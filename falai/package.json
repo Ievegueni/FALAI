@@ -1,0 +1,26 @@
+{
+  "name": "falai",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:api": "pnpm --filter @falai/api dev",
+    "dev:worker": "pnpm --filter @falai/worker dev",
+    "dev:crm": "pnpm --filter @falai/crm dev",
+    "dev:backoffice": "pnpm --filter @falai/backoffice dev",
+    "build": "pnpm -r build",
+    "db:generate": "pnpm --filter @falai/db generate",
+    "db:migrate": "pnpm --filter @falai/db migrate:dev",
+    "db:migrate:prod": "pnpm --filter @falai/db migrate:prod",
+    "db:studio": "pnpm --filter @falai/db studio",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "tsx": "^4.16.0",
+    "tsup": "^8.2.0",
+    "vitest": "^2.0.0"
+  }
+}

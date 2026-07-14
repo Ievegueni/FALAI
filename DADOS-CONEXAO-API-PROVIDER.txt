@@ -1,0 +1,67 @@
+================================================================================
+FALAÍ — DADOS NECESSÁRIOS PARA CONEXÃO POR API (Yeastar P-Series Cloud)
+================================================================================
+Documento para solicitar ao provider de telefonia (PBX).
+Objectivo: ligar a plataforma Falaí à API do PBX (Yeastar OpenAPI v1.0).
+
+
+--------------------------------------------------------------------------------
+1. CREDENCIAIS OBRIGATÓRIAS
+--------------------------------------------------------------------------------
+Estes três campos são o mínimo para autenticar na API. Com eles, o sistema
+obtém automaticamente o token de acesso via POST /openapi/v1.0/get_token.
+
+  [ ] Base URL do PBX
+      Descrição: URL da instância (ex.: https://a-tua-empresa.yeastar.cloud)
+      Variável no Falaí: YEASTAR_BASE_URL
+      Valor: ________________________________________________
+
+  [ ] Client ID
+      Descrição: ID da aplicação/integração OpenAPI
+      Variável no Falaí: YEASTAR_CLIENT_ID
+      Valor: ________________________________________________
+
+  [ ] Client Secret
+      Descrição: Segredo da aplicação OpenAPI
+      Variável no Falaí: YEASTAR_CLIENT_SECRET
+      Valor: ________________________________________________
+
+
+--------------------------------------------------------------------------------
+2. PRÉ-CONDIÇÕES A CONFIRMAR COM O PROVIDER
+--------------------------------------------------------------------------------
+
+  [ ] OpenAPI / Integration ACTIVADA na conta
+      (Sem isto, o Client ID / Client Secret não existem nem funcionam.)
+
+  [ ] Versão da API = v1.0
+      (É a versão usada pela plataforma: path /openapi/v1.0/...)
+
+  [ ] Allowlist de IP
+      Fornecer ao provider o IP público do nosso servidor para autorização.
+      Nosso IP público: _____________________________________
+
+  [ ] Webhook / Eventos de chamada
+      URL público que iremos expor para receber eventos
+      (ringing / answered / hangup), caso usem webhook.
+      Nosso URL de webhook: _________________________________
+
+
+--------------------------------------------------------------------------------
+3. NOTAS
+--------------------------------------------------------------------------------
+- Estes dados cobrem APENAS a autenticação/ligação por API.
+- Tarifas, SIP trunk e numeração (DID/Caller ID) são temas separados e não
+  entram na conexão da API — afectam apenas se as chamadas chegam a ser feitas.
+- Outros providers da plataforma (Deepgram/STT, Anthropic/LLM, ElevenLabs e
+  Azure/TTS, ProxyPay/pagamentos, Futurix/SMS) NÃO são fornecidos pela empresa
+  de telefonia; obtêm-se criando conta directamente em cada serviço.
+
+
+--------------------------------------------------------------------------------
+PEDIDO RESUMIDO
+--------------------------------------------------------------------------------
+"Preciso de: Base URL do PBX + Client ID + Client Secret, com a OpenAPI (v1.0)
+activada na conta. Indiquem também qual o IP que devem autorizar (allowlist)."
+
+================================================================================

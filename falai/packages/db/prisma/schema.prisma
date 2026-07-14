@@ -1,0 +1,431 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ ENUMS ============
+
+enum ProductType {
+  VOICE_AI // Operador: PBX + IA da plataforma, faturado por minuto
+  CRM_BYO_PBX // Só CRM: o cliente liga o PBX Yeastar dele (bring-your-own-PBX)
+}
+
+enum InvoiceStatus {
+  PAID
+  DUE
+  VOID
+}
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum TenantRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum AdminRole {
+  SUPERADMIN
+  OPERATOR
+  FINANCE
+  SUPPORT
+}
+
+enum AgentStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  PAUSED
+  BLOCKED
+}
+
+enum CallStatus {
+  QUEUED
+  DIALING
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  NO_ANSWER
+  BUSY
+  FAILED
+  CANCELLED
+  ESCALATED
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  DONE
+  CANCELLED
+}
+
+enum TurnRole {
+  AGENT
+  HUMAN
+  SYSTEM
+}
+
+enum TxType {
+  TOPUP
+  CALL_CHARGE
+  REFUND
+  ADJUSTMENT
+  MONTHLY_FEE
+}
+
+enum CampaignContactStatus {
+  PENDING
+  QUEUED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  OPTED_OUT
+}
+
+// ============ TENANTS & ACESSO ============
+
+model Tenant {
+  id               String        @id @default(cuid())
+  name             String
+  nif              String?       @unique
+  email            String
+  phone            String
+  status           TenantStatus  @default(TRIAL)
+  plan             Plan          @relation(fields: [planId], references: [id])
+  planId           String
+  balanceCents     Int           @default(0)
+  creditLimitCents Int           @default(0)
+  webhookUrl       String?
+  webhookSecret    String?
+  maxConcurrent    Int           @default(1)
+  // PBX próprio do cliente (bring-your-own-PBX) — só usado quando plan.productType = CRM_BYO_PBX
+  pbxBaseUrl       String?
+  pbxClientId      String?
+  pbxClientSecret  String? // encriptado (AES-256-GCM) via crypto.service
+  pbxExtension     String? // extensão de saída por defeito
+  pbxConnected     Boolean       @default(false) // resultado do último teste de ligação
+  pbxLastSyncAt    DateTime? // último sync de CDR do PBX do cliente
+  pbxWebhookToken  String?       @unique // token do URL de webhook do PBX do cliente
+  pbxCalls         PbxCall[]
+  nextBillingAt    DateTime? // data do próximo débito da subscrição mensal
+  invoices         Invoice[]
+  deletedAt        DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  apiKeys          ApiKey[]
+  users            TenantUser[]
+  agents           Agent[]
+  calls            Call[]
+  campaigns        Campaign[]
+  transactions     WalletTransaction[]
+  contacts         Contact[]
+}
+
+// Fatura da subscrição mensal do CRM (produto CRM_BYO_PBX; também qualquer plano com mensalidade)
+model Invoice {
+  id          String        @id @default(cuid())
+  tenantId    String
+  tenant      Tenant        @relation(fields: [tenantId], references: [id])
+  period      String // "YYYY-MM"
+  amountCents Int
+  status      InvoiceStatus @default(DUE)
+  issuedAt    DateTime      @default(now())
+  paidAt      DateTime?
+  note        String?
+
+  @@unique([tenantId, period])
+  @@index([tenantId, issuedAt])
+}
+
+// Registos de chamadas (CDR) sincronizados do PBX próprio do cliente (produto CRM_BYO_PBX)
+model PbxCall {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  uid          String // identificador único da chamada no PBX Yeastar
+  callType     String // Inbound | Outbound | Internal
+  disposition  String // ANSWERED | NO ANSWER | BUSY | FAILED | VOICEMAIL
+  fromNumber   String
+  toNumber     String
+  fromName     String?
+  toName       String?
+  durationSecs Int      @default(0)
+  ringSecs     Int      @default(0)
+  talkSecs     Int      @default(0)
+  recordFile   String?
+  startedAt    DateTime
+  syncedAt     DateTime @default(now())
+
+  @@unique([tenantId, uid])
+  @@index([tenantId, startedAt])
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  label      String
+  keyHash    String    @unique
+  prefix     String
+  scopes     String[]
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+model TenantUser {
+  id           String     @id @default(cuid())
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         TenantRole @default(MEMBER)
+  twoFaSecret  String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+// ============ OPERADOR (COMUNICA) ============
+
+model AdminUser {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         AdminRole @default(OPERATOR)
+  twoFaSecret  String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Plan {
+  id                  String      @id @default(cuid())
+  name                String
+  productType         ProductType @default(VOICE_AI)
+  aiAgentsEnabled     Boolean     @default(true) // se o cliente tem agentes de IA
+  pricePerMinuteCents Int
+  pricePerCallCents   Int      @default(0)
+  includedMinutes     Int      @default(0)
+  monthlyFeeCents     Int      @default(0)
+  maxAgents           Int      @default(1)
+  maxConcurrent       Int      @default(1)
+  sttMarginPct        Int      @default(30)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  tenants             Tenant[]
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  isSecret  Boolean  @default(false)
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+}
+
+// ============ AGENTES DE IA ============
+
+model Agent {
+  id               String      @id @default(cuid())
+  tenantId         String
+  tenant           Tenant      @relation(fields: [tenantId], references: [id])
+  name             String
+  description      String?
+  systemPrompt     String      @db.Text
+  language         String      @default("pt-PT")
+  ttsVoiceId       String
+  sttModel         String      @default("default")
+  maxTurnSeconds   Int         @default(30)
+  maxCallSeconds   Int         @default(300)
+  escalationNumber String?
+  escalationRules  Json?
+  variablesSchema  Json?
+  greetingAudioRef String?
+  isApproved       Boolean     @default(false)
+  approvedBy       String?
+  status           AgentStatus @default(DRAFT)
+  deletedAt        DateTime?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  calls            Call[]
+  versions         AgentVersion[]
+  campaigns        Campaign[]
+}
+
+model AgentVersion {
+  id           String   @id @default(cuid())
+  agentId      String
+  agent        Agent    @relation(fields: [agentId], references: [id])
+  systemPrompt String   @db.Text
+  changedBy    String
+  createdAt    DateTime @default(now())
+}
+
+// ============ CHAMADAS ============
+
+model Call {
+  id                String     @id @default(cuid())
+  tenantId          String
+  tenant            Tenant     @relation(fields: [tenantId], references: [id])
+  agentId           String
+  agent             Agent      @relation(fields: [agentId], references: [id])
+  campaignId        String?
+  campaign          Campaign?  @relation(fields: [campaignId], references: [id])
+  contactId         String?
+  contact           Contact?   @relation(fields: [contactId], references: [id])
+  toNumber          String
+  variables         Json?
+  status            CallStatus @default(QUEUED)
+  outcome           String?
+  yeastarCallId     String?    @unique
+  startedAt         DateTime?
+  answeredAt        DateTime?
+  endedAt           DateTime?
+  durationSecs      Int        @default(0)
+  billedSecs        Int        @default(0)
+  costCents         Int        @default(0)
+  providerCostCents Int        @default(0)
+  transcript        Json?
+  summary           String?    @db.Text
+  recordingUrl      String?
+  failReason        String?
+  webhookDelivered  Boolean    @default(false)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  turns             CallTurn[]
+}
+
+model CallTurn {
+  id        String   @id @default(cuid())
+  callId    String
+  call      Call     @relation(fields: [callId], references: [id])
+  seq       Int
+  role      TurnRole
+  text      String   @db.Text
+  audioRef  String?
+  sttMs     Int?
+  llmMs     Int?
+  ttsMs     Int?
+  playMs    Int?
+  createdAt DateTime @default(now())
+
+  @@unique([callId, seq])
+}
+
+// ============ CAMPANHAS & CONTACTOS ============
+
+model Campaign {
+  id                String         @id @default(cuid())
+  tenantId          String
+  tenant            Tenant         @relation(fields: [tenantId], references: [id])
+  agentId           String
+  agent             Agent          @relation(fields: [agentId], references: [id])
+  name              String
+  status            CampaignStatus @default(DRAFT)
+  scheduleJson      Json?
+  retryPolicy       Json?
+  throttlePerMinute Int            @default(2)
+  totalContacts     Int            @default(0)
+  completed         Int            @default(0)
+  failedCount       Int            @default(0)
+  summary           String?        @db.Text
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  calls             Call[]
+  campaignContacts  CampaignContact[]
+}
+
+model Contact {
+  id         String    @id @default(cuid())
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  phone      String
+  name       String?
+  attributes Json?
+  optedOutAt DateTime?
+  optOutReason String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  calls      Call[]
+  campaignContacts CampaignContact[]
+
+  @@unique([tenantId, phone])
+}
+
+model CampaignContact {
+  id          String                @id @default(cuid())
+  campaignId  String
+  campaign    Campaign              @relation(fields: [campaignId], references: [id])
+  contactId   String
+  contact     Contact               @relation(fields: [contactId], references: [id])
+  status      CampaignContactStatus @default(PENDING)
+  callId      String?
+  attempts    Int                   @default(0)
+  nextRetryAt DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
+}
+
+// ============ FINANCEIRO ============
+
+model WalletTransaction {
+  id                String   @id @default(cuid())
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  type              TxType
+  amountCents       Int
+  balanceAfterCents Int
+  reference         String?
+  proxypayRef       String?  @unique
+  note              String?
+  createdBy         String?
+  createdAt         DateTime @default(now())
+}
+
+// ============ AUDITORIA & SAÚDE ============
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorType  String
+  actorId    String
+  tenantId   String?
+  action     String
+  targetType String
+  targetId   String
+  before     Json?
+  after      Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+}
+
+model SystemEvent {
+  id        String   @id @default(cuid())
+  severity  String
+  source    String
+  tenantId  String?
+  message   String
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+}
