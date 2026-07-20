@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation, Trans } from 'react-i18next';
 import { ArrowLeft, Save, MessageSquare, Info } from 'lucide-react';
 import { agentsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
@@ -10,10 +11,10 @@ import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 
+// Conteúdo operacional em PT (prompt do agente); o label visível vem das traduções.
 const TEMPLATES = [
   {
     id: 'cobranca',
-    label: 'Cobrança amigável',
     objective: 'Contactar clientes com dívidas em atraso e negociar um plano de pagamento.',
     tone: 'Profissional, empático e respeitoso. Nunca agressivo.',
     dataToCollect: 'Confirmação de recebimento, data prevista de pagamento, valor que consegue pagar.',
@@ -21,7 +22,6 @@ const TEMPLATES = [
   },
   {
     id: 'confirmacao',
-    label: 'Confirmação de entrega',
     objective: 'Confirmar que o cliente recebeu o seu pedido e recolher feedback.',
     tone: 'Cordial e eficiente.',
     dataToCollect: 'Se recebeu, condição da entrega, satisfação de 1 a 5.',
@@ -29,7 +29,6 @@ const TEMPLATES = [
   },
   {
     id: 'pesquisa',
-    label: 'Pesquisa de satisfação',
     objective: 'Recolher feedback sobre o serviço prestado nos últimos 30 dias.',
     tone: 'Amigável e breve. Máximo 3 minutos.',
     dataToCollect: 'NPS (0-10), razão principal, o que pode melhorar.',
@@ -58,11 +57,14 @@ const EMPTY: FormData = {
 };
 
 export function AgentFormPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { success, error: toastError } = useToast();
+
+  const templateLabel = (tid: string) => t(`onboarding.templates.${tid}.label`);
 
   const [form, setForm] = useState<FormData>(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -91,25 +93,25 @@ export function AgentFormPage() {
     setErrors((e) => ({ ...e, [k]: undefined }));
   }
 
-  function applyTemplate(id: string) {
-    const t = TEMPLATES.find((t) => t.id === id);
-    if (!t) return;
+  function applyTemplate(tid: string) {
+    const tpl = TEMPLATES.find((x) => x.id === tid);
+    if (!tpl) return;
     setForm((f) => ({
       ...f,
-      objective: t.objective,
-      tone: t.tone,
-      dataToCollect: t.dataToCollect,
-      neverSay: t.neverSay,
+      objective: tpl.objective,
+      tone: tpl.tone,
+      dataToCollect: tpl.dataToCollect,
+      neverSay: tpl.neverSay,
     }));
   }
 
   function validate(): boolean {
     const e: Partial<Record<keyof FormData, string>> = {};
-    if (!form.name.trim()) e.name = 'Nome obrigatório';
-    if (!form.objective.trim()) e.objective = 'Objectivo obrigatório';
-    if (!form.tone.trim()) e.tone = 'Tom obrigatório';
-    if (form.maxDurationSecs < 30) e.maxDurationSecs = 'Mínimo 30 segundos';
-    if (form.maxDurationSecs > 1800) e.maxDurationSecs = 'Máximo 30 minutos';
+    if (!form.name.trim()) e.name = t('agentForm.errNameRequired');
+    if (!form.objective.trim()) e.objective = t('agentForm.errObjectiveRequired');
+    if (!form.tone.trim()) e.tone = t('agentForm.errToneRequired');
+    if (form.maxDurationSecs < 30) e.maxDurationSecs = t('agentForm.errMinDuration');
+    if (form.maxDurationSecs > 1800) e.maxDurationSecs = t('agentForm.errMaxDuration');
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -128,19 +130,19 @@ export function AgentFormPage() {
       return isEdit ? agentsApi.update(id!, data) : agentsApi.create(data);
     },
     onSuccess: (saved) => {
-      success(isEdit ? 'Agente actualizado' : 'Agente criado');
+      success(isEdit ? t('agentForm.updated') : t('agentForm.created'));
       void qc.invalidateQueries({ queryKey: ['agents'] });
       navigate(`/agents/${saved.id}`);
     },
     onError: (e: Error) => toastError(e.message),
   });
 
-  if (isEdit && isLoading) return <><Header title="Agente" /><PageSpinner /></>;
+  if (isEdit && isLoading) return <><Header title={t('agentForm.agentTitle')} /><PageSpinner /></>;
 
   return (
     <>
       <Header
-        title={isEdit ? 'Editar agente' : 'Novo agente'}
+        title={isEdit ? t('agentForm.titleEdit') : t('agentForm.titleNew')}
         actions={
           <Button
             size="sm"
@@ -148,7 +150,7 @@ export function AgentFormPage() {
             icon={<ArrowLeft className="h-3.5 w-3.5" />}
             onClick={() => navigate('/agents')}
           >
-            Voltar
+            {t('common.back')}
           </Button>
         }
       />
@@ -156,15 +158,15 @@ export function AgentFormPage() {
       <div className="p-6 max-w-3xl space-y-6">
         {!isEdit && (
           <Card>
-            <h2 className="text-sm font-semibold text-gray-900 mb-3">Começar de um template</h2>
+            <h2 className="text-sm font-semibold text-gray-900 mb-3">{t('agentForm.startFromTemplate')}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {TEMPLATES.map((t) => (
+              {TEMPLATES.map((tpl) => (
                 <button
-                  key={t.id}
-                  onClick={() => applyTemplate(t.id)}
+                  key={tpl.id}
+                  onClick={() => applyTemplate(tpl.id)}
                   className="rounded-lg border border-gray-200 p-3 text-left hover:border-blue-400 hover:bg-blue-50 transition-colors"
                 >
-                  <p className="text-sm font-medium text-gray-900">{t.label}</p>
+                  <p className="text-sm font-medium text-gray-900">{templateLabel(tpl.id)}</p>
                 </button>
               ))}
             </div>
@@ -172,77 +174,77 @@ export function AgentFormPage() {
         )}
 
         <Card>
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Informações do agente</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('agentForm.agentInfo')}</h2>
           <div className="flex flex-col gap-4">
             <Input
-              label="Nome do agente"
+              label={t('agentForm.name')}
               value={form.name}
               onChange={(e) => set('name', e.target.value)}
               error={errors.name}
-              placeholder="ex: Agente de Cobrança"
+              placeholder={t('agentForm.namePlaceholder')}
               required
             />
 
             <Textarea
-              label="Objectivo"
+              label={t('agentForm.objective')}
               value={form.objective}
               onChange={(e) => set('objective', e.target.value)}
               error={errors.objective}
-              placeholder="Qual é o objectivo desta conversa? Seja específico sobre o resultado pretendido."
+              placeholder={t('agentForm.objectivePlaceholder')}
               rows={3}
               required
             />
 
             <Textarea
-              label="Tom e personalidade"
+              label={t('agentForm.tone')}
               value={form.tone}
               onChange={(e) => set('tone', e.target.value)}
               error={errors.tone}
-              placeholder="Como deve o agente comunicar? ex: Profissional, empático, directo."
+              placeholder={t('agentForm.tonePlaceholder')}
               rows={2}
               required
             />
 
             <Textarea
-              label="Informação a recolher"
+              label={t('agentForm.dataToCollect')}
               value={form.dataToCollect}
               onChange={(e) => set('dataToCollect', e.target.value)}
               error={errors.dataToCollect}
-              placeholder="Que dados deve o agente recolher durante a chamada?"
+              placeholder={t('agentForm.dataToCollectPlaceholder')}
               rows={3}
             />
 
             <Textarea
-              label="O que nunca dizer"
+              label={t('agentForm.neverSay')}
               value={form.neverSay}
               onChange={(e) => set('neverSay', e.target.value)}
               error={errors.neverSay}
-              placeholder="Tópicos, frases ou informações que o agente nunca deve mencionar."
+              placeholder={t('agentForm.neverSayPlaceholder')}
               rows={2}
             />
           </div>
         </Card>
 
         <Card>
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Regras da chamada</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('agentForm.callRules')}</h2>
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Duração máxima (segundos)"
+              label={t('agentForm.maxDuration')}
               type="number"
               value={form.maxDurationSecs}
               onChange={(e) => set('maxDurationSecs', parseInt(e.target.value, 10))}
               error={errors.maxDurationSecs}
               min={30}
               max={1800}
-              hint="Mínimo 30s, máximo 30 min (1800s)"
+              hint={t('agentForm.maxDurationHint')}
             />
             <Input
-              label="Número de escalonamento"
+              label={t('agentForm.escalationPhone')}
               value={form.escalationPhone}
               onChange={(e) => set('escalationPhone', e.target.value)}
               error={errors.escalationPhone}
               placeholder="+244 9XX XXX XXX"
-              hint="Transfere a chamada se o cliente pedir um humano"
+              hint={t('agentForm.escalationPhoneHint')}
             />
           </div>
         </Card>
@@ -250,8 +252,7 @@ export function AgentFormPage() {
         <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 flex gap-3">
           <Info className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-blue-700">
-            Após guardar, pode usar o <strong>Simulador</strong> para testar o agente em texto antes de activar.
-            A submissão para revisão é feita separadamente na listagem de agentes.
+            <Trans i18nKey="agentForm.infoNote" components={[<strong key="0" />]} />
           </p>
         </div>
 
@@ -261,7 +262,7 @@ export function AgentFormPage() {
             loading={save.isPending}
             onClick={() => { if (validate()) save.mutate(); }}
           >
-            {isEdit ? 'Guardar alterações' : 'Criar agente'}
+            {isEdit ? t('agentForm.saveChanges') : t('agentForm.createAgent')}
           </Button>
           {id && (
             <Button
@@ -269,11 +270,11 @@ export function AgentFormPage() {
               icon={<MessageSquare className="h-4 w-4" />}
               onClick={() => navigate(`/agents/${id}/simulate`)}
             >
-              Abrir simulador
+              {t('agentForm.openSimulator')}
             </Button>
           )}
           <Button variant="ghost" onClick={() => navigate('/agents')}>
-            Cancelar
+            {t('common.cancel')}
           </Button>
         </div>
       </div>

@@ -258,7 +258,7 @@ export function WalletPage() {
                         <Icon className="h-4 w-4" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900">{transactionTypeLabel[tx.type]}</p>
+                        <p className="text-sm font-medium text-gray-900">{transactionTypeLabel(tx.type)}</p>
                         {tx.note && <p className="text-xs text-gray-400 truncate">{tx.note}</p>}
                         <p className="text-xs text-gray-400 flex items-center gap-1">
                           <Clock className="h-3 w-3" /> {formatDate(tx.createdAt)}

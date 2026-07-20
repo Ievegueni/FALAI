@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { walletApi } from '@/lib/api';
 import { formatAOA } from '@/lib/utils';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
 interface Props {
   title: string;
@@ -38,6 +39,8 @@ export function Header({ title, actions }: Props) {
             {formatAOA(wallet.balanceCents)}
           </div>
         )}
+
+        <LanguageSwitcher />
 
         <button className="relative rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
           <Bell className="h-5 w-5" />

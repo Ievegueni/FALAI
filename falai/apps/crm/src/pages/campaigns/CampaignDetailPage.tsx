@@ -76,7 +76,7 @@ export function CampaignDetailPage() {
               <p className="text-xs text-gray-500 mt-0.5">{c.agent.name}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge className={campaignStatusColor[c.status]}>{campaignStatusLabel[c.status]}</Badge>
+              <Badge className={campaignStatusColor[c.status]}>{campaignStatusLabel(c.status)}</Badge>
               {c.status === 'ACTIVE' && (
                 <Button size="sm" variant="ghost" icon={<Pause className="h-3.5 w-3.5" />} loading={pause.isPending} onClick={() => pause.mutate()}>Pausar</Button>
               )}
@@ -156,7 +156,7 @@ export function CampaignDetailPage() {
             <div className="col-span-2">
               <span className="text-gray-500">Dias:</span>{' '}
               <span className="text-gray-900">
-                {c.scheduleJson.daysOfWeek.map((d) => daysOfWeekLabel[d]).join(', ')}
+                {c.scheduleJson.daysOfWeek.map((d) => daysOfWeekLabel()[d]).join(', ')}
               </span>
             </div>
             <div>

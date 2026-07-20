@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -7,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { ApiError } from '@/lib/api';
 
 export function TwoFactorPage() {
+  const { t } = useTranslation();
   const { verify2fa } = useAuth();
   const { error: toastError } = useToast();
   const navigate = useNavigate();
@@ -43,7 +45,7 @@ export function TwoFactorPage() {
       await verify2fa(code);
       navigate('/dashboard');
     } catch (err) {
-      toastError(err instanceof ApiError ? err.message : 'Código inválido');
+      toastError(err instanceof ApiError ? err.message : t('twofa.invalidCode'));
       setDigits(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } finally {
@@ -57,8 +59,8 @@ export function TwoFactorPage() {
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600">
           <ShieldCheck className="h-6 w-6 text-white" />
         </div>
-        <h1 className="text-2xl font-bold text-white">Verificação 2FA</h1>
-        <p className="mt-1 text-sm text-slate-400">Introduza o código da sua app de autenticação</p>
+        <h1 className="text-2xl font-bold text-white">{t('twofa.title')}</h1>
+        <p className="mt-1 text-sm text-slate-400">{t('twofa.subtitle')}</p>
       </div>
 
       <div className="rounded-2xl bg-white p-8 shadow-2xl">
@@ -84,7 +86,7 @@ export function TwoFactorPage() {
           disabled={digits.some(Boolean) && digits.join('').length < 6}
           className="mt-6 w-full h-10"
         >
-          Verificar
+          {t('twofa.verify')}
         </Button>
       </div>
     </div>

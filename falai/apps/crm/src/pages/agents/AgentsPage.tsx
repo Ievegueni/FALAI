@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Plus, Bot, Play, Pause, Send, Eye, Trash2, MessageSquare } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { agentsApi } from '@/lib/api';
@@ -16,40 +17,41 @@ import { agentStatusLabel, agentStatusColor, formatDate } from '@/lib/utils';
 import type { Agent, AgentStatus } from '@/types';
 
 const STATUS_TABS = [
-  { key: '', label: 'Todos' },
-  { key: 'ACTIVE', label: 'Activos' },
-  { key: 'DRAFT', label: 'Rascunhos' },
-  { key: 'PENDING_REVIEW', label: 'Em revisão' },
-  { key: 'PAUSED', label: 'Pausados' },
-  { key: 'BLOCKED', label: 'Bloqueados' },
+  { key: '', labelKey: 'agents.tabs.all' },
+  { key: 'ACTIVE', labelKey: 'agents.tabs.active' },
+  { key: 'DRAFT', labelKey: 'agents.tabs.drafts' },
+  { key: 'PENDING_REVIEW', labelKey: 'agents.tabs.review' },
+  { key: 'PAUSED', labelKey: 'agents.tabs.paused' },
+  { key: 'BLOCKED', labelKey: 'agents.tabs.blocked' },
 ];
 
 function AgentCard({ agent, onAction }: { agent: Agent; onAction: () => void }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { success, error } = useToast();
 
   const submitReview = useMutation({
     mutationFn: () => agentsApi.submitReview(agent.id),
-    onSuccess: () => { success('Agente enviado para revisão'); void qc.invalidateQueries({ queryKey: ['agents'] }); onAction(); },
+    onSuccess: () => { success(t('agents.sentForReview')); void qc.invalidateQueries({ queryKey: ['agents'] }); onAction(); },
     onError: (e: Error) => error(e.message),
   });
 
   const pause = useMutation({
     mutationFn: () => agentsApi.pause(agent.id),
-    onSuccess: () => { success('Agente pausado'); void qc.invalidateQueries({ queryKey: ['agents'] }); },
+    onSuccess: () => { success(t('agents.paused')); void qc.invalidateQueries({ queryKey: ['agents'] }); },
     onError: (e: Error) => error(e.message),
   });
 
   const resume = useMutation({
     mutationFn: () => agentsApi.resume(agent.id),
-    onSuccess: () => { success('Agente retomado'); void qc.invalidateQueries({ queryKey: ['agents'] }); },
+    onSuccess: () => { success(t('agents.resumed')); void qc.invalidateQueries({ queryKey: ['agents'] }); },
     onError: (e: Error) => error(e.message),
   });
 
   const del = useMutation({
     mutationFn: () => agentsApi.delete(agent.id),
-    onSuccess: () => { success('Agente eliminado'); void qc.invalidateQueries({ queryKey: ['agents'] }); },
+    onSuccess: () => { success(t('agents.deleted')); void qc.invalidateQueries({ queryKey: ['agents'] }); },
     onError: (e: Error) => error(e.message),
   });
 
@@ -66,28 +68,28 @@ function AgentCard({ agent, onAction }: { agent: Agent; onAction: () => void }) 
           </div>
         </div>
         <Badge className={agentStatusColor[agent.status]}>
-          {agentStatusLabel[agent.status]}
+          {agentStatusLabel(agent.status)}
         </Badge>
       </div>
 
       {agent.status === 'BLOCKED' && agent.reviewRejectionReason && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
-          <strong>Bloqueado:</strong> {agent.reviewRejectionReason}
+          <strong>{t('agents.blocked')}</strong> {agent.reviewRejectionReason}
         </div>
       )}
 
       {agent.status === 'PENDING_REVIEW' && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
-          Em verificação de qualidade. SLA: 4 horas úteis.
+          {t('agents.pendingReview')}
         </div>
       )}
 
       <div className="flex items-center gap-2 pt-1 border-t border-gray-100 flex-wrap">
         <Button size="sm" variant="ghost" icon={<Eye className="h-3.5 w-3.5" />} onClick={() => navigate(`/agents/${agent.id}`)}>
-          Editar
+          {t('agents.edit')}
         </Button>
         <Button size="sm" variant="ghost" icon={<MessageSquare className="h-3.5 w-3.5" />} onClick={() => navigate(`/agents/${agent.id}/simulate`)}>
-          Simular
+          {t('agents.simulate')}
         </Button>
 
         {agent.status === 'DRAFT' && (
@@ -98,7 +100,7 @@ function AgentCard({ agent, onAction }: { agent: Agent; onAction: () => void }) 
             loading={submitReview.isPending}
             onClick={() => submitReview.mutate()}
           >
-            Submeter
+            {t('agents.submit')}
           </Button>
         )}
         {agent.status === 'ACTIVE' && (
@@ -109,7 +111,7 @@ function AgentCard({ agent, onAction }: { agent: Agent; onAction: () => void }) 
             loading={pause.isPending}
             onClick={() => pause.mutate()}
           >
-            Pausar
+            {t('agents.pause')}
           </Button>
         )}
         {agent.status === 'PAUSED' && (
@@ -120,7 +122,7 @@ function AgentCard({ agent, onAction }: { agent: Agent; onAction: () => void }) 
             loading={resume.isPending}
             onClick={() => resume.mutate()}
           >
-            Retomar
+            {t('agents.resume')}
           </Button>
         )}
 
@@ -131,10 +133,10 @@ function AgentCard({ agent, onAction }: { agent: Agent; onAction: () => void }) 
             icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
             loading={del.isPending}
             onClick={() => {
-              if (confirm(`Eliminar o agente "${agent.name}"?`)) del.mutate();
+              if (confirm(t('agents.deleteConfirm', { name: agent.name }))) del.mutate();
             }}
           >
-            <span className="text-red-500">Eliminar</span>
+            <span className="text-red-500">{t('agents.delete')}</span>
           </Button>
         )}
       </div>
@@ -143,6 +145,7 @@ function AgentCard({ agent, onAction }: { agent: Agent; onAction: () => void }) 
 }
 
 export function AgentsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [tab, setTab] = useState('');
   const [page, setPage] = useState(1);
@@ -155,17 +158,17 @@ export function AgentsPage() {
   return (
     <>
       <Header
-        title="Agentes de IA"
+        title={t('agents.title')}
         actions={
           <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => navigate('/agents/new')}>
-            Novo agente
+            {t('agents.new')}
           </Button>
         }
       />
 
       <div className="p-6 space-y-4">
         <Tabs
-          tabs={STATUS_TABS}
+          tabs={STATUS_TABS.map((tb) => ({ key: tb.key, label: t(tb.labelKey) }))}
           active={tab}
           onChange={(k) => { setTab(k); setPage(1); }}
         />
@@ -175,9 +178,9 @@ export function AgentsPage() {
         ) : data?.data.length === 0 ? (
           <EmptyState
             icon={<Bot className="h-8 w-8" />}
-            title="Sem agentes ainda"
-            description="Crie o seu primeiro agente a partir de um template ou do zero."
-            action={{ label: 'Criar agente', icon: <Plus className="h-4 w-4" />, onClick: () => navigate('/agents/new') }}
+            title={t('agents.emptyTitle')}
+            description={t('agents.emptyDescription')}
+            action={{ label: t('agents.createAgent'), icon: <Plus className="h-4 w-4" />, onClick: () => navigate('/agents/new') }}
           />
         ) : (
           <>

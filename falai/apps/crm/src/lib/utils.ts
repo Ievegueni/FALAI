@@ -1,5 +1,5 @@
 import { formatInTimeZone } from 'date-fns-tz';
-import { ptBR } from 'date-fns/locale';
+import i18n from '@/i18n';
 import type { AgentStatus, CallStatus, CampaignStatus, TransactionType } from '@/types';
 
 const TZ = 'Africa/Luanda';
@@ -15,15 +15,15 @@ export function formatAOA(cents: number): string {
 }
 
 export function formatDate(iso: string): string {
-  return formatInTimeZone(new Date(iso), TZ, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+  return formatInTimeZone(new Date(iso), TZ, 'dd/MM/yyyy HH:mm');
 }
 
 export function formatDateShort(iso: string): string {
-  return formatInTimeZone(new Date(iso), TZ, 'dd/MM/yyyy', { locale: ptBR });
+  return formatInTimeZone(new Date(iso), TZ, 'dd/MM/yyyy');
 }
 
 export function formatTime(iso: string): string {
-  return formatInTimeZone(new Date(iso), TZ, 'HH:mm', { locale: ptBR });
+  return formatInTimeZone(new Date(iso), TZ, 'HH:mm');
 }
 
 export function formatDuration(secs: number): string {
@@ -58,14 +58,11 @@ export function clsx(...args: (string | undefined | null | false | Record<string
 }
 
 // ─── Status labels & colours ─────────────────────────────────────────────────
+// As etiquetas são traduzidas em runtime via i18n; as cores são estáticas.
+// Os componentes que as usam subscrevem useTranslation(), pelo que re-renderizam
+// ao mudar de idioma.
 
-export const agentStatusLabel: Record<AgentStatus, string> = {
-  DRAFT: 'Rascunho',
-  PENDING_REVIEW: 'Em revisão',
-  ACTIVE: 'Activo',
-  PAUSED: 'Pausado',
-  BLOCKED: 'Bloqueado',
-};
+export const agentStatusLabel = (s: AgentStatus): string => i18n.t(`status.agent.${s}`);
 
 export const agentStatusColor: Record<AgentStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-700',
@@ -75,17 +72,7 @@ export const agentStatusColor: Record<AgentStatus, string> = {
   BLOCKED: 'bg-red-100 text-red-700',
 };
 
-export const callStatusLabel: Record<CallStatus, string> = {
-  QUEUED: 'Na fila',
-  DIALING: 'A ligar',
-  RINGING: 'A chamar',
-  IN_PROGRESS: 'Em curso',
-  COMPLETED: 'Concluída',
-  NO_ANSWER: 'Não atendeu',
-  FAILED: 'Falhou',
-  CANCELLED: 'Cancelada',
-  ESCALATED: 'Escalada',
-};
+export const callStatusLabel = (s: CallStatus): string => i18n.t(`status.call.${s}`);
 
 export const callStatusColor: Record<CallStatus, string> = {
   QUEUED: 'bg-gray-100 text-gray-700',
@@ -99,13 +86,7 @@ export const callStatusColor: Record<CallStatus, string> = {
   ESCALATED: 'bg-purple-100 text-purple-700',
 };
 
-export const campaignStatusLabel: Record<CampaignStatus, string> = {
-  DRAFT: 'Rascunho',
-  ACTIVE: 'Activa',
-  PAUSED: 'Pausada',
-  COMPLETED: 'Concluída',
-  CANCELLED: 'Cancelada',
-};
+export const campaignStatusLabel = (s: CampaignStatus): string => i18n.t(`status.campaign.${s}`);
 
 export const campaignStatusColor: Record<CampaignStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-700',
@@ -115,12 +96,7 @@ export const campaignStatusColor: Record<CampaignStatus, string> = {
   CANCELLED: 'bg-red-100 text-red-700',
 };
 
-export const transactionTypeLabel: Record<TransactionType, string> = {
-  TOPUP: 'Carregamento',
-  CALL_CHARGE: 'Débito de chamada',
-  REFUND: 'Reembolso',
-  ADJUSTMENT: 'Ajuste',
-  MONTHLY_FEE: 'Fee mensal',
-};
+export const transactionTypeLabel = (t: TransactionType): string => i18n.t(`tx.${t}`);
 
-export const daysOfWeekLabel = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+export const daysOfWeekLabel = (): string[] =>
+  i18n.t('days', { returnObjects: true }) as string[];

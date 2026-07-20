@@ -173,7 +173,7 @@ export function ContactDetailPage() {
                     onClick={() => navigate(`/calls/${c.id}`)}
                   >
                     <td className="px-4 py-3">
-                      <Badge className={callStatusColor[c.status]}>{callStatusLabel[c.status]}</Badge>
+                      <Badge className={callStatusColor[c.status]}>{callStatusLabel(c.status)}</Badge>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">
                       {c.outcome ? <span className="truncate max-w-[160px] block">{c.outcome}</span> : '—'}

@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard,
   Bot,
@@ -17,20 +18,21 @@ import { clsx } from '@/lib/utils';
 
 import type { FeatureKey } from '@/types';
 
-const dashboardItem = { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' };
+const dashboardItem = { to: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard' };
 // Cada item pode declarar a feature que o activa; sem feature = sempre visível
-const featureItems: { to: string; icon: typeof Bot; label: string; feature: FeatureKey }[] = [
-  { to: '/agents', icon: Bot, label: 'Agentes', feature: 'agents' },
-  { to: '/campaigns', icon: Megaphone, label: 'Campanhas', feature: 'campaigns' },
-  { to: '/contacts', icon: Users, label: 'Contactos', feature: 'contacts' },
-  { to: '/calls', icon: Phone, label: 'Chamadas', feature: 'calls' },
-  { to: '/wallet', icon: Wallet, label: 'Carteira', feature: 'wallet' },
-  { to: '/team', icon: UserCheck, label: 'Equipa', feature: 'team' },
-  { to: '/developers', icon: Code2, label: 'Developers', feature: 'developers' },
+const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: FeatureKey }[] = [
+  { to: '/agents', icon: Bot, labelKey: 'nav.agents', feature: 'agents' },
+  { to: '/campaigns', icon: Megaphone, labelKey: 'nav.campaigns', feature: 'campaigns' },
+  { to: '/contacts', icon: Users, labelKey: 'nav.contacts', feature: 'contacts' },
+  { to: '/calls', icon: Phone, labelKey: 'nav.calls', feature: 'calls' },
+  { to: '/wallet', icon: Wallet, labelKey: 'nav.wallet', feature: 'wallet' },
+  { to: '/team', icon: UserCheck, labelKey: 'nav.team', feature: 'team' },
+  { to: '/developers', icon: Code2, labelKey: 'nav.developers', feature: 'developers' },
 ];
-const settingsItem = { to: '/settings', icon: Settings, label: 'Definições' };
+const settingsItem = { to: '/settings', icon: Settings, labelKey: 'nav.settings' };
 
 export function Sidebar() {
+  const { t } = useTranslation();
   const { tenant, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -44,7 +46,7 @@ export function Sidebar() {
     dashboardItem,
     ...featureItems.filter((i) => isOn(i.feature)),
     settingsItem,
-    ...(ownPbx ? [{ to: '/settings/pbx', icon: Server, label: 'Integração PBX' }] : []),
+    ...(ownPbx ? [{ to: '/settings/pbx', icon: Server, labelKey: 'nav.pbx' }] : []),
   ];
 
   function handleLogout() {
@@ -70,7 +72,7 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-3 px-2">
         <ul className="space-y-0.5">
-          {nav.map(({ to, icon: Icon, label }) => (
+          {nav.map(({ to, icon: Icon, labelKey }) => (
             <li key={to}>
               <NavLink
                 to={to}
@@ -84,7 +86,7 @@ export function Sidebar() {
                 }
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
-                {label}
+                {t(labelKey)}
               </NavLink>
             </li>
           ))}
@@ -98,7 +100,7 @@ export function Sidebar() {
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
         >
           <LogOut className="h-4 w-4" />
-          Terminar sessão
+          {t('nav.logout')}
         </button>
       </div>
     </aside>

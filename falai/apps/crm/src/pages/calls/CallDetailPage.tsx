@@ -79,7 +79,7 @@ export function CallDetailPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Badge className={callStatusColor[call.status]}>{callStatusLabel[call.status]}</Badge>
+              <Badge className={callStatusColor[call.status]}>{callStatusLabel(call.status)}</Badge>
               {isLive && (
                 <span className="flex h-2 w-2">
                   <span className="animate-ping absolute h-2 w-2 rounded-full bg-green-400 opacity-75" />

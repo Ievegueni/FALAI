@@ -171,7 +171,7 @@ export function CampaignFormPage() {
           <div>
             <p className="text-sm font-medium text-gray-700 mb-2">Dias da semana</p>
             <div className="flex gap-2">
-              {daysOfWeekLabel.map((label, i) => (
+              {daysOfWeekLabel().map((label, i) => (
                 <button
                   key={i}
                   type="button"

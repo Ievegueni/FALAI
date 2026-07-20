@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Send, RotateCcw, Bot, User } from 'lucide-react';
 import { agentsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
@@ -39,6 +40,7 @@ function Bubble({ message }: BubbleProps) {
 }
 
 export function SimulatorPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { error: toastError } = useToast();
@@ -69,7 +71,7 @@ export function SimulatorPage() {
       ]);
       if (res.action === 'end') {
         setTimeout(() => {
-          setHistory((h) => [...h, { role: 'assistant', content: '— Chamada terminada —' }]);
+          setHistory((h) => [...h, { role: 'assistant', content: t('simulator.callEnded') }]);
         }, 300);
       }
     },
@@ -88,16 +90,16 @@ export function SimulatorPage() {
     setInput('');
   }
 
-  if (isLoading) return <><Header title="Simulador" /><PageSpinner /></>;
+  if (isLoading) return <><Header title={t('simulator.title')} /><PageSpinner /></>;
 
   if (isError || !agent) {
     return (
       <>
-        <Header title="Simulador" />
+        <Header title={t('simulator.title')} />
         <div className="p-6 text-center">
-          <p className="text-sm text-gray-500 mb-4">Agente não encontrado ou já não existe.</p>
+          <p className="text-sm text-gray-500 mb-4">{t('simulator.notFound')}</p>
           <Button variant="outline" icon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate('/agents')}>
-            Voltar aos agentes
+            {t('simulator.backToAgents')}
           </Button>
         </div>
       </>
@@ -109,10 +111,10 @@ export function SimulatorPage() {
   return (
     <>
       <Header
-        title={`Simulador — ${agent.name}`}
+        title={t('simulator.titleWith', { name: agent.name })}
         actions={
           <Button size="sm" variant="ghost" icon={<ArrowLeft className="h-3.5 w-3.5" />} onClick={() => navigate(`/agents/${id}`)}>
-            Voltar
+            {t('common.back')}
           </Button>
         }
       />
@@ -123,10 +125,10 @@ export function SimulatorPage() {
           <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-gray-900">{agent.name}</p>
-              <p className="text-xs text-gray-400">Simulação em texto — sem custo real</p>
+              <p className="text-xs text-gray-400">{t('simulator.subtitle')}</p>
             </div>
             <Button size="sm" variant="ghost" icon={<RotateCcw className="h-3.5 w-3.5" />} onClick={handleReset}>
-              Reiniciar
+              {t('simulator.reset')}
             </Button>
           </div>
 
@@ -136,7 +138,7 @@ export function SimulatorPage() {
                 <Bot className="h-10 w-10 text-gray-300 mb-3" />
                 <p className="text-sm font-medium text-gray-500">{agent.name}</p>
                 <p className="text-xs text-gray-400 mt-1">
-                  Escreva uma mensagem para iniciar a conversa de teste.
+                  {t('simulator.emptyHint')}
                 </p>
               </div>
             )}
@@ -161,7 +163,7 @@ export function SimulatorPage() {
           <div className="border-t border-gray-200 p-3 flex gap-2">
             <input
               className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              placeholder="Escreva como se fosse o cliente..."
+              placeholder={t('simulator.placeholder')}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
@@ -173,7 +175,7 @@ export function SimulatorPage() {
               loading={simulate.isPending}
               disabled={!input.trim()}
             >
-              Enviar
+              {t('simulator.send')}
             </Button>
           </div>
         </Card>
@@ -182,7 +184,7 @@ export function SimulatorPage() {
         {variableKeys.length > 0 && (
           <div className="w-72 flex-shrink-0">
             <Card>
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Variáveis da chamada</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">{t('simulator.callVariables')}</h3>
               <div className="space-y-3">
                 {variableKeys.map((key) => {
                   const field = agent.variablesSchema[key];
@@ -196,14 +198,14 @@ export function SimulatorPage() {
                         className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                         value={variables[key] ?? ''}
                         onChange={(e) => setVariables((v) => ({ ...v, [key]: e.target.value }))}
-                        placeholder={field.example ?? `Valor de ${key}`}
+                        placeholder={field.example ?? t('simulator.varValuePlaceholder', { key })}
                       />
                     </div>
                   );
                 })}
               </div>
               <p className="mt-3 text-xs text-gray-400">
-                Estas variáveis serão injectadas no prompt do agente.
+                {t('simulator.varsNote')}
               </p>
             </Card>
           </div>

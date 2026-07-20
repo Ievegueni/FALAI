@@ -46,7 +46,7 @@ function CallRow({ call }: { call: Call }) {
         )}
       </td>
       <td className="px-4 py-3">
-        <Badge className={callStatusColor[call.status]}>{callStatusLabel[call.status]}</Badge>
+        <Badge className={callStatusColor[call.status]}>{callStatusLabel(call.status)}</Badge>
       </td>
       <td className="px-4 py-3 text-sm text-gray-500">
         {call.outcome ? (

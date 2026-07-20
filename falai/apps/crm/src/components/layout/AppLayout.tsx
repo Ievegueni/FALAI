@@ -2,6 +2,7 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Sidebar } from './Sidebar';
 import { PageSpinner } from '@/components/ui/Spinner';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
 export function AppLayout() {
   const { user, loading } = useAuth();
@@ -40,7 +41,10 @@ export function AuthLayout() {
   if (user) return <Navigate to="/dashboard" replace />;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-blue-950 flex items-center justify-center p-4">
+    <div className="relative min-h-screen bg-gradient-to-br from-slate-900 to-blue-950 flex items-center justify-center p-4">
+      <div className="absolute top-4 right-4 rounded-full bg-white/10 backdrop-blur">
+        <LanguageSwitcher />
+      </div>
       <Outlet />
     </div>
   );

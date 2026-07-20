@@ -54,7 +54,7 @@ function CampaignCard({ c }: { c: Campaign }) {
           <h3 className="text-sm font-semibold text-gray-900">{c.name}</h3>
           <p className="text-xs text-gray-500 mt-0.5">{c.agent.name} · {formatDate(c.createdAt)}</p>
         </div>
-        <Badge className={campaignStatusColor[c.status]}>{campaignStatusLabel[c.status]}</Badge>
+        <Badge className={campaignStatusColor[c.status]}>{campaignStatusLabel(c.status)}</Badge>
       </div>
 
       <div className="grid grid-cols-4 gap-2 text-center">

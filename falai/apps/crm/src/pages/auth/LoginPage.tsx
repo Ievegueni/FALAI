@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -8,6 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { ApiError } from '@/lib/api';
 
 export function LoginPage() {
+  const { t } = useTranslation();
   const { login } = useAuth();
   const { error: toastError } = useToast();
   const navigate = useNavigate();
@@ -28,7 +30,7 @@ export function LoginPage() {
         navigate('/dashboard');
       }
     } catch (err) {
-      toastError(err instanceof ApiError ? err.message : 'Erro ao iniciar sessão');
+      toastError(err instanceof ApiError ? err.message : t('login.error'));
     } finally {
       setLoading(false);
     }
@@ -41,23 +43,23 @@ export function LoginPage() {
           <img src="/logo.png" alt="Comunica" className="h-10 w-auto" />
         </div>
         <h1 className="text-2xl font-bold text-white">Falaí</h1>
-        <p className="mt-1 text-sm text-slate-400">Inicie sessão na sua conta</p>
+        <p className="mt-1 text-sm text-slate-400">{t('login.subtitle')}</p>
       </div>
 
       <div className="rounded-2xl bg-white p-8 shadow-2xl">
         <form onSubmit={(e) => { void handleSubmit(e); }} className="flex flex-col gap-4">
           <Input
-            label="Email"
+            label={t('login.email')}
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="empresa@exemplo.ao"
+            placeholder={t('login.emailPlaceholder')}
             required
             autoFocus
           />
           <div className="relative">
             <Input
-              label="Palavra-passe"
+              label={t('login.password')}
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -74,13 +76,13 @@ export function LoginPage() {
           </div>
 
           <Button type="submit" loading={loading} className="mt-2 w-full h-10">
-            Entrar
+            {t('login.submit')}
           </Button>
         </form>
       </div>
 
       <p className="mt-6 text-center text-xs text-slate-500">
-        Suporte: <span className="text-slate-300">+244 924 572 875</span>
+        {t('common.support')}: <span className="text-slate-300">+244 924 572 875</span>
       </p>
     </div>
   );

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Phone, TrendingUp, Clock, DollarSign, Bot, Megaphone, Plus } from 'lucide-react';
 import {
   AreaChart,
@@ -27,6 +28,7 @@ import type { Call } from '@/types';
 
 function CallRow({ call }: { call: Call }) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   return (
     <tr
       className="hover:bg-gray-50 cursor-pointer"
@@ -35,15 +37,15 @@ function CallRow({ call }: { call: Call }) {
       <td className="px-4 py-3 text-sm text-gray-900">{call.contact?.name ?? call.to}</td>
       <td className="px-4 py-3 text-sm text-gray-500">
         {call.kind === 'OTP' ? (
-          <Badge className="bg-indigo-100 text-indigo-700">Verificação OTP</Badge>
+          <Badge className="bg-indigo-100 text-indigo-700">{t('dashboard.otpVerification')}</Badge>
         ) : call.kind === 'DIRECT' ? (
-          <Badge className="bg-slate-100 text-slate-600">Chamada directa</Badge>
+          <Badge className="bg-slate-100 text-slate-600">{t('dashboard.directCall')}</Badge>
         ) : (
           call.agent?.name || '—'
         )}
       </td>
       <td className="px-4 py-3">
-        <Badge className={callStatusColor[call.status]}>{callStatusLabel[call.status]}</Badge>
+        <Badge className={callStatusColor[call.status]}>{callStatusLabel(call.status)}</Badge>
       </td>
       <td className="px-4 py-3 text-sm text-gray-500">
         {call.durationSecs !== null ? formatDuration(call.durationSecs) : '—'}
@@ -57,6 +59,7 @@ function CallRow({ call }: { call: Call }) {
 }
 
 export function DashboardPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard'],
@@ -67,7 +70,7 @@ export function DashboardPage() {
   if (isLoading) {
     return (
       <>
-        <Header title="Dashboard" />
+        <Header title={t('nav.dashboard')} />
         <PageSpinner />
       </>
     );
@@ -76,9 +79,9 @@ export function DashboardPage() {
   if (error || !data) {
     return (
       <>
-        <Header title="Dashboard" />
+        <Header title={t('nav.dashboard')} />
         <div className="p-6 text-center text-sm text-gray-500">
-          Não foi possível carregar os dados. Tente novamente.
+          {t('dashboard.loadError')}
         </div>
       </>
     );
@@ -86,16 +89,16 @@ export function DashboardPage() {
 
   const chartData = data.chartData.map((p) => ({
     ...p,
-    date: new Date(p.date).toLocaleDateString('pt-AO', { weekday: 'short', day: '2-digit' }),
+    date: new Date(p.date).toLocaleDateString(undefined, { weekday: 'short', day: '2-digit' }),
   }));
 
   return (
     <>
       <Header
-        title="Dashboard"
+        title={t('nav.dashboard')}
         actions={
           <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => navigate('/calls/new')}>
-            Nova chamada
+            {t('dashboard.newCall')}
           </Button>
         }
       />
@@ -104,37 +107,37 @@ export function DashboardPage() {
         {/* KPI cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            label="Chamadas hoje"
+            label={t('dashboard.callsToday')}
             value={data.callsToday}
             icon={<Phone className="h-5 w-5" />}
           />
           <StatCard
-            label="Taxa de atendimento"
+            label={t('dashboard.answerRate')}
             value={`${data.answerRatePct.toFixed(1)}%`}
-            sub="este mês"
+            sub={t('dashboard.thisMonth')}
             icon={<TrendingUp className="h-5 w-5" />}
           />
           <StatCard
-            label="Duração média"
+            label={t('dashboard.avgDuration')}
             value={formatDuration(data.avgDurationSecs)}
             icon={<Clock className="h-5 w-5" />}
           />
           <StatCard
-            label="Custo médio"
+            label={t('dashboard.avgCost')}
             value={formatAOA(data.avgCostCents)}
-            sub="por chamada"
+            sub={t('dashboard.perCall')}
             icon={<DollarSign className="h-5 w-5" />}
           />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <StatCard
-            label="Agentes activos"
+            label={t('dashboard.activeAgents')}
             value={data.activeAgents}
             icon={<Bot className="h-5 w-5" />}
           />
           <StatCard
-            label="Campanhas activas"
+            label={t('dashboard.activeCampaigns')}
             value={data.activeCampaigns}
             icon={<Megaphone className="h-5 w-5" />}
           />
@@ -142,7 +145,7 @@ export function DashboardPage() {
 
         {/* Chart */}
         <Card>
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Chamadas — últimos 7 dias</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('dashboard.callsLast7Days')}</h2>
           <ResponsiveContainer width="100%" height={220}>
             <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
               <defs>
@@ -162,7 +165,7 @@ export function DashboardPage() {
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
                 formatter={(value: number, name: string) => [
                   value,
-                  name === 'total' ? 'Total' : 'Atendidas',
+                  name === 'total' ? t('dashboard.total') : t('dashboard.answered'),
                 ]}
               />
               <Area
@@ -186,23 +189,23 @@ export function DashboardPage() {
         {/* Recent calls */}
         <Card padding={false}>
           <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-900">Chamadas recentes</h2>
+            <h2 className="text-sm font-semibold text-gray-900">{t('dashboard.recentCalls')}</h2>
             <button
               onClick={() => navigate('/calls')}
               className="text-xs text-blue-600 hover:underline"
             >
-              Ver todas
+              {t('dashboard.viewAll')}
             </button>
           </div>
           {data.recentCalls.length === 0 ? (
             <div className="py-12 text-center text-sm text-gray-500">
-              Ainda não há chamadas. <button onClick={() => navigate('/calls/new')} className="text-blue-600 hover:underline">Fazer a primeira.</button>
+              {t('dashboard.noCalls')} <button onClick={() => navigate('/calls/new')} className="text-blue-600 hover:underline">{t('dashboard.makeFirst')}</button>
             </div>
           ) : (
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {['Contacto', 'Agente', 'Estado', 'Duração', 'Custo', 'Data'].map((h) => (
+                  {[t('dashboard.colContact'), t('dashboard.colAgent'), t('dashboard.colStatus'), t('dashboard.colDuration'), t('dashboard.colCost'), t('dashboard.colDate')].map((h) => (
                     <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
                       {h}
                     </th>
