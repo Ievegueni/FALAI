@@ -11,6 +11,31 @@ import {
   issueTenantToken,
   pending2FaTenantKey,
 } from "../../services/auth.service.js";
+import { computeFeatures } from "../../services/features.js";
+
+// Selecção comum do tenant devolvida ao CRM (login e /me)
+const tenantClientSelect = {
+  id: true,
+  name: true,
+  status: true,
+  balanceCents: true,
+  features: true,
+  plan: { select: { name: true, productType: true, aiAgentsEnabled: true, clinicEnabled: true, maxAgents: true, maxConcurrent: true } },
+} as const;
+
+// Substitui o campo `features` cru (overrides) pelas features efectivas calculadas
+function shapeTenant<T extends { features: unknown; plan: { aiAgentsEnabled: boolean } | null }>(
+  tenant: T | null,
+) {
+  if (!tenant) return null;
+  return {
+    ...tenant,
+    features: computeFeatures({
+      overrides: tenant.features,
+      aiAgentsEnabled: tenant.plan?.aiAgentsEnabled ?? true,
+    }),
+  };
+}
 
 const PENDING_2FA_TTL = 5 * 60;
 
@@ -90,7 +115,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/auth/login
-  fastify.post("/login", async (request, reply) => {
+  fastify.post("/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = loginSchema.parse(request.body);
 
     const user = await prisma.tenantUser.findUnique({
@@ -130,16 +155,13 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
       });
       const tenantRecord = await prisma.tenant.findUnique({
         where: { id: user.tenantId },
-        select: {
-          id: true, name: true, status: true, balanceCents: true,
-          plan: { select: { name: true, maxAgents: true, maxConcurrent: true } },
-        },
+        select: tenantClientSelect,
       });
       return {
         token,
         requiresTwoFactor: false,
         user: { id: user.id, name: user.name, email: user.email, role: user.role, twoFaEnabled: false },
-        tenant: tenantRecord,
+        tenant: shapeTenant(tenantRecord),
       };
     }
 
@@ -149,7 +171,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/auth/2fa/verify
-  fastify.post("/2fa/verify", async (request, reply) => {
+  fastify.post("/2fa/verify", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = totpSchema.parse(request.body);
 
     const userId = await fastify.redis.get(pending2FaTenantKey(body.sessionToken));
@@ -215,17 +237,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
     const user = request.tenantUser!;
     const tenantUser = await prisma.tenantUser.findUniqueOrThrow({
       where: { id: user.sub },
-      include: {
-        tenant: {
-          select: {
-            id: true,
-            name: true,
-            status: true,
-            balanceCents: true,
-            plan: { select: { name: true, productType: true, aiAgentsEnabled: true, maxAgents: true, maxConcurrent: true } },
-          },
-        },
-      },
+      include: { tenant: { select: tenantClientSelect } },
     });
     return {
       user: {
@@ -235,7 +247,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
         role: tenantUser.role,
         twoFaEnabled: !!tenantUser.twoFaSecret,
       },
-      tenant: tenantUser.tenant,
+      tenant: shapeTenant(tenantUser.tenant),
     };
   });
 };

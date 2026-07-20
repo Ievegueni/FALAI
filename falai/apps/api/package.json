@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file=../../.env src/index.ts",
     "build": "tsup src/index.ts --format esm --dts",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
+    "otp:prompts": "tsx --env-file=../../.env scripts/setup-otp-prompts.mts",
     "test": "vitest run"
   },
   "dependencies": {

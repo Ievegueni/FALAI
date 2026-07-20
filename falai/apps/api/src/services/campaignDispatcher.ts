@@ -1,8 +1,9 @@
 import type { FastifyBaseLogger } from "fastify";
-import { prisma } from "@falai/db";
+import { prisma, type BillingMode } from "@falai/db";
 import type { TelephonyProvider } from "@falai/providers";
 import type { CallEngineService } from "./CallEngineService.js";
-import { reserveBalance } from "./billing.service.js";
+import { reserveBalance, computeReservation, effectiveBillingMode, type PriceConfig } from "./billing.service.js";
+import { resolveOutboundExtension, NoOutboundLineError } from "./outboundExtension.service.js";
 
 const DISPATCH_INTERVAL_MS = 30_000; // every 30 seconds
 
@@ -31,7 +32,6 @@ export class CampaignDispatcher {
   constructor(
     private telephony: TelephonyProvider,
     private callEngine: CallEngineService,
-    private outboundExtension: string,
     private log: FastifyBaseLogger
   ) {}
 
@@ -56,7 +56,7 @@ export class CampaignDispatcher {
     const campaigns = await prisma.campaign.findMany({
       where: { status: "RUNNING" },
       include: {
-        tenant: { include: { plan: { select: { pricePerMinuteCents: true } } } },
+        tenant: { include: { plan: { select: { billingMode: true, pricePerMinuteCents: true, pricePerCallCents: true } } } },
         agent: {
           select: {
             systemPrompt: true,
@@ -84,7 +84,7 @@ export class CampaignDispatcher {
       throttlePerMinute: number;
       scheduleJson: unknown;
       retryPolicy: unknown;
-      tenant: { balanceCents: number; creditLimitCents: number; maxConcurrent: number; plan: { pricePerMinuteCents: number } };
+      tenant: { balanceCents: number; creditLimitCents: number; maxConcurrent: number; billingModeOverride: BillingMode | null; plan: { billingMode: BillingMode; pricePerMinuteCents: number; pricePerCallCents: number } };
       agent: { systemPrompt: string; ttsVoiceId: string; maxCallSeconds: number; maxTurnSeconds: number; escalationNumber: string | null };
     },
     now: Date
@@ -94,7 +94,34 @@ export class CampaignDispatcher {
     // Check schedule window
     if (!isWithinWindow(campaign.scheduleJson, now)) return;
 
-    const estimatedCost = Math.ceil(agent.maxCallSeconds / 60) * tenant.plan.pricePerMinuteCents;
+    // Resolve a extensão de saída da linha do cliente. Sem linha activa,
+    // pausa a campanha (não há por onde marcar as chamadas).
+    let fromExtension: string;
+    try {
+      fromExtension = await resolveOutboundExtension(campaign.tenantId);
+    } catch (err) {
+      if (err instanceof NoOutboundLineError) {
+        await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
+        await prisma.systemEvent.create({
+          data: {
+            severity: "WARNING",
+            source: "dispatcher",
+            message: `Campaign ${campaign.id} paused — no active outbound line (tenant ${campaign.tenantId})`,
+            payload: { campaignId: campaign.id, tenantId: campaign.tenantId },
+          },
+        });
+        this.log.warn({ campaignId: campaign.id }, "dispatcher.campaign_paused_no_line");
+        return;
+      }
+      throw err;
+    }
+
+    const price: PriceConfig = {
+      billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
+      pricePerMinuteCents: tenant.plan.pricePerMinuteCents,
+      pricePerCallCents: tenant.plan.pricePerCallCents,
+    };
+    const estimatedCost = computeReservation(agent.maxCallSeconds, price);
 
     // Auto-pause if balance insufficient for even one call
     if (tenant.balanceCents + tenant.creditLimitCents < estimatedCost && estimatedCost > 0) {
@@ -138,7 +165,7 @@ export class CampaignDispatcher {
     });
 
     for (const cc of pendingContacts) {
-      await this.dispatchContact(campaign, cc, agent, tenant.plan.pricePerMinuteCents, estimatedCost);
+      await this.dispatchContact(campaign, cc, agent, price, estimatedCost, fromExtension);
     }
 
     // Mark campaign DONE if all contacts are settled
@@ -166,8 +193,9 @@ export class CampaignDispatcher {
     campaign: { id: string; tenantId: string; agentId: string; retryPolicy: unknown },
     cc: { id: string; attempts: number; contact: { id: string; phone: string; attributes: unknown; optedOutAt: Date | null } },
     agent: { systemPrompt: string; ttsVoiceId: string; maxCallSeconds: number; maxTurnSeconds: number; escalationNumber: string | null },
-    pricePerMinuteCents: number,
-    estimatedCost: number
+    price: PriceConfig,
+    estimatedCost: number,
+    fromExtension: string
   ): Promise<void> {
     const { contact } = cc;
 
@@ -183,7 +211,7 @@ export class CampaignDispatcher {
 
     try {
       const { providerCallId } = await this.telephony.dial({
-        fromExtension: this.outboundExtension,
+        fromExtension,
         to: contact.phone,
         ref: `cmp_${campaign.id}_${contact.id}`,
       });
@@ -215,7 +243,9 @@ export class CampaignDispatcher {
         maxTurnSeconds: agent.maxTurnSeconds,
         ...(agent.escalationNumber !== null && { escalationNumber: agent.escalationNumber }),
         reservedCents: estimatedCost,
-        pricePerMinuteCents,
+        billingMode: price.billingMode,
+        pricePerMinuteCents: price.pricePerMinuteCents,
+        pricePerCallCents: price.pricePerCallCents,
       });
 
       await prisma.campaignContact.update({

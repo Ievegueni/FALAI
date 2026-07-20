@@ -47,10 +47,11 @@ export function SimulatorPage() {
   const [variables, setVariables] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const { data: agent, isLoading } = useQuery({
+  const { data: agent, isLoading, isError } = useQuery({
     queryKey: ['agents', id],
     queryFn: () => agentsApi.get(id!),
     enabled: Boolean(id),
+    retry: false,
   });
 
   useEffect(() => {
@@ -87,7 +88,21 @@ export function SimulatorPage() {
     setInput('');
   }
 
-  if (isLoading || !agent) return <><Header title="Simulador" /><PageSpinner /></>;
+  if (isLoading) return <><Header title="Simulador" /><PageSpinner /></>;
+
+  if (isError || !agent) {
+    return (
+      <>
+        <Header title="Simulador" />
+        <div className="p-6 text-center">
+          <p className="text-sm text-gray-500 mb-4">Agente não encontrado ou já não existe.</p>
+          <Button variant="outline" icon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate('/agents')}>
+            Voltar aos agentes
+          </Button>
+        </div>
+      </>
+    );
+  }
 
   const variableKeys = Object.keys(agent.variablesSchema);
 

@@ -48,6 +48,7 @@ import { v1AgentsRoutes } from "./routes/v1/agents.js";
 import { v1ContactsRoutes } from "./routes/v1/contacts.js";
 import { v1CampaignsRoutes } from "./routes/v1/campaigns.js";
 import { v1WalletRoutes } from "./routes/v1/wallet.js";
+import { v1OtpRoutes } from "./routes/v1/otp.js";
 import { yeastarWebhookRoutes } from "./routes/webhooks/yeastar.js";
 import { pbxWebhookRoutes } from "./routes/webhooks/pbx.js";
 import { registerYeastarWebSocket } from "./websocket/yeastar.js";
@@ -71,8 +72,13 @@ async function buildApp() {
   // ── Core plugins ───────────────────────────────────────────────────────
   await fastify.register(fastifyRawBody, { global: false });
   await fastify.register(fastifyMultipart, { limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
+  // Em produção: usa a whitelist de ALLOWED_ORIGINS se definida; senão bloqueia
+  // cross-origin (FE e API na mesma origem/proxy). Em dev: reflecte qualquer origem.
+  const allowedOrigins = config.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()).filter(Boolean);
+  const corsOrigin =
+    config.NODE_ENV === "production" ? (allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : false) : true;
   await fastify.register(fastifyCors, {
-    origin: config.NODE_ENV === "production" ? false : true,
+    origin: corsOrigin,
     credentials: true,
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
@@ -111,8 +117,17 @@ async function buildApp() {
   );
   fastify.decorate("yeastar", yeastar);
 
-  // Call engine wires STT/LLM/TTS and subscribes to Yeastar events
+  // eventBus: multiplexor de eventos Yeastar (deve ser registado antes de callEngine e otpCallService)
+  const { default: eventBusPlugin } = await import("./plugins/eventBus.js");
+  await fastify.register(eventBusPlugin);
+
+  // Call engine wires STT/LLM/TTS e regista no eventBus
   await fastify.register(callEnginePlugin);
+
+  // OTP call service — chamadas de entrega de código por voz
+  const { default: otpCallServicePlugin } = await import("./plugins/otpCallService.js");
+  await fastify.register(otpCallServicePlugin);
+
   await fastify.register(campaignDispatcherPlugin);
 
   // ── Routes ─────────────────────────────────────────────────────────────
@@ -162,6 +177,7 @@ async function buildApp() {
     await v1.register(v1ContactsRoutes);
     await v1.register(v1CampaignsRoutes);
     await v1.register(v1WalletRoutes);
+    await v1.register(v1OtpRoutes);
   });
 
   // ── Webhooks ────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import type {
   Agent,
   AgentReviewStatus,
   AuditLog,
+  BillingMode,
   Call,
   FinanceSummary,
   HealthStatus,
@@ -15,6 +16,11 @@ import type {
   SystemEvent,
   SystemSetting,
   Tenant,
+  TenantFeatures,
+  TenantLine,
+  TenantLineInput,
+  TenantUser,
+  TenantUserInput,
   WalletTransaction,
 } from '@/types';
 
@@ -107,6 +113,11 @@ export const tenantsApi = {
     phone: string;
     nif?: string;
     planId: string;
+    ownerName: string;
+    ownerEmail: string;
+    ownerPassword: string;
+    creditLimitCents?: number;
+    maxConcurrent?: number;
   }) => post<Tenant>('/admin/tenants', data),
 
   update: (id: string, data: Partial<Tenant>) =>
@@ -128,6 +139,35 @@ export const tenantsApi = {
     get<Paginated<WalletTransaction>>(
       `/admin/tenants/${id}/transactions${qs({ page: params?.page ?? 1, perPage: params?.perPage ?? 10 })}`,
     ),
+
+  // Linhas de chamadas
+  lines: (id: string) => get<{ data: TenantLine[] }>(`/admin/tenants/${id}/lines`),
+
+  createLine: (id: string, data: TenantLineInput) =>
+    post<TenantLine>(`/admin/tenants/${id}/lines`, data),
+
+  updateLine: (id: string, lineId: string, data: Partial<TenantLineInput>) =>
+    patch<TenantLine>(`/admin/tenants/${id}/lines/${lineId}`, data),
+
+  deleteLine: (id: string, lineId: string) =>
+    del<{ ok: boolean }>(`/admin/tenants/${id}/lines/${lineId}`),
+
+  // Funcionalidades
+  updateFeatures: (id: string, features: Partial<TenantFeatures>) =>
+    put<{ featureOverrides: Partial<TenantFeatures>; features: TenantFeatures }>(
+      `/admin/tenants/${id}/features`,
+      features,
+    ),
+
+  // Utilizadores
+  users: (id: string) =>
+    get<{ users: TenantUser[] }>(`/admin/tenants/${id}/users`).then((r) => r.users),
+
+  createUser: (id: string, data: TenantUserInput) =>
+    post<TenantUser>(`/admin/tenants/${id}/users`, data),
+
+  resetUserPassword: (id: string, userId: string, password: string) =>
+    post<{ ok: boolean }>(`/admin/tenants/${id}/users/${userId}/reset-password`, { password }),
 };
 
 // ─── Agents (Moderation) ─────────────────────────────────────────────────────
@@ -163,7 +203,10 @@ interface RawPlan {
   name: string;
   productType: ProductType;
   aiAgentsEnabled: boolean;
+  clinicEnabled: boolean;
+  billingMode: BillingMode;
   pricePerMinuteCents: number;
+  pricePerCallCents: number;
   monthlyFeeCents: number;
   maxAgents: number;
   maxConcurrent: number;
@@ -175,7 +218,10 @@ const toPlan = (p: RawPlan): Plan => ({
   name: p.name,
   productType: p.productType ?? 'VOICE_AI',
   aiAgentsEnabled: p.aiAgentsEnabled ?? true,
+  clinicEnabled: p.clinicEnabled ?? false,
+  billingMode: p.billingMode ?? 'PER_MINUTE',
   pricePerMinCents: p.pricePerMinuteCents,
+  pricePerCallCents: p.pricePerCallCents ?? 0,
   monthlyFeeCents: p.monthlyFeeCents,
   maxAgents: p.maxAgents,
   maxConcurrentCalls: p.maxConcurrent,
@@ -186,7 +232,10 @@ const toRawPlanBody = (data: Partial<Omit<Plan, 'id' | 'isActive'>>) => ({
   ...(data.name !== undefined && { name: data.name }),
   ...(data.productType !== undefined && { productType: data.productType }),
   ...(data.aiAgentsEnabled !== undefined && { aiAgentsEnabled: data.aiAgentsEnabled }),
+  ...(data.clinicEnabled !== undefined && { clinicEnabled: data.clinicEnabled }),
+  ...(data.billingMode !== undefined && { billingMode: data.billingMode }),
   ...(data.pricePerMinCents !== undefined && { pricePerMinuteCents: data.pricePerMinCents }),
+  ...(data.pricePerCallCents !== undefined && { pricePerCallCents: data.pricePerCallCents }),
   ...(data.monthlyFeeCents !== undefined && { monthlyFeeCents: data.monthlyFeeCents }),
   ...(data.maxAgents !== undefined && { maxAgents: data.maxAgents }),
   ...(data.maxConcurrentCalls !== undefined && { maxConcurrent: data.maxConcurrentCalls }),

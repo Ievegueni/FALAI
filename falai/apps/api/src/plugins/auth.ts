@@ -1,6 +1,7 @@
 import fp from "fastify-plugin";
 import fastifyJwt from "@fastify/jwt";
 import type { FastifyRequest, FastifyReply } from "fastify";
+import { prisma } from "@falai/db";
 import { config } from "../config.js";
 import type { AdminRole, TenantRole } from "@falai/shared";
 
@@ -50,9 +51,17 @@ export default fp(async (fastify) => {
         if (request.user.type !== "admin") {
           return reply.status(401).send({ error: "Not an admin session" });
         }
-        request.adminUser = request.user;
-      } catch (err) {
-        reply.send(err);
+
+        // Revalida na BD: um admin removido não deve manter acesso até o token expirar
+        const admin = request.user as AdminJwtPayload;
+        const exists = await prisma.adminUser.findUnique({ where: { id: admin.sub }, select: { id: true } });
+        if (!exists) {
+          return reply.status(401).send({ error: "Sessão inválida" });
+        }
+
+        request.adminUser = admin;
+      } catch {
+        return reply.status(401).send({ error: "Não autenticado" });
       }
     }
   );

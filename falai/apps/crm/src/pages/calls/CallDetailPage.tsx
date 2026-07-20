@@ -67,7 +67,15 @@ export function CallDetailPage() {
                 <p className="text-lg font-semibold text-gray-900">
                   {call.contact?.name ?? formatPhone(call.to)}
                 </p>
-                <p className="text-sm text-gray-500">{formatPhone(call.to)} · {call.agent.name}</p>
+                <p className="text-sm text-gray-500">
+                  {formatPhone(call.to)}
+                  {' · '}
+                  {call.kind === 'OTP'
+                    ? 'Verificação OTP'
+                    : call.kind === 'DIRECT'
+                      ? 'Chamada directa'
+                      : call.agent?.name || '—'}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2">

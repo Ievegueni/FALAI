@@ -31,8 +31,8 @@ export default fp(async (fastify) => {
         }
 
         request.tenantUser = user;
-      } catch (err) {
-        reply.send(err);
+      } catch {
+        return reply.status(401).send({ error: "Não autenticado" });
       }
     }
   );

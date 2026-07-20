@@ -112,7 +112,7 @@ export const adminDashboardRoutes: FastifyPluginAsync = async (fastify) => {
       liveCalls: liveCalls.map((c) => ({
         id: c.id,
         tenantName: c.tenant.name,
-        agentName: c.agent.name,
+        agentName: c.agent?.name ?? "—",
         to: c.toNumber,
         status: c.status,
         durationSecs: c.durationSecs,

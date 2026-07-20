@@ -136,7 +136,7 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
     const { tenantId } = request.tenantUser!;
     const contact = await prisma.contact.findFirst({
       where: { id: request.params.id, tenantId },
-      include: { calls: { orderBy: { createdAt: "desc" }, take: 10, select: { id: true, status: true, outcome: true, durationSecs: true, createdAt: true } } },
+      include: { calls: { orderBy: { createdAt: "desc" }, take: 10, select: { id: true, toNumber: true, kind: true, status: true, outcome: true, durationSecs: true, createdAt: true } } },
     });
     if (!contact) return reply.status(404).send({ error: "Contacto não encontrado" });
     return { contact };

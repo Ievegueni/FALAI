@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, type Prisma } from "@falai/db";
 import type { YeastarAdapter } from "@falai/providers";
-import { reserveBalance } from "../../services/billing.service.js";
+import { reserveBalance, computeReservation, effectiveBillingMode } from "../../services/billing.service.js";
+import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
 
 export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
   // POST /v1/calls — dial a number
@@ -25,7 +26,10 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
       }),
       prisma.tenant.findUnique({
         where: { id: tenantId },
-        select: { balanceCents: true, creditLimitCents: true, plan: { select: { pricePerMinuteCents: true, maxConcurrent: true } } },
+        select: {
+          balanceCents: true, creditLimitCents: true, billingModeOverride: true,
+          plan: { select: { billingMode: true, pricePerMinuteCents: true, pricePerCallCents: true, maxConcurrent: true } },
+        },
       }),
     ]);
 
@@ -33,8 +37,23 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
     if (agent.status !== "ACTIVE") return reply.status(422).send({ error: "Agent must be ACTIVE to place calls" });
     if (!tenant) return reply.status(404).send({ error: "Tenant not found" });
 
-    const pricePerMinuteCents = tenant.plan.pricePerMinuteCents;
-    const estimatedCents = Math.ceil((agent.maxCallSeconds / 60) * pricePerMinuteCents);
+    // Resolve the tenant's own outbound line extension
+    let fromExtension: string;
+    try {
+      fromExtension = await resolveOutboundExtension(tenantId);
+    } catch (err) {
+      if (err instanceof NoOutboundLineError) {
+        return reply.status(422).send({ error: "No active outbound line configured for this tenant" });
+      }
+      throw err;
+    }
+
+    const price = {
+      billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
+      pricePerMinuteCents: tenant.plan.pricePerMinuteCents,
+      pricePerCallCents: tenant.plan.pricePerCallCents,
+    };
+    const estimatedCents = computeReservation(agent.maxCallSeconds, price);
 
     const reserved = await reserveBalance(tenantId, estimatedCents);
     if (!reserved) {
@@ -58,7 +77,7 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
     let providerCallId: string;
     try {
       const result = await (fastify.yeastar as YeastarAdapter).dial({
-        fromExtension: process.env["YEASTAR_OUTBOUND_EXTENSION"] ?? "1000",
+        fromExtension,
         to: body.toNumber,
         ref: call.id,
       });
@@ -87,7 +106,9 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
       maxTurnSeconds: agent.maxTurnSeconds,
       escalationNumber: agent.escalationNumber,
       reservedCents: estimatedCents,
-      pricePerMinuteCents,
+      billingMode: price.billingMode,
+      pricePerMinuteCents: price.pricePerMinuteCents,
+      pricePerCallCents: price.pricePerCallCents,
     });
 
     return reply.status(202).send(call);

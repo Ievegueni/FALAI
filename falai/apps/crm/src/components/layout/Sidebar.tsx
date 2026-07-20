@@ -16,32 +16,35 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { clsx } from '@/lib/utils';
 
+import type { FeatureKey } from '@/types';
+
 const dashboardItem = { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' };
-const aiItems = [
-  { to: '/agents', icon: Bot, label: 'Agentes' },
-  { to: '/campaigns', icon: Megaphone, label: 'Campanhas' },
+// Cada item pode declarar a feature que o activa; sem feature = sempre visível
+const featureItems: { to: string; icon: typeof Bot; label: string; feature: FeatureKey }[] = [
+  { to: '/agents', icon: Bot, label: 'Agentes', feature: 'agents' },
+  { to: '/campaigns', icon: Megaphone, label: 'Campanhas', feature: 'campaigns' },
+  { to: '/contacts', icon: Users, label: 'Contactos', feature: 'contacts' },
+  { to: '/calls', icon: Phone, label: 'Chamadas', feature: 'calls' },
+  { to: '/wallet', icon: Wallet, label: 'Carteira', feature: 'wallet' },
+  { to: '/team', icon: UserCheck, label: 'Equipa', feature: 'team' },
+  { to: '/developers', icon: Code2, label: 'Developers', feature: 'developers' },
 ];
-const commonItems = [
-  { to: '/contacts', icon: Users, label: 'Contactos' },
-  { to: '/calls', icon: Phone, label: 'Chamadas' },
-  { to: '/wallet', icon: Wallet, label: 'Carteira' },
-  { to: '/team', icon: UserCheck, label: 'Equipa' },
-  { to: '/developers', icon: Code2, label: 'Developers' },
-  { to: '/settings', icon: Settings, label: 'Definições' },
-];
+const settingsItem = { to: '/settings', icon: Settings, label: 'Definições' };
 
 export function Sidebar() {
   const { tenant, logout } = useAuth();
   const navigate = useNavigate();
 
-  const aiEnabled = tenant?.plan?.aiAgentsEnabled !== false;
+  const features = tenant?.features;
   const ownPbx = tenant?.plan?.productType === 'CRM_BYO_PBX';
 
-  // Agentes/Campanhas só se o plano tiver IA; Integração PBX só para PBX próprio
+  // Mostra um item se a sua feature estiver activa (default: visível se não houver info de features)
+  const isOn = (f: FeatureKey) => features?.[f] !== false;
+
   const nav = [
     dashboardItem,
-    ...(aiEnabled ? aiItems : []),
-    ...commonItems,
+    ...featureItems.filter((i) => isOn(i.feature)),
+    settingsItem,
     ...(ownPbx ? [{ to: '/settings/pbx', icon: Server, label: 'Integração PBX' }] : []),
   ];
 

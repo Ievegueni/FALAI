@@ -3,6 +3,27 @@ import { prisma, chargeMonthlyInvoice } from "@falai/db";
 import { z } from "zod";
 import { hashPassword } from "../../services/auth.service.js";
 import { pbxCallStatus } from "../../services/pbxCdr.service.js";
+import { computeFeatures, sanitizeFeatureOverrides, FEATURE_KEYS } from "../../services/features.js";
+
+const lineCreateSchema = z.object({
+  name: z.string().min(1).max(100),
+  extension: z.string().min(1).max(30),
+  phoneNumber: z.string().max(30).optional(),
+  isDefault: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const lineUpdateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  extension: z.string().min(1).max(30).optional(),
+  phoneNumber: z.string().max(30).nullable().optional(),
+  isDefault: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+});
+
+const featuresSchema = z.object(
+  Object.fromEntries(FEATURE_KEYS.map((k) => [k, z.boolean().optional()])) as Record<string, z.ZodOptional<z.ZodBoolean>>,
+);
 
 const createSchema = z.object({
   name: z.string().min(2).max(150),
@@ -27,11 +48,23 @@ const updateSchema = z.object({
   creditLimitCents: z.number().int().min(0).optional(),
   webhookUrl: z.string().url().optional(),
   webhookSecret: z.string().min(16).optional(),
+  billingModeOverride: z.enum(["PER_MINUTE", "PER_SECOND", "PER_CALL"]).nullable().optional(),
 });
 
 const adjustBalanceSchema = z.object({
   amountCents: z.number().int(),
   note: z.string().min(3).max(255),
+});
+
+const resetPasswordSchema = z.object({
+  password: z.string().min(8, "A password deve ter pelo menos 8 caracteres"),
+});
+
+const userCreateSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+  password: z.string().min(8),
+  role: z.enum(["OWNER", "ADMIN", "MEMBER", "VIEWER"]).optional(),
 });
 
 function mapTenant(t: any) {
@@ -51,14 +84,22 @@ function mapTenant(t: any) {
       ? {
           id: t.plan.id ?? t.planId,
           name: t.plan.name,
+          billingMode: t.plan.billingMode ?? "PER_MINUTE",
           pricePerMinCents: t.plan.pricePerMinuteCents ?? 0,
+          pricePerCallCents: t.plan.pricePerCallCents ?? 0,
           monthlyFeeCents: t.plan.monthlyFeeCents ?? 0,
           maxAgents: t.plan.maxAgents ?? 0,
           maxConcurrentCalls: t.plan.maxConcurrent ?? t.maxConcurrent ?? 1,
+          aiAgentsEnabled: t.plan.aiAgentsEnabled ?? true,
           isActive: t.plan.isActive ?? true,
         }
       : null,
     maxConcurrentCalls: t.maxConcurrent,
+    billingModeOverride: t.billingModeOverride ?? null,
+    // features efectivas (o que o cliente vê) + overrides crus (o que o operador definiu)
+    features: computeFeatures({ overrides: t.features, aiAgentsEnabled: t.plan?.aiAgentsEnabled }),
+    featureOverrides: (t.features ?? {}) as Record<string, boolean>,
+    ...(t.lines !== undefined && { lines: t.lines }),
     createdAt: t.createdAt,
     _count: t._count,
     users: t.users,
@@ -143,6 +184,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
       include: {
         plan: true,
         users: { select: { id: true, name: true, email: true, role: true, lastLoginAt: true } },
+        lines: { orderBy: { createdAt: "asc" } },
         _count: { select: { agents: true, calls: true, contacts: true } },
       },
     });
@@ -170,6 +212,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.creditLimitCents !== undefined && { creditLimitCents: body.creditLimitCents }),
         ...(body.webhookUrl !== undefined && { webhookUrl: body.webhookUrl }),
         ...(body.webhookSecret !== undefined && { webhookSecret: body.webhookSecret }),
+        ...(body.billingModeOverride !== undefined && { billingModeOverride: body.billingModeOverride }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },
     });
@@ -205,6 +248,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null } });
     if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
     if (existing.status === "ACTIVE") return reply.status(400).send({ error: "Tenant já activo" });
+    if (existing.status === "CLOSED") return reply.status(400).send({ error: "Tenant encerrado não pode ser reactivado" });
 
     await prisma.tenant.update({ where: { id: request.params.id }, data: { status: "ACTIVE" } });
     await fastify.audit({
@@ -345,4 +389,218 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
       };
     }
   );
+
+  // ============ LINHAS DE CHAMADAS ============
+
+  // GET /admin/tenants/:id/lines
+  fastify.get<{ Params: { id: string } }>("/:id/lines", { preHandler }, async (request, reply) => {
+    const tenant = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null }, select: { id: true } });
+    if (!tenant) return reply.status(404).send({ error: "Tenant não encontrado" });
+    const lines = await prisma.tenantLine.findMany({ where: { tenantId: request.params.id }, orderBy: { createdAt: "asc" } });
+    return { data: lines };
+  });
+
+  // POST /admin/tenants/:id/lines
+  fastify.post<{ Params: { id: string } }>("/:id/lines", { preHandler }, async (request, reply) => {
+    const body = lineCreateSchema.parse(request.body);
+    const admin = request.adminUser!;
+
+    const tenant = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null }, select: { id: true } });
+    if (!tenant) return reply.status(404).send({ error: "Tenant não encontrado" });
+
+    const existingCount = await prisma.tenantLine.count({ where: { tenantId: request.params.id } });
+    // Primeira linha do tenant é sempre a default
+    const makeDefault = body.isDefault ?? existingCount === 0;
+
+    const line = await prisma.$transaction(async (tx) => {
+      if (makeDefault) {
+        await tx.tenantLine.updateMany({ where: { tenantId: request.params.id }, data: { isDefault: false } });
+      }
+      return tx.tenantLine.create({
+        data: {
+          tenantId: request.params.id,
+          name: body.name,
+          extension: body.extension,
+          ...(body.phoneNumber !== undefined && { phoneNumber: body.phoneNumber }),
+          isDefault: makeDefault,
+          ...(body.isActive !== undefined && { isActive: body.isActive }),
+        },
+      });
+    });
+
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: "tenant.line_created",
+      targetType: "TenantLine", targetId: line.id,
+      after: { tenantId: request.params.id, name: line.name, extension: line.extension } as object, ip: request.ip,
+    });
+
+    return reply.status(201).send(line);
+  });
+
+  // PATCH /admin/tenants/:id/lines/:lineId
+  fastify.patch<{ Params: { id: string; lineId: string } }>("/:id/lines/:lineId", { preHandler }, async (request, reply) => {
+    const body = lineUpdateSchema.parse(request.body);
+    const admin = request.adminUser!;
+
+    const existing = await prisma.tenantLine.findFirst({ where: { id: request.params.lineId, tenantId: request.params.id } });
+    if (!existing) return reply.status(404).send({ error: "Linha não encontrada" });
+
+    const line = await prisma.$transaction(async (tx) => {
+      if (body.isDefault === true) {
+        await tx.tenantLine.updateMany({ where: { tenantId: request.params.id, id: { not: request.params.lineId } }, data: { isDefault: false } });
+      }
+      return tx.tenantLine.update({
+        where: { id: request.params.lineId },
+        data: {
+          ...(body.name !== undefined && { name: body.name }),
+          ...(body.extension !== undefined && { extension: body.extension }),
+          ...(body.phoneNumber !== undefined && { phoneNumber: body.phoneNumber }),
+          ...(body.isDefault !== undefined && { isDefault: body.isDefault }),
+          ...(body.isActive !== undefined && { isActive: body.isActive }),
+        },
+      });
+    });
+
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: "tenant.line_updated",
+      targetType: "TenantLine", targetId: line.id,
+      before: existing as unknown as object, after: body as object, ip: request.ip,
+    });
+
+    return line;
+  });
+
+  // DELETE /admin/tenants/:id/lines/:lineId
+  fastify.delete<{ Params: { id: string; lineId: string } }>("/:id/lines/:lineId", { preHandler }, async (request, reply) => {
+    const admin = request.adminUser!;
+    const existing = await prisma.tenantLine.findFirst({ where: { id: request.params.lineId, tenantId: request.params.id } });
+    if (!existing) return reply.status(404).send({ error: "Linha não encontrada" });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.tenantLine.delete({ where: { id: request.params.lineId } });
+      // Se apagámos a default, promover a linha mais antiga que sobra
+      if (existing.isDefault) {
+        const next = await tx.tenantLine.findFirst({ where: { tenantId: request.params.id }, orderBy: { createdAt: "asc" } });
+        if (next) await tx.tenantLine.update({ where: { id: next.id }, data: { isDefault: true } });
+      }
+    });
+
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: "tenant.line_deleted",
+      targetType: "TenantLine", targetId: request.params.lineId,
+      before: existing as unknown as object, ip: request.ip,
+    });
+
+    return { ok: true };
+  });
+
+  // ============ FUNCIONALIDADES ============
+
+  // PUT /admin/tenants/:id/features — grava overrides de funcionalidades
+  fastify.put<{ Params: { id: string } }>("/:id/features", { preHandler }, async (request, reply) => {
+    const body = featuresSchema.parse(request.body);
+    const admin = request.adminUser!;
+
+    const existing = await prisma.tenant.findFirst({
+      where: { id: request.params.id, deletedAt: null },
+      include: { plan: { select: { aiAgentsEnabled: true } } },
+    });
+    if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
+
+    const overrides = sanitizeFeatureOverrides(body);
+    await prisma.tenant.update({ where: { id: request.params.id }, data: { features: overrides } });
+
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: "tenant.features_updated",
+      targetType: "Tenant", targetId: request.params.id,
+      before: (existing.features ?? {}) as object, after: overrides as object, ip: request.ip,
+    });
+
+    return {
+      featureOverrides: overrides,
+      features: computeFeatures({ overrides, aiAgentsEnabled: existing.plan?.aiAgentsEnabled }),
+    };
+  });
+
+  // ============ UTILIZADORES DO TENANT ============
+
+  // GET /admin/tenants/:id/users — lista os utilizadores do cliente
+  fastify.get<{ Params: { id: string } }>("/:id/users", { preHandler }, async (request, reply) => {
+    const tenant = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null }, select: { id: true } });
+    if (!tenant) return reply.status(404).send({ error: "Tenant não encontrado" });
+
+    const users = await prisma.tenantUser.findMany({
+      where: { tenantId: request.params.id },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true, email: true, role: true, lastLoginAt: true, twoFaSecret: true, createdAt: true },
+    });
+
+    // Nunca expomos a passwordHash. Indicamos apenas se o 2FA está activo.
+    return {
+      users: users.map((u) => ({
+        id: u.id, name: u.name, email: u.email, role: u.role,
+        lastLoginAt: u.lastLoginAt, twoFaEnabled: !!u.twoFaSecret, createdAt: u.createdAt,
+      })),
+    };
+  });
+
+  // POST /admin/tenants/:id/users/:userId/reset-password — define nova password
+  fastify.post<{ Params: { id: string; userId: string }; Body: { password: string } }>(
+    "/:id/users/:userId/reset-password",
+    { preHandler },
+    async (request, reply) => {
+      const admin = request.adminUser!;
+      const password = resetPasswordSchema.parse(request.body).password;
+
+      const user = await prisma.tenantUser.findFirst({
+        where: { id: request.params.userId, tenantId: request.params.id },
+        select: { id: true, email: true },
+      });
+      if (!user) return reply.status(404).send({ error: "Utilizador não encontrado" });
+
+      await prisma.tenantUser.update({
+        where: { id: user.id },
+        data: { passwordHash: await hashPassword(password) },
+      });
+
+      await fastify.audit({
+        actorType: "ADMIN", actorId: admin.sub, action: "tenant.user.password_reset",
+        targetType: "TenantUser", targetId: user.id,
+        after: { tenantId: request.params.id, email: user.email } as object, ip: request.ip,
+      });
+
+      return { ok: true };
+    },
+  );
+
+  // POST /admin/tenants/:id/users — cria um novo utilizador para o cliente
+  fastify.post<{ Params: { id: string } }>("/:id/users", { preHandler }, async (request, reply) => {
+    const admin = request.adminUser!;
+    const body = userCreateSchema.parse(request.body);
+
+    const tenant = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null }, select: { id: true } });
+    if (!tenant) return reply.status(404).send({ error: "Tenant não encontrado" });
+
+    const existingEmail = await prisma.tenantUser.findUnique({ where: { email: body.email } });
+    if (existingEmail) return reply.status(409).send({ error: "Email já registado" });
+
+    const user = await prisma.tenantUser.create({
+      data: {
+        tenantId: request.params.id,
+        name: body.name,
+        email: body.email,
+        passwordHash: await hashPassword(body.password),
+        role: body.role ?? "MEMBER",
+      },
+      select: { id: true, name: true, email: true, role: true, lastLoginAt: true, createdAt: true },
+    });
+
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: "tenant.user.created",
+      targetType: "TenantUser", targetId: user.id,
+      after: { tenantId: request.params.id, email: user.email, role: user.role } as object, ip: request.ip,
+    });
+
+    return reply.status(201).send({ ...user, twoFaEnabled: false });
+  });
 };

@@ -10,12 +10,28 @@ export interface DialParams {
    * telefone). Default "yes" para preservar o comportamento do motor de IA.
    */
   autoAnswer?: "yes" | "no";
+  /**
+   * Extensão cujas permissões de saída (outbound route) são usadas para a chamada.
+   * Por defeito é igual a fromExtension. Útil quando a extensão de origem não tem
+   * permissões de saída para números externos — usa-se uma extensão com trunk configurado.
+   */
+  dialPermission?: string;
 }
 
 export interface PlayPromptParams {
   number: string;
   prompts: string[];
   volume?: number;
+  /** Número de repetições da sequência de prompts (default 1 no Yeastar). */
+  count?: number;
+  /**
+   * Quando presente, o Yeastar coloca uma chamada de saída para `number` e toca os
+   * prompts (fluxo de anúncio/OTP). `dialPermission` é a extensão cujas permissões de
+   * saída (outbound route) são usadas para chegar a números externos.
+   */
+  dialPermission?: string;
+  /** "yes"/"no" — comportamento de atendimento automático da chamada de anúncio. */
+  autoAnswer?: "yes" | "no";
   /** Internal call ID — used by stub mode to fire PROMPT_FINISHED events. Not sent to real Yeastar. */
   providerCallId?: string;
 }

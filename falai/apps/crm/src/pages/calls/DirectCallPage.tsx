@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { ArrowLeft, PhoneCall, PhoneOff, Info } from 'lucide-react';
 import { callsApi } from '@/lib/api';
@@ -12,10 +12,14 @@ import { useToast } from '@/contexts/ToastContext';
 
 export function DirectCallPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { success, error } = useToast();
 
+  // Número pré-preenchido quando se vem do botão rápido de um contacto
+  const prefillTo = (location.state as { to?: string } | null)?.to ?? '';
+
   const [fromExtension, setFromExtension] = useState('');
-  const [to, setTo] = useState('');
+  const [to, setTo] = useState(prefillTo);
   const [activeCallId, setActiveCallId] = useState<string | null>(null);
 
   const { data: extensions, isLoading: loadingExt } = useQuery({
@@ -97,19 +101,25 @@ export function DirectCallPage() {
         <Card>
           <h2 className="text-sm font-semibold text-gray-900 mb-4">Configurar chamada</h2>
           <div className="flex flex-col gap-4">
-            <Select
-              label="Extensão de origem"
-              value={fromExtension}
-              onChange={(e) => setFromExtension(e.target.value)}
-              disabled={!!activeCallId}
-              required
-            >
-              {(extensions ?? []).map((ext) => (
-                <option key={ext.number} value={ext.number}>
-                  {ext.number}{ext.name && ext.name !== ext.number ? ` — ${ext.name}` : ''}
-                </option>
-              ))}
-            </Select>
+            {!loadingExt && (extensions?.length ?? 0) === 0 ? (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                Ainda não há nenhuma linha activa associada a esta conta. Contacte o suporte para configurar a sua linha de chamadas.
+              </div>
+            ) : (
+              <Select
+                label="Extensão de origem"
+                value={fromExtension}
+                onChange={(e) => setFromExtension(e.target.value)}
+                disabled={!!activeCallId || loadingExt}
+                required
+              >
+                {(extensions ?? []).map((ext) => (
+                  <option key={ext.number} value={ext.number}>
+                    {ext.number}{ext.name && ext.name !== ext.number ? ` — ${ext.name}` : ''}
+                  </option>
+                ))}
+              </Select>
+            )}
 
             <Input
               label="Número de destino"

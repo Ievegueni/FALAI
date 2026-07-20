@@ -90,7 +90,7 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
           orderBy: { createdAt: "desc" },
           take: 8,
           select: {
-            id: true, toNumber: true, status: true, outcome: true,
+            id: true, toNumber: true, kind: true, status: true, outcome: true,
             durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
             agent: { select: { name: true } },
             contact: { select: { name: true } },
@@ -124,6 +124,7 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
       recentCalls: recentRows.map((c) => ({
         id: c.id,
         to: c.toNumber,
+        kind: c.kind,
         status: c.status,
         outcome: c.outcome,
         durationSecs: c.durationSecs,

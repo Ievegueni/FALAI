@@ -33,7 +33,15 @@ function CallRow({ call }: { call: Call }) {
       onClick={() => navigate(`/calls/${call.id}`)}
     >
       <td className="px-4 py-3 text-sm text-gray-900">{call.contact?.name ?? call.to}</td>
-      <td className="px-4 py-3 text-sm text-gray-500">{call.agent.name}</td>
+      <td className="px-4 py-3 text-sm text-gray-500">
+        {call.kind === 'OTP' ? (
+          <Badge className="bg-indigo-100 text-indigo-700">Verificação OTP</Badge>
+        ) : call.kind === 'DIRECT' ? (
+          <Badge className="bg-slate-100 text-slate-600">Chamada directa</Badge>
+        ) : (
+          call.agent?.name || '—'
+        )}
+      </td>
       <td className="px-4 py-3">
         <Badge className={callStatusColor[call.status]}>{callStatusLabel[call.status]}</Badge>
       </td>
