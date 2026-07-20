@@ -11,7 +11,6 @@ import {
   Settings,
   Server,
   LogOut,
-  Zap,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { clsx } from '@/lib/utils';
@@ -57,8 +56,8 @@ export function Sidebar() {
     <aside className="flex h-screen w-60 flex-col bg-slate-900 text-slate-100 fixed left-0 top-0 z-30">
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-700/60">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
-          <Zap className="h-4 w-4 text-white" />
+        <div className="flex items-center justify-center rounded-lg bg-white px-2 py-1.5">
+          <img src="/logo.png" alt="Comunica" className="h-5 w-auto" />
         </div>
         <div>
           <p className="text-sm font-bold text-white leading-none">Falaí</p>

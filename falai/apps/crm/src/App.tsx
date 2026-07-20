@@ -7,7 +7,6 @@ import { AppLayout, AuthLayout } from '@/components/layout/AppLayout';
 import { RequireFeature } from '@/components/layout/RequireFeature';
 
 import { LoginPage } from '@/pages/auth/LoginPage';
-import { RegisterPage } from '@/pages/auth/RegisterPage';
 import { TwoFactorPage } from '@/pages/auth/TwoFactorPage';
 import { OnboardingPage } from '@/pages/onboarding/OnboardingPage';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
@@ -40,7 +39,6 @@ export default function App() {
               {/* Public auth routes */}
               <Route element={<AuthLayout />}>
                 <Route path="/login" element={<LoginPage />} />
-                <Route path="/register" element={<RegisterPage />} />
                 <Route path="/2fa" element={<TwoFactorPage />} />
               </Route>
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Zap, Eye, EyeOff } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { Button } from '@/components/ui/Button';
@@ -37,8 +37,8 @@ export function LoginPage() {
   return (
     <div className="w-full max-w-sm">
       <div className="mb-8 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600">
-          <Zap className="h-6 w-6 text-white" />
+        <div className="mx-auto mb-4 inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 shadow-lg">
+          <img src="/logo.png" alt="Comunica" className="h-10 w-auto" />
         </div>
         <h1 className="text-2xl font-bold text-white">Falaí</h1>
         <p className="mt-1 text-sm text-slate-400">Inicie sessão na sua conta</p>
@@ -77,17 +77,10 @@ export function LoginPage() {
             Entrar
           </Button>
         </form>
-
-        <p className="mt-6 text-center text-sm text-gray-500">
-          Ainda não tem conta?{' '}
-          <Link to="/register" className="font-medium text-blue-600 hover:underline">
-            Registar
-          </Link>
-        </p>
       </div>
 
       <p className="mt-6 text-center text-xs text-slate-500">
-        Suporte: <span className="text-slate-300">+244 923 000 000</span>
+        Suporte: <span className="text-slate-300">+244 924 572 875</span>
       </p>
     </div>
   );

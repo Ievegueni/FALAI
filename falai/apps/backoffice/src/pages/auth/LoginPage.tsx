@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Zap } from 'lucide-react';
+import { Mail, Lock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { Button, Input } from '@/components/ui';
@@ -33,8 +33,8 @@ export function LoginPage() {
   return (
     <div className="w-full max-w-sm">
       <div className="mb-8 flex flex-col items-center">
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600">
-          <Zap className="h-7 w-7 text-white" />
+        <div className="mb-4 inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 shadow-lg">
+          <img src="/logo.png" alt="Comunica" className="h-10 w-auto" />
         </div>
         <h1 className="text-xl font-bold text-white">Falaí Backoffice</h1>
         <p className="mt-1 text-sm text-slate-400">Acesso reservado a COMUNICA</p>

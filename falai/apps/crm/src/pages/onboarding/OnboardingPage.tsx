@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
-import { Bot, Users, Phone, CheckCircle, ArrowRight, Zap } from 'lucide-react';
+import { Bot, Users, Phone, CheckCircle, ArrowRight } from 'lucide-react';
 import { agentsApi, contactsApi, callsApi } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
@@ -83,8 +83,8 @@ export function OnboardingPage() {
       <div className="w-full max-w-xl">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600">
-            <Zap className="h-6 w-6 text-white" />
+          <div className="mx-auto mb-3 inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 shadow-lg">
+            <img src="/logo.png" alt="Comunica" className="h-10 w-auto" />
           </div>
           <h1 className="text-2xl font-bold text-white">Bem-vindo ao Falaí</h1>
           <p className="text-slate-400 mt-1 text-sm">Vamos criar o seu primeiro agente e fazer uma chamada de teste.</p>
@@ -217,7 +217,7 @@ export function OnboardingPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-500">
-          Suporte: <span className="text-slate-300">+244 923 000 000</span>
+          Suporte: <span className="text-slate-300">+244 924 572 875</span>
         </p>
       </div>
     </div>

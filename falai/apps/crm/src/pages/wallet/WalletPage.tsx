@@ -92,7 +92,7 @@ function TopupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
             Válido até {formatDate(reference.expiresAt)}.
           </p>
           <p className="text-xs text-gray-400">
-            Para assistência: <strong>+244 923 000 000</strong>
+            Para assistência: <strong>+244 924 572 875</strong>
           </p>
         </div>
       )}
@@ -228,7 +228,7 @@ export function WalletPage() {
             <Card>
               <p className="text-xs text-gray-500 mb-1">Para mudar de plano</p>
               <p className="text-sm text-gray-700 mt-1">Contacte a nossa equipa comercial para obter uma proposta personalizada.</p>
-              <p className="text-sm font-medium text-blue-600 mt-2">+244 923 000 000</p>
+              <p className="text-sm font-medium text-blue-600 mt-2">+244 924 572 875</p>
             </Card>
           </div>
         ) : null}

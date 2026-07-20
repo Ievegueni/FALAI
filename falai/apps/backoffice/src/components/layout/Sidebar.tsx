@@ -9,7 +9,6 @@ import {
   BarChart3,
   ScrollText,
   Phone,
-  Zap,
 } from 'lucide-react';
 import { clsx } from '@/lib/utils';
 
@@ -29,8 +28,8 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-60 flex-col border-r border-gray-200 bg-slate-900">
       <div className="flex h-16 items-center gap-2.5 px-5 border-b border-slate-700">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
-          <Zap className="h-5 w-5 text-white" />
+        <div className="flex items-center justify-center rounded-lg bg-white px-2 py-1.5">
+          <img src="/logo.png" alt="Comunica" className="h-5 w-auto" />
         </div>
         <div>
           <p className="text-sm font-bold text-white leading-none">Falaí</p>
