@@ -4,6 +4,7 @@ import { queryClient } from '@/lib/queryClient';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ToastProvider } from '@/contexts/ToastContext';
 import { AppLayout, AuthLayout } from '@/components/layout/AppLayout';
+import { RequireFeature } from '@/components/layout/RequireFeature';
 
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { RegisterPage } from '@/pages/auth/RegisterPage';
@@ -14,6 +15,7 @@ import { AgentsPage } from '@/pages/agents/AgentsPage';
 import { AgentFormPage } from '@/pages/agents/AgentFormPage';
 import { SimulatorPage } from '@/pages/agents/SimulatorPage';
 import { ContactsPage } from '@/pages/contacts/ContactsPage';
+import { ContactDetailPage } from '@/pages/contacts/ContactDetailPage';
 import { ImportPage } from '@/pages/contacts/ImportPage';
 import { CallsPage } from '@/pages/calls/CallsPage';
 import { NewCallPage } from '@/pages/calls/NewCallPage';
@@ -50,26 +52,27 @@ export default function App() {
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<DashboardPage />} />
 
-                <Route path="/agents" element={<AgentsPage />} />
-                <Route path="/agents/new" element={<AgentFormPage />} />
-                <Route path="/agents/:id" element={<AgentFormPage />} />
-                <Route path="/agents/:id/simulate" element={<SimulatorPage />} />
+                <Route path="/agents" element={<RequireFeature feature="agents"><AgentsPage /></RequireFeature>} />
+                <Route path="/agents/new" element={<RequireFeature feature="agents"><AgentFormPage /></RequireFeature>} />
+                <Route path="/agents/:id" element={<RequireFeature feature="agents"><AgentFormPage /></RequireFeature>} />
+                <Route path="/agents/:id/simulate" element={<RequireFeature feature="agents"><SimulatorPage /></RequireFeature>} />
 
-                <Route path="/contacts" element={<ContactsPage />} />
-                <Route path="/contacts/import" element={<ImportPage />} />
+                <Route path="/contacts" element={<RequireFeature feature="contacts"><ContactsPage /></RequireFeature>} />
+                <Route path="/contacts/import" element={<RequireFeature feature="contacts"><ImportPage /></RequireFeature>} />
+                <Route path="/contacts/:id" element={<RequireFeature feature="contacts"><ContactDetailPage /></RequireFeature>} />
 
-                <Route path="/calls" element={<CallsPage />} />
-                <Route path="/calls/new" element={<NewCallPage />} />
-                <Route path="/calls/direct" element={<DirectCallPage />} />
-                <Route path="/calls/:id" element={<CallDetailPage />} />
+                <Route path="/calls" element={<RequireFeature feature="calls"><CallsPage /></RequireFeature>} />
+                <Route path="/calls/new" element={<RequireFeature feature="agents"><NewCallPage /></RequireFeature>} />
+                <Route path="/calls/direct" element={<RequireFeature feature="directCall"><DirectCallPage /></RequireFeature>} />
+                <Route path="/calls/:id" element={<RequireFeature feature="calls"><CallDetailPage /></RequireFeature>} />
 
-                <Route path="/campaigns" element={<CampaignsPage />} />
-                <Route path="/campaigns/new" element={<CampaignFormPage />} />
-                <Route path="/campaigns/:id" element={<CampaignDetailPage />} />
+                <Route path="/campaigns" element={<RequireFeature feature="campaigns"><CampaignsPage /></RequireFeature>} />
+                <Route path="/campaigns/new" element={<RequireFeature feature="campaigns"><CampaignFormPage /></RequireFeature>} />
+                <Route path="/campaigns/:id" element={<RequireFeature feature="campaigns"><CampaignDetailPage /></RequireFeature>} />
 
-                <Route path="/wallet" element={<WalletPage />} />
-                <Route path="/team" element={<TeamPage />} />
-                <Route path="/developers" element={<DevelopersPage />} />
+                <Route path="/wallet" element={<RequireFeature feature="wallet"><WalletPage /></RequireFeature>} />
+                <Route path="/team" element={<RequireFeature feature="team"><TeamPage /></RequireFeature>} />
+                <Route path="/developers" element={<RequireFeature feature="developers"><DevelopersPage /></RequireFeature>} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/pbx" element={<PbxIntegrationPage />} />
               </Route>

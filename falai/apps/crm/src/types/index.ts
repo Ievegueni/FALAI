@@ -12,6 +12,19 @@ export interface TenantUser {
   createdAt: string;
 }
 
+export type FeatureKey =
+  | 'agents'
+  | 'campaigns'
+  | 'contacts'
+  | 'calls'
+  | 'directCall'
+  | 'otpCall'
+  | 'wallet'
+  | 'team'
+  | 'developers';
+
+export type TenantFeatures = Record<FeatureKey, boolean>;
+
 export interface Tenant {
   id: string;
   name: string;
@@ -21,6 +34,7 @@ export interface Tenant {
   webhookUrl: string | null;
   planId: string;
   plan: Plan;
+  features?: TenantFeatures;
   onboardingCompletedAt: string | null;
 }
 
@@ -45,6 +59,7 @@ export interface Plan {
   name: string;
   productType?: ProductType;
   aiAgentsEnabled?: boolean;
+  clinicEnabled?: boolean;
   pricePerMinuteCents: number;
   monthlyFeeCents: number;
   maxAgents: number;
@@ -120,6 +135,18 @@ export interface Contact {
   optedOutAt: string | null;
   optOutReason: string | null;
   createdAt: string;
+  // Presente apenas na resposta de detalhe (GET /tenant/contacts/:id)
+  calls?: ContactCall[];
+}
+
+export interface ContactCall {
+  id: string;
+  toNumber: string;
+  kind: CallKind;
+  status: CallStatus;
+  outcome: string | null;
+  durationSecs: number;
+  createdAt: string;
 }
 
 export interface ImportResult {
@@ -142,9 +169,12 @@ export type CallStatus =
   | 'CANCELLED'
   | 'ESCALATED';
 
+export type CallKind = 'AI_AGENT' | 'DIRECT' | 'OTP';
+
 export interface Call {
   id: string;
-  agentId: string;
+  agentId: string | null;
+  kind?: CallKind;
   contactId: string | null;
   to: string;
   status: CallStatus;

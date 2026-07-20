@@ -6,7 +6,6 @@ export default fp(async (fastify) => {
   const dispatcher = new CampaignDispatcher(
     fastify.yeastar as YeastarAdapter,
     fastify.callEngine,
-    fastify.providerConfig.yeastar.outboundExtension,
     fastify.log
   );
 

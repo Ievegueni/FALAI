@@ -32,7 +32,6 @@ const SECTIONS: Section[] = [
       { key: 'YEASTAR_BASE_URL', label: 'Base URL', type: 'text', placeholder: 'https://a-tua-empresa.yeastar.cloud' },
       { key: 'YEASTAR_CLIENT_ID', label: 'Client ID', type: 'text' },
       { key: 'YEASTAR_CLIENT_SECRET', label: 'Client Secret', type: 'secret' },
-      { key: 'YEASTAR_OUTBOUND_EXTENSION', label: 'Extensão de saída', type: 'text', placeholder: '1000' },
       { key: 'YEASTAR_STUB_MODE', label: 'Modo stub (sem chamadas reais)', type: 'bool', hint: 'Deixa "Ligado" enquanto testas sem PBX. Muda para "Desligado" para chamadas reais.' },
     ],
   },

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Upload, Users, Search, Phone, Trash2, Download } from 'lucide-react';
+import { Plus, Upload, Users, Search, Phone, PhoneCall, Trash2, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { contactsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
@@ -92,6 +92,7 @@ function CreateContactModal({
 }
 
 function ContactRow({ contact }: { contact: Contact }) {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { success, error } = useToast();
 
@@ -104,8 +105,13 @@ function ContactRow({ contact }: { contact: Contact }) {
   return (
     <tr className="hover:bg-gray-50">
       <td className="px-4 py-3">
-        <p className="text-sm font-medium text-gray-900">{contact.name}</p>
-        {contact.email && <p className="text-xs text-gray-400">{contact.email}</p>}
+        <button
+          onClick={() => navigate(`/contacts/${contact.id}`)}
+          className="text-left"
+        >
+          <p className="text-sm font-medium text-gray-900 hover:text-blue-600 hover:underline">{contact.name}</p>
+          {contact.email && <p className="text-xs text-gray-400">{contact.email}</p>}
+        </button>
       </td>
       <td className="px-4 py-3 text-sm text-gray-600 flex items-center gap-1.5">
         <Phone className="h-3.5 w-3.5 text-gray-400" />
@@ -120,17 +126,28 @@ function ContactRow({ contact }: { contact: Contact }) {
       </td>
       <td className="px-4 py-3 text-xs text-gray-400">{formatDate(contact.createdAt)}</td>
       <td className="px-4 py-3">
-        {!contact.optedOutAt && (
-          <Button
-            size="sm"
-            variant="ghost"
-            icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
-            loading={del.isPending}
-            onClick={() => {
-              if (confirm(`Eliminar ${contact.name}?`)) del.mutate();
-            }}
-          />
-        )}
+        <div className="flex items-center justify-end gap-1">
+          {!contact.optedOutAt && (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<PhoneCall className="h-3.5 w-3.5 text-green-600" />}
+              title="Ligar agora"
+              onClick={() => navigate('/calls/direct', { state: { to: contact.phone } })}
+            />
+          )}
+          {!contact.optedOutAt && (
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
+              loading={del.isPending}
+              onClick={() => {
+                if (confirm(`Eliminar ${contact.name}?`)) del.mutate();
+              }}
+            />
+          )}
+        </div>
       </td>
     </tr>
   );

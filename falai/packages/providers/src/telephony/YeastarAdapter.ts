@@ -188,8 +188,7 @@ export class YeastarAdapter implements TelephonyProvider {
       {
         caller: params.fromExtension,
         callee: params.to,
-        // dial_permission = extensão cujas permissões de saída usar (a própria origem)
-        dial_permission: params.fromExtension,
+        dial_permission: params.dialPermission ?? params.fromExtension,
         auto_answer: params.autoAnswer ?? "yes",
       },
       this.tokenParam(token)
@@ -240,8 +239,10 @@ export class YeastarAdapter implements TelephonyProvider {
     const token = await this.getToken();
     const safeName = name.replace(/\.[^.]+$/, "");
     const form = new FormData();
-    form.append("name", safeName);
+    // A API do Yeastar deriva o nome do prompt do nome do ficheiro no multipart.
+    // is_check="force" sobrepõe um prompt existente com o mesmo nome.
     form.append("file", wavBuffer, { filename: `${safeName}.wav`, contentType: "audio/wav" });
+    form.append("is_check", "force");
     const res = await this.http.post<YeastarResponse>(
       "/openapi/v1.0/custom_prompt/upload",
       form,
@@ -262,7 +263,14 @@ export class YeastarAdapter implements TelephonyProvider {
     const safePrompts = params.prompts.map((p) => p.replace(/\.[^.]+$/, ""));
     const res = await this.http.post<YeastarResponse>(
       "/openapi/v1.0/call/play_prompt",
-      { number: params.number, prompts: safePrompts, volume: params.volume ?? 5 },
+      {
+        number: params.number,
+        prompts: safePrompts,
+        volume: params.volume ?? 5,
+        ...(params.count && { count: params.count }),
+        ...(params.dialPermission && { dial_permission: params.dialPermission }),
+        ...(params.autoAnswer && { auto_answer: params.autoAnswer }),
+      },
       this.tokenParam(token)
     );
     this.assertOk(res.data);
@@ -328,23 +336,29 @@ export class YeastarAdapter implements TelephonyProvider {
 
   /** Verifica se uma chamada pelo providerCallId ainda está activa no PBX. */
   async isCallActive(providerCallId: string): Promise<boolean> {
-    if (this.config.stubMode) {
-      // Em stub, chamadas ficam activas até serem explicitamente desligadas (hangup dispara CALL_ENDED).
-      // Não há estado persistido no stub, por isso retornamos true para não interferir com testes.
-      return true;
-    }
+    const state = await this.getCallState(providerCallId);
+    return state !== null;
+  }
+
+  /**
+   * Devolve o estado actual de uma chamada activa no PBX.
+   * Retorna null se a chamada não existir (já terminou ou nunca foi criada).
+   * Os valores de state conhecidos: "RINGING", "ANSWERED", "HOLDING".
+   */
+  async getCallState(providerCallId: string): Promise<{ state: string } | null> {
+    if (this.config.stubMode) return { state: "ANSWERED" };
     try {
       const token = await this.getToken();
-      const res = await this.http.get<YeastarResponse<Array<{ call_id?: string; callid?: string }>>>(
+      const res = await this.http.get<YeastarResponse<Array<{ call_id?: string; callid?: string; state?: string }>>>(
         "/openapi/v1.0/call/query",
         { params: { access_token: token } }
       );
-      if (res.data.errcode !== 0) return false;
-      const calls = res.data.data ?? [];
-      return calls.some((c) => (c.call_id ?? c.callid) === providerCallId);
+      if (res.data.errcode !== 0) return null;
+      const found = (res.data.data ?? []).find((c) => (c.call_id ?? c.callid) === providerCallId);
+      if (!found) return null;
+      return { state: (found.state ?? "UNKNOWN").toUpperCase() };
     } catch {
-      // Em caso de erro de rede, assumir que ainda está activa (evitar falso-positivo de desligamento)
-      return true;
+      return null;
     }
   }
 

@@ -27,16 +27,73 @@ export interface AdminLoginResponse {
 
 export type ProductType = 'VOICE_AI' | 'CRM_BYO_PBX';
 
+export type BillingMode = 'PER_MINUTE' | 'PER_SECOND' | 'PER_CALL';
+
 export interface Plan {
   id: string;
   name: string;
   productType: ProductType;
   aiAgentsEnabled: boolean;
+  clinicEnabled: boolean;
+  billingMode: BillingMode;
   pricePerMinCents: number;
+  pricePerCallCents: number;
   monthlyFeeCents: number;
   maxAgents: number;
   maxConcurrentCalls: number;
   isActive: boolean;
+}
+
+export type FeatureKey =
+  | 'agents'
+  | 'campaigns'
+  | 'contacts'
+  | 'calls'
+  | 'directCall'
+  | 'otpCall'
+  | 'wallet'
+  | 'team'
+  | 'developers';
+
+export type TenantFeatures = Record<FeatureKey, boolean>;
+
+export interface TenantLine {
+  id: string;
+  tenantId: string;
+  name: string;
+  extension: string;
+  phoneNumber: string | null;
+  isDefault: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TenantLineInput {
+  name: string;
+  extension: string;
+  phoneNumber?: string;
+  isDefault?: boolean;
+  isActive?: boolean;
+}
+
+export type TenantRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+
+export interface TenantUser {
+  id: string;
+  name: string;
+  email: string;
+  role: TenantRole;
+  lastLoginAt: string | null;
+  twoFaEnabled?: boolean;
+  createdAt?: string;
+}
+
+export interface TenantUserInput {
+  name: string;
+  email: string;
+  password: string;
+  role?: TenantRole;
 }
 
 export interface Tenant {
@@ -53,6 +110,11 @@ export interface Tenant {
   planId: string;
   plan: Plan;
   maxConcurrentCalls: number;
+  features?: TenantFeatures;
+  featureOverrides?: Partial<TenantFeatures>;
+  billingModeOverride?: BillingMode | null;
+  lines?: TenantLine[];
+  users?: TenantUser[];
   createdAt: string;
   _count?: {
     calls: number;

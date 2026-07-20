@@ -18,7 +18,7 @@ export const adminAuthRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.authenticate];
 
   // POST /admin/auth/login
-  fastify.post("/login", async (request, reply) => {
+  fastify.post("/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = adminLoginSchema.parse(request.body);
 
     const admin = await prisma.adminUser.findUnique({ where: { email: body.email } });
@@ -63,7 +63,7 @@ export const adminAuthRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /admin/auth/2fa/verify
-  fastify.post("/2fa/verify", async (request, reply) => {
+  fastify.post("/2fa/verify", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = adminTotpSchema.parse(request.body);
 
     const adminId = await fastify.redis.get(pending2FaKey(body.sessionToken));
@@ -129,6 +129,17 @@ export const adminAuthRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return { ok: true };
+  });
+
+  // GET /admin/auth/me
+  fastify.get("/me", { preHandler }, async (request) => {
+    const admin = request.adminUser!;
+    const user = await prisma.adminUser.findUnique({
+      where: { id: admin.sub },
+      select: { id: true, name: true, email: true, role: true, twoFaSecret: true },
+    });
+    if (!user) throw new Error("Utilizador não encontrado");
+    return { id: user.id, name: user.name, email: user.email, role: user.role, twoFaEnabled: !!user.twoFaSecret };
   });
 
   // POST /admin/auth/register

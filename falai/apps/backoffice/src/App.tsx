@@ -8,6 +8,7 @@ import { LoginPage } from '@/pages/auth/LoginPage';
 import { TwoFactorPage } from '@/pages/auth/TwoFactorPage';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { TenantsPage } from '@/pages/tenants/TenantsPage';
+import { TenantNewPage } from '@/pages/tenants/TenantNewPage';
 import { TenantDetailPage } from '@/pages/tenants/TenantDetailPage';
 import { ModerationPage } from '@/pages/moderation/ModerationPage';
 import { PlansPage } from '@/pages/plans/PlansPage';
@@ -35,6 +36,7 @@ export default function App() {
               <Route element={<AppLayout />}>
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/tenants" element={<TenantsPage />} />
+                <Route path="/tenants/new" element={<TenantNewPage />} />
                 <Route path="/tenants/:id" element={<TenantDetailPage />} />
                 <Route path="/moderation" element={<ModerationPage />} />
                 <Route path="/calls" element={<CallsPage />} />

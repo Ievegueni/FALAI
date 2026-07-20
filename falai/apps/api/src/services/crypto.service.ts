@@ -1,14 +1,25 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import { config } from "../config.js";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 
+/**
+ * Deriva sempre uma chave de 32 bytes para o AES-256-GCM.
+ * Retrocompatível: uma chave que já ocupe exactamente 32 bytes em UTF-8 é usada
+ * tal como antes (mantém decifráveis os segredos já guardados); qualquer outra é
+ * normalizada via SHA-256, evitando que caracteres multibyte partam o cipher.
+ */
+function getKey(): Buffer {
+  const raw = Buffer.from(config.ENCRYPTION_KEY, "utf8");
+  return raw.length === 32 ? raw : createHash("sha256").update(raw).digest();
+}
+
 // Encripta um valor de secret para guardar em SystemSetting
 export function encryptSecret(plaintext: string): string {
   const iv = randomBytes(IV_LENGTH);
-  const key = Buffer.from(config.ENCRYPTION_KEY, "utf8");
+  const key = getKey();
   const cipher = createCipheriv(ALGORITHM, key, iv);
 
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
@@ -24,7 +35,7 @@ export function decryptSecret(ciphertext: string): string {
   const authTag = buf.subarray(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
   const encrypted = buf.subarray(IV_LENGTH + AUTH_TAG_LENGTH);
 
-  const key = Buffer.from(config.ENCRYPTION_KEY, "utf8");
+  const key = getKey();
   const decipher = createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(authTag);
 

@@ -4,6 +4,10 @@ import * as QRCode from "qrcode";
 import { prisma } from "@falai/db";
 import type { FastifyInstance } from "fastify";
 import type { AdminJwtPayload, TenantJwtPayload } from "../plugins/auth.js";
+import { generateTotpSecretNative, generateTotpNative, verifyTotpNative } from "./totp.native.js";
+
+// Re-exporta a implementação nativa para quem quiser usá-la directamente
+export { generateTotpSecretNative, generateTotpNative, verifyTotpNative };
 
 const TOTP_WINDOW = 1; // ±1 intervalo de 30s
 

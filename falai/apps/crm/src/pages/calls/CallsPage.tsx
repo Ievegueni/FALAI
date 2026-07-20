@@ -36,7 +36,15 @@ function CallRow({ call }: { call: Call }) {
         <p className="text-sm font-medium text-gray-900">{call.contact?.name ?? formatPhone(call.to)}</p>
         {call.contact && <p className="text-xs text-gray-400">{formatPhone(call.to)}</p>}
       </td>
-      <td className="px-4 py-3 text-sm text-gray-600">{call.agent.name}</td>
+      <td className="px-4 py-3 text-sm text-gray-600">
+        {call.kind === 'OTP' ? (
+          <Badge className="bg-indigo-100 text-indigo-700">Verificação OTP</Badge>
+        ) : call.kind === 'DIRECT' ? (
+          <Badge className="bg-slate-100 text-slate-600">Chamada directa</Badge>
+        ) : (
+          call.agent?.name || '—'
+        )}
+      </td>
       <td className="px-4 py-3">
         <Badge className={callStatusColor[call.status]}>{callStatusLabel[call.status]}</Badge>
       </td>
@@ -59,7 +67,11 @@ function CallRow({ call }: { call: Call }) {
 export function CallsPage() {
   const navigate = useNavigate();
   const { tenant } = useAuth();
-  const aiEnabled = tenant?.plan?.aiAgentsEnabled !== false;
+  // "Nova chamada" usa um agente de IA — só disponível quando o plano permite
+  // agentes E a funcionalidade "agents" está activa para este cliente (senão a
+  // rota /calls/new é bloqueada por RequireFeature e redirecciona ao dashboard).
+  const aiEnabled = tenant?.plan?.aiAgentsEnabled !== false && tenant?.features?.agents !== false;
+  const directEnabled = tenant?.features?.directCall !== false;
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<CallStatus | ''>('');
 
@@ -112,8 +124,20 @@ export function CallsPage() {
           <EmptyState
             icon={<Phone className="h-8 w-8" />}
             title="Sem chamadas"
-            description="Faça a primeira chamada com um agente activo."
-            action={{ label: 'Nova chamada', icon: <Plus className="h-4 w-4" />, onClick: () => navigate('/calls/new') }}
+            description={
+              aiEnabled
+                ? 'Faça a primeira chamada com um agente activo.'
+                : directEnabled
+                  ? 'Faça uma chamada directa a partir de uma extensão.'
+                  : 'Ainda não há chamadas registadas.'
+            }
+            action={
+              aiEnabled
+                ? { label: 'Nova chamada', icon: <Plus className="h-4 w-4" />, onClick: () => navigate('/calls/new') }
+                : directEnabled
+                  ? { label: 'Chamada directa', icon: <PhoneCall className="h-4 w-4" />, onClick: () => navigate('/calls/direct') }
+                  : undefined
+            }
           />
         ) : (
           <Card padding={false}>

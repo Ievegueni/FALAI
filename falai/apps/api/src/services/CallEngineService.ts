@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "@falai/db";
-import type { CallStatus } from "@falai/db";
+import type { CallStatus, BillingMode } from "@falai/db";
 import type { CallEvent } from "@falai/shared";
 import type { TelephonyProvider, TurnMessage } from "@falai/providers";
 import { VadDetector } from "./VadDetector.js";
@@ -25,7 +25,9 @@ interface CallSession {
   escalationNumber: string | null;
   // Billing
   reservedCents: number;
+  billingMode: BillingMode;
   pricePerMinuteCents: number;
+  pricePerCallCents: number;
 
   state: "DIALING" | "RINGING" | "IN_PROGRESS" | "AWAITING_SPEECH" | "PROCESSING_TURN" | "TERMINATED";
   history: TurnMessage[];
@@ -68,7 +70,9 @@ export class CallEngineService {
     maxTurnSeconds?: number;
     escalationNumber?: string | null;
     reservedCents?: number;
+    billingMode?: BillingMode;
     pricePerMinuteCents?: number;
+    pricePerCallCents?: number;
   }): Promise<void> {
     const session: CallSession = {
       callId: params.callId,
@@ -83,7 +87,9 @@ export class CallEngineService {
       maxTurnSeconds: params.maxTurnSeconds ?? 30,
       escalationNumber: params.escalationNumber ?? null,
       reservedCents: params.reservedCents ?? 0,
+      billingMode: params.billingMode ?? "PER_MINUTE",
       pricePerMinuteCents: params.pricePerMinuteCents ?? 0,
+      pricePerCallCents: params.pricePerCallCents ?? 0,
       state: "DIALING",
       history: [],
       turnSeq: 0,
@@ -319,8 +325,12 @@ export class CallEngineService {
         callId: session.callId,
         tenantId: session.tenantId,
         billedSecs: duration,
-        pricePerMinuteCents: session.pricePerMinuteCents,
         reservedCents: session.reservedCents,
+        price: {
+          billingMode: session.billingMode,
+          pricePerMinuteCents: session.pricePerMinuteCents,
+          pricePerCallCents: session.pricePerCallCents,
+        },
       }).catch((err) => this.cfg.log.error({ err, callId: session.callId }, "billing.settle_failed"));
     }
 
@@ -364,4 +374,5 @@ export class CallEngineService {
   }
 
   get activeCallCount(): number { return this.sessions.size; }
+  get audioCache(): AudioCache { return this.cfg.audioCache; }
 }

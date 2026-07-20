@@ -71,8 +71,8 @@ export default fp(async (fastify) => {
     },
   });
 
-  // Wire Yeastar events to call engine (replaces the placeholder in index.ts)
-  await (fastify.yeastar as YeastarAdapter).subscribeToEvents(async (event) => {
+  // Regista no eventBus (multiplexor) em vez de subscribeToEvents directo
+  fastify.onCallEvent(async (event) => {
     await callEngine.handleEvent(event);
   });
 

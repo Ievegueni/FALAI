@@ -5,7 +5,13 @@ import { plansApi } from '@/lib/api';
 import { Card, Button, PageSpinner, EmptyState, Modal, Input, Select, Badge } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
 import { formatAOA } from '@/lib/utils';
-import type { Plan, ProductType } from '@/types';
+import type { Plan, ProductType, BillingMode } from '@/types';
+
+const BILLING_LABELS: Record<BillingMode, string> = {
+  PER_MINUTE: 'Por minuto',
+  PER_SECOND: 'Por segundo',
+  PER_CALL: 'Por chamada',
+};
 
 const PRODUCT_LABELS: Record<ProductType, string> = {
   VOICE_AI: 'Operador (PBX + IA)',
@@ -19,7 +25,10 @@ function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
   const [name, setName] = useState(plan?.name ?? '');
   const [productType, setProductType] = useState<ProductType>(plan?.productType ?? 'VOICE_AI');
   const [aiAgentsEnabled, setAiAgentsEnabled] = useState(plan?.aiAgentsEnabled ?? true);
+  const [clinicEnabled, setClinicEnabled] = useState(plan?.clinicEnabled ?? false);
+  const [billingMode, setBillingMode] = useState<BillingMode>(plan?.billingMode ?? 'PER_MINUTE');
   const [pricePerMin, setPricePerMin] = useState(plan ? String(plan.pricePerMinCents / 100) : '');
+  const [pricePerCall, setPricePerCall] = useState(plan ? String((plan.pricePerCallCents ?? 0) / 100) : '');
   const [monthlyFee, setMonthlyFee] = useState(plan ? String((plan.monthlyFeeCents ?? 0) / 100) : '');
   const [maxConcurrent, setMaxConcurrent] = useState(plan ? String(plan.maxConcurrentCalls) : '1');
   const [maxAgents, setMaxAgents] = useState(plan ? String(plan.maxAgents) : '5');
@@ -30,7 +39,10 @@ function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
         name,
         productType,
         aiAgentsEnabled,
-        pricePerMinCents: Math.round(parseFloat(pricePerMin) * 100),
+        clinicEnabled,
+        billingMode,
+        pricePerMinCents: Math.round(parseFloat(pricePerMin || '0') * 100),
+        pricePerCallCents: Math.round(parseFloat(pricePerCall || '0') * 100),
         monthlyFeeCents: Math.round(parseFloat(monthlyFee) * 100),
         maxConcurrentCalls: parseInt(maxConcurrent),
         maxAgents: parseInt(maxAgents),
@@ -73,7 +85,39 @@ function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
           />
           Agentes de IA (o cliente pode criar e usar agentes de voz IA)
         </label>
-        <Input label="Preço por minuto (Kz)" type="number" value={pricePerMin} onChange={(e) => setPricePerMin(e.target.value)} required />
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={clinicEnabled}
+            onChange={(e) => setClinicEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          Módulo Clínica (ficha do paciente: consultas, alergias, notas)
+        </label>
+        <Select label="Modo de cobrança" value={billingMode} onChange={(e) => setBillingMode(e.target.value as BillingMode)}>
+          <option value="PER_MINUTE">Por minuto (arredonda ao minuto)</option>
+          <option value="PER_SECOND">Por segundo (tarifa/min ÷ 60)</option>
+          <option value="PER_CALL">Por chamada (valor fixo, ex.: OTP)</option>
+        </Select>
+        {billingMode === 'PER_CALL' ? (
+          <Input
+            label="Preço por chamada (Kz)"
+            type="number"
+            value={pricePerCall}
+            onChange={(e) => setPricePerCall(e.target.value)}
+            hint="Valor fixo cobrado por cada chamada, independente da duração."
+            required
+          />
+        ) : (
+          <Input
+            label="Preço por minuto (Kz)"
+            type="number"
+            value={pricePerMin}
+            onChange={(e) => setPricePerMin(e.target.value)}
+            hint={billingMode === 'PER_SECOND' ? 'Cobrado ao segundo: preço/min ÷ 60 por segundo.' : undefined}
+            required
+          />
+        )}
         <Input label="Fee mensal (Kz)" type="number" value={monthlyFee} onChange={(e) => setMonthlyFee(e.target.value)} required />
         <div className="grid grid-cols-2 gap-3">
           <Input label="Max. chamadas simult." type="number" value={maxConcurrent} onChange={(e) => setMaxConcurrent(e.target.value)} />
@@ -133,6 +177,10 @@ export function PlansPage() {
                     <Badge className={plan.aiAgentsEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}>
                       {plan.aiAgentsEnabled ? 'Com IA' : 'Sem IA'}
                     </Badge>
+                    {plan.clinicEnabled && (
+                      <Badge className="bg-teal-100 text-teal-700">Clínica</Badge>
+                    )}
+                    <Badge className="bg-amber-100 text-amber-700">{BILLING_LABELS[plan.billingMode]}</Badge>
                   </div>
                 </div>
                 <div className="flex gap-1">
@@ -141,7 +189,11 @@ export function PlansPage() {
                 </div>
               </div>
               <dl className="space-y-2 text-sm">
-                <div className="flex justify-between"><dt className="text-gray-500">Preço/min</dt><dd className="font-medium">{formatAOA(plan.pricePerMinCents ?? 0)}</dd></div>
+                {plan.billingMode === 'PER_CALL' ? (
+                  <div className="flex justify-between"><dt className="text-gray-500">Preço/chamada</dt><dd className="font-medium">{formatAOA(plan.pricePerCallCents ?? 0)}</dd></div>
+                ) : (
+                  <div className="flex justify-between"><dt className="text-gray-500">Preço/min</dt><dd className="font-medium">{formatAOA(plan.pricePerMinCents ?? 0)}{plan.billingMode === 'PER_SECOND' ? ' (ao seg.)' : ''}</dd></div>
+                )}
                 <div className="flex justify-between"><dt className="text-gray-500">Fee mensal</dt><dd className="font-medium">{formatAOA(plan.monthlyFeeCents)}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Max. simultâneas</dt><dd className="font-medium">{plan.maxConcurrentCalls}</dd></div>
                 <div className="flex justify-between"><dt className="text-gray-500">Max. agentes</dt><dd className="font-medium">{plan.maxAgents}</dd></div>
