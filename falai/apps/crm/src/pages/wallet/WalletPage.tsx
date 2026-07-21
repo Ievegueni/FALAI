@@ -104,6 +104,7 @@ function TopupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 const txIcon: Record<TransactionType, typeof ArrowUpRight> = {
   TOPUP: ArrowUpRight,
   CALL_CHARGE: ArrowDownLeft,
+  SMS_CHARGE: ArrowDownLeft,
   REFUND: ArrowUpRight,
   ADJUSTMENT: ArrowUpRight,
   MONTHLY_FEE: ArrowDownLeft,
@@ -112,6 +113,7 @@ const txIcon: Record<TransactionType, typeof ArrowUpRight> = {
 const txColor: Record<TransactionType, string> = {
   TOPUP: 'text-emerald-600 bg-emerald-50',
   CALL_CHARGE: 'text-red-600 bg-red-50',
+  SMS_CHARGE: 'text-red-600 bg-red-50',
   REFUND: 'text-emerald-600 bg-emerald-50',
   ADJUSTMENT: 'text-blue-600 bg-blue-50',
   MONTHLY_FEE: 'text-orange-600 bg-orange-50',

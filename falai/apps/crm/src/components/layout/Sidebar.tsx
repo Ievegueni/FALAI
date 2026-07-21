@@ -5,7 +5,9 @@ import {
   Bot,
   Users,
   Phone,
+  MessageSquare,
   Megaphone,
+  BarChart3,
   Wallet,
   UserCheck,
   Code2,
@@ -25,11 +27,13 @@ const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: F
   { to: '/campaigns', icon: Megaphone, labelKey: 'nav.campaigns', feature: 'campaigns' },
   { to: '/contacts', icon: Users, labelKey: 'nav.contacts', feature: 'contacts' },
   { to: '/calls', icon: Phone, labelKey: 'nav.calls', feature: 'calls' },
+  { to: '/reports', icon: BarChart3, labelKey: 'nav.reports', feature: 'calls' },
   { to: '/wallet', icon: Wallet, labelKey: 'nav.wallet', feature: 'wallet' },
   { to: '/team', icon: UserCheck, labelKey: 'nav.team', feature: 'team' },
   { to: '/developers', icon: Code2, labelKey: 'nav.developers', feature: 'developers' },
 ];
 const settingsItem = { to: '/settings', icon: Settings, labelKey: 'nav.settings' };
+const smsItem = { to: '/sms', icon: MessageSquare, labelKey: 'nav.sms' };
 
 export function Sidebar() {
   const { t } = useTranslation();
@@ -42,9 +46,13 @@ export function Sidebar() {
   // Mostra um item se a sua feature estiver activa (default: visível se não houver info de features)
   const isOn = (f: FeatureKey) => features?.[f] !== false;
 
+  // SMS visível quando o plano o inclui (o backend valida à mesma no envio)
+  const smsOn = tenant?.plan?.smsEnabled === true;
+
   const nav = [
     dashboardItem,
     ...featureItems.filter((i) => isOn(i.feature)),
+    ...(smsOn ? [smsItem] : []),
     settingsItem,
     ...(ownPbx ? [{ to: '/settings/pbx', icon: Server, labelKey: 'nav.pbx' }] : []),
   ];

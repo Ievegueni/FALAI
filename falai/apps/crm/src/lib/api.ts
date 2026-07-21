@@ -24,6 +24,9 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
 
+/** Base da API — usada por ligações que não passam por `request` (ex.: EventSource/SSE). */
+export const apiBaseUrl = API_BASE;
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -505,6 +508,81 @@ export const apiKeysApi = {
 };
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
+
+// ─── Relatórios ───────────────────────────────────────────────────────────────
+
+export interface CallReportSummary {
+  from: string;
+  to: string;
+  totals: {
+    total: number;
+    inbound: number;
+    outbound: number;
+    answered: number;
+    missed: number;
+    avgDurationSecs: number;
+    totalTalkSecs: number;
+    costCents: number;
+  };
+  byDay: { date: string; total: number; answered: number }[];
+  byOutcome: { outcome: string; count: number }[];
+  byDirection: { direction: 'inbound' | 'outbound' | 'internal'; count: number }[];
+  sms: { total: number; sent: number; failed: number; costCents: number };
+}
+
+export const reportsApi = {
+  summary: (params?: { from?: string; to?: string }) =>
+    get<CallReportSummary>(`/tenant/reports${qs({ from: params?.from, to: params?.to })}`),
+
+  /** Descarrega o CSV das chamadas do intervalo (mantém a autenticação via header). */
+  downloadCsv: async (params?: { from?: string; to?: string }) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/reports/calls.csv${qs({ from: params?.from, to: params?.to })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao exportar CSV');
+    const blob = await res.blob();
+    const disposition = res.headers.get('Content-Disposition') ?? '';
+    const match = /filename="?([^"]+)"?/.exec(disposition);
+    return { blob, filename: match?.[1] ?? 'chamadas.csv' };
+  },
+};
+
+// ─── SMS ──────────────────────────────────────────────────────────────────────
+
+import type { SmsMessage, SmsCampaign, SmsConfig, SmsStatus } from '@/types';
+
+export const smsApi = {
+  config: () => get<SmsConfig>('/tenant/sms/config'),
+
+  list: async (params?: { page?: number; status?: string }) => {
+    const page = params?.page ?? 1;
+    const raw = await get<{ messages: SmsMessage[]; total: number }>(
+      `/tenant/sms${qs({ ...pageRange(page), status: params?.status })}`,
+    );
+    return toPaginated(raw.messages, raw.total, page);
+  },
+
+  preview: (body: string) => post<{ segments: number; costCents: number; chars: number }>('/tenant/sms/preview', { body }),
+
+  send: (data: { to: string; body: string; contactId?: string }) =>
+    post<{ sms: { id: string; status: SmsStatus; segments: number; costCents: number } }>('/tenant/sms', data),
+
+  // Campanhas
+  campaigns: () => get<{ campaigns: SmsCampaign[] }>('/tenant/sms/campaigns').then((r) => r.campaigns),
+
+  campaign: (id: string) => get<{ campaign: SmsCampaign }>(`/tenant/sms/campaigns/${id}`).then((r) => r.campaign),
+
+  createCampaign: (data: { name: string; body: string; contactIds?: string[]; throttlePerMinute?: number }) =>
+    post<{ id: string }>('/tenant/sms/campaigns', data),
+
+  addCampaignContacts: (id: string, contactIds: string[]) =>
+    post<{ added: number }>(`/tenant/sms/campaigns/${id}/contacts`, { contactIds }),
+
+  startCampaign: (id: string) => post<{ ok: boolean }>(`/tenant/sms/campaigns/${id}/start`),
+
+  cancelCampaign: (id: string) => post<{ ok: boolean }>(`/tenant/sms/campaigns/${id}/cancel`),
+};
 
 export const settingsApi = {
   get: () => get<TenantSettings>('/tenant/settings'),

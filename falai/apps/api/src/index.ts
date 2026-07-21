@@ -38,6 +38,9 @@ import { tenantBillingRoutes } from "./routes/tenant/billing.js";
 import { tenantApiKeysRoutes } from "./routes/tenant/api-keys.js";
 import { tenantWebhookEventsRoutes } from "./routes/tenant/webhook-events.js";
 import { tenantSettingsRoutes } from "./routes/tenant/settings.js";
+import { tenantEventsRoutes } from "./routes/tenant/events.js";
+import { tenantReportsRoutes } from "./routes/tenant/reports.js";
+import { tenantSmsRoutes } from "./routes/tenant/sms.js";
 import { adminAuditRoutes } from "./routes/admin/audit.js";
 import { adminDashboardRoutes } from "./routes/admin/dashboard.js";
 import { adminFinanceRoutes } from "./routes/admin/finance.js";
@@ -49,8 +52,10 @@ import { v1ContactsRoutes } from "./routes/v1/contacts.js";
 import { v1CampaignsRoutes } from "./routes/v1/campaigns.js";
 import { v1WalletRoutes } from "./routes/v1/wallet.js";
 import { v1OtpRoutes } from "./routes/v1/otp.js";
+import { v1SmsRoutes } from "./routes/v1/sms.js";
 import { yeastarWebhookRoutes } from "./routes/webhooks/yeastar.js";
 import { pbxWebhookRoutes } from "./routes/webhooks/pbx.js";
+import { smsWebhookRoutes } from "./routes/webhooks/sms.js";
 import { registerYeastarWebSocket } from "./websocket/yeastar.js";
 
 declare module "fastify" {
@@ -95,6 +100,10 @@ async function buildApp() {
   await fastify.register(authPlugin);
   await fastify.register(auditPlugin);
   await fastify.register(tenantAuthPlugin);
+
+  // Hub de "screen pop" (chamadas a entrar → push SSE para o CRM)
+  const { default: incomingCallsPlugin } = await import("./plugins/incomingCalls.js");
+  await fastify.register(incomingCallsPlugin);
 
   // API key auth plugin (provides verifyScope decorator)
   const { default: apiKeyAuthPlugin } = await import("./plugins/apiKeyAuth.js");
@@ -159,6 +168,9 @@ async function buildApp() {
   await fastify.register(tenantApiKeysRoutes);
   await fastify.register(tenantWebhookEventsRoutes);
   await fastify.register(tenantSettingsRoutes);
+  await fastify.register(tenantEventsRoutes);
+  await fastify.register(tenantReportsRoutes);
+  await fastify.register(tenantSmsRoutes);
 
   // ── Public API v1 (API key authenticated, per-key rate limiting) ─────────
   await fastify.register(async (v1) => {
@@ -178,11 +190,13 @@ async function buildApp() {
     await v1.register(v1CampaignsRoutes);
     await v1.register(v1WalletRoutes);
     await v1.register(v1OtpRoutes);
+    await v1.register(v1SmsRoutes);
   });
 
   // ── Webhooks ────────────────────────────────────────────────────────────
   await fastify.register(yeastarWebhookRoutes, { prefix: "/webhooks/yeastar" });
   await fastify.register(pbxWebhookRoutes, { prefix: "/webhooks/pbx" });
+  await fastify.register(smsWebhookRoutes, { prefix: "/webhooks/sms" });
   await fastify.register(proxypayWebhookRoutes, { prefix: "/webhooks/proxypay" });
 
   // ── WebSocket ──────────────────────────────────────────────────────────

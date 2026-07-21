@@ -168,6 +168,15 @@ export const tenantsApi = {
 
   resetUserPassword: (id: string, userId: string, password: string) =>
     post<{ ok: boolean }>(`/admin/tenants/${id}/users/${userId}/reset-password`, { password }),
+
+  // SMS (gateway Futurix — configurado por cliente)
+  smsConfig: (id: string) =>
+    get<{ enabled: boolean; senderId: string | null; apiKeySet: boolean; priceSegmentCents: number | null; planPriceSegmentCents: number }>(
+      `/admin/tenants/${id}/sms`,
+    ),
+
+  saveSmsConfig: (id: string, data: { apiKey?: string; senderId?: string; priceSegmentCents?: number }) =>
+    put<{ ok: boolean }>(`/admin/tenants/${id}/sms`, data),
 };
 
 // ─── Agents (Moderation) ─────────────────────────────────────────────────────
@@ -204,9 +213,11 @@ interface RawPlan {
   productType: ProductType;
   aiAgentsEnabled: boolean;
   clinicEnabled: boolean;
+  smsEnabled: boolean;
   billingMode: BillingMode;
   pricePerMinuteCents: number;
   pricePerCallCents: number;
+  pricePerSmsCents: number;
   monthlyFeeCents: number;
   maxAgents: number;
   maxConcurrent: number;
@@ -219,9 +230,11 @@ const toPlan = (p: RawPlan): Plan => ({
   productType: p.productType ?? 'VOICE_AI',
   aiAgentsEnabled: p.aiAgentsEnabled ?? true,
   clinicEnabled: p.clinicEnabled ?? false,
+  smsEnabled: p.smsEnabled ?? false,
   billingMode: p.billingMode ?? 'PER_MINUTE',
   pricePerMinCents: p.pricePerMinuteCents,
   pricePerCallCents: p.pricePerCallCents ?? 0,
+  pricePerSmsCents: p.pricePerSmsCents ?? 0,
   monthlyFeeCents: p.monthlyFeeCents,
   maxAgents: p.maxAgents,
   maxConcurrentCalls: p.maxConcurrent,
@@ -233,9 +246,11 @@ const toRawPlanBody = (data: Partial<Omit<Plan, 'id' | 'isActive'>>) => ({
   ...(data.productType !== undefined && { productType: data.productType }),
   ...(data.aiAgentsEnabled !== undefined && { aiAgentsEnabled: data.aiAgentsEnabled }),
   ...(data.clinicEnabled !== undefined && { clinicEnabled: data.clinicEnabled }),
+  ...(data.smsEnabled !== undefined && { smsEnabled: data.smsEnabled }),
   ...(data.billingMode !== undefined && { billingMode: data.billingMode }),
   ...(data.pricePerMinCents !== undefined && { pricePerMinuteCents: data.pricePerMinCents }),
   ...(data.pricePerCallCents !== undefined && { pricePerCallCents: data.pricePerCallCents }),
+  ...(data.pricePerSmsCents !== undefined && { pricePerSmsCents: data.pricePerSmsCents }),
   ...(data.monthlyFeeCents !== undefined && { monthlyFeeCents: data.monthlyFeeCents }),
   ...(data.maxAgents !== undefined && { maxAgents: data.maxAgents }),
   ...(data.maxConcurrentCalls !== undefined && { maxConcurrent: data.maxConcurrentCalls }),

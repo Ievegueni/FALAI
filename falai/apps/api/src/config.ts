@@ -24,6 +24,8 @@ const envSchema = z.object({
   ELEVENLABS_API_KEY: z.string().optional(),
   PROXYPAY_API_KEY: z.string().optional(),
   FUTURIX_SMS_API_KEY: z.string().optional(),
+  FUTURIX_SMS_BASE_URL: z.string().optional(),
+  FUTURIX_SMS_STUB_MODE: z.coerce.boolean().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

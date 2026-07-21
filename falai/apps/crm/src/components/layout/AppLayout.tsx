@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Sidebar } from './Sidebar';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
+import { IncomingCallBanner } from '@/components/calls/IncomingCallBanner';
 
 export function AppLayout() {
   const { user, loading } = useAuth();
@@ -19,6 +20,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen bg-gray-50">
+      <IncomingCallBanner />
       <Sidebar />
       <div className="flex-1 ml-60 overflow-y-auto">
         <Outlet />

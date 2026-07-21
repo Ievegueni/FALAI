@@ -19,6 +19,7 @@ const ALL_SCOPES = [
   { key: 'calls:write', labelKey: 'developers.scopes.callsWrite' },
   { key: 'calls:read', labelKey: 'developers.scopes.callsRead' },
   { key: 'otp:call', labelKey: 'developers.scopes.otpCall' },
+  { key: 'sms:send', labelKey: 'developers.scopes.smsSend' },
   { key: 'contacts:write', labelKey: 'developers.scopes.contactsWrite' },
   { key: 'contacts:read', labelKey: 'developers.scopes.contactsRead' },
   { key: 'campaigns:write', labelKey: 'developers.scopes.campaignsWrite' },
@@ -352,6 +353,24 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
   "to": "+244923000000",
   "status": "dialing",
   "message": "Chamada iniciada. O código será ditado assim que o destinatário atender."
+}`,
+      },
+    ],
+  },
+  {
+    labelKey: 'developers.groups.sms',
+    endpoints: [
+      {
+        method: 'POST', path: '/v1/sms/send', descKey: 'developers.ep.smsSend', scope: 'sms:send',
+        body: `{
+  "to": "244912345678",    // obrigatório — número com indicativo
+  "body": "Olá! Mensagem de teste."  // obrigatório
+}`,
+        response: `{
+  "id": "sms_abc123",
+  "status": "SENT",
+  "segments": 1,
+  "costCents": 500
 }`,
       },
     ],

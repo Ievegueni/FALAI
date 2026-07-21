@@ -20,6 +20,8 @@ import { CallsPage } from '@/pages/calls/CallsPage';
 import { NewCallPage } from '@/pages/calls/NewCallPage';
 import { DirectCallPage } from '@/pages/calls/DirectCallPage';
 import { CallDetailPage } from '@/pages/calls/CallDetailPage';
+import { ReportsPage } from '@/pages/reports/ReportsPage';
+import { SmsPage } from '@/pages/sms/SmsPage';
 import { CampaignsPage } from '@/pages/campaigns/CampaignsPage';
 import { CampaignFormPage } from '@/pages/campaigns/CampaignFormPage';
 import { CampaignDetailPage } from '@/pages/campaigns/CampaignDetailPage';
@@ -63,6 +65,10 @@ export default function App() {
                 <Route path="/calls/new" element={<RequireFeature feature="agents"><NewCallPage /></RequireFeature>} />
                 <Route path="/calls/direct" element={<RequireFeature feature="directCall"><DirectCallPage /></RequireFeature>} />
                 <Route path="/calls/:id" element={<RequireFeature feature="calls"><CallDetailPage /></RequireFeature>} />
+
+                <Route path="/reports" element={<RequireFeature feature="calls"><ReportsPage /></RequireFeature>} />
+
+                <Route path="/sms" element={<SmsPage />} />
 
                 <Route path="/campaigns" element={<RequireFeature feature="campaigns"><CampaignsPage /></RequireFeature>} />
                 <Route path="/campaigns/new" element={<RequireFeature feature="campaigns"><CampaignFormPage /></RequireFeature>} />

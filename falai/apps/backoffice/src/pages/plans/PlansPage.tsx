@@ -26,6 +26,8 @@ function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
   const [productType, setProductType] = useState<ProductType>(plan?.productType ?? 'VOICE_AI');
   const [aiAgentsEnabled, setAiAgentsEnabled] = useState(plan?.aiAgentsEnabled ?? true);
   const [clinicEnabled, setClinicEnabled] = useState(plan?.clinicEnabled ?? false);
+  const [smsEnabled, setSmsEnabled] = useState(plan?.smsEnabled ?? false);
+  const [pricePerSms, setPricePerSms] = useState(plan ? String((plan.pricePerSmsCents ?? 0) / 100) : '');
   const [billingMode, setBillingMode] = useState<BillingMode>(plan?.billingMode ?? 'PER_MINUTE');
   const [pricePerMin, setPricePerMin] = useState(plan ? String(plan.pricePerMinCents / 100) : '');
   const [pricePerCall, setPricePerCall] = useState(plan ? String((plan.pricePerCallCents ?? 0) / 100) : '');
@@ -40,9 +42,11 @@ function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
         productType,
         aiAgentsEnabled,
         clinicEnabled,
+        smsEnabled,
         billingMode,
         pricePerMinCents: Math.round(parseFloat(pricePerMin || '0') * 100),
         pricePerCallCents: Math.round(parseFloat(pricePerCall || '0') * 100),
+        pricePerSmsCents: Math.round(parseFloat(pricePerSms || '0') * 100),
         monthlyFeeCents: Math.round(parseFloat(monthlyFee) * 100),
         maxConcurrentCalls: parseInt(maxConcurrent),
         maxAgents: parseInt(maxAgents),
@@ -94,6 +98,24 @@ function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
           />
           Módulo Clínica (ficha do paciente: consultas, alergias, notas)
         </label>
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={smsEnabled}
+            onChange={(e) => setSmsEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          SMS (o cliente pode enviar SMS via Futurix)
+        </label>
+        {smsEnabled && (
+          <Input
+            label="Preço por segmento de SMS (Kz)"
+            type="number"
+            value={pricePerSms}
+            onChange={(e) => setPricePerSms(e.target.value)}
+            hint="Default do plano; pode ser sobreposto por cliente. Definido pela Futurix."
+          />
+        )}
         <Select label="Modo de cobrança" value={billingMode} onChange={(e) => setBillingMode(e.target.value as BillingMode)}>
           <option value="PER_MINUTE">Por minuto (arredonda ao minuto)</option>
           <option value="PER_SECOND">Por segundo (tarifa/min ÷ 60)</option>

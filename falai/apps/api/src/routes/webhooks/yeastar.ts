@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@falai/db";
 import type { YeastarAdapter } from "@falai/providers";
+import { ingestSharedPbxEvent } from "../../services/incomingCalls.service.js";
 
 const WEBHOOK_SECRET_KEY = "yeastar.webhook_secret";
 
@@ -45,6 +46,11 @@ export const yeastarWebhookRoutes: FastifyPluginAsync = async (fastify) => {
 
       const yeastar = fastify.yeastar as YeastarAdapter;
       yeastar.handleWebhookEvent(payload);
+
+      // Chamada a entrar: screen pop + registo ao vivo
+      void ingestSharedPbxEvent(fastify, payload).catch((err) =>
+        fastify.log.warn({ err }, "yeastar.webhook.inbound_ingest_failed")
+      );
 
       return reply.status(200).send({ errcode: 0, errmsg: "OK" });
     }

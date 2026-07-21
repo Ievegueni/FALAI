@@ -160,7 +160,8 @@ export function ContactsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
+  // Pré-preenche a pesquisa a partir do URL (ex.: screen pop de chamada a entrar → /contacts?search=+244…)
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') ?? '');
   const [showCreate, setShowCreate] = useState(false);
 
   const { data, isLoading } = useQuery({

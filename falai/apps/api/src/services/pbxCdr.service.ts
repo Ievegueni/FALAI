@@ -118,6 +118,26 @@ async function upsertRecords(tenantId: string, records: YeastarCdrRecord[]): Pro
         });
       })
   );
+
+  // Registos "ao vivo" de entrada já terminados passam a ser cobertos pelo CDR
+  // (fonte autoritativa) — remove-os para não duplicar na lista do CRM.
+  await prisma.call.deleteMany({
+    where: { tenantId, kind: "INBOUND", status: { notIn: ["RINGING", "IN_PROGRESS"] } },
+  });
+}
+
+/** Registos de entrada ainda em curso (toque/em conversa), para fundir na lista/dashboard BYO-PBX. */
+export async function activeInboundCalls(tenantId: string) {
+  return prisma.call.findMany({
+    where: { tenantId, kind: "INBOUND", status: { in: ["RINGING", "IN_PROGRESS"] } },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
+      outcome: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
+      agent: { select: { name: true } },
+      contact: { select: { name: true } },
+    },
+  });
 }
 
 // ── Mapeamento para o shape de Call que o CRM consome ────────────────────────
@@ -160,12 +180,21 @@ function otherParty(c: PbxCallRow): string {
   return c.callType === "Inbound" ? c.fromNumber : c.toNumber;
 }
 
+const DIRECTION_KEY: Record<string, string> = {
+  Inbound: "inbound",
+  Outbound: "outbound",
+  Internal: "internal",
+};
+
 export function mapPbxCall(c: PbxCallRow) {
   return {
     id: c.id,
     agentId: "",
+    direction: DIRECTION_KEY[c.callType] ?? "outbound",
     contactId: null,
     to: otherParty(c),
+    from: c.fromNumber,
+    party: otherParty(c),
     status: pbxCallStatus(c.disposition),
     outcome: c.disposition,
     durationSecs: c.talkSecs || c.durationSecs,

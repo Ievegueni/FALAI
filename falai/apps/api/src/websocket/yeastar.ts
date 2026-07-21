@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "@falai/db";
 import type { YeastarAdapter } from "@falai/providers";
+import { ingestSharedPbxEvent } from "../services/incomingCalls.service.js";
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -46,6 +47,11 @@ export function registerYeastarWebSocket(fastify: FastifyInstance): void {
 
         // Pass to adapter for event normalisation
         yeastar.handleRawEvent(payload);
+
+        // Chamada a entrar: screen pop + registo ao vivo (resolve o tenant pela extensão)
+        void ingestSharedPbxEvent(fastify, payload).catch((err) =>
+          fastify.log.warn({ err }, "yeastar.ws.inbound_ingest_failed")
+        );
 
         // Log errors
         const code = payload["event"] as number | undefined;

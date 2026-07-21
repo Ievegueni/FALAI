@@ -7,7 +7,7 @@ export type AgentReviewStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'BL
 export type CallStatus =
   | 'QUEUED' | 'DIALING' | 'RINGING' | 'IN_PROGRESS'
   | 'COMPLETED' | 'NO_ANSWER' | 'FAILED' | 'CANCELLED' | 'ESCALATED';
-export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
+export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
 
 export interface AdminUser {
   id: string;
@@ -35,9 +35,11 @@ export interface Plan {
   productType: ProductType;
   aiAgentsEnabled: boolean;
   clinicEnabled: boolean;
+  smsEnabled: boolean;
   billingMode: BillingMode;
   pricePerMinCents: number;
   pricePerCallCents: number;
+  pricePerSmsCents: number;
   monthlyFeeCents: number;
   maxAgents: number;
   maxConcurrentCalls: number;

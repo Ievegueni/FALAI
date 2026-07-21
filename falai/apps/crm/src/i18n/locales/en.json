@@ -37,7 +37,9 @@
     "developers": "Developers",
     "settings": "Settings",
     "pbx": "PBX Integration",
-    "logout": "Sign out"
+    "logout": "Sign out",
+    "reports": "Reports",
+    "sms": "SMS"
   },
   "login": {
     "subtitle": "Sign in to your account",
@@ -116,9 +118,18 @@
     "CALL_CHARGE": "Call charge",
     "REFUND": "Refund",
     "ADJUSTMENT": "Adjustment",
-    "MONTHLY_FEE": "Monthly fee"
+    "MONTHLY_FEE": "Monthly fee",
+    "SMS_CHARGE": "SMS"
   },
-  "days": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+  "days": [
+    "Sun",
+    "Mon",
+    "Tue",
+    "Wed",
+    "Thu",
+    "Fri",
+    "Sat"
+  ],
   "dashboard": {
     "newCall": "New call",
     "loadError": "Could not load the data. Please try again.",
@@ -456,7 +467,8 @@
       "variablesUsed": "Variables used",
       "otpVerification": "OTP verification",
       "directCall": "Direct call"
-    }
+    },
+    "inbound": "Inbound"
   },
   "wallet": {
     "title": "Wallet",
@@ -629,7 +641,8 @@
       "campaignsWrite": "Create campaigns",
       "campaignsRead": "Read campaigns",
       "walletRead": "Read balance",
-      "agentsRead": "Read agents"
+      "agentsRead": "Read agents",
+      "smsSend": "Send SMS"
     },
     "groups": {
       "calls": "Calls",
@@ -637,7 +650,8 @@
       "agents": "Agents",
       "contacts": "Contacts",
       "campaigns": "Campaigns",
-      "wallet": "Wallet"
+      "wallet": "Wallet",
+      "sms": "SMS"
     },
     "ep": {
       "callsCreate": "Start a voice call with an AI agent",
@@ -654,7 +668,8 @@
       "campaignsCreate": "Create a new automatic call campaign",
       "campaignsList": "List the tenant's campaigns",
       "campaignsGet": "Detail and metrics of a campaign",
-      "walletGet": "Current balance and latest transactions"
+      "walletGet": "Current balance and latest transactions",
+      "smsSend": "Send an SMS"
     },
     "param": {
       "callId": "Call ID",
@@ -686,5 +701,67 @@
       "e429": "Too many requests. Wait and try again. The `Retry-After` header indicates the seconds.",
       "e502": "Telephony provider failure. Try again after a few seconds."
     }
+  },
+  "incomingCall": {
+    "title": "Incoming call",
+    "open": "Open contact",
+    "find": "Find contact",
+    "unknownContact": "Unknown contact"
+  },
+  "reports": {
+    "from": "From",
+    "to": "To",
+    "total": "Total",
+    "inbound": "Inbound",
+    "outbound": "Outbound",
+    "answered": "Answered",
+    "missed": "Missed",
+    "avgDuration": "Avg. duration",
+    "byDay": "Calls per day",
+    "byOutcome": "By outcome",
+    "exportCsv": "Export CSV",
+    "pdf": "Print / PDF",
+    "exportError": "Export failed",
+    "noData": "No data in range",
+    "smsSent": "SMS sent",
+    "smsFailed": "SMS failed",
+    "smsCost": "SMS cost"
+  },
+  "sms": {
+    "notEnabled": "Your plan does not include SMS. Contact support.",
+    "notConfigured": "SMS is not yet configured for your account. Contact support.",
+    "tabSend": "Send",
+    "tabHistory": "History",
+    "tabCampaigns": "Campaigns",
+    "to": "To",
+    "message": "Message",
+    "messagePlaceholder": "Write your message…",
+    "segments": "{{count}} segment(s)",
+    "chars": "characters",
+    "estCost": "Estimated cost",
+    "send": "Send SMS",
+    "sent": "SMS sent",
+    "sendError": "Failed to send SMS",
+    "cost": "Cost",
+    "emptyTitle": "No messages",
+    "emptyDescription": "Sent messages appear here.",
+    "status": {
+      "QUEUED": "Queued",
+      "SENT": "Sent",
+      "DELIVERED": "Delivered",
+      "FAILED": "Failed"
+    },
+    "newCampaign": "New campaign",
+    "campaignName": "Campaign name",
+    "templatePlaceholder": "Hi {name}, …",
+    "templateHint": "Use {name}, {phone} or contact attributes in braces.",
+    "campaignCreated": "Campaign created",
+    "campaignStarted": "Campaign started",
+    "startCampaign": "Start",
+    "noCampaigns": "No campaigns",
+    "noCampaignsDesc": "Create a campaign to send bulk SMS.",
+    "recipients": "{{count}} recipient(s)",
+    "sentCount": "{{count}} sent",
+    "failedCount": "{{count}} failed"
   }
 }

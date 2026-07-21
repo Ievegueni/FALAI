@@ -60,6 +60,7 @@ export interface Plan {
   productType?: ProductType;
   aiAgentsEnabled?: boolean;
   clinicEnabled?: boolean;
+  smsEnabled?: boolean;
   pricePerMinuteCents: number;
   monthlyFeeCents: number;
   maxAgents: number;
@@ -169,14 +170,58 @@ export type CallStatus =
   | 'CANCELLED'
   | 'ESCALATED';
 
-export type CallKind = 'AI_AGENT' | 'DIRECT' | 'OTP';
+export type SmsStatus = 'QUEUED' | 'SENT' | 'DELIVERED' | 'FAILED';
+
+export interface SmsMessage {
+  id: string;
+  toNumber: string;
+  body: string;
+  segments: number;
+  status: SmsStatus;
+  costCents: number;
+  senderId: string | null;
+  campaignId: string | null;
+  failReason: string | null;
+  createdAt: string;
+  contact: { name: string | null } | null;
+}
+
+export interface SmsCampaign {
+  id: string;
+  name: string;
+  body: string;
+  status: CampaignStatus;
+  totalRecipients: number;
+  sentCount: number;
+  failedCount: number;
+  costCents: number;
+  throttlePerMinute?: number;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt: string | null;
+}
+
+export interface SmsConfig {
+  enabled: boolean;
+  configured: boolean;
+  senderId: string | null;
+  pricePerSegmentCents: number;
+}
+
+export type CallKind = 'AI_AGENT' | 'DIRECT' | 'OTP' | 'INBOUND';
+
+export type CallDirection = 'inbound' | 'outbound' | 'internal';
 
 export interface Call {
   id: string;
   agentId: string | null;
   kind?: CallKind;
+  direction?: CallDirection;
   contactId: string | null;
   to: string;
+  from?: string | null;
+  /** Número do interveniente externo (entrada → origem; saída → destino). */
+  party?: string;
   status: CallStatus;
   outcome: string | null;
   durationSecs: number | null;
@@ -243,7 +288,7 @@ export interface RetryPolicy {
 
 // ─── Wallet ──────────────────────────────────────────────────────────────────
 
-export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
+export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
 
 export interface WalletTransaction {
   id: string;

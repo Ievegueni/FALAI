@@ -37,7 +37,9 @@
     "developers": "Developers",
     "settings": "Definições",
     "pbx": "Integração PBX",
-    "logout": "Terminar sessão"
+    "logout": "Terminar sessão",
+    "reports": "Relatórios",
+    "sms": "SMS"
   },
   "login": {
     "subtitle": "Inicie sessão na sua conta",
@@ -116,9 +118,18 @@
     "CALL_CHARGE": "Débito de chamada",
     "REFUND": "Reembolso",
     "ADJUSTMENT": "Ajuste",
-    "MONTHLY_FEE": "Fee mensal"
+    "MONTHLY_FEE": "Fee mensal",
+    "SMS_CHARGE": "SMS"
   },
-  "days": ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"],
+  "days": [
+    "Dom",
+    "Seg",
+    "Ter",
+    "Qua",
+    "Qui",
+    "Sex",
+    "Sáb"
+  ],
   "dashboard": {
     "newCall": "Nova chamada",
     "loadError": "Não foi possível carregar os dados. Tente novamente.",
@@ -456,7 +467,8 @@
       "variablesUsed": "Variáveis usadas",
       "otpVerification": "Verificação OTP",
       "directCall": "Chamada directa"
-    }
+    },
+    "inbound": "Entrada"
   },
   "wallet": {
     "title": "Carteira",
@@ -629,7 +641,8 @@
       "campaignsWrite": "Criar campanhas",
       "campaignsRead": "Ler campanhas",
       "walletRead": "Ler saldo",
-      "agentsRead": "Ler agentes"
+      "agentsRead": "Ler agentes",
+      "smsSend": "Enviar SMS"
     },
     "groups": {
       "calls": "Chamadas",
@@ -637,7 +650,8 @@
       "agents": "Agentes",
       "contacts": "Contactos",
       "campaigns": "Campanhas",
-      "wallet": "Carteira"
+      "wallet": "Carteira",
+      "sms": "SMS"
     },
     "ep": {
       "callsCreate": "Iniciar uma chamada de voz com um agente IA",
@@ -654,7 +668,8 @@
       "campaignsCreate": "Criar uma nova campanha de chamadas automáticas",
       "campaignsList": "Listar campanhas do tenant",
       "campaignsGet": "Detalhe e métricas de uma campanha",
-      "walletGet": "Saldo actual e últimos movimentos"
+      "walletGet": "Saldo actual e últimos movimentos",
+      "smsSend": "Enviar um SMS"
     },
     "param": {
       "callId": "ID da chamada",
@@ -686,5 +701,67 @@
       "e429": "Demasiados pedidos. Aguarda e tenta novamente. Header `Retry-After` indica os segundos.",
       "e502": "Falha no operador de telefonia. Tenta novamente após alguns segundos."
     }
+  },
+  "incomingCall": {
+    "title": "Chamada a entrar",
+    "open": "Abrir contacto",
+    "find": "Procurar contacto",
+    "unknownContact": "Contacto desconhecido"
+  },
+  "reports": {
+    "from": "De",
+    "to": "Até",
+    "total": "Total",
+    "inbound": "Entradas",
+    "outbound": "Saídas",
+    "answered": "Atendidas",
+    "missed": "Perdidas",
+    "avgDuration": "Duração média",
+    "byDay": "Chamadas por dia",
+    "byOutcome": "Por resultado",
+    "exportCsv": "Exportar CSV",
+    "pdf": "Imprimir / PDF",
+    "exportError": "Erro ao exportar",
+    "noData": "Sem dados no período",
+    "smsSent": "SMS enviados",
+    "smsFailed": "SMS falhados",
+    "smsCost": "Custo SMS"
+  },
+  "sms": {
+    "notEnabled": "O seu plano não inclui SMS. Contacte o suporte.",
+    "notConfigured": "O SMS ainda não foi configurado para a sua conta. Contacte o suporte.",
+    "tabSend": "Enviar",
+    "tabHistory": "Histórico",
+    "tabCampaigns": "Campanhas",
+    "to": "Para",
+    "message": "Mensagem",
+    "messagePlaceholder": "Escreva a sua mensagem…",
+    "segments": "{{count}} segmento(s)",
+    "chars": "caracteres",
+    "estCost": "Custo estimado",
+    "send": "Enviar SMS",
+    "sent": "SMS enviado",
+    "sendError": "Erro ao enviar o SMS",
+    "cost": "Custo",
+    "emptyTitle": "Sem mensagens",
+    "emptyDescription": "As mensagens enviadas aparecem aqui.",
+    "status": {
+      "QUEUED": "Na fila",
+      "SENT": "Enviado",
+      "DELIVERED": "Entregue",
+      "FAILED": "Falhou"
+    },
+    "newCampaign": "Nova campanha",
+    "campaignName": "Nome da campanha",
+    "templatePlaceholder": "Olá {name}, …",
+    "templateHint": "Use {name}, {phone} ou atributos do contacto entre chavetas.",
+    "campaignCreated": "Campanha criada",
+    "campaignStarted": "Campanha iniciada",
+    "startCampaign": "Iniciar",
+    "noCampaigns": "Sem campanhas",
+    "noCampaignsDesc": "Crie uma campanha para enviar SMS em massa.",
+    "recipients": "{{count}} destinatário(s)",
+    "sentCount": "{{count}} enviado(s)",
+    "failedCount": "{{count}} falhado(s)"
   }
 }

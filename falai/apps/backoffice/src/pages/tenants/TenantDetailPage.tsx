@@ -275,12 +275,15 @@ export function TenantDetailPage() {
           { key: 'users', label: 'Utilizadores' },
           { key: 'lines', label: 'Linhas' },
           { key: 'features', label: 'Funcionalidades' },
+          { key: 'sms', label: 'SMS' },
           { key: 'calls', label: 'Chamadas' },
           { key: 'wallet', label: 'Carteira' },
         ]}
         active={tab}
         onChange={setTab}
       />
+
+      {tab === 'sms' && <SmsConfigTab tenantId={id!} />}
 
       {tab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -742,5 +745,83 @@ export function TenantDetailPage() {
         </div>
       </Modal>
     </div>
+  );
+}
+
+// ─── Configuração de SMS (gateway Futurix, por cliente) ──────────────────────
+function SmsConfigTab({ tenantId }: { tenantId: string }) {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['tenant-sms', tenantId],
+    queryFn: () => tenantsApi.smsConfig(tenantId),
+  });
+
+  const [apiKey, setApiKey] = useState('');
+  const [senderId, setSenderId] = useState('');
+  const [price, setPrice] = useState('');
+
+  useEffect(() => {
+    if (data) {
+      setSenderId(data.senderId ?? '');
+      setPrice(data.priceSegmentCents != null ? String(data.priceSegmentCents) : '');
+    }
+  }, [data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      tenantsApi.saveSmsConfig(tenantId, {
+        ...(apiKey ? { apiKey } : {}),
+        senderId,
+        ...(price !== '' ? { priceSegmentCents: parseInt(price, 10) } : {}),
+      }),
+    onSuccess: () => {
+      toast.success('Configuração de SMS guardada');
+      setApiKey('');
+      void qc.invalidateQueries({ queryKey: ['tenant-sms', tenantId] });
+    },
+    onError: () => toast.error('Erro ao guardar'),
+  });
+
+  if (isLoading || !data) return <PageSpinner />;
+
+  return (
+    <Card className="max-w-xl space-y-4">
+      {!data.enabled && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          O plano deste cliente não tem SMS activado. Active-o no plano para o cliente poder enviar.
+        </div>
+      )}
+      <div>
+        <label className="text-sm font-medium text-gray-700">API Key Futurix</label>
+        <Input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder={data.apiKeySet ? '•••••••• (definida — deixe vazio para manter)' : 'Cole a API key da Futurix'}
+        />
+      </div>
+      <Input label="Sender ID" value={senderId} onChange={(e) => setSenderId(e.target.value)} placeholder="ex.: COMUNICA" />
+      <div>
+        <Input
+          label="Preço por segmento (cêntimos)"
+          type="number"
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          placeholder={`Default do plano: ${data.planPriceSegmentCents}`}
+        />
+        <p className="mt-1 text-xs text-gray-400">Vazio = usa o preço do plano. Definido pela Futurix.</p>
+      </div>
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+        <p className="font-medium text-gray-700">Delivery report</p>
+        <p className="mt-0.5">
+          Nas Definições da conta Futurix deste cliente, define o <code>webhook_url</code> para o endpoint
+          {' '}
+          <code className="rounded bg-gray-200 px-1 py-0.5">https://&lt;dominio-da-api&gt;/webhooks/sms</code>
+          {' '}— actualiza o estado das mensagens (Entregue/Falhou) automaticamente.
+        </p>
+      </div>
+      <Button onClick={() => save.mutate()} disabled={save.isPending}>Guardar</Button>
+    </Card>
   );
 }

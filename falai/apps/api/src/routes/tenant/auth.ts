@@ -20,7 +20,7 @@ const tenantClientSelect = {
   status: true,
   balanceCents: true,
   features: true,
-  plan: { select: { name: true, productType: true, aiAgentsEnabled: true, clinicEnabled: true, maxAgents: true, maxConcurrent: true } },
+  plan: { select: { name: true, productType: true, aiAgentsEnabled: true, clinicEnabled: true, smsEnabled: true, maxAgents: true, maxConcurrent: true } },
 } as const;
 
 // Substitui o campo `features` cru (overrides) pelas features efectivas calculadas

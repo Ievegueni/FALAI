@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import { syncCdrOnWebhook } from "../../services/pbxCdr.service.js";
+import { ingestTenantPbxEvent } from "../../services/incomingCalls.service.js";
 
 /**
  * Webhook por tenant para o produto CRM (BYO-PBX). Cada cliente configura o
@@ -24,6 +25,11 @@ export const pbxWebhookRoutes: FastifyPluginAsync = async (fastify) => {
 
       const payload = request.body ?? {};
       fastify.log.info({ tenantId: tenant.id, event: payload["event"] }, "pbx.webhook.received");
+
+      // Chamada a entrar: screen pop + registo ao vivo (token já identifica o tenant)
+      void ingestTenantPbxEvent(fastify, tenant.id, payload).catch((err) =>
+        fastify.log.warn({ err, tenantId: tenant.id }, "pbx.webhook.inbound_ingest_failed")
+      );
 
       // Dispara sync do CDR sem bloquear a resposta ao PBX
       void syncCdrOnWebhook(fastify, tenant.id);

@@ -37,7 +37,9 @@
     "developers": "开发者",
     "settings": "设置",
     "pbx": "PBX 集成",
-    "logout": "退出登录"
+    "logout": "退出登录",
+    "reports": "报告",
+    "sms": "短信"
   },
   "login": {
     "subtitle": "登录您的账户",
@@ -116,9 +118,18 @@
     "CALL_CHARGE": "通话扣费",
     "REFUND": "退款",
     "ADJUSTMENT": "调整",
-    "MONTHLY_FEE": "月费"
+    "MONTHLY_FEE": "月费",
+    "SMS_CHARGE": "短信"
   },
-  "days": ["日", "一", "二", "三", "四", "五", "六"],
+  "days": [
+    "日",
+    "一",
+    "二",
+    "三",
+    "四",
+    "五",
+    "六"
+  ],
   "dashboard": {
     "newCall": "新建通话",
     "loadError": "无法加载数据，请重试。",
@@ -456,7 +467,8 @@
       "variablesUsed": "使用的变量",
       "otpVerification": "OTP 验证",
       "directCall": "直接呼叫"
-    }
+    },
+    "inbound": "来电"
   },
   "wallet": {
     "title": "钱包",
@@ -629,7 +641,8 @@
       "campaignsWrite": "创建活动",
       "campaignsRead": "读取活动",
       "walletRead": "读取余额",
-      "agentsRead": "读取坐席"
+      "agentsRead": "读取坐席",
+      "smsSend": "发送短信"
     },
     "groups": {
       "calls": "通话",
@@ -637,7 +650,8 @@
       "agents": "坐席",
       "contacts": "联系人",
       "campaigns": "活动",
-      "wallet": "钱包"
+      "wallet": "钱包",
+      "sms": "短信"
     },
     "ep": {
       "callsCreate": "使用 AI 坐席发起语音通话",
@@ -654,7 +668,8 @@
       "campaignsCreate": "创建新的自动呼叫活动",
       "campaignsList": "列出租户的活动",
       "campaignsGet": "活动的详情和指标",
-      "walletGet": "当前余额和最近交易"
+      "walletGet": "当前余额和最近交易",
+      "smsSend": "发送一条短信"
     },
     "param": {
       "callId": "通话 ID",
@@ -686,5 +701,67 @@
       "e429": "请求过多。请稍候再试。`Retry-After` 请求头指示等待的秒数。",
       "e502": "电话运营商故障。请几秒后重试。"
     }
+  },
+  "incomingCall": {
+    "title": "来电",
+    "open": "打开联系人",
+    "find": "查找联系人",
+    "unknownContact": "未知联系人"
+  },
+  "reports": {
+    "from": "从",
+    "to": "至",
+    "total": "总计",
+    "inbound": "来电",
+    "outbound": "去电",
+    "answered": "已接听",
+    "missed": "未接",
+    "avgDuration": "平均时长",
+    "byDay": "每日通话",
+    "byOutcome": "按结果",
+    "exportCsv": "导出 CSV",
+    "pdf": "打印 / PDF",
+    "exportError": "导出失败",
+    "noData": "此期间无数据",
+    "smsSent": "已发送短信",
+    "smsFailed": "失败短信",
+    "smsCost": "短信费用"
+  },
+  "sms": {
+    "notEnabled": "您的套餐不包含短信。请联系支持。",
+    "notConfigured": "您的账户尚未配置短信。请联系支持。",
+    "tabSend": "发送",
+    "tabHistory": "历史",
+    "tabCampaigns": "活动",
+    "to": "收件人",
+    "message": "消息",
+    "messagePlaceholder": "输入您的消息…",
+    "segments": "{{count}} 条",
+    "chars": "字符",
+    "estCost": "预计费用",
+    "send": "发送短信",
+    "sent": "短信已发送",
+    "sendError": "发送短信失败",
+    "cost": "费用",
+    "emptyTitle": "暂无消息",
+    "emptyDescription": "已发送的消息显示在此。",
+    "status": {
+      "QUEUED": "排队中",
+      "SENT": "已发送",
+      "DELIVERED": "已送达",
+      "FAILED": "失败"
+    },
+    "newCampaign": "新活动",
+    "campaignName": "活动名称",
+    "templatePlaceholder": "你好 {name}，…",
+    "templateHint": "可使用 {name}、{phone} 或大括号内的联系人属性。",
+    "campaignCreated": "活动已创建",
+    "campaignStarted": "活动已开始",
+    "startCampaign": "开始",
+    "noCampaigns": "暂无活动",
+    "noCampaignsDesc": "创建活动以批量发送短信。",
+    "recipients": "{{count}} 位收件人",
+    "sentCount": "已发送 {{count}}",
+    "failedCount": "失败 {{count}}"
   }
 }

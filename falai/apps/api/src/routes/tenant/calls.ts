@@ -5,7 +5,7 @@ import { YeastarAdapter } from "@falai/providers";
 import { reserveBalance, computeReservation, effectiveBillingMode } from "../../services/billing.service.js";
 import { getTenantTelephony } from "../../services/tenantTelephony.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
-import { ensureCdrSynced, mapPbxCall, PBX_CALL_SELECT } from "../../services/pbxCdr.service.js";
+import { ensureCdrSynced, mapPbxCall, PBX_CALL_SELECT, activeInboundCalls } from "../../services/pbxCdr.service.js";
 
 const createSchema = z.object({
   agentId: z.string().min(1),
@@ -31,6 +31,7 @@ type CallRow = {
   kind?: string;
   contactId: string | null;
   toNumber: string;
+  fromNumber?: string | null;
   status: string;
   outcome: string | null;
   durationSecs: number;
@@ -55,12 +56,17 @@ type CallRow = {
 };
 
 function mapCall(c: CallRow) {
+  const direction = c.kind === "INBOUND" ? "inbound" : "outbound";
   return {
     id: c.id,
     agentId: c.agentId,
     kind: c.kind ?? "AI_AGENT",
+    direction,
     contactId: c.contactId,
     to: c.toNumber,
+    from: c.fromNumber ?? null,
+    // Número do interveniente externo (entrada → origem; saída → destino)
+    party: direction === "inbound" ? c.fromNumber ?? c.toNumber : c.toNumber,
     status: c.status,
     outcome: c.outcome,
     durationSecs: c.durationSecs,
@@ -103,7 +109,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       if (isCrmPbx) {
         const take = parseInt(limit, 10);
         const skip = parseInt(offset, 10);
-        const [rows, total] = await Promise.all([
+        const [rows, total, liveRows] = await Promise.all([
           prisma.pbxCall.findMany({
             where: { tenantId },
             orderBy: { startedAt: "desc" },
@@ -112,8 +118,11 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
             select: PBX_CALL_SELECT,
           }),
           prisma.pbxCall.count({ where: { tenantId } }),
+          // Chamadas de entrada em curso ainda sem CDR — só na 1ª página e sem filtro de estado
+          skip === 0 && !status ? activeInboundCalls(tenantId) : Promise.resolve([]),
         ]);
-        return { calls: rows.map(mapPbxCall), total };
+        const live = liveRows.map(mapCall);
+        return { calls: [...live, ...rows.map(mapPbxCall)], total: total + live.length };
       }
 
       const where: Prisma.CallWhereInput = { tenantId };
@@ -128,7 +137,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
           take: parseInt(limit, 10),
           skip: parseInt(offset, 10),
           select: {
-            id: true, agentId: true, kind: true, contactId: true, toNumber: true, status: true,
+            id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
             outcome: true, durationSecs: true, costCents: true,
             startedAt: true, endedAt: true, createdAt: true,
             agent: { select: { name: true } },
@@ -148,7 +157,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     const call = await prisma.call.findFirst({
       where: { id: request.params.id, tenantId },
       select: {
-        id: true, agentId: true, kind: true, contactId: true, toNumber: true, status: true,
+        id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
         outcome: true, durationSecs: true, costCents: true, variables: true, recordingUrl: true,
         startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
@@ -229,7 +238,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
         startedAt: new Date(),
       },
       select: {
-        id: true, agentId: true, contactId: true, toNumber: true, status: true,
+        id: true, agentId: true, contactId: true, toNumber: true, fromNumber: true, status: true,
         outcome: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
@@ -301,7 +310,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       where: { id: existing.id },
       data: { status: "CANCELLED", endedAt: new Date() },
       select: {
-        id: true, agentId: true, contactId: true, toNumber: true, status: true,
+        id: true, agentId: true, contactId: true, toNumber: true, fromNumber: true, status: true,
         outcome: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },

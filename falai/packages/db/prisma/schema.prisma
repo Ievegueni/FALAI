@@ -72,6 +72,7 @@ enum CallKind {
   AI_AGENT // chamada conduzida por agente de IA
   DIRECT   // click-to-call (extensão → número), sem IA
   OTP      // entrega de código OTP por voz, sem IA
+  INBOUND  // chamada recebida (entrada), registada ao vivo a partir do PBX
 }
 
 enum CampaignStatus {
@@ -92,9 +93,17 @@ enum TurnRole {
 enum TxType {
   TOPUP
   CALL_CHARGE
+  SMS_CHARGE
   REFUND
   ADJUSTMENT
   MONTHLY_FEE
+}
+
+enum SmsStatus {
+  QUEUED // aceite pela plataforma, a caminho do gateway
+  SENT // entregue ao gateway (Futurix)
+  DELIVERED // confirmado entregue ao destinatário (delivery report)
+  FAILED // falhou no envio ou entrega
 }
 
 enum CampaignContactStatus {
@@ -137,6 +146,12 @@ model Tenant {
   pbxLastSyncAt    DateTime? // último sync de CDR do PBX do cliente
   pbxWebhookToken  String?       @unique // token do URL de webhook do PBX do cliente
   pbxCalls         PbxCall[]
+  // SMS (gateway Futurix) — credenciais e preço configurados por tenant no backoffice
+  smsApiKey            String? // encriptado (AES-256-GCM) via crypto.service
+  smsSenderId          String? // remetente (alfanumérico) atribuído ao cliente
+  smsPriceSegmentCents Int?    // preço por segmento (definido no backoffice; null = usa o do plano)
+  smsMessages          SmsMessage[]
+  smsCampaigns         SmsCampaign[]
   nextBillingAt    DateTime? // data do próximo débito da subscrição mensal
   invoices         Invoice[]
   deletedAt        DateTime?
@@ -256,6 +271,8 @@ model Plan {
   productType         ProductType @default(VOICE_AI)
   aiAgentsEnabled     Boolean     @default(true) // se o cliente tem agentes de IA
   clinicEnabled       Boolean     @default(false) // acesso ao módulo Clínica
+  smsEnabled          Boolean     @default(false) // acesso ao envio de SMS
+  pricePerSmsCents    Int         @default(0) // preço por segmento de SMS (default do plano)
   billingMode         BillingMode @default(PER_MINUTE)
   pricePerMinuteCents Int
   pricePerCallCents   Int      @default(0)
@@ -330,6 +347,7 @@ model Call {
   contactId         String?
   contact           Contact?   @relation(fields: [contactId], references: [id])
   toNumber          String
+  fromNumber        String? // origem — preenchido em chamadas de entrada (kind INBOUND)
   variables         Json?
   status            CallStatus @default(QUEUED)
   outcome           String?
@@ -404,8 +422,57 @@ model Contact {
   updatedAt  DateTime  @updatedAt
   calls      Call[]
   campaignContacts CampaignContact[]
+  smsMessages SmsMessage[]
 
   @@unique([tenantId, phone])
+}
+
+// ============ SMS ============
+
+// Mensagem SMS enviada por um cliente através do gateway Futurix.
+model SmsMessage {
+  id            String       @id @default(cuid())
+  tenantId      String
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  contactId     String?
+  contact       Contact?     @relation(fields: [contactId], references: [id])
+  campaignId    String? // SmsCampaign (envio em massa); null = envio avulso
+  campaign      SmsCampaign? @relation(fields: [campaignId], references: [id])
+  toNumber      String
+  body          String       @db.Text
+  segments      Int          @default(1) // nº de segmentos faturados (160 GSM / 70 unicode)
+  status        SmsStatus    @default(QUEUED)
+  costCents     Int          @default(0)
+  senderId      String? // remetente usado (snapshot do Tenant.smsSenderId)
+  providerMsgId String? // id da mensagem no gateway (para delivery report)
+  failReason    String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([providerMsgId])
+}
+
+// Campanha de SMS em massa (espelha as campanhas de voz, mas para SMS).
+model SmsCampaign {
+  id              String         @id @default(cuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id])
+  name            String
+  body            String         @db.Text // template da mensagem (suporta {variáveis})
+  status          CampaignStatus @default(DRAFT)
+  totalRecipients Int            @default(0)
+  sentCount       Int            @default(0)
+  failedCount     Int            @default(0)
+  costCents       Int            @default(0)
+  throttlePerMinute Int          @default(60)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  messages        SmsMessage[]
+
+  @@index([tenantId, createdAt])
 }
 
 model CampaignContact {

@@ -4,6 +4,8 @@ import { z } from "zod";
 import { hashPassword } from "../../services/auth.service.js";
 import { pbxCallStatus } from "../../services/pbxCdr.service.js";
 import { computeFeatures, sanitizeFeatureOverrides, FEATURE_KEYS } from "../../services/features.js";
+import { encryptSecret } from "../../services/crypto.service.js";
+import { invalidateTenantSms } from "../../services/sms.service.js";
 
 const lineCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -49,6 +51,13 @@ const updateSchema = z.object({
   webhookUrl: z.string().url().optional(),
   webhookSecret: z.string().min(16).optional(),
   billingModeOverride: z.enum(["PER_MINUTE", "PER_SECOND", "PER_CALL"]).nullable().optional(),
+});
+
+const smsConfigSchema = z.object({
+  // apiKey: preenchida = grava nova; "" = remove; undefined = mantém
+  apiKey: z.string().optional(),
+  senderId: z.string().max(20).optional(),
+  priceSegmentCents: z.number().int().min(0).optional(),
 });
 
 const adjustBalanceSchema = z.object({
@@ -224,6 +233,53 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return mapTenant(tenant);
+  });
+
+  // GET /admin/tenants/:id/sms — configuração de SMS do tenant (chave mascarada)
+  fastify.get<{ Params: { id: string } }>("/:id/sms", { preHandler }, async (request, reply) => {
+    const t = await prisma.tenant.findFirst({
+      where: { id: request.params.id, deletedAt: null },
+      select: {
+        smsApiKey: true, smsSenderId: true, smsPriceSegmentCents: true,
+        plan: { select: { smsEnabled: true, pricePerSmsCents: true } },
+      },
+    });
+    if (!t) return reply.status(404).send({ error: "Tenant não encontrado" });
+    return {
+      enabled: t.plan.smsEnabled,
+      senderId: t.smsSenderId,
+      apiKeySet: !!t.smsApiKey,
+      priceSegmentCents: t.smsPriceSegmentCents,
+      planPriceSegmentCents: t.plan.pricePerSmsCents,
+    };
+  });
+
+  // PUT /admin/tenants/:id/sms — grava credenciais Futurix + preço (por tenant)
+  fastify.put<{ Params: { id: string } }>("/:id/sms", { preHandler }, async (request, reply) => {
+    const admin = request.adminUser!;
+    const body = smsConfigSchema.parse(request.body);
+    const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null }, select: { id: true } });
+    if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
+
+    await prisma.tenant.update({
+      where: { id: request.params.id },
+      data: {
+        ...(body.senderId !== undefined && { smsSenderId: body.senderId || null }),
+        ...(body.priceSegmentCents !== undefined && { smsPriceSegmentCents: body.priceSegmentCents }),
+        // Só sobrescreve a chave se vier preenchida (evita apagar ao gravar o formulário)
+        ...(body.apiKey ? { smsApiKey: encryptSecret(body.apiKey) } : {}),
+        ...(body.apiKey === "" && { smsApiKey: null }),
+      },
+    });
+    invalidateTenantSms(request.params.id);
+
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: "tenant.sms_configured",
+      targetType: "Tenant", targetId: request.params.id,
+      before: null, after: { senderId: body.senderId, priceSegmentCents: body.priceSegmentCents, apiKeyChanged: !!body.apiKey } as object,
+      ip: request.ip,
+    });
+    return { ok: true };
   });
 
   // POST /admin/tenants/:id/suspend

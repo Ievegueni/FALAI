@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
-import { ensureCdrSynced, mapPbxCall, pbxCallStatus, PBX_CALL_SELECT } from "../../services/pbxCdr.service.js";
+import { ensureCdrSynced, mapPbxCall, pbxCallStatus, PBX_CALL_SELECT, activeInboundCalls } from "../../services/pbxCdr.service.js";
 
 export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
@@ -21,7 +21,7 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
     // ── Tenants CRM (BYO-PBX): métricas a partir do CDR do PBX do cliente ──────
     const { isCrmPbx } = await ensureCdrSynced(fastify, tenantId);
     if (isCrmPbx) {
-      const [tenant, activeAgents, activeCampaigns, monthRows, recentRows, chartRows] = await Promise.all([
+      const [tenant, activeAgents, activeCampaigns, monthRows, recentRows, liveInbound, chartRows] = await Promise.all([
         prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { balanceCents: true } }),
         prisma.agent.count({ where: { tenantId, status: "ACTIVE", deletedAt: null } }),
         prisma.campaign.count({ where: { tenantId, status: "RUNNING" } }),
@@ -35,6 +35,7 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
           take: 8,
           select: PBX_CALL_SELECT,
         }),
+        activeInboundCalls(tenantId),
         prisma.pbxCall.findMany({
           where: { tenantId, startedAt: { gte: sevenDaysAgo } },
           select: { disposition: true, startedAt: true },
@@ -67,7 +68,7 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
         avgCostCents: 0,
         activeAgents,
         activeCampaigns,
-        recentCalls: recentRows.map(mapPbxCall),
+        recentCalls: [...liveInbound.map(mapLiveInbound), ...recentRows.map(mapPbxCall)].slice(0, 8),
         chartData: Object.entries(dailyBuckets).map(([date, v]) => ({ date, total: v.total, answered: v.answered })),
       };
     }
@@ -90,7 +91,7 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
           orderBy: { createdAt: "desc" },
           take: 8,
           select: {
-            id: true, toNumber: true, kind: true, status: true, outcome: true,
+            id: true, toNumber: true, fromNumber: true, kind: true, status: true, outcome: true,
             durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
             agent: { select: { name: true } },
             contact: { select: { name: true } },
@@ -121,24 +122,66 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
       avgCostCents: Math.round(monthAgg._avg.costCents ?? 0),
       activeAgents,
       activeCampaigns,
-      recentCalls: recentRows.map((c) => ({
-        id: c.id,
-        to: c.toNumber,
-        kind: c.kind,
-        status: c.status,
-        outcome: c.outcome,
-        durationSecs: c.durationSecs,
-        costCents: c.costCents,
-        startedAt: c.startedAt,
-        endedAt: c.endedAt,
-        createdAt: c.createdAt,
-        agent: c.agent,
-        contact: c.contact,
-      })),
+      recentCalls: recentRows.map((c) => {
+        const direction = c.kind === "INBOUND" ? "inbound" : "outbound";
+        return {
+          id: c.id,
+          to: c.toNumber,
+          from: c.fromNumber ?? null,
+          party: direction === "inbound" ? c.fromNumber ?? c.toNumber : c.toNumber,
+          direction,
+          kind: c.kind,
+          status: c.status,
+          outcome: c.outcome,
+          durationSecs: c.durationSecs,
+          costCents: c.costCents,
+          startedAt: c.startedAt,
+          endedAt: c.endedAt,
+          createdAt: c.createdAt,
+          agent: c.agent,
+          contact: c.contact,
+        };
+      }),
       chartData: Object.entries(dailyBuckets).map(([date, v]) => ({ date, total: v.total, answered: v.answered })),
     };
   });
 };
+
+// Chamada de entrada "ao vivo" (ainda sem CDR) → shape das chamadas recentes do dashboard
+type LiveInboundRow = {
+  id: string;
+  toNumber: string;
+  fromNumber: string | null;
+  status: string;
+  outcome: string | null;
+  durationSecs: number;
+  costCents: number;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  createdAt: Date;
+  agent: { name: string } | null;
+  contact: { name: string | null } | null;
+};
+
+function mapLiveInbound(c: LiveInboundRow) {
+  return {
+    id: c.id,
+    to: c.toNumber,
+    from: c.fromNumber,
+    party: c.fromNumber ?? c.toNumber,
+    direction: "inbound" as const,
+    kind: "INBOUND" as const,
+    status: c.status,
+    outcome: c.outcome,
+    durationSecs: c.durationSecs,
+    costCents: c.costCents,
+    startedAt: c.startedAt,
+    endedAt: c.endedAt,
+    createdAt: c.createdAt,
+    agent: c.agent ?? { name: "" },
+    contact: c.contact ? { name: c.contact.name ?? "" } : null,
+  };
+}
 
 function buildBuckets(from: Date): Record<string, { total: number; answered: number }> {
   const buckets: Record<string, { total: number; answered: number }> = {};

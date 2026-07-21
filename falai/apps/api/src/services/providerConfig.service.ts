@@ -24,7 +24,7 @@ export interface ResolvedProviderConfig {
   anthropic: { apiKey: string };
   elevenlabs: { apiKey: string; defaultVoiceId: string };
   proxypay: { apiKey: string };
-  futurix: { apiKey: string };
+  futurix: { apiKey: string; baseUrl: string; stubMode: boolean };
 }
 
 /** Chaves de provedores geridas via SystemSetting (para o backoffice conhecer o conjunto). */
@@ -40,6 +40,8 @@ export const PROVIDER_SETTING_KEYS = [
   "ELEVENLABS_DEFAULT_VOICE_ID",
   "PROXYPAY_API_KEY",
   "FUTURIX_SMS_API_KEY",
+  "FUTURIX_SMS_BASE_URL",
+  "FUTURIX_SMS_STUB_MODE",
 ] as const;
 
 async function val(key: string, envFallback: string | undefined): Promise<string | undefined> {
@@ -49,7 +51,7 @@ async function val(key: string, envFallback: string | undefined): Promise<string
 }
 
 export async function resolveProviderConfig(): Promise<ResolvedProviderConfig> {
-  const [yBase, yId, ySecret, yStub, yExt, dg, an, el, elVoice, pp, fx] = await Promise.all([
+  const [yBase, yId, ySecret, yStub, yExt, dg, an, el, elVoice, pp, fx, fxBase, fxStub] = await Promise.all([
     val("YEASTAR_BASE_URL", config.YEASTAR_BASE_URL),
     val("YEASTAR_CLIENT_ID", config.YEASTAR_CLIENT_ID),
     val("YEASTAR_CLIENT_SECRET", config.YEASTAR_CLIENT_SECRET),
@@ -61,6 +63,8 @@ export async function resolveProviderConfig(): Promise<ResolvedProviderConfig> {
     val("ELEVENLABS_DEFAULT_VOICE_ID", process.env["ELEVENLABS_DEFAULT_VOICE_ID"]),
     val("PROXYPAY_API_KEY", config.PROXYPAY_API_KEY),
     val("FUTURIX_SMS_API_KEY", config.FUTURIX_SMS_API_KEY),
+    val("FUTURIX_SMS_BASE_URL", config.FUTURIX_SMS_BASE_URL),
+    val("FUTURIX_SMS_STUB_MODE", config.FUTURIX_SMS_STUB_MODE ? "true" : "false"),
   ]);
 
   return {
@@ -75,6 +79,10 @@ export async function resolveProviderConfig(): Promise<ResolvedProviderConfig> {
     anthropic: { apiKey: an ?? "" },
     elevenlabs: { apiKey: el ?? "", defaultVoiceId: elVoice ?? "21m00Tcm4TlvDq8ikWAM" },
     proxypay: { apiKey: pp ?? "" },
-    futurix: { apiKey: fx ?? "" },
+    futurix: {
+      apiKey: fx ?? "",
+      baseUrl: fxBase ?? "https://sms-api.futurix.ao",
+      stubMode: fxStub === "true",
+    },
   };
 }

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Phone, TrendingUp, Clock, DollarSign, Bot, Megaphone, Plus } from 'lucide-react';
+import { Phone, PhoneIncoming, TrendingUp, Clock, DollarSign, Bot, Megaphone, Plus } from 'lucide-react';
 import {
   AreaChart,
   Area,
@@ -34,9 +34,16 @@ function CallRow({ call }: { call: Call }) {
       className="hover:bg-gray-50 cursor-pointer"
       onClick={() => navigate(`/calls/${call.id}`)}
     >
-      <td className="px-4 py-3 text-sm text-gray-900">{call.contact?.name ?? call.to}</td>
+      <td className="px-4 py-3 text-sm text-gray-900">
+        <div className="flex items-center gap-2">
+          {call.direction === 'inbound' && <PhoneIncoming className="h-4 w-4 shrink-0 text-emerald-500" />}
+          <span>{call.contact?.name ?? call.party ?? call.to}</span>
+        </div>
+      </td>
       <td className="px-4 py-3 text-sm text-gray-500">
-        {call.kind === 'OTP' ? (
+        {call.direction === 'inbound' ? (
+          <Badge className="bg-emerald-100 text-emerald-700">{t('calls.inbound')}</Badge>
+        ) : call.kind === 'OTP' ? (
           <Badge className="bg-indigo-100 text-indigo-700">{t('dashboard.otpVerification')}</Badge>
         ) : call.kind === 'DIRECT' ? (
           <Badge className="bg-slate-100 text-slate-600">{t('dashboard.directCall')}</Badge>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Phone, PhoneCall, Plus, Search, Download } from 'lucide-react';
+import { Phone, PhoneCall, PhoneIncoming, Plus, Search, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { callsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
@@ -27,11 +27,22 @@ function CallRow({ call }: { call: Call }) {
       onClick={() => navigate(`/calls/${call.id}`)}
     >
       <td className="px-4 py-3">
-        <p className="text-sm font-medium text-gray-900">{call.contact?.name ?? formatPhone(call.to)}</p>
-        {call.contact && <p className="text-xs text-gray-400">{formatPhone(call.to)}</p>}
+        <div className="flex items-center gap-2">
+          {call.direction === 'inbound' && (
+            <PhoneIncoming className="h-4 w-4 shrink-0 text-emerald-500" aria-label={t('calls.inbound')} />
+          )}
+          <div>
+            <p className="text-sm font-medium text-gray-900">
+              {call.contact?.name ?? formatPhone(call.party ?? call.to)}
+            </p>
+            {call.contact && <p className="text-xs text-gray-400">{formatPhone(call.party ?? call.to)}</p>}
+          </div>
+        </div>
       </td>
       <td className="px-4 py-3 text-sm text-gray-600">
-        {call.kind === 'OTP' ? (
+        {call.direction === 'inbound' ? (
+          <Badge className="bg-emerald-100 text-emerald-700">{t('calls.inbound')}</Badge>
+        ) : call.kind === 'OTP' ? (
           <Badge className="bg-indigo-100 text-indigo-700">{t('calls.otpVerification')}</Badge>
         ) : call.kind === 'DIRECT' ? (
           <Badge className="bg-slate-100 text-slate-600">{t('calls.directCall')}</Badge>

@@ -96,6 +96,7 @@ export const callStatusColor: Record<CallStatus, string> = {
 export const txTypeLabel: Record<TransactionType, string> = {
   TOPUP: 'Carregamento',
   CALL_CHARGE: 'Chamada',
+  SMS_CHARGE: 'SMS',
   REFUND: 'Reembolso',
   ADJUSTMENT: 'Ajuste',
   MONTHLY_FEE: 'Fee mensal',
