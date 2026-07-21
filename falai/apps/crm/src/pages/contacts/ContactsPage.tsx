@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Plus, Upload, Users, Search, Phone, PhoneCall, Trash2, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { contactsApi } from '@/lib/api';
@@ -23,6 +24,7 @@ function CreateContactModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const { success, error } = useToast();
   const [form, setForm] = useState({ name: '', phone: '', email: '' });
@@ -31,7 +33,7 @@ function CreateContactModal({
   const create = useMutation({
     mutationFn: () => contactsApi.create({ name: form.name, phone: form.phone, email: form.email || undefined }),
     onSuccess: () => {
-      success('Contacto criado');
+      success(t('contacts.created'));
       void qc.invalidateQueries({ queryKey: ['contacts'] });
       onClose();
       setForm({ name: '', phone: '', email: '' });
@@ -41,8 +43,8 @@ function CreateContactModal({
 
   function handleSubmit() {
     const e = { name: '', phone: '', email: '' };
-    if (!form.name.trim()) e.name = 'Nome obrigatório';
-    if (!form.phone.trim()) e.phone = 'Número obrigatório';
+    if (!form.name.trim()) e.name = t('contacts.errNameRequired');
+    if (!form.phone.trim()) e.phone = t('contacts.errPhoneRequired');
     setErrors(e);
     if (e.name || e.phone) return;
     create.mutate();
@@ -52,39 +54,39 @@ function CreateContactModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Novo contacto"
+      title={t('contacts.modalNew')}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button loading={create.isPending} onClick={handleSubmit}>Guardar</Button>
+          <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button loading={create.isPending} onClick={handleSubmit}>{t('common.save')}</Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
         <Input
-          label="Nome"
+          label={t('contacts.modalName')}
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           error={errors.name}
-          placeholder="João Silva"
+          placeholder={t('contacts.modalNamePlaceholder')}
           required
           autoFocus
         />
         <Input
-          label="Telemóvel"
+          label={t('contacts.modalPhone')}
           value={form.phone}
           onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
           error={errors.phone}
           placeholder="+244 9XX XXX XXX"
-          hint="Formato +244XXXXXXXXX"
+          hint={t('contacts.modalPhoneHint')}
           required
         />
         <Input
-          label="Email (opcional)"
+          label={t('contacts.modalEmail')}
           type="email"
           value={form.email}
           onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-          placeholder="joao@email.com"
+          placeholder={t('contacts.modalEmailPlaceholder')}
         />
       </div>
     </Modal>
@@ -92,13 +94,14 @@ function CreateContactModal({
 }
 
 function ContactRow({ contact }: { contact: Contact }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { success, error } = useToast();
 
   const del = useMutation({
     mutationFn: () => contactsApi.delete(contact.id),
-    onSuccess: () => { success('Contacto eliminado'); void qc.invalidateQueries({ queryKey: ['contacts'] }); },
+    onSuccess: () => { success(t('contacts.deleted')); void qc.invalidateQueries({ queryKey: ['contacts'] }); },
     onError: (e: Error) => error(e.message),
   });
 
@@ -119,9 +122,9 @@ function ContactRow({ contact }: { contact: Contact }) {
       </td>
       <td className="px-4 py-3">
         {contact.optedOutAt ? (
-          <Badge className="bg-red-100 text-red-700">Opt-out</Badge>
+          <Badge className="bg-red-100 text-red-700">{t('contacts.optOut')}</Badge>
         ) : (
-          <Badge className="bg-emerald-100 text-emerald-700">Activo</Badge>
+          <Badge className="bg-emerald-100 text-emerald-700">{t('contacts.active')}</Badge>
         )}
       </td>
       <td className="px-4 py-3 text-xs text-gray-400">{formatDate(contact.createdAt)}</td>
@@ -132,7 +135,7 @@ function ContactRow({ contact }: { contact: Contact }) {
               size="sm"
               variant="ghost"
               icon={<PhoneCall className="h-3.5 w-3.5 text-green-600" />}
-              title="Ligar agora"
+              title={t('contacts.callNow')}
               onClick={() => navigate('/calls/direct', { state: { to: contact.phone } })}
             />
           )}
@@ -143,7 +146,7 @@ function ContactRow({ contact }: { contact: Contact }) {
               icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
               loading={del.isPending}
               onClick={() => {
-                if (confirm(`Eliminar ${contact.name}?`)) del.mutate();
+                if (confirm(t('contacts.deleteConfirm', { name: contact.name }))) del.mutate();
               }}
             />
           )}
@@ -154,6 +157,7 @@ function ContactRow({ contact }: { contact: Contact }) {
 }
 
 export function ContactsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -167,14 +171,14 @@ export function ContactsPage() {
   return (
     <>
       <Header
-        title="Contactos"
+        title={t('contacts.title')}
         actions={
           <>
             <Button size="sm" variant="outline" icon={<Upload className="h-3.5 w-3.5" />} onClick={() => navigate('/contacts/import')}>
-              Importar
+              {t('contacts.import')}
             </Button>
             <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>
-              Novo contacto
+              {t('contacts.new')}
             </Button>
           </>
         }
@@ -184,14 +188,14 @@ export function ContactsPage() {
         <div className="flex items-center gap-3">
           <div className="flex-1 max-w-sm">
             <Input
-              placeholder="Pesquisar por nome ou número..."
+              placeholder={t('contacts.searchPlaceholder')}
               icon={<Search className="h-4 w-4" />}
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             />
           </div>
           {data && (
-            <p className="text-sm text-gray-500">{data.total} contactos</p>
+            <p className="text-sm text-gray-500">{t('contacts.count', { count: data.total })}</p>
           )}
         </div>
 
@@ -200,12 +204,12 @@ export function ContactsPage() {
         ) : data?.data.length === 0 ? (
           <EmptyState
             icon={<Users className="h-8 w-8" />}
-            title={search ? 'Nenhum resultado' : 'Sem contactos ainda'}
-            description={search ? 'Tente outro nome ou número.' : 'Importe uma lista CSV/XLSX ou crie manualmente.'}
+            title={search ? t('contacts.emptySearchTitle') : t('contacts.emptyTitle')}
+            description={search ? t('contacts.emptySearchDescription') : t('contacts.emptyDescription')}
             action={
               search
                 ? undefined
-                : { label: 'Importar lista', icon: <Upload className="h-4 w-4" />, onClick: () => navigate('/contacts/import') }
+                : { label: t('contacts.importList'), icon: <Upload className="h-4 w-4" />, onClick: () => navigate('/contacts/import') }
             }
           />
         ) : (
@@ -213,8 +217,8 @@ export function ContactsPage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {['Nome', 'Telemóvel', 'Estado', 'Criado', ''].map((h) => (
-                    <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
+                  {[t('contacts.colName'), t('contacts.colPhone'), t('contacts.colStatus'), t('contacts.colCreated'), ''].map((h, i) => (
+                    <th key={i} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">
                       {h}
                     </th>
                   ))}

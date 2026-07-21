@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Wallet, CreditCard, ArrowUpRight, ArrowDownLeft, Clock, Download } from 'lucide-react';
 import { walletApi, billingApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
@@ -17,6 +18,7 @@ import type { TransactionType } from '@/types';
 const TOPUP_AMOUNTS = [5000_00, 10000_00, 20000_00, 50000_00];
 
 function TopupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useTranslation();
   const { success, error } = useToast();
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState<{ reference: string; entity: string; expiresAt: string } | null>(null);
@@ -39,18 +41,18 @@ function TopupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     <Modal
       open={open}
       onClose={handleClose}
-      title="Carregar saldo"
+      title={t('wallet.topupTitle')}
       size="sm"
       footer={
         !reference ? (
           <>
-            <Button variant="ghost" onClick={handleClose}>Cancelar</Button>
+            <Button variant="ghost" onClick={handleClose}>{t('common.cancel')}</Button>
             <Button loading={topup.isPending} onClick={() => topup.mutate()}>
-              Gerar referência
+              {t('wallet.generateRef')}
             </Button>
           </>
         ) : (
-          <Button onClick={handleClose}>Fechar</Button>
+          <Button onClick={handleClose}>{t('common.close')}</Button>
         )
       }
     >
@@ -73,26 +75,25 @@ function TopupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
             ))}
           </div>
           <Input
-            label="Ou introduza o valor (Kz)"
+            label={t('wallet.amountLabel')}
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="ex: 15000,00"
-            hint="Mínimo: 1 000,00 Kz"
+            placeholder={t('wallet.amountPlaceholder')}
+            hint={t('wallet.amountMin')}
           />
         </div>
       ) : (
         <div className="text-center space-y-4">
           <div className="rounded-xl bg-blue-50 border border-blue-200 p-6">
-            <p className="text-xs text-blue-600 mb-1">Referência Multicaixa</p>
+            <p className="text-xs text-blue-600 mb-1">{t('wallet.refMulticaixa')}</p>
             <p className="text-3xl font-bold text-blue-900 tracking-widest">{reference.reference}</p>
-            <p className="text-sm text-blue-700 mt-2">Entidade: <strong>{reference.entity}</strong></p>
+            <p className="text-sm text-blue-700 mt-2">{t('wallet.entity')}: <strong>{reference.entity}</strong></p>
           </div>
           <p className="text-xs text-gray-500">
-            Pague através do Multicaixa ou qualquer ATM. O saldo é creditado automaticamente.
-            Válido até {formatDate(reference.expiresAt)}.
+            {t('wallet.refInstructions', { date: formatDate(reference.expiresAt) })}
           </p>
           <p className="text-xs text-gray-400">
-            Para assistência: <strong>+244 924 572 875</strong>
+            {t('wallet.refSupport')} <strong>+244 924 572 875</strong>
           </p>
         </div>
       )}
@@ -117,6 +118,7 @@ const txColor: Record<TransactionType, string> = {
 };
 
 export function WalletPage() {
+  const { t } = useTranslation();
   const [showTopup, setShowTopup] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -136,18 +138,18 @@ export function WalletPage() {
   const sub = billing?.subscription;
   const subBadge =
     sub?.status === 'SUSPENDED'
-      ? { text: 'Suspensa', cls: 'bg-red-100 text-red-700' }
+      ? { text: t('wallet.subSuspended'), cls: 'bg-red-100 text-red-700' }
       : sub?.status === 'PAST_DUE'
-        ? { text: 'Pagamento em atraso', cls: 'bg-amber-100 text-amber-700' }
-        : { text: 'Activa', cls: 'bg-green-100 text-green-700' };
+        ? { text: t('wallet.subPastDue'), cls: 'bg-amber-100 text-amber-700' }
+        : { text: t('wallet.subActive'), cls: 'bg-green-100 text-green-700' };
 
   return (
     <>
       <Header
-        title="Carteira"
+        title={t('wallet.title')}
         actions={
           <Button size="sm" icon={<CreditCard className="h-3.5 w-3.5" />} onClick={() => setShowTopup(true)}>
-            Carregar saldo
+            {t('wallet.topup')}
           </Button>
         }
       />
@@ -157,10 +159,10 @@ export function WalletPage() {
           <Card>
             <div className="flex items-start justify-between mb-4">
               <div>
-                <p className="text-sm font-semibold text-gray-900">Subscrição — {sub.planName}</p>
+                <p className="text-sm font-semibold text-gray-900">{t('wallet.subscription', { plan: sub.planName })}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {formatAOA(sub.monthlyFeeCents)}/mês
-                  {sub.nextBillingAt && ` · próximo débito ${formatDate(sub.nextBillingAt)}`}
+                  {t('wallet.perMonth', { value: formatAOA(sub.monthlyFeeCents) })}
+                  {sub.nextBillingAt && ` · ${t('wallet.nextCharge', { date: formatDate(sub.nextBillingAt) })}`}
                 </p>
               </div>
               <Badge className={subBadge.cls}>{subBadge.text}</Badge>
@@ -170,10 +172,10 @@ export function WalletPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-xs text-gray-500">
                     <tr>
-                      <th className="px-4 py-2 text-left font-medium">Período</th>
-                      <th className="px-4 py-2 text-left font-medium">Valor</th>
-                      <th className="px-4 py-2 text-left font-medium">Estado</th>
-                      <th className="px-4 py-2 text-left font-medium">Data</th>
+                      <th className="px-4 py-2 text-left font-medium">{t('wallet.invPeriod')}</th>
+                      <th className="px-4 py-2 text-left font-medium">{t('wallet.invAmount')}</th>
+                      <th className="px-4 py-2 text-left font-medium">{t('wallet.invStatus')}</th>
+                      <th className="px-4 py-2 text-left font-medium">{t('wallet.invDate')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -183,7 +185,7 @@ export function WalletPage() {
                         <td className="px-4 py-2 text-gray-700">{formatAOA(inv.amountCents)}</td>
                         <td className="px-4 py-2">
                           <Badge className={inv.status === 'PAID' ? 'bg-green-100 text-green-700' : inv.status === 'DUE' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}>
-                            {inv.status === 'PAID' ? 'Paga' : inv.status === 'DUE' ? 'Em dívida' : 'Anulada'}
+                            {inv.status === 'PAID' ? t('wallet.invPaid') : inv.status === 'DUE' ? t('wallet.invDue') : t('wallet.invVoid')}
                           </Badge>
                         </td>
                         <td className="px-4 py-2 text-gray-500">{formatDate(inv.paidAt ?? inv.issuedAt)}</td>
@@ -193,7 +195,7 @@ export function WalletPage() {
                 </table>
               </div>
             ) : (
-              <p className="text-xs text-gray-400">Ainda sem faturas emitidas.</p>
+              <p className="text-xs text-gray-400">{t('wallet.noInvoices')}</p>
             )}
           </Card>
         )}
@@ -206,28 +208,28 @@ export function WalletPage() {
                 <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
                   <Wallet className="h-5 w-5" />
                 </div>
-                <p className="text-sm font-medium text-gray-700">Saldo disponível</p>
+                <p className="text-sm font-medium text-gray-700">{t('wallet.balanceAvailable')}</p>
               </div>
               <p className="text-3xl font-bold text-gray-900">{formatAOA(wallet.balanceCents)}</p>
               {wallet.creditLimitCents > 0 && (
                 <p className="text-xs text-gray-400 mt-1">
-                  + {formatAOA(wallet.creditLimitCents)} crédito
+                  {t('wallet.credit', { value: formatAOA(wallet.creditLimitCents) })}
                 </p>
               )}
               <Button className="mt-4 w-full" size="sm" onClick={() => setShowTopup(true)} icon={<CreditCard className="h-3.5 w-3.5" />}>
-                Carregar
+                {t('wallet.topupShort')}
               </Button>
             </Card>
 
             <Card>
-              <p className="text-xs text-gray-500 mb-1">Plano actual</p>
+              <p className="text-xs text-gray-500 mb-1">{t('wallet.currentPlan')}</p>
               <p className="text-lg font-bold text-gray-900">{wallet.plan.name}</p>
-              <p className="text-sm text-gray-600 mt-1">{formatAOA(wallet.plan.pricePerMinuteCents)}/min</p>
+              <p className="text-sm text-gray-600 mt-1">{t('wallet.perMinute', { value: formatAOA(wallet.plan.pricePerMinuteCents) })}</p>
             </Card>
 
             <Card>
-              <p className="text-xs text-gray-500 mb-1">Para mudar de plano</p>
-              <p className="text-sm text-gray-700 mt-1">Contacte a nossa equipa comercial para obter uma proposta personalizada.</p>
+              <p className="text-xs text-gray-500 mb-1">{t('wallet.changePlanTitle')}</p>
+              <p className="text-sm text-gray-700 mt-1">{t('wallet.changePlanDesc')}</p>
               <p className="text-sm font-medium text-blue-600 mt-2">+244 924 572 875</p>
             </Card>
           </div>
@@ -236,16 +238,16 @@ export function WalletPage() {
         {/* Transactions */}
         <Card padding={false}>
           <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-900">Extracto</h2>
+            <h2 className="text-sm font-semibold text-gray-900">{t('wallet.statement')}</h2>
             <Button size="sm" variant="outline" icon={<Download className="h-3.5 w-3.5" />}>
-              Exportar CSV
+              {t('wallet.exportCsv')}
             </Button>
           </div>
 
           {loadingTxs ? (
             <div className="p-8"><PageSpinner /></div>
           ) : txs?.data.length === 0 ? (
-            <div className="py-12 text-center text-sm text-gray-500">Sem movimentos ainda.</div>
+            <div className="py-12 text-center text-sm text-gray-500">{t('wallet.noTransactions')}</div>
           ) : (
             <>
               <div className="divide-y divide-gray-100">

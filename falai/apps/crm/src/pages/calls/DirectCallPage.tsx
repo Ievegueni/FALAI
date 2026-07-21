@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { useTranslation, Trans } from 'react-i18next';
 import { ArrowLeft, PhoneCall, PhoneOff, Info } from 'lucide-react';
 import { callsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
@@ -11,6 +12,7 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 
 export function DirectCallPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const { success, error } = useToast();
@@ -39,7 +41,7 @@ export function DirectCallPage() {
     mutationFn: () => callsApi.direct({ fromExtension, to }),
     onSuccess: (res) => {
       setActiveCallId(res.providerCallId);
-      success(`Chamada iniciada da extensão ${fromExtension} para ${to}`);
+      success(t('calls.direct.started', { ext: fromExtension, to }));
     },
     onError: (e: Error) => error(e.message),
   });
@@ -48,7 +50,7 @@ export function DirectCallPage() {
     mutationFn: () => callsApi.directHangup(activeCallId!),
     onSuccess: () => {
       setActiveCallId(null);
-      success('Chamada terminada');
+      success(t('calls.direct.ended'));
     },
     onError: (e: Error) => error(e.message),
   });
@@ -61,30 +63,30 @@ export function DirectCallPage() {
         const { active } = await callsApi.directStatus(activeCallId);
         if (!active) {
           setActiveCallId(null);
-          success('Chamada terminada pelo outro lado');
+          success(t('calls.direct.endedByOther'));
         }
       } catch {
         // ignora erros de rede transientes
       }
     }, 4000);
     return () => clearInterval(id);
-  }, [activeCallId, success]);
+  }, [activeCallId, success, t]);
 
   function handleDial() {
-    if (!fromExtension) { error('Seleccione a extensão de origem'); return; }
-    if (!to.trim()) { error('Indique o número de destino'); return; }
+    if (!fromExtension) { error(t('calls.direct.errSelectExt')); return; }
+    if (!to.trim()) { error(t('calls.direct.errDestination')); return; }
     dial.mutate();
   }
 
-  if (loadingExt) return <><Header title="Chamada directa" /><PageSpinner /></>;
+  if (loadingExt) return <><Header title={t('calls.direct.title')} /><PageSpinner /></>;
 
   return (
     <>
       <Header
-        title="Chamada directa"
+        title={t('calls.direct.title')}
         actions={
           <Button size="sm" variant="ghost" icon={<ArrowLeft className="h-3.5 w-3.5" />} onClick={() => navigate('/calls')}>
-            Voltar
+            {t('common.back')}
           </Button>
         }
       />
@@ -93,21 +95,20 @@ export function DirectCallPage() {
         <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 flex items-start gap-3">
           <Info className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-blue-700">
-            Chamada normal do PBX, sem agente de IA. Toca primeiro a <strong>extensão de origem</strong> e,
-            quando esta atende, liga ao número de destino. A extensão precisa de ter um telefone/softphone registado.
+            <Trans i18nKey="calls.direct.infoNote" components={[<strong key="0" />]} />
           </div>
         </div>
 
         <Card>
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Configurar chamada</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('calls.direct.configureCall')}</h2>
           <div className="flex flex-col gap-4">
             {!loadingExt && (extensions?.length ?? 0) === 0 ? (
               <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
-                Ainda não há nenhuma linha activa associada a esta conta. Contacte o suporte para configurar a sua linha de chamadas.
+                {t('calls.direct.noLine')}
               </div>
             ) : (
               <Select
-                label="Extensão de origem"
+                label={t('calls.direct.fromExtension')}
                 value={fromExtension}
                 onChange={(e) => setFromExtension(e.target.value)}
                 disabled={!!activeCallId || loadingExt}
@@ -122,11 +123,11 @@ export function DirectCallPage() {
             )}
 
             <Input
-              label="Número de destino"
+              label={t('calls.direct.destination')}
               value={to}
               onChange={(e) => setTo(e.target.value)}
               placeholder="+244 9XX XXX XXX"
-              hint="Número externo ou outra extensão"
+              hint={t('calls.direct.destHint')}
               disabled={!!activeCallId}
               required
             />
@@ -134,7 +135,7 @@ export function DirectCallPage() {
             {activeCallId ? (
               <div className="flex flex-col gap-3">
                 <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
-                  Chamada em curso · ID PBX: <strong>{activeCallId}</strong>
+                  {t('calls.direct.inProgress')} <strong>{activeCallId}</strong>
                 </div>
                 <Button
                   variant="danger"
@@ -142,7 +143,7 @@ export function DirectCallPage() {
                   loading={hangup.isPending}
                   onClick={() => hangup.mutate()}
                 >
-                  Desligar chamada
+                  {t('calls.direct.hangup')}
                 </Button>
               </div>
             ) : (
@@ -151,7 +152,7 @@ export function DirectCallPage() {
                 loading={dial.isPending}
                 onClick={handleDial}
               >
-                Ligar agora
+                {t('calls.direct.callNow')}
               </Button>
             )}
           </div>

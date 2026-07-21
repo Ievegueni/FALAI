@@ -1,5 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Phone, Clock, DollarSign, XCircle, Play } from 'lucide-react';
 import { callsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
@@ -18,6 +19,7 @@ import {
 } from '@/lib/utils';
 
 export function CallDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -34,12 +36,12 @@ export function CallDetailPage() {
 
   const cancel = useMutation({
     mutationFn: () => callsApi.cancel(id!),
-    onSuccess: () => { success('Chamada cancelada'); void qc.invalidateQueries({ queryKey: ['calls', id] }); },
+    onSuccess: () => { success(t('calls.detail.cancelled')); void qc.invalidateQueries({ queryKey: ['calls', id] }); },
     onError: (e: Error) => error(e.message),
   });
 
-  if (isLoading) return <><Header title="Chamada" /><PageSpinner /></>;
-  if (!call) return <><Header title="Chamada" /><div className="p-6 text-sm text-gray-500">Chamada não encontrada.</div></>;
+  if (isLoading) return <><Header title={t('calls.detail.callTitle')} /><PageSpinner /></>;
+  if (!call) return <><Header title={t('calls.detail.callTitle')} /><div className="p-6 text-sm text-gray-500">{t('calls.detail.notFound')}</div></>;
 
   const canCancel = ['QUEUED', 'DIALING', 'RINGING'].includes(call.status);
   const isLive = ['DIALING', 'RINGING', 'IN_PROGRESS'].includes(call.status);
@@ -47,10 +49,10 @@ export function CallDetailPage() {
   return (
     <>
       <Header
-        title="Detalhe da chamada"
+        title={t('calls.detail.title')}
         actions={
           <Button size="sm" variant="ghost" icon={<ArrowLeft className="h-3.5 w-3.5" />} onClick={() => navigate('/calls')}>
-            Voltar
+            {t('common.back')}
           </Button>
         }
       />
@@ -71,9 +73,9 @@ export function CallDetailPage() {
                   {formatPhone(call.to)}
                   {' · '}
                   {call.kind === 'OTP'
-                    ? 'Verificação OTP'
+                    ? t('calls.detail.otpVerification')
                     : call.kind === 'DIRECT'
-                      ? 'Chamada directa'
+                      ? t('calls.detail.directCall')
                       : call.agent?.name || '—'}
                 </p>
               </div>
@@ -91,26 +93,26 @@ export function CallDetailPage() {
 
           <div className="mt-4 grid grid-cols-3 gap-4 pt-4 border-t border-gray-100">
             <div className="text-center">
-              <p className="text-xs text-gray-500">Duração</p>
+              <p className="text-xs text-gray-500">{t('calls.detail.duration')}</p>
               <p className="mt-1 text-sm font-semibold text-gray-900">
                 {call.durationSecs !== null ? formatDuration(call.durationSecs) : '—'}
               </p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-gray-500">Custo</p>
+              <p className="text-xs text-gray-500">{t('calls.detail.cost')}</p>
               <p className="mt-1 text-sm font-semibold text-gray-900">
                 {call.costCents !== null ? formatAOA(call.costCents) : '—'}
               </p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-gray-500">Data</p>
+              <p className="text-xs text-gray-500">{t('calls.detail.date')}</p>
               <p className="mt-1 text-sm font-semibold text-gray-900">{formatDate(call.createdAt)}</p>
             </div>
           </div>
 
           {call.outcome && (
             <div className="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 p-3">
-              <p className="text-xs font-medium text-emerald-700 mb-1">Resultado</p>
+              <p className="text-xs font-medium text-emerald-700 mb-1">{t('calls.detail.outcome')}</p>
               <p className="text-sm text-emerald-900">{call.outcome}</p>
             </div>
           )}
@@ -122,9 +124,9 @@ export function CallDetailPage() {
                 size="sm"
                 icon={<XCircle className="h-3.5 w-3.5" />}
                 loading={cancel.isPending}
-                onClick={() => { if (confirm('Cancelar esta chamada?')) cancel.mutate(); }}
+                onClick={() => { if (confirm(t('calls.detail.cancelConfirm'))) cancel.mutate(); }}
               >
-                Cancelar chamada
+                {t('calls.detail.cancelCall')}
               </Button>
             </div>
           )}
@@ -134,10 +136,10 @@ export function CallDetailPage() {
         {call.recordingUrl && (
           <Card>
             <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-              <Play className="h-4 w-4" /> Gravação
+              <Play className="h-4 w-4" /> {t('calls.detail.recording')}
             </h2>
             <audio controls className="w-full" src={call.recordingUrl}>
-              O seu browser não suporta o player de áudio.
+              {t('calls.detail.audioUnsupported')}
             </audio>
           </Card>
         )}
@@ -146,8 +148,8 @@ export function CallDetailPage() {
         {call.turns && call.turns.length > 0 && (
           <Card padding={false}>
             <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-sm font-semibold text-gray-900">Transcrição</h2>
-              <p className="text-xs text-gray-400 mt-0.5">{call.turns.length} turnos</p>
+              <h2 className="text-sm font-semibold text-gray-900">{t('calls.detail.transcript')}</h2>
+              <p className="text-xs text-gray-400 mt-0.5">{t('calls.detail.turns', { count: call.turns.length })}</p>
             </div>
             <div className="divide-y divide-gray-50">
               {call.turns.map((turn) => (
@@ -160,7 +162,7 @@ export function CallDetailPage() {
                           : 'bg-gray-100 text-gray-700'
                       }`}
                     >
-                      {turn.role === 'agent' ? 'Agente' : 'Cliente'}
+                      {turn.role === 'agent' ? t('calls.detail.agent') : t('calls.detail.customer')}
                     </span>
                   </div>
                   <p className="flex-1 text-sm text-gray-800">{turn.text}</p>
@@ -173,7 +175,7 @@ export function CallDetailPage() {
         {/* Variables */}
         {call.variables && Object.keys(call.variables).length > 0 && (
           <Card>
-            <h2 className="text-sm font-semibold text-gray-900 mb-3">Variáveis usadas</h2>
+            <h2 className="text-sm font-semibold text-gray-900 mb-3">{t('calls.detail.variablesUsed')}</h2>
             <div className="grid grid-cols-2 gap-2">
               {Object.entries(call.variables).map(([k, v]) => (
                 <div key={k} className="text-xs">

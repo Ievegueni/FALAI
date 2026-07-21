@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Save, RotateCcw } from 'lucide-react';
 import { settingsApi } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,6 +12,7 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 
 export function SettingsPage() {
+  const { t } = useTranslation();
   const { refreshMe } = useAuth();
   const qc = useQueryClient();
   const { success, error } = useToast();
@@ -64,7 +66,7 @@ export function SettingsPage() {
         lowBalanceAlertPhone: form.lowBalanceAlertPhone || null,
       }),
     onSuccess: () => {
-      success('Definições guardadas');
+      success(t('settings.saved'));
       void qc.invalidateQueries({ queryKey: ['settings'] });
       void refreshMe();
     },
@@ -73,22 +75,22 @@ export function SettingsPage() {
 
   const rotateSecret = useMutation({
     mutationFn: settingsApi.rotateSecret,
-    onSuccess: () => success('Secret do webhook regenerado'),
+    onSuccess: () => success(t('settings.secretRotated')),
     onError: (e: Error) => error(e.message),
   });
 
-  if (isLoading) return <><Header title="Definições" /><PageSpinner /></>;
+  if (isLoading) return <><Header title={t('settings.title')} /><PageSpinner /></>;
 
   return (
     <>
-      <Header title="Definições" />
+      <Header title={t('settings.title')} />
 
       <div className="p-6 max-w-2xl space-y-6">
         <Card>
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Informações da empresa</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('settings.companyInfo')}</h2>
           <div className="flex flex-col gap-4">
             <Input
-              label="Nome da empresa"
+              label={t('settings.companyName')}
               value={form.name}
               onChange={(e) => set('name', e.target.value)}
               required
@@ -97,44 +99,44 @@ export function SettingsPage() {
         </Card>
 
         <Card>
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Dados fiscais</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('settings.fiscalData')}</h2>
           <div className="flex flex-col gap-4">
             <Input
-              label="Nome fiscal"
+              label={t('settings.fiscalName')}
               value={form.fiscalName}
               onChange={(e) => set('fiscalName', e.target.value)}
-              placeholder="Empresa, Lda"
+              placeholder={t('settings.fiscalNamePlaceholder')}
             />
             <Input
-              label="NIF"
+              label={t('settings.nif')}
               value={form.fiscalNif}
               onChange={(e) => set('fiscalNif', e.target.value)}
               placeholder="5000000000"
             />
             <Textarea
-              label="Endereço fiscal"
+              label={t('settings.fiscalAddress')}
               value={form.fiscalAddress}
               onChange={(e) => set('fiscalAddress', e.target.value)}
-              placeholder="Rua…, Luanda, Angola"
+              placeholder={t('settings.fiscalAddressPlaceholder')}
               rows={2}
             />
           </div>
         </Card>
 
         <Card>
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Integrações</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('settings.integrations')}</h2>
           <div className="flex flex-col gap-4">
             <Input
-              label="Webhook URL"
+              label={t('settings.webhookUrl')}
               type="url"
               value={form.webhookUrl}
               onChange={(e) => set('webhookUrl', e.target.value)}
-              placeholder="https://empresa.ao/webhook/falai"
-              hint="Receberá eventos de chamadas e campanhas assinados com HMAC."
+              placeholder={t('settings.webhookUrlPlaceholder')}
+              hint={t('settings.webhookHint')}
             />
             {data?.webhookUrl && (
               <div>
-                <p className="text-sm font-medium text-gray-700 mb-1">Secret HMAC</p>
+                <p className="text-sm font-medium text-gray-700 mb-1">{t('settings.hmacSecret')}</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500 font-mono">
                     {'•'.repeat(40)}
@@ -145,12 +147,12 @@ export function SettingsPage() {
                     icon={<RotateCcw className="h-3.5 w-3.5" />}
                     loading={rotateSecret.isPending}
                     onClick={() => {
-                      if (confirm('Regenerar o secret invalida a assinatura de eventos futuros. Continuar?')) {
+                      if (confirm(t('settings.regenerateConfirm'))) {
                         rotateSecret.mutate();
                       }
                     }}
                   >
-                    Regenerar
+                    {t('settings.regenerate')}
                   </Button>
                 </div>
               </div>
@@ -159,24 +161,24 @@ export function SettingsPage() {
         </Card>
 
         <Card>
-          <h2 className="text-sm font-semibold text-gray-900 mb-4">Alertas de saldo baixo</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('settings.lowBalanceAlerts')}</h2>
           <div className="grid grid-cols-2 gap-4">
             <Input
-              label="Limiar de alerta (Kz)"
+              label={t('settings.thresholdLabel')}
               value={form.lowBalanceAlertCents}
               onChange={(e) => set('lowBalanceAlertCents', e.target.value)}
-              placeholder="ex: 5000"
-              hint="Recebe alerta quando o saldo baixar deste valor"
+              placeholder={t('settings.thresholdPlaceholder')}
+              hint={t('settings.thresholdHint')}
             />
             <Input
-              label="Email de alerta"
+              label={t('settings.alertEmail')}
               type="email"
               value={form.lowBalanceAlertEmail}
               onChange={(e) => set('lowBalanceAlertEmail', e.target.value)}
-              placeholder="gestor@empresa.ao"
+              placeholder={t('settings.alertEmailPlaceholder')}
             />
             <Input
-              label="Telemóvel de alerta"
+              label={t('settings.alertPhone')}
               value={form.lowBalanceAlertPhone}
               onChange={(e) => set('lowBalanceAlertPhone', e.target.value)}
               placeholder="+244 9XX XXX XXX"
@@ -189,7 +191,7 @@ export function SettingsPage() {
           loading={save.isPending}
           onClick={() => save.mutate()}
         >
-          Guardar definições
+          {t('settings.save')}
         </Button>
       </div>
     </>

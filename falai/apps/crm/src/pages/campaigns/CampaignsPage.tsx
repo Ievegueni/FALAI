@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { Plus, Megaphone, Play, Pause, Square, BarChart2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { campaignsApi } from '@/lib/api';
@@ -27,6 +28,7 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
 }
 
 function CampaignCard({ c }: { c: Campaign }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { success, error } = useToast();
@@ -39,10 +41,10 @@ function CampaignCard({ c }: { c: Campaign }) {
     });
   }
 
-  const start = action(() => campaignsApi.start(c.id), 'Campanha iniciada');
-  const pause = action(() => campaignsApi.pause(c.id), 'Campanha pausada');
-  const resume = action(() => campaignsApi.resume(c.id), 'Campanha retomada');
-  const cancel = action(() => campaignsApi.cancel(c.id), 'Campanha cancelada');
+  const start = action(() => campaignsApi.start(c.id), t('campaigns.started'));
+  const pause = action(() => campaignsApi.pause(c.id), t('campaigns.paused'));
+  const resume = action(() => campaignsApi.resume(c.id), t('campaigns.resumed'));
+  const cancel = action(() => campaignsApi.cancel(c.id), t('campaigns.cancelled'));
 
   const answered = c.answeredCount;
   const answerRate = c.completedCount > 0 ? Math.round((answered / c.completedCount) * 100) : 0;
@@ -60,19 +62,19 @@ function CampaignCard({ c }: { c: Campaign }) {
       <div className="grid grid-cols-4 gap-2 text-center">
         <div>
           <p className="text-lg font-bold text-gray-900">{c.totalContacts}</p>
-          <p className="text-xs text-gray-400">Total</p>
+          <p className="text-xs text-gray-400">{t('campaigns.total')}</p>
         </div>
         <div>
           <p className="text-lg font-bold text-emerald-600">{c.completedCount}</p>
-          <p className="text-xs text-gray-400">Concluídas</p>
+          <p className="text-xs text-gray-400">{t('campaigns.completed')}</p>
         </div>
         <div>
           <p className="text-lg font-bold text-blue-600">{answerRate}%</p>
-          <p className="text-xs text-gray-400">Atendimento</p>
+          <p className="text-xs text-gray-400">{t('campaigns.answerRate')}</p>
         </div>
         <div>
           <p className="text-lg font-bold text-gray-700">{formatAOA(c.actualCostCents)}</p>
-          <p className="text-xs text-gray-400">Custo</p>
+          <p className="text-xs text-gray-400">{t('campaigns.cost')}</p>
         </div>
       </div>
 
@@ -80,22 +82,22 @@ function CampaignCard({ c }: { c: Campaign }) {
 
       <div className="flex items-center gap-2 pt-1 border-t border-gray-100 flex-wrap">
         <Button size="sm" variant="ghost" icon={<BarChart2 className="h-3.5 w-3.5" />} onClick={() => navigate(`/campaigns/${c.id}`)}>
-          Relatório
+          {t('campaigns.report')}
         </Button>
 
         {c.status === 'DRAFT' && (
           <Button size="sm" variant="ghost" icon={<Play className="h-3.5 w-3.5" />} loading={start.isPending} onClick={() => start.mutate()}>
-            Iniciar
+            {t('campaigns.start')}
           </Button>
         )}
         {c.status === 'ACTIVE' && (
           <Button size="sm" variant="ghost" icon={<Pause className="h-3.5 w-3.5" />} loading={pause.isPending} onClick={() => pause.mutate()}>
-            Pausar
+            {t('campaigns.pause')}
           </Button>
         )}
         {c.status === 'PAUSED' && (
           <Button size="sm" variant="ghost" icon={<Play className="h-3.5 w-3.5" />} loading={resume.isPending} onClick={() => resume.mutate()}>
-            Retomar
+            {t('campaigns.resume')}
           </Button>
         )}
         {['DRAFT', 'ACTIVE', 'PAUSED'].includes(c.status) && (
@@ -104,9 +106,9 @@ function CampaignCard({ c }: { c: Campaign }) {
             variant="ghost"
             icon={<Square className="h-3.5 w-3.5 text-red-500" />}
             loading={cancel.isPending}
-            onClick={() => { if (confirm('Cancelar esta campanha?')) cancel.mutate(); }}
+            onClick={() => { if (confirm(t('campaigns.cancelConfirm'))) cancel.mutate(); }}
           >
-            <span className="text-red-500">Cancelar</span>
+            <span className="text-red-500">{t('campaigns.cancel')}</span>
           </Button>
         )}
       </div>
@@ -115,6 +117,7 @@ function CampaignCard({ c }: { c: Campaign }) {
 }
 
 export function CampaignsPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
 
@@ -127,10 +130,10 @@ export function CampaignsPage() {
   return (
     <>
       <Header
-        title="Campanhas"
+        title={t('campaigns.title')}
         actions={
           <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => navigate('/campaigns/new')}>
-            Nova campanha
+            {t('campaigns.new')}
           </Button>
         }
       />
@@ -141,9 +144,9 @@ export function CampaignsPage() {
         ) : data?.data.length === 0 ? (
           <EmptyState
             icon={<Megaphone className="h-8 w-8" />}
-            title="Sem campanhas"
-            description="Crie a sua primeira campanha para contactar múltiplos clientes automaticamente."
-            action={{ label: 'Nova campanha', icon: <Plus className="h-4 w-4" />, onClick: () => navigate('/campaigns/new') }}
+            title={t('campaigns.emptyTitle')}
+            description={t('campaigns.emptyDescription')}
+            action={{ label: t('campaigns.new'), icon: <Plus className="h-4 w-4" />, onClick: () => navigate('/campaigns/new') }}
           />
         ) : (
           <>

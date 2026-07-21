@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Phone, PhoneCall, User, Stethoscope, Save } from 'lucide-react';
 import { contactsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
@@ -20,17 +21,19 @@ import {
 } from '@/lib/utils';
 
 // Contrato dos campos clínicos guardados em Contact.attributes (ver melhorias.md §5)
-const CLINIC_FIELDS: { key: string; label: string; type: 'text' | 'date' | 'textarea' }[] = [
-  { key: 'nrProcesso', label: 'Nº de processo', type: 'text' },
-  { key: 'dataNascimento', label: 'Data de nascimento', type: 'date' },
-  { key: 'ultimaConsulta', label: 'Última consulta', type: 'date' },
-  { key: 'proximaConsulta', label: 'Próxima consulta', type: 'date' },
-  { key: 'medicoResponsavel', label: 'Médico responsável', type: 'text' },
-  { key: 'alergias', label: 'Alergias', type: 'text' },
-  { key: 'notas', label: 'Notas clínicas', type: 'textarea' },
+// A chave é estável; a etiqueta é traduzida via contacts.clinic.<key>
+const CLINIC_FIELDS: { key: string; type: 'text' | 'date' | 'textarea' }[] = [
+  { key: 'nrProcesso', type: 'text' },
+  { key: 'dataNascimento', type: 'date' },
+  { key: 'ultimaConsulta', type: 'date' },
+  { key: 'proximaConsulta', type: 'date' },
+  { key: 'medicoResponsavel', type: 'text' },
+  { key: 'alergias', type: 'text' },
+  { key: 'notas', type: 'textarea' },
 ];
 
 export function ContactDetailPage() {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -54,19 +57,19 @@ export function ContactDetailPage() {
   const save = useMutation({
     mutationFn: () => contactsApi.update(id!, { attributes: fields }),
     onSuccess: () => {
-      success('Ficha actualizada');
+      success(t('contacts.sheetUpdated'));
       void qc.invalidateQueries({ queryKey: ['contact', id] });
     },
     onError: (e: Error) => error(e.message),
   });
 
-  if (isLoading) return <><Header title="Contacto" /><PageSpinner /></>;
-  if (!contact) return <><Header title="Contacto" /><div className="p-6 text-sm text-gray-500">Contacto não encontrado.</div></>;
+  if (isLoading) return <><Header title={t('contacts.contactTitle')} /><PageSpinner /></>;
+  if (!contact) return <><Header title={t('contacts.contactTitle')} /><div className="p-6 text-sm text-gray-500">{t('contacts.notFound')}</div></>;
 
   return (
     <>
       <Header
-        title="Ficha do contacto"
+        title={t('contacts.sheetTitle')}
         actions={
           <div className="flex items-center gap-2">
             {!contact.optedOutAt && (
@@ -75,11 +78,11 @@ export function ContactDetailPage() {
                 icon={<PhoneCall className="h-3.5 w-3.5" />}
                 onClick={() => navigate('/calls/direct', { state: { to: contact.phone } })}
               >
-                Ligar
+                {t('contacts.call')}
               </Button>
             )}
             <Button size="sm" variant="ghost" icon={<ArrowLeft className="h-3.5 w-3.5" />} onClick={() => navigate('/contacts')}>
-              Voltar
+              {t('common.back')}
             </Button>
           </div>
         }
@@ -102,9 +105,9 @@ export function ContactDetailPage() {
               </div>
             </div>
             {contact.optedOutAt ? (
-              <Badge className="bg-red-100 text-red-700">Opt-out</Badge>
+              <Badge className="bg-red-100 text-red-700">{t('contacts.optOut')}</Badge>
             ) : (
-              <Badge className="bg-emerald-100 text-emerald-700">Activo</Badge>
+              <Badge className="bg-emerald-100 text-emerald-700">{t('contacts.active')}</Badge>
             )}
           </div>
         </Card>
@@ -113,21 +116,21 @@ export function ContactDetailPage() {
         {clinicEnabled && (
           <Card>
             <h2 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Stethoscope className="h-4 w-4 text-teal-600" /> Ficha clínica
+              <Stethoscope className="h-4 w-4 text-teal-600" /> {t('contacts.clinicSheet')}
             </h2>
             <div className="grid grid-cols-2 gap-4">
               {CLINIC_FIELDS.map((f) => (
                 <div key={f.key} className={f.type === 'textarea' ? 'col-span-2' : ''}>
                   {f.type === 'textarea' ? (
                     <Textarea
-                      label={f.label}
+                      label={t(`contacts.clinic.${f.key}`)}
                       rows={3}
                       value={fields[f.key] ?? ''}
                       onChange={(e) => setFields((s) => ({ ...s, [f.key]: e.target.value }))}
                     />
                   ) : (
                     <Input
-                      label={f.label}
+                      label={t(`contacts.clinic.${f.key}`)}
                       type={f.type}
                       value={fields[f.key] ?? ''}
                       onChange={(e) => setFields((s) => ({ ...s, [f.key]: e.target.value }))}
@@ -143,7 +146,7 @@ export function ContactDetailPage() {
                 loading={save.isPending}
                 onClick={() => save.mutate()}
               >
-                Guardar ficha
+                {t('contacts.saveSheet')}
               </Button>
             </div>
           </Card>
@@ -152,16 +155,16 @@ export function ContactDetailPage() {
         {/* Histórico de chamadas */}
         <Card padding={false}>
           <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-sm font-semibold text-gray-900">Histórico de chamadas</h2>
+            <h2 className="text-sm font-semibold text-gray-900">{t('contacts.callHistory')}</h2>
           </div>
           {!contact.calls || contact.calls.length === 0 ? (
-            <div className="py-10 text-center text-sm text-gray-500">Ainda não há chamadas para este contacto.</div>
+            <div className="py-10 text-center text-sm text-gray-500">{t('contacts.noCalls')}</div>
           ) : (
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  {['Estado', 'Resultado', 'Duração', 'Data'].map((h) => (
-                    <th key={h} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">{h}</th>
+                  {[t('contacts.histStatus'), t('contacts.histOutcome'), t('contacts.histDuration'), t('contacts.histDate')].map((h, i) => (
+                    <th key={i} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">{h}</th>
                   ))}
                 </tr>
               </thead>
