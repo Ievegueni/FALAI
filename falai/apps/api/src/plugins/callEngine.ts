@@ -1,6 +1,7 @@
 import fp from "fastify-plugin";
 import { Queue } from "bullmq";
-import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter } from "@falai/providers";
+import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter } from "@falai/providers";
+import type { TtsProvider } from "@falai/providers";
 import type { YeastarAdapter } from "@falai/providers";
 import { prisma } from "@falai/db";
 import { config } from "../config.js";
@@ -13,6 +14,8 @@ import { settleCampaignContact } from "../services/callSettlement.service.js";
 declare module "fastify" {
   interface FastifyInstance {
     callEngine: CallEngineService;
+    /** True quando o LLM corre em modo stub (sem chave real) — respostas não são IA real. */
+    llmStub: boolean;
   }
 }
 
@@ -27,18 +30,23 @@ export default fp(async (fastify) => {
     stubMode: stubMode || !providers.deepgram.apiKey,
   });
 
+  const llmStub = stubMode || !providers.anthropic.apiKey;
   const llm = new ClaudeAdapter({
     apiKey: providers.anthropic.apiKey,
     model: "claude-sonnet-4-6",
-    stubMode: stubMode || !providers.anthropic.apiKey,
+    stubMode: llmStub,
   });
 
-  const tts = new ElevenLabsAdapter({
-    apiKey: providers.elevenlabs.apiKey,
-    stubMode: stubMode || !providers.elevenlabs.apiKey,
-  });
+  // TTS_PROVIDER=macos usa say+afconvert localmente (sem API externa)
+  const useMacTts = process.env["TTS_PROVIDER"] === "macos";
+  const tts: TtsProvider = useMacTts
+    ? new MacOsTtsAdapter("Joana")
+    : new ElevenLabsAdapter({
+        apiKey: providers.elevenlabs.apiKey,
+        stubMode: stubMode || !providers.elevenlabs.apiKey,
+      });
 
-  const defaultVoiceId = providers.elevenlabs.defaultVoiceId;
+  const defaultVoiceId = useMacTts ? "Joana" : providers.elevenlabs.defaultVoiceId;
 
   const audioCache = new AudioCache(fastify.redis, tts, fastify.yeastar as YeastarAdapter, defaultVoiceId);
   const turnProcessor = new TurnProcessor(stt, llm, tts, fastify.yeastar as YeastarAdapter, audioCache);
@@ -80,10 +88,11 @@ export default fp(async (fastify) => {
   audioCache.warmUp().catch((err) => fastify.log.error({ err }, "audio_cache.warmup_failed"));
 
   fastify.decorate("callEngine", callEngine);
+  fastify.decorate("llmStub", llmStub);
 
   fastify.log.info({
     sttStub: stubMode || !providers.deepgram.apiKey,
-    llmStub: stubMode || !providers.anthropic.apiKey,
+    llmStub,
     ttsStub: stubMode || !providers.elevenlabs.apiKey,
   }, "call_engine.initialized");
 });

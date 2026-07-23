@@ -10,15 +10,31 @@ const scheduleSchema = z.object({
 
 const createSchema = z.object({
   name: z.string().min(2).max(150),
-  agentId: z.string().cuid(),
+  mode: z.enum(["VOICE_AI", "FIXED_SCRIPT"]).default("VOICE_AI"),
+  agentId: z.string().cuid().optional(),
+  scriptText: z.string().min(10).max(2000).optional(),
+  ttsVoiceId: z.string().max(100).optional(),
   schedule: scheduleSchema.optional(),
   retryPolicy: z
     .object({ maxAttempts: z.number().int().min(1).max(5), retryDelayMinutes: z.number().int().min(1) })
     .optional(),
   throttlePerMinute: z.number().int().min(1).max(100).default(2),
-});
+}).refine(
+  (d) => d.mode === "FIXED_SCRIPT" ? !!d.scriptText : !!d.agentId,
+  { message: "VOICE_AI requer agentId; FIXED_SCRIPT requer scriptText" }
+);
 
-const updateSchema = createSchema.partial();
+const updateSchema = z.object({
+  name: z.string().min(2).max(150).optional(),
+  agentId: z.string().cuid().optional(),
+  scriptText: z.string().min(10).max(2000).optional(),
+  ttsVoiceId: z.string().max(100).optional(),
+  schedule: scheduleSchema.optional(),
+  retryPolicy: z
+    .object({ maxAttempts: z.number().int().min(1).max(5), retryDelayMinutes: z.number().int().min(1) })
+    .optional(),
+  throttlePerMinute: z.number().int().min(1).max(100).optional(),
+});
 
 const addContactsSchema = z.object({
   contactIds: z.array(z.string().cuid()).min(1).max(5000),
@@ -65,15 +81,20 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
     const body = createSchema.parse(request.body);
     const { tenantId, sub: userId } = request.tenantUser!;
 
-    const agent = await prisma.agent.findFirst({
-      where: { id: body.agentId, tenantId, status: "ACTIVE", deletedAt: null },
-    });
-    if (!agent) return reply.status(400).send({ error: "Agente não encontrado ou não está activo" });
+    if (body.mode === "VOICE_AI" || !body.mode) {
+      const agent = await prisma.agent.findFirst({
+        where: { id: body.agentId!, tenantId, status: "ACTIVE", deletedAt: null },
+      });
+      if (!agent) return reply.status(400).send({ error: "Agente não encontrado ou não está activo" });
+    }
 
     const campaign = await prisma.campaign.create({
       data: {
         tenantId,
-        agentId: body.agentId,
+        mode: body.mode,
+        ...(body.agentId && { agentId: body.agentId }),
+        ...(body.scriptText !== undefined && { scriptText: body.scriptText }),
+        ...(body.ttsVoiceId !== undefined && { ttsVoiceId: body.ttsVoiceId }),
         name: body.name,
         throttlePerMinute: body.throttlePerMinute,
         ...(body.schedule !== undefined && { scheduleJson: body.schedule as object }),
@@ -131,6 +152,9 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       where: { id: existing.id },
       data: {
         ...(body.name !== undefined && { name: body.name }),
+        ...(body.agentId !== undefined && { agentId: body.agentId }),
+        ...(body.scriptText !== undefined && { scriptText: body.scriptText }),
+        ...(body.ttsVoiceId !== undefined && { ttsVoiceId: body.ttsVoiceId }),
         ...(body.throttlePerMinute !== undefined && { throttlePerMinute: body.throttlePerMinute }),
         ...(body.schedule !== undefined && { scheduleJson: body.schedule as object }),
         ...(body.retryPolicy !== undefined && { retryPolicy: body.retryPolicy as object }),
@@ -170,6 +194,45 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       targetId: campaign.id,
       ip: request.ip,
     });
+
+    return { ok: true, status: "RUNNING", pendingContacts: pendingCount };
+  });
+
+  // POST /tenant/campaigns/:id/launch — inicia + dispara imediatamente (sem esperar pelo tick de 30s)
+  fastify.post<{ Params: { id: string } }>("/:id/launch", { preHandler }, async (request, reply) => {
+    const { tenantId, sub: userId } = request.tenantUser!;
+
+    const campaign = await prisma.campaign.findFirst({ where: { id: request.params.id, tenantId } });
+    if (!campaign) return reply.status(404).send({ error: "Campanha não encontrada" });
+    if (!["DRAFT", "SCHEDULED", "PAUSED"].includes(campaign.status)) {
+      return reply.status(400).send({ error: `Campanha não pode ser lançada a partir do estado ${campaign.status}` });
+    }
+
+    const pendingCount = await prisma.campaignContact.count({
+      where: { campaignId: campaign.id, status: "PENDING" },
+    });
+    if (pendingCount === 0) {
+      return reply.status(400).send({ error: "Campanha sem contactos pendentes. Adiciona contactos primeiro." });
+    }
+
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { status: "RUNNING", totalContacts: pendingCount },
+    });
+
+    await fastify.audit({
+      actorType: "TENANT_USER",
+      actorId: userId,
+      action: "campaign.launched",
+      targetType: "Campaign",
+      targetId: campaign.id,
+      ip: request.ip,
+    });
+
+    // Disparo imediato — não espera resposta para não bloquear o cliente
+    fastify.campaignDispatcher.processNow(campaign.id).catch((err) =>
+      fastify.log.error({ err, campaignId: campaign.id }, "campaign.launch.dispatch_error")
+    );
 
     return { ok: true, status: "RUNNING", pendingContacts: pendingCount };
   });
@@ -253,6 +316,52 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
     return { ok: true, status: "CANCELLED" };
   });
 
+  // POST /tenant/campaigns/:id/retry — reset contacts e relança campanha
+  fastify.post<{ Params: { id: string } }>("/:id/retry", { preHandler }, async (request, reply) => {
+    const { tenantId, sub: userId } = request.tenantUser!;
+
+    const campaign = await prisma.campaign.findFirst({ where: { id: request.params.id, tenantId } });
+    if (!campaign) return reply.status(404).send({ error: "Campanha não encontrada" });
+    if (!["CANCELLED", "DONE"].includes(campaign.status)) {
+      return reply.status(400).send({ error: "Só é possível repetir campanhas CANCELLED ou DONE" });
+    }
+
+    // Reset all contacts back to PENDING (including FAILED ones from cancel)
+    await prisma.campaignContact.updateMany({
+      where: { campaignId: campaign.id },
+      data: { status: "PENDING" },
+    });
+
+    const totalContacts = await prisma.campaignContact.count({ where: { campaignId: campaign.id } });
+
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        status: "RUNNING",
+        completed: 0,
+        failedCount: 0,
+        totalContacts,
+        summary: null,
+      },
+    });
+
+    await fastify.audit({
+      actorType: "TENANT_USER",
+      actorId: userId,
+      action: "campaign.retried",
+      targetType: "Campaign",
+      targetId: campaign.id,
+      ip: request.ip,
+    });
+
+    // Disparo imediato
+    fastify.campaignDispatcher.processNow(campaign.id).catch((err) =>
+      fastify.log.error({ err, campaignId: campaign.id }, "campaign.retry.dispatch_error")
+    );
+
+    return { ok: true, status: "RUNNING", totalContacts };
+  });
+
   // POST /tenant/campaigns/:id/contacts — add existing contacts to campaign
   fastify.post<{ Params: { id: string } }>("/:id/contacts", { preHandler }, async (request, reply) => {
     const body = addContactsSchema.parse(request.body);
@@ -321,9 +430,11 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       where: { campaignId: campaign.id, status: { in: ["COMPLETED", "ESCALATED"] } },
     });
 
-    // Generate LLM summary if not already cached
+    // Generate LLM summary if not already cached.
+    // Em modo stub o LLM devolve respostas de conversa (não IA real), por isso não geramos
+    // resumo — o CRM esconde a secção quando summary é null.
     let summary = campaign.summary;
-    if (!summary && callStats._count.id > 0) {
+    if (!summary && !fastify.llmStub && callStats._count.id > 0) {
       try {
         const reportText = buildReportText(campaign.name, callStats, contactStats, outcomeBreakdown);
         const result = await fastify.callEngine.simulateTurn({
