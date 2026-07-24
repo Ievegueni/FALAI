@@ -1,45 +1,44 @@
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { TtsProvider } from "./TtsProvider.js";
 
-const execFileAsync = promisify(execFile);
+const exec = promisify(execFile);
 
 /**
- * TTS local via `say` + `afconvert` do macOS — usado apenas em dev quando
- * TTS_PROVIDER=macos (sem chave de API externa). Não disponível em Linux.
+ * Adaptador TTS local usando `say` (macOS) + `afconvert`.
+ * Não requer nenhuma API externa — útil para desenvolvimento e testes.
+ * Em produção (Linux) usa-se ElevenLabs ou outro provedor cloud.
+ *
+ * voiceId mapeia para vozes do `say -v`: "Joana" (PT), "Samantha" (EN), etc.
+ * Se voiceId for desconhecido, usa a voz do sistema por defeito.
  */
 export class MacOsTtsAdapter implements TtsProvider {
-  constructor(private voice: string = "Joana") {}
+  constructor(private readonly defaultVoice = "Joana") {}
 
   async synthesize(params: {
     text: string;
     voiceId: string;
     language?: string;
   }): Promise<{ wavBuffer: Buffer; durationMs: number; characters: number }> {
-    const startedAt = Date.now();
+    const voice = params.voiceId || this.defaultVoice;
     const dir = await mkdtemp(join(tmpdir(), "falai-tts-"));
     const aiffPath = join(dir, "out.aiff");
     const wavPath = join(dir, "out.wav");
 
     try {
-      await execFileAsync("say", ["-v", this.voice, "-o", aiffPath, params.text]);
-      await execFileAsync("afconvert", [
-        aiffPath,
-        wavPath,
-        "-f", "WAVE",
-        "-d", "LEI16@16000",
-        "-c", "1",
-      ]);
-      const wavBuffer = await readFile(wavPath);
+      // Gera AIFF com o say do macOS
+      await exec("say", ["-v", voice, "-o", aiffPath, "--", params.text]);
 
-      return {
-        wavBuffer,
-        durationMs: Date.now() - startedAt,
-        characters: params.text.length,
-      };
+      // Converte para WAV PCM 16-bit 8 kHz mono (formato aceite pelo Yeastar)
+      await exec("afconvert", [aiffPath, "-o", wavPath, "-d", "LEI16@8000", "-c", "1"]);
+
+      const wavBuffer = await readFile(wavPath);
+      const durationMs = Math.round((wavBuffer.length / (8000 * 2)) * 1000);
+
+      return { wavBuffer, durationMs, characters: params.text.length };
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -47,10 +46,11 @@ export class MacOsTtsAdapter implements TtsProvider {
 
   async healthCheck(): Promise<{ ok: boolean; details?: string }> {
     try {
-      await execFileAsync("say", ["-v", "?"]);
-      return { ok: true, details: "macos say available" };
-    } catch (err) {
-      return { ok: false, details: String(err) };
+      await exec("which", ["say"]);
+      await exec("which", ["afconvert"]);
+      return { ok: true, details: "macOS say + afconvert disponíveis" };
+    } catch {
+      return { ok: false, details: "say ou afconvert não encontrados (requer macOS)" };
     }
   }
 }

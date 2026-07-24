@@ -1,11 +1,23 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Phone } from 'lucide-react';
+import { Phone, AlertCircle } from 'lucide-react';
 import { callsApi } from '@/lib/api';
 import { Card, Badge, Pagination, EmptyState, PageSpinner } from '@/components/ui';
 import { formatDate, formatDuration, formatAOA, callStatusColor, callStatusLabel } from '@/lib/utils';
 import type { CallStatus } from '@/types';
+
+function FailReasonBadge({ reason }: { reason: string }) {
+  return (
+    <span className="group relative inline-flex items-center gap-1 cursor-help">
+      <AlertCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+      <span className="max-w-[140px] truncate text-red-600 text-xs">{reason}</span>
+      <span className="pointer-events-none absolute bottom-full left-0 z-10 mb-1.5 hidden w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs text-white shadow-lg group-hover:block whitespace-pre-wrap">
+        {reason}
+      </span>
+    </span>
+  );
+}
 
 export function CallsPage() {
   const navigate = useNavigate();
@@ -52,7 +64,7 @@ export function CallsPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                 <tr>
-                  {['Destino', 'Status', 'Tenant', 'Agente', 'Duração', 'Custo', 'Criada em'].map((h) => (
+                  {['Destino', 'Status / Erro', 'Tenant', 'Agente', 'Duração', 'Custo', 'Criada em'].map((h) => (
                     <th key={h} className="px-6 py-3 text-left font-medium">{h}</th>
                   ))}
                 </tr>
@@ -66,9 +78,12 @@ export function CallsPage() {
                   >
                     <td className="px-6 py-3 font-medium text-gray-900">{c.to}</td>
                     <td className="px-6 py-3">
-                      <Badge className={callStatusColor[c.status as CallStatus]}>
-                        {callStatusLabel[c.status as CallStatus] ?? c.status}
-                      </Badge>
+                      <div className="flex flex-col gap-1">
+                        <Badge className={callStatusColor[c.status as CallStatus]}>
+                          {callStatusLabel[c.status as CallStatus] ?? c.status}
+                        </Badge>
+                        {c.failReason && <FailReasonBadge reason={c.failReason} />}
+                      </div>
                     </td>
                     <td className="px-6 py-3 text-gray-600">{c.tenant?.name ?? '–'}</td>
                     <td className="px-6 py-3 text-gray-600">{c.agent?.name ?? '–'}</td>

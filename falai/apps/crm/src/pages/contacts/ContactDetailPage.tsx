@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Phone, PhoneCall, User, Stethoscope, Save } from 'lucide-react';
+import { ArrowLeft, Phone, PhoneCall, User, Stethoscope, Save, Pencil } from 'lucide-react';
 import { contactsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { Input, Textarea } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -63,6 +64,41 @@ export function ContactDetailPage() {
     onError: (e: Error) => error(e.message),
   });
 
+  // Edição dos dados base do contacto (nome + telefone)
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ name: '', phone: '' });
+  const [editErrors, setEditErrors] = useState({ name: '', phone: '' });
+
+  const openEdit = () => {
+    if (!contact) return;
+    // Mostra o número em formato nacional (sem +244), incluindo dados legados
+    const digits = contact.phone.replace(/\D/g, '');
+    const local = digits.startsWith('244') && digits.length === 12 ? digits.slice(3) : digits;
+    setEditForm({ name: contact.name, phone: local });
+    setEditErrors({ name: '', phone: '' });
+    setEditOpen(true);
+  };
+
+  const updateContact = useMutation({
+    mutationFn: () => contactsApi.update(id!, { name: editForm.name, phone: editForm.phone }),
+    onSuccess: () => {
+      success(t('contacts.contactUpdated'));
+      setEditOpen(false);
+      void qc.invalidateQueries({ queryKey: ['contact', id] });
+      void qc.invalidateQueries({ queryKey: ['contacts'] });
+    },
+    onError: (e: Error) => error(e.message),
+  });
+
+  const submitEdit = () => {
+    const errs = { name: '', phone: '' };
+    if (!editForm.name.trim()) errs.name = t('contacts.errNameRequired');
+    if (!editForm.phone.trim()) errs.phone = t('contacts.errPhoneRequired');
+    setEditErrors(errs);
+    if (errs.name || errs.phone) return;
+    updateContact.mutate();
+  };
+
   if (isLoading) return <><Header title={t('contacts.contactTitle')} /><PageSpinner /></>;
   if (!contact) return <><Header title={t('contacts.contactTitle')} /><div className="p-6 text-sm text-gray-500">{t('contacts.notFound')}</div></>;
 
@@ -104,11 +140,21 @@ export function ContactDetailPage() {
                 </p>
               </div>
             </div>
-            {contact.optedOutAt ? (
-              <Badge className="bg-red-100 text-red-700">{t('contacts.optOut')}</Badge>
-            ) : (
-              <Badge className="bg-emerald-100 text-emerald-700">{t('contacts.active')}</Badge>
-            )}
+            <div className="flex items-center gap-3">
+              {contact.optedOutAt ? (
+                <Badge className="bg-red-100 text-red-700">{t('contacts.optOut')}</Badge>
+              ) : (
+                <Badge className="bg-emerald-100 text-emerald-700">{t('contacts.active')}</Badge>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Pencil className="h-3.5 w-3.5" />}
+                onClick={openEdit}
+              >
+                {t('contacts.edit')}
+              </Button>
+            </div>
           </div>
         </Card>
 
@@ -192,6 +238,35 @@ export function ContactDetailPage() {
           )}
         </Card>
       </div>
+
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title={t('contacts.editTitle')}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditOpen(false)}>{t('common.cancel')}</Button>
+            <Button loading={updateContact.isPending} onClick={submitEdit}>{t('common.save')}</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label={t('contacts.modalName')}
+            value={editForm.name}
+            onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+            error={editErrors.name}
+            placeholder={t('contacts.modalNamePlaceholder')}
+          />
+          <Input
+            label={t('contacts.modalPhone')}
+            value={editForm.phone}
+            onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+            error={editErrors.phone}
+            hint={t('contacts.modalPhoneHint')}
+          />
+        </div>
+      </Modal>
     </>
   );
 }

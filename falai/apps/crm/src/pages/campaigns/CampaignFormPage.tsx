@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Megaphone, Info } from 'lucide-react';
+import { ArrowLeft, Megaphone, Info, Bot, FileText, Rocket } from 'lucide-react';
 import { agentsApi, campaignsApi, contactsApi, walletApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { formatAOA, daysOfWeekLabel } from '@/lib/utils';
+import type { CampaignMode } from '@/types';
 
 const RETRY_STATUSES = ['NO_ANSWER', 'FAILED'] as const;
 
@@ -19,8 +20,10 @@ export function CampaignFormPage() {
   const navigate = useNavigate();
   const { success, error } = useToast();
 
+  const [mode, setMode] = useState<CampaignMode>('VOICE_AI');
   const [name, setName] = useState('');
   const [agentId, setAgentId] = useState('');
+  const [scriptText, setScriptText] = useState('');
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [startHour, setStartHour] = useState(8);
   const [endHour, setEndHour] = useState(18);
@@ -46,22 +49,41 @@ export function CampaignFormPage() {
   });
 
   const estimatedCost =
-    wallet && selectedContactIds.length > 0
-      ? selectedContactIds.length * 2 * wallet.plan.pricePerMinuteCents // 2 min avg estimate
-      : null;
+    wallet && selectedContactIds.length > 0 && mode === 'VOICE_AI'
+      ? selectedContactIds.length * 2 * wallet.plan.pricePerMinuteCents
+      : wallet && selectedContactIds.length > 0 && mode === 'FIXED_SCRIPT'
+        ? selectedContactIds.length * wallet.plan.pricePerCallCents
+        : null;
+
+  function buildPayload() {
+    return {
+      name,
+      mode,
+      ...(mode === 'VOICE_AI' ? { agentId } : { scriptText }),
+      contactIds: selectedContactIds,
+      scheduleJson: { startHour, endHour, timezone: 'Africa/Luanda', daysOfWeek },
+      retryPolicy: { maxAttempts, delayMinutes, retryOn: retryOn as any },
+      throttlePerMinute,
+    };
+  }
 
   const create = useMutation({
-    mutationFn: () =>
-      campaignsApi.create({
-        name,
-        agentId,
-        contactIds: selectedContactIds,
-        scheduleJson: { startHour, endHour, timezone: 'Africa/Luanda', daysOfWeek },
-        retryPolicy: { maxAttempts, delayMinutes, retryOn: retryOn as any },
-        throttlePerMinute,
-      }),
+    mutationFn: () => campaignsApi.create(buildPayload()),
     onSuccess: (campaign) => {
       success(t('campaigns.form.created'));
+      navigate(`/campaigns/${campaign.id}`);
+    },
+    onError: (e: Error) => error(e.message),
+  });
+
+  const createAndLaunch = useMutation({
+    mutationFn: async () => {
+      const campaign = await campaignsApi.create(buildPayload());
+      await campaignsApi.launch(campaign.id);
+      return campaign;
+    },
+    onSuccess: (campaign) => {
+      success(t('campaigns.launched'));
       navigate(`/campaigns/${campaign.id}`);
     },
     onError: (e: Error) => error(e.message),
@@ -81,7 +103,8 @@ export function CampaignFormPage() {
 
   function validate(): boolean {
     if (!name.trim()) { error(t('campaigns.form.errNameRequired')); return false; }
-    if (!agentId) { error(t('campaigns.form.errSelectAgent')); return false; }
+    if (mode === 'VOICE_AI' && !agentId) { error(t('campaigns.form.errSelectAgent')); return false; }
+    if (mode === 'FIXED_SCRIPT' && !scriptText.trim()) { error(t('campaigns.form.errScriptRequired')); return false; }
     if (selectedContactIds.length === 0) { error(t('campaigns.form.errSelectContact')); return false; }
     if (startHour >= endHour) { error(t('campaigns.form.errHourOrder')); return false; }
     return true;
@@ -101,6 +124,48 @@ export function CampaignFormPage() {
       />
 
       <div className="p-6 max-w-3xl space-y-6">
+        {/* Campaign type selector */}
+        <Card>
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('campaigns.form.mode')}</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setMode('VOICE_AI')}
+              className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 text-left transition-colors ${
+                mode === 'VOICE_AI'
+                  ? 'border-blue-600 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Bot className={`h-4 w-4 ${mode === 'VOICE_AI' ? 'text-blue-600' : 'text-gray-400'}`} />
+                <span className={`text-sm font-medium ${mode === 'VOICE_AI' ? 'text-blue-700' : 'text-gray-700'}`}>
+                  {t('campaigns.form.voiceAi')}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500">{t('campaigns.form.voiceAiDesc')}</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMode('FIXED_SCRIPT')}
+              className={`flex flex-col items-start gap-2 rounded-lg border-2 p-4 text-left transition-colors ${
+                mode === 'FIXED_SCRIPT'
+                  ? 'border-green-600 bg-green-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <FileText className={`h-4 w-4 ${mode === 'FIXED_SCRIPT' ? 'text-green-600' : 'text-gray-400'}`} />
+                <span className={`text-sm font-medium ${mode === 'FIXED_SCRIPT' ? 'text-green-700' : 'text-gray-700'}`}>
+                  {t('campaigns.form.fixedScript')}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500">{t('campaigns.form.fixedScriptDesc')}</p>
+            </button>
+          </div>
+        </Card>
+
         <Card>
           <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('campaigns.form.basicInfo')}</h2>
           <div className="flex flex-col gap-4">
@@ -111,17 +176,41 @@ export function CampaignFormPage() {
               placeholder={t('campaigns.form.namePlaceholder')}
               required
             />
-            <Select
-              label={t('campaigns.form.agent')}
-              value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
-              required
-            >
-              <option value="">{t('campaigns.form.selectAgent')}</option>
-              {agents?.data.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </Select>
+
+            {mode === 'VOICE_AI' && (
+              <Select
+                label={t('campaigns.form.agent')}
+                value={agentId}
+                onChange={(e) => setAgentId(e.target.value)}
+                required
+              >
+                <option value="">{t('campaigns.form.selectAgent')}</option>
+                {agents?.data.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </Select>
+            )}
+
+            {mode === 'FIXED_SCRIPT' && (
+              <div className="flex flex-col gap-1">
+                <label className="block text-sm font-medium text-gray-700">
+                  {t('campaigns.form.scriptText')}
+                  <span className="ml-1 text-red-500">*</span>
+                </label>
+                <textarea
+                  value={scriptText}
+                  onChange={(e) => setScriptText(e.target.value)}
+                  placeholder={t('campaigns.form.scriptTextPlaceholder')}
+                  maxLength={2000}
+                  rows={5}
+                  className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                />
+                <p className="text-xs text-gray-500 flex justify-between">
+                  <span>{t('campaigns.form.scriptTextHint')}</span>
+                  <span>{scriptText.length}/2000</span>
+                </p>
+              </div>
+            )}
           </div>
         </Card>
 
@@ -249,14 +338,27 @@ export function CampaignFormPage() {
           <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 flex gap-3">
             <Info className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
             <div className="text-sm text-blue-700">
-              <p>{t('campaigns.form.estCostLabel')}: <strong>{formatAOA(estimatedCost)}</strong> ({t('campaigns.form.estCostBreakdown', { count: selectedContactIds.length, price: formatAOA(wallet?.plan.pricePerMinuteCents ?? 0) })})</p>
+              {mode === 'VOICE_AI' ? (
+                <p>{t('campaigns.form.estCostLabel')}: <strong>{formatAOA(estimatedCost)}</strong> ({t('campaigns.form.estCostBreakdown', { count: selectedContactIds.length, price: formatAOA(wallet?.plan.pricePerMinuteCents ?? 0) })})</p>
+              ) : (
+                <p>{t('campaigns.form.estCostLabel')}: <strong>{formatAOA(estimatedCost)}</strong> ({selectedContactIds.length} × {formatAOA(wallet?.plan.pricePerCallCents ?? 0)}/chamada)</p>
+              )}
               <p className="mt-1 text-xs">{t('campaigns.form.estCostNote')}</p>
             </div>
           </div>
         )}
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Button
+            className="bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+            icon={<Rocket className="h-4 w-4" />}
+            loading={createAndLaunch.isPending}
+            onClick={() => { if (validate()) createAndLaunch.mutate(); }}
+          >
+            {t('campaigns.form.createAndLaunch')}
+          </Button>
+          <Button
+            variant="ghost"
             icon={<Megaphone className="h-4 w-4" />}
             loading={create.isPending}
             onClick={() => { if (validate()) create.mutate(); }}

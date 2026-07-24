@@ -34,10 +34,12 @@ export function formatDuration(secs: number): string {
 }
 
 export function formatPhone(phone: string): string {
-  // +244XXXXXXXXX → +244 9XX XXX XXX
+  // Mostra sempre no formato nacional 9XX XXX XXX (sem +244).
+  // Aceita dados legados em +244XXXXXXXXX e o novo formato nacional de 9 dígitos.
   const digits = phone.replace(/\D/g, '');
-  if (digits.startsWith('244') && digits.length === 12) {
-    return `+244 ${digits.slice(3, 6)} ${digits.slice(6, 9)} ${digits.slice(9)}`;
+  const local = digits.startsWith('244') && digits.length === 12 ? digits.slice(3) : digits;
+  if (local.length === 9) {
+    return `${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
   }
   return phone;
 }

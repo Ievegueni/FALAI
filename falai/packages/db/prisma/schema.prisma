@@ -69,10 +69,11 @@ enum CallStatus {
 }
 
 enum CallKind {
-  AI_AGENT // chamada conduzida por agente de IA
-  DIRECT   // click-to-call (extensão → número), sem IA
-  OTP      // entrega de código OTP por voz, sem IA
-  INBOUND  // chamada recebida (entrada), registada ao vivo a partir do PBX
+  AI_AGENT      // chamada conduzida por agente de IA
+  DIRECT        // click-to-call (extensão → número), sem IA
+  OTP           // entrega de código OTP por voz, sem IA
+  INBOUND       // chamada recebida (entrada), registada ao vivo a partir do PBX
+  FIXED_SCRIPT  // campanha com script pré-definido, sem IA
 }
 
 enum CampaignStatus {
@@ -82,6 +83,11 @@ enum CampaignStatus {
   PAUSED
   DONE
   CANCELLED
+}
+
+enum CampaignMode {
+  VOICE_AI
+  FIXED_SCRIPT
 }
 
 enum TurnRole {
@@ -392,8 +398,11 @@ model Campaign {
   id                String         @id @default(cuid())
   tenantId          String
   tenant            Tenant         @relation(fields: [tenantId], references: [id])
-  agentId           String
-  agent             Agent          @relation(fields: [agentId], references: [id])
+  agentId           String?
+  agent             Agent?         @relation(fields: [agentId], references: [id])
+  mode              CampaignMode   @default(VOICE_AI)
+  scriptText        String?        @db.Text
+  ttsVoiceId        String?
   name              String
   status            CampaignStatus @default(DRAFT)
   scheduleJson      Json?

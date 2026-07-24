@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Plus, Megaphone, Play, Pause, Square, BarChart2 } from 'lucide-react';
+import { Plus, Megaphone, Play, Pause, Square, BarChart2, Rocket, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { campaignsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
@@ -33,7 +33,7 @@ function CampaignCard({ c }: { c: Campaign }) {
   const qc = useQueryClient();
   const { success, error } = useToast();
 
-  function action(fn: () => Promise<Campaign>, msg: string) {
+  function action(fn: () => Promise<unknown>, msg: string) {
     return useMutation({
       mutationFn: fn,
       onSuccess: () => { success(msg); void qc.invalidateQueries({ queryKey: ['campaigns'] }); },
@@ -41,10 +41,11 @@ function CampaignCard({ c }: { c: Campaign }) {
     });
   }
 
-  const start = action(() => campaignsApi.start(c.id), t('campaigns.started'));
+  const launch = action(() => campaignsApi.launch(c.id), t('campaigns.launched'));
   const pause = action(() => campaignsApi.pause(c.id), t('campaigns.paused'));
   const resume = action(() => campaignsApi.resume(c.id), t('campaigns.resumed'));
   const cancel = action(() => campaignsApi.cancel(c.id), t('campaigns.cancelled'));
+  const retry = action(() => campaignsApi.retry(c.id), t('campaigns.retried'));
 
   const answered = c.answeredCount;
   const answerRate = c.completedCount > 0 ? Math.round((answered / c.completedCount) * 100) : 0;
@@ -54,7 +55,7 @@ function CampaignCard({ c }: { c: Campaign }) {
       <div className="flex items-start justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-gray-900">{c.name}</h3>
-          <p className="text-xs text-gray-500 mt-0.5">{c.agent.name} · {formatDate(c.createdAt)}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{c.agent?.name ?? '—'} · {formatDate(c.createdAt)}</p>
         </div>
         <Badge className={campaignStatusColor[c.status]}>{campaignStatusLabel(c.status)}</Badge>
       </div>
@@ -85,19 +86,20 @@ function CampaignCard({ c }: { c: Campaign }) {
           {t('campaigns.report')}
         </Button>
 
-        {c.status === 'DRAFT' && (
-          <Button size="sm" variant="ghost" icon={<Play className="h-3.5 w-3.5" />} loading={start.isPending} onClick={() => start.mutate()}>
-            {t('campaigns.start')}
+        {(c.status === 'DRAFT' || c.status === 'PAUSED') && (
+          <Button
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+            icon={<Rocket className="h-3.5 w-3.5" />}
+            loading={launch.isPending}
+            onClick={() => launch.mutate()}
+          >
+            {t('campaigns.launch')}
           </Button>
         )}
         {c.status === 'ACTIVE' && (
           <Button size="sm" variant="ghost" icon={<Pause className="h-3.5 w-3.5" />} loading={pause.isPending} onClick={() => pause.mutate()}>
             {t('campaigns.pause')}
-          </Button>
-        )}
-        {c.status === 'PAUSED' && (
-          <Button size="sm" variant="ghost" icon={<Play className="h-3.5 w-3.5" />} loading={resume.isPending} onClick={() => resume.mutate()}>
-            {t('campaigns.resume')}
           </Button>
         )}
         {['DRAFT', 'ACTIVE', 'PAUSED'].includes(c.status) && (
@@ -109,6 +111,17 @@ function CampaignCard({ c }: { c: Campaign }) {
             onClick={() => { if (confirm(t('campaigns.cancelConfirm'))) cancel.mutate(); }}
           >
             <span className="text-red-500">{t('campaigns.cancel')}</span>
+          </Button>
+        )}
+        {['CANCELLED', 'COMPLETED'].includes(c.status) && (
+          <Button
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700 text-white border-0"
+            icon={<RotateCcw className="h-3.5 w-3.5" />}
+            loading={retry.isPending}
+            onClick={() => retry.mutate()}
+          >
+            {t('campaigns.retry')}
           </Button>
         )}
       </div>

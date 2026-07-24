@@ -62,6 +62,7 @@ export interface Plan {
   clinicEnabled?: boolean;
   smsEnabled?: boolean;
   pricePerMinuteCents: number;
+  pricePerCallCents: number;
   monthlyFeeCents: number;
   maxAgents: number;
   maxConcurrent: number;
@@ -250,13 +251,17 @@ export interface CallTurn {
 // ─── Campaign ────────────────────────────────────────────────────────────────
 
 export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED';
+export type CampaignMode = 'VOICE_AI' | 'FIXED_SCRIPT';
 
 export interface Campaign {
   id: string;
   name: string;
   status: CampaignStatus;
-  agentId: string;
-  agent: { name: string };
+  mode: CampaignMode;
+  agentId: string | null;
+  agent: { name: string } | null;
+  scriptText: string | null;
+  ttsVoiceId: string | null;
   totalContacts: number;
   pendingCount: number;
   completedCount: number;

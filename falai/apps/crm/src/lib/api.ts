@@ -6,6 +6,7 @@ import type {
   Call,
   CallStatus,
   Campaign,
+  CampaignMode,
   CampaignSchedule,
   CampaignStatus,
   Contact,
@@ -347,6 +348,9 @@ function mapCampaign(raw: Record<string, unknown>): Campaign {
     answeredCount: (raw.answeredCount as number | undefined) ?? 0,
     pendingCount: (raw.pendingCount as number | undefined) ?? Math.max(0, total - completed - failed),
     actualCostCents: (raw.actualCostCents as number | undefined) ?? 0,
+    mode: (raw.mode as Campaign['mode']) ?? 'VOICE_AI',
+    scriptText: (raw.scriptText as string | null) ?? null,
+    ttsVoiceId: (raw.ttsVoiceId as string | null) ?? null,
     // Backend stores `days`/`retryDelayMinutes`; normalize + default so the UI never reads null.
     scheduleJson: {
       startHour: (s.startHour as number) ?? 8,
@@ -376,7 +380,10 @@ export const campaignsApi = {
 
   create: async (data: {
     name: string;
-    agentId: string;
+    mode?: CampaignMode;
+    agentId?: string;
+    scriptText?: string;
+    ttsVoiceId?: string;
     contactIds?: string[];
     scheduleJson: CampaignSchedule;
     retryPolicy: RetryPolicy;
@@ -385,7 +392,10 @@ export const campaignsApi = {
     // Backend uses `schedule`/`retryDelayMinutes` and adds contacts via a separate call.
     const raw = await post<{ campaign: Record<string, unknown> }>('/tenant/campaigns', {
       name: data.name,
-      agentId: data.agentId,
+      mode: data.mode ?? 'VOICE_AI',
+      ...(data.agentId && { agentId: data.agentId }),
+      ...(data.scriptText && { scriptText: data.scriptText }),
+      ...(data.ttsVoiceId && { ttsVoiceId: data.ttsVoiceId }),
       throttlePerMinute: data.throttlePerMinute,
       schedule: {
         startHour: data.scheduleJson.startHour,
@@ -418,9 +428,11 @@ export const campaignsApi = {
   },
 
   start: (id: string) => post<Campaign>(`/tenant/campaigns/${id}/start`),
+  launch: (id: string) => post<{ ok: boolean; pendingContacts: number }>(`/tenant/campaigns/${id}/launch`),
   pause: (id: string) => post<Campaign>(`/tenant/campaigns/${id}/pause`),
   resume: (id: string) => post<Campaign>(`/tenant/campaigns/${id}/resume`),
   cancel: (id: string) => post<Campaign>(`/tenant/campaigns/${id}/cancel`),
+  retry: (id: string) => post<{ ok: boolean; totalContacts: number }>(`/tenant/campaigns/${id}/retry`),
 };
 
 // ─── Wallet ──────────────────────────────────────────────────────────────────
@@ -428,7 +440,7 @@ export const campaignsApi = {
 export const walletApi = {
   balance: async () => {
     const raw = await get<{
-      balance: { balanceCents: number; creditLimitCents: number; plan: { name: string; pricePerMinuteCents: number } };
+      balance: { balanceCents: number; creditLimitCents: number; plan: { name: string; pricePerMinuteCents: number; pricePerCallCents: number } };
     }>('/tenant/wallet');
     return raw.balance;
   },
