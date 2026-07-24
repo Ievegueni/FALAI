@@ -16,15 +16,20 @@ const createSchema = z.object({
 
 const updateSchema = z.object({
   name: z.string().max(100).optional(),
+  phone: z.string().min(7).max(20).optional(),
   attributes: z.record(z.unknown()).optional(),
 });
 
-/** Normalize phone to E.164 for Angola (+244XXXXXXXXX) */
+/**
+ * Normaliza para o formato nacional de Angola (9 dígitos, sem indicativo +244).
+ * É este o formato que o trunk da Yeastar encaminha; guardar sem +244 mantém a
+ * base de dados alinhada com o que o cliente vê e com o que a PBX espera.
+ */
 function normalizePhone(raw: string): string | null {
   const digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("244") && digits.length === 12) return `+${digits}`;
-  if (digits.length === 9) return `+244${digits}`; // local format
-  if (digits.startsWith("00244") && digits.length === 14) return `+${digits.slice(2)}`;
+  if (digits.startsWith("244") && digits.length === 12) return digits.slice(3);
+  if (digits.startsWith("00244") && digits.length === 14) return digits.slice(5);
+  if (digits.length === 9) return digits; // já em formato nacional
   return null;
 }
 
@@ -112,7 +117,7 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
     const { tenantId } = request.tenantUser!;
 
     const phone = normalizePhone(body.phone);
-    if (!phone) return reply.status(400).send({ error: "Formato de telefone inválido. Use E.164 (+244XXXXXXXXX) ou formato local." });
+    if (!phone) return reply.status(400).send({ error: "Formato de telefone inválido. Use o número nacional de 9 dígitos (ex: 9XX XXX XXX)." });
 
     const contact = await prisma.contact.upsert({
       where: { tenantId_phone: { tenantId, phone } },
@@ -150,10 +155,23 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await prisma.contact.findFirst({ where: { id: request.params.id, tenantId } });
     if (!existing) return reply.status(404).send({ error: "Contacto não encontrado" });
 
+    // Se o telefone mudar, normaliza para o formato nacional e garante que não colide com outro contacto
+    let normalizedPhone: string | undefined;
+    if (body.phone !== undefined) {
+      const normalized = normalizePhone(body.phone);
+      if (!normalized) return reply.status(400).send({ error: "Formato de telefone inválido. Use o número nacional de 9 dígitos (ex: 9XX XXX XXX)." });
+      if (normalized !== existing.phone) {
+        const clash = await prisma.contact.findFirst({ where: { tenantId, phone: normalized, id: { not: existing.id } } });
+        if (clash) return reply.status(409).send({ error: "Já existe um contacto com este número." });
+      }
+      normalizedPhone = normalized;
+    }
+
     const contact = await prisma.contact.update({
       where: { id: request.params.id },
       data: {
         ...(body.name !== undefined && { name: body.name }),
+        ...(normalizedPhone !== undefined && { phone: normalizedPhone }),
         ...(body.attributes !== undefined && { attributes: body.attributes as object }),
       },
     });

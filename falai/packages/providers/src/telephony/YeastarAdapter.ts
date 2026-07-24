@@ -168,6 +168,22 @@ export class YeastarAdapter implements TelephonyProvider {
     }, delayMs);
   }
 
+  /**
+   * Normaliza um número para o formato que o trunk da PBX espera (local, sem
+   * indicativo de país). Os contactos são guardados em E.164 (`+244XXXXXXXXX`),
+   * mas a rota de saída da Yeastar encaminha o formato nacional (`XXXXXXXXX`).
+   * Sem esta conversão, o `+244` não é encaminhável e a chamada nunca sai
+   * (o `dial`/`play_prompt` devolve errcode 0 mas nenhum telefone toca).
+   */
+  private normalizeNumber(raw: string): string {
+    let n = raw.trim().replace(/[\s\-()]/g, "");
+    if (n.startsWith("+244")) n = n.slice(4);
+    else if (n.startsWith("00244")) n = n.slice(5);
+    else if (n.startsWith("244") && n.length === 12) n = n.slice(3);
+    else if (n.startsWith("+")) n = n.slice(1); // outros internacionais: remove só o "+"
+    return n;
+  }
+
   // ── Core operations ───────────────────────────────────────────────────────
 
   async dial(params: DialParams): Promise<{ providerCallId: string }> {
@@ -187,7 +203,7 @@ export class YeastarAdapter implements TelephonyProvider {
       "/openapi/v1.0/call/dial",
       {
         caller: params.fromExtension,
-        callee: params.to,
+        callee: this.normalizeNumber(params.to),
         dial_permission: params.dialPermission ?? params.fromExtension,
         auto_answer: params.autoAnswer ?? "yes",
       },
@@ -264,7 +280,7 @@ export class YeastarAdapter implements TelephonyProvider {
     const res = await this.http.post<YeastarResponse>(
       "/openapi/v1.0/call/play_prompt",
       {
-        number: params.number,
+        number: this.normalizeNumber(params.number),
         prompts: safePrompts,
         volume: params.volume ?? 5,
         ...(params.count && { count: params.count }),

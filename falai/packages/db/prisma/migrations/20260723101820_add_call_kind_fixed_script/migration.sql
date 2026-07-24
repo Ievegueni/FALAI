@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "CallKind" ADD VALUE 'FIXED_SCRIPT';

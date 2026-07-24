@@ -21,7 +21,7 @@ export const tenantWalletRoutes: FastifyPluginAsync = async (fastify) => {
         select: {
           balanceCents: true,
           creditLimitCents: true,
-          plan: { select: { name: true, pricePerMinuteCents: true, monthlyFeeCents: true } },
+          plan: { select: { name: true, pricePerMinuteCents: true, pricePerCallCents: true, monthlyFeeCents: true } },
         },
       }),
       prisma.walletTransaction.findMany({

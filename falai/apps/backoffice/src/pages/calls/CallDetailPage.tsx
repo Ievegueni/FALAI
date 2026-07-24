@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Phone, Clock, DollarSign, User } from 'lucide-react';
+import { ArrowLeft, Phone, Clock, DollarSign, User, AlertTriangle } from 'lucide-react';
 import { callsApi } from '@/lib/api';
 import { Card, Button, Badge, PageSpinner, StatCard } from '@/components/ui';
 import { formatDate, formatDuration, formatAOA, callStatusColor, callStatusLabel } from '@/lib/utils';
@@ -43,15 +43,25 @@ export function CallDetailPage() {
         <StatCard label="Tenant" value={call.tenantId.slice(0, 8) + '…'} icon={<User className="h-5 w-5" />} />
       </div>
 
+      {call.failReason && (
+        <div className="rounded-lg bg-red-50 border border-red-200 p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-red-800 mb-1">Motivo da falha</p>
+            <p className="text-sm text-red-700 font-mono break-all">{call.failReason}</p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <Card>
           <h2 className="text-sm font-semibold text-gray-700 mb-4">Detalhes</h2>
           <dl className="space-y-3 text-sm">
-            <div className="flex justify-between"><dt className="text-gray-500">Agente</dt><dd className="font-medium font-mono text-xs">{call.agentId}</dd></div>
+            <div className="flex justify-between"><dt className="text-gray-500">Agente</dt><dd className="font-medium font-mono text-xs">{call.agentId ?? '–'}</dd></div>
             <div className="flex justify-between"><dt className="text-gray-500">Criada em</dt><dd>{formatDate(call.createdAt)}</dd></div>
             {call.startedAt && <div className="flex justify-between"><dt className="text-gray-500">Iniciada em</dt><dd>{formatDate(call.startedAt)}</dd></div>}
             {call.endedAt && <div className="flex justify-between"><dt className="text-gray-500">Terminada em</dt><dd>{formatDate(call.endedAt)}</dd></div>}
-            {call.failReason && <div className="flex justify-between"><dt className="text-gray-500">Erro</dt><dd className="text-red-600 font-mono text-xs">{call.failReason}</dd></div>}
+            {call.outcome && <div className="flex justify-between"><dt className="text-gray-500">Resultado</dt><dd className="font-medium">{call.outcome}</dd></div>}
           </dl>
         </Card>
 

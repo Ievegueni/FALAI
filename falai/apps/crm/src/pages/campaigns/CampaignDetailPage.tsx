@@ -1,7 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Play, Pause, Square, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Square, RefreshCw, Rocket, RotateCcw } from 'lucide-react';
 import { campaignsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -48,9 +48,11 @@ export function CampaignDetailPage() {
     });
   }
 
+  const launch = action(() => campaignsApi.launch(id!), t('campaigns.launched'));
   const pause = action(() => campaignsApi.pause(id!), t('campaigns.detail.pausedShort'));
   const resume = action(() => campaignsApi.resume(id!), t('campaigns.detail.resumedShort'));
   const cancel = action(() => campaignsApi.cancel(id!), t('campaigns.detail.cancelledShort'));
+  const retry = action(() => campaignsApi.retry(id!), t('campaigns.retried'));
 
   if (isLoading) return <><Header title={t('campaigns.campaignTitle')} /><PageSpinner /></>;
   if (!campaign) return <><Header title={t('campaigns.campaignTitle')} /><div className="p-6 text-sm text-gray-500">{t('campaigns.notFound')}</div></>;
@@ -75,19 +77,38 @@ export function CampaignDetailPage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-sm font-semibold text-gray-900">{c.name}</h2>
-              <p className="text-xs text-gray-500 mt-0.5">{c.agent.name}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{c.agent?.name ?? '—'}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge className={campaignStatusColor[c.status]}>{campaignStatusLabel(c.status)}</Badge>
+              {(c.status === 'DRAFT' || c.status === 'PAUSED') && (
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+                  icon={<Rocket className="h-3.5 w-3.5" />}
+                  loading={launch.isPending}
+                  onClick={() => launch.mutate()}
+                >
+                  {t('campaigns.launch')}
+                </Button>
+              )}
               {c.status === 'ACTIVE' && (
                 <Button size="sm" variant="ghost" icon={<Pause className="h-3.5 w-3.5" />} loading={pause.isPending} onClick={() => pause.mutate()}>{t('campaigns.pause')}</Button>
               )}
-              {c.status === 'PAUSED' && (
-                <Button size="sm" icon={<Play className="h-3.5 w-3.5" />} loading={resume.isPending} onClick={() => resume.mutate()}>{t('campaigns.resume')}</Button>
-              )}
-              {['ACTIVE', 'PAUSED'].includes(c.status) && (
+              {['DRAFT', 'ACTIVE', 'PAUSED'].includes(c.status) && (
                 <Button size="sm" variant="danger" icon={<Square className="h-3.5 w-3.5" />} loading={cancel.isPending} onClick={() => { if (confirm(t('campaigns.detail.cancelConfirm'))) cancel.mutate(); }}>
                   {t('campaigns.cancel')}
+                </Button>
+              )}
+              {['CANCELLED', 'COMPLETED'].includes(c.status) && (
+                <Button
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white border-0"
+                  icon={<RotateCcw className="h-3.5 w-3.5" />}
+                  loading={retry.isPending}
+                  onClick={() => retry.mutate()}
+                >
+                  {t('campaigns.retry')}
                 </Button>
               )}
             </div>

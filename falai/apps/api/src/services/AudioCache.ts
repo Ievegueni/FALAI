@@ -64,6 +64,8 @@ export class AudioCache {
     return map[key] ?? key;
   }
 
+  get defaultVoice(): string { return this.defaultVoiceId; }
+
   /** Generate, upload, and return name for a dynamic response (agent turn reply). */
   async prepareDynamic(text: string, voiceId: string, callId: string, seq: number): Promise<string> {
     const name = `dyn_${callId}_${seq}`.slice(0, 32); // Yeastar name length limit
@@ -74,6 +76,24 @@ export class AudioCache {
       const { wavBuffer } = await this.tts.synthesize({ text, voiceId });
       await this.telephony.uploadPrompt(name, wavBuffer);
       await this.redis.set(cacheKey, "1", "EX", 3600); // 1h TTL for dynamic
+    }
+
+    return name;
+  }
+
+  /**
+   * Synthesize and upload a fixed campaign script. Cached permanently (no TTL) —
+   * a campaign's script doesn't change after creation.
+   */
+  async prepareScriptPrompt(campaignId: string, text: string, voiceId: string): Promise<string> {
+    const name = `cmp_${campaignId}`.slice(0, 32);
+    const cacheKey = `${CACHE_PREFIX}script:${name}`;
+
+    const exists = await this.redis.exists(cacheKey);
+    if (!exists) {
+      const { wavBuffer } = await this.tts.synthesize({ text, voiceId });
+      await this.telephony.uploadPrompt(name, wavBuffer);
+      await this.redis.set(cacheKey, "1");
     }
 
     return name;
