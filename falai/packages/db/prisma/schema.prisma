@@ -20,6 +20,18 @@ enum BillingMode {
   PER_CALL // pricePerCallCents por chamada, independente da duração (ex.: OTP)
 }
 
+// Módulo PBX nativo (Extensões/Trunk) — ver docs/sip_trunk.md
+enum TrunkType {
+  REGISTER // Trunk de registo (o Falaí regista-se no provider com user/secret)
+  PEER // Trunk peer (IP-to-IP, sem registo)
+}
+
+enum SipTransport {
+  UDP
+  TCP
+  TLS
+}
+
 enum InvoiceStatus {
   PAID
   DUE
@@ -69,11 +81,11 @@ enum CallStatus {
 }
 
 enum CallKind {
-  AI_AGENT      // chamada conduzida por agente de IA
-  DIRECT        // click-to-call (extensão → número), sem IA
-  OTP           // entrega de código OTP por voz, sem IA
-  INBOUND       // chamada recebida (entrada), registada ao vivo a partir do PBX
-  FIXED_SCRIPT  // campanha com script pré-definido, sem IA
+  AI_AGENT // chamada conduzida por agente de IA
+  DIRECT // click-to-call (extensão → número), sem IA
+  OTP // entrega de código OTP por voz, sem IA
+  INBOUND // chamada recebida (entrada), registada ao vivo a partir do PBX
+  FIXED_SCRIPT // campanha com script pré-definido, sem IA
 }
 
 enum CampaignStatus {
@@ -124,52 +136,59 @@ enum CampaignContactStatus {
 // ============ TENANTS & ACESSO ============
 
 model Tenant {
-  id               String        @id @default(cuid())
-  name             String
-  nif              String?       @unique
-  email            String
-  phone            String
-  status           TenantStatus  @default(TRIAL)
-  plan             Plan          @relation(fields: [planId], references: [id])
-  planId           String
-  balanceCents     Int           @default(0)
-  creditLimitCents Int           @default(0)
-  webhookUrl       String?
-  webhookSecret    String?
-  maxConcurrent    Int           @default(1)
+  id                   String              @id @default(cuid())
+  name                 String
+  nif                  String?             @unique
+  email                String
+  phone                String
+  status               TenantStatus        @default(TRIAL)
+  plan                 Plan                @relation(fields: [planId], references: [id])
+  planId               String
+  balanceCents         Int                 @default(0)
+  creditLimitCents     Int                 @default(0)
+  webhookUrl           String?
+  webhookSecret        String?
+  maxConcurrent        Int                 @default(1)
   // Overrides de funcionalidades por tenant (Json { agents, campaigns, contacts, ... }).
   // Sobrepõe-se aos defaults e às capacidades do plano; ver services/features.ts
-  features         Json?
+  features             Json?
   // Override do modo de cobrança do plano (null = usa o do plano)
-  billingModeOverride BillingMode?
-  lines            TenantLine[]
+  billingModeOverride  BillingMode?
+  lines                TenantLine[]
   // PBX próprio do cliente (bring-your-own-PBX) — só usado quando plan.productType = CRM_BYO_PBX
-  pbxBaseUrl       String?
-  pbxClientId      String?
-  pbxClientSecret  String? // encriptado (AES-256-GCM) via crypto.service
-  pbxExtension     String? // extensão de saída por defeito
-  pbxConnected     Boolean       @default(false) // resultado do último teste de ligação
-  pbxLastSyncAt    DateTime? // último sync de CDR do PBX do cliente
-  pbxWebhookToken  String?       @unique // token do URL de webhook do PBX do cliente
-  pbxCalls         PbxCall[]
+  pbxBaseUrl           String?
+  pbxClientId          String?
+  pbxClientSecret      String? // encriptado (AES-256-GCM) via crypto.service
+  pbxExtension         String? // extensão de saída por defeito
+  pbxConnected         Boolean             @default(false) // resultado do último teste de ligação
+  pbxLastSyncAt        DateTime? // último sync de CDR do PBX do cliente
+  pbxWebhookToken      String?             @unique // token do URL de webhook do PBX do cliente
+  pbxCalls             PbxCall[]
   // SMS (gateway Futurix) — credenciais e preço configurados por tenant no backoffice
   smsApiKey            String? // encriptado (AES-256-GCM) via crypto.service
   smsSenderId          String? // remetente (alfanumérico) atribuído ao cliente
-  smsPriceSegmentCents Int?    // preço por segmento (definido no backoffice; null = usa o do plano)
+  smsPriceSegmentCents Int? // preço por segmento (definido no backoffice; null = usa o do plano)
   smsMessages          SmsMessage[]
   smsCampaigns         SmsCampaign[]
-  nextBillingAt    DateTime? // data do próximo débito da subscrição mensal
-  invoices         Invoice[]
-  deletedAt        DateTime?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  apiKeys          ApiKey[]
-  users            TenantUser[]
-  agents           Agent[]
-  calls            Call[]
-  campaigns        Campaign[]
-  transactions     WalletTransaction[]
-  contacts         Contact[]
+  nextBillingAt        DateTime? // data do próximo débito da subscrição mensal
+  invoices             Invoice[]
+  deletedAt            DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  apiKeys              ApiKey[]
+  users                TenantUser[]
+  agents               Agent[]
+  calls                Call[]
+  campaigns            Campaign[]
+  transactions         WalletTransaction[]
+  contacts             Contact[]
+  // Módulo PBX nativo (Extensões/Trunk) — ver docs/sip_trunk.md
+  extensions           Extension[]
+  trunks               Trunk[]
+  extensionGroups      ExtensionGroup[]
+  roles                Role[]
+  outboundRoutes       OutboundRoute[]
+  inboundRoutes        InboundRoute[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -186,6 +205,170 @@ model TenantLine {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+// ============ MÓDULO PBX NATIVO (Extensões/Trunk) ============
+// Falaí é dono da configuração (igual ao Yeastar). Do provider só entram os
+// dados de ligação SIP guardados em Trunk. Spec: docs/sip_trunk.md
+
+// Trunk SIP para o provider (saída/entrada). tenantId=null => partilhado do
+// operador (produto VOICE_AI, só backoffice edita). tenantId preenchido =>
+// BYO por tenant (CRM_BYO_PBX, cliente edita). Ver regra em docs/sip_trunk.md §1.1
+model Trunk {
+  id                String          @id @default(cuid())
+  tenantId          String?
+  tenant            Tenant?         @relation(fields: [tenantId], references: [id])
+  name              String // ex: "TESTE.ANGOLA.AGV"
+  enabled           Boolean         @default(true)
+  itspTemplate      String          @default("GENERIC") // "Geral"
+  type              TrunkType       @default(REGISTER)
+  // Ligação (dados do provider)
+  transport         SipTransport    @default(UDP)
+  host              String // "87.238.224.117"
+  port              Int             @default(5060)
+  domain            String? // "87.238.224.117"
+  authUser          String // "878029113001" (Nome de utilizador)
+  authName          String? // "878029113001" (Nome de autenticação)
+  authSecret        String // encriptado (AES-256-GCM) via crypto.service
+  outboundProxy     String?
+  // Avançadas
+  codecs            String[] // ordenado: ["ulaw","alaw","g729","g726","g722","gsm"]
+  dtmfMode          String          @default("RFC4733")
+  dtmfFmtp          String          @default("0-16")
+  authErrorCodes    String          @default("401;407;403")
+  authRegAttempts   Int             @default(3)
+  regRetryIntervalS Int             @default(20)
+  callRestriction   String          @default("OUTBOUND") // Chamada de saída
+  maxConcurrent     Int? // null = Ilimitado
+  voipFlags         Json? // { qualify, srtp, t38, inbandProgress, ... }
+  sipHeaders        Json? // { inbound, outbound, other }
+  dids              TrunkDid[]
+  inboundRoutes     InboundRoute[]
+  outboundRoutes    OutboundRoute[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([tenantId])
+}
+
+model TrunkDid {
+  id      String  @id @default(cuid())
+  trunkId String
+  trunk   Trunk   @relation(fields: [trunkId], references: [id], onDelete: Cascade)
+  did     String // "244959100354"
+  name    String?
+
+  @@unique([trunkId, did])
+}
+
+// Extensão configurada nativamente no Falaí (substitui TenantLine na Fase 3).
+// sipAuthUser/sipAuthSecret são as credenciais com que um softphone/webphone se
+// regista. As restantes abas do Yeastar ficam em JSON por aba.
+model Extension {
+  id             String                    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant                    @relation(fields: [tenantId], references: [id])
+  number         String // "1000"
+  callerId       String // ID de chamador exibido
+  displayName    String?
+  email          String?
+  mobile         String?
+  roleId         String?
+  role           Role?                     @relation(fields: [roleId], references: [id])
+  // Registo SIP
+  sipAuthUser    String                    @unique // "Nome de registo", ex "7jyXTI2S56"
+  sipAuthSecret  String // encriptado (AES-256-GCM)
+  maxIpRegs      Int                       @default(4)
+  maxWebRegs     Int                       @default(3)
+  // Config por aba (JSON)
+  presence       Json? // { forwarding, ringStrategy, ringTimeoutS:30 }
+  voicemail      Json? // { enabled, pinAuth, emailNotify, greeting }
+  features       Json? // { recording, moh, businessHours:{tz:"WAT"}, monitored }
+  voip           Json? // { dtmf, transport, qualify, t38, srtp }
+  security       Json? // { disallowIntl:true, ipRestriction, sipAgentAuth }
+  isActive       Boolean                   @default(true)
+  isDefault      Boolean                   @default(false)
+  phoneNumber    String? // DID público associado
+  groups         ExtensionGroupMember[]
+  outboundRoutes OutboundRoutePermission[]
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  @@unique([tenantId, number])
+  @@index([tenantId])
+}
+
+model ExtensionGroup {
+  id          String                 @id @default(cuid())
+  tenantId    String
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id])
+  name        String // "VENDAS", "SUPORTE", "Default_All_Extensions"
+  isDefault   Boolean                @default(false)
+  permissions Json? // painel de operações (redirecionar, transferir, monitorizar, ...)
+  members     ExtensionGroupMember[]
+
+  @@unique([tenantId, name])
+}
+
+model ExtensionGroupMember {
+  extensionId String
+  groupId     String
+  extension   Extension      @relation(fields: [extensionId], references: [id], onDelete: Cascade)
+  group       ExtensionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([extensionId, groupId])
+}
+
+model Role {
+  id          String      @id @default(cuid())
+  tenantId    String
+  tenant      Tenant      @relation(fields: [tenantId], references: [id])
+  name        String // Administrator, Supervisor, Operator, Employee, ...
+  permissions Json // matriz por módulo — ver docs/sip_trunk.md §4
+  extensions  Extension[]
+
+  @@unique([tenantId, name])
+}
+
+// Encaminhamento de saída: que extensões podem usar que trunk, com que caller id
+model OutboundRoute {
+  id          String                    @id @default(cuid())
+  tenantId    String
+  tenant      Tenant                    @relation(fields: [tenantId], references: [id])
+  name        String // "Default_Outbound_Route", "SHARE_AGV_OUT", "To_S50"
+  trunkId     String
+  trunk       Trunk                     @relation(fields: [trunkId], references: [id])
+  dialPattern String? // prefixo/regex de números permitidos
+  callerId    String?
+  priority    Int                       @default(0)
+  permissions OutboundRoutePermission[]
+
+  @@unique([tenantId, name])
+}
+
+model OutboundRoutePermission {
+  routeId     String
+  extensionId String
+  route       OutboundRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  extension   Extension     @relation(fields: [extensionId], references: [id], onDelete: Cascade)
+
+  @@id([routeId, extensionId])
+}
+
+// Encaminhamento de entrada: DID → destino (extensão, grupo, IVR, agente IA)
+model InboundRoute {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  name       String
+  trunkId    String
+  trunk      Trunk    @relation(fields: [trunkId], references: [id])
+  didPattern String // "244959100354"
+  destType   String // EXTENSION | GROUP | IVR | AI_AGENT
+  destValue  String // número da extensão / id do grupo / id do agente
+  createdAt  DateTime @default(now())
 
   @@index([tenantId])
 }
@@ -281,15 +464,15 @@ model Plan {
   pricePerSmsCents    Int         @default(0) // preço por segmento de SMS (default do plano)
   billingMode         BillingMode @default(PER_MINUTE)
   pricePerMinuteCents Int
-  pricePerCallCents   Int      @default(0)
-  includedMinutes     Int      @default(0)
-  monthlyFeeCents     Int      @default(0)
-  maxAgents           Int      @default(1)
-  maxConcurrent       Int      @default(1)
-  sttMarginPct        Int      @default(30)
-  isActive            Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  pricePerCallCents   Int         @default(0)
+  includedMinutes     Int         @default(0)
+  monthlyFeeCents     Int         @default(0)
+  maxAgents           Int         @default(1)
+  maxConcurrent       Int         @default(1)
+  sttMarginPct        Int         @default(30)
+  isActive            Boolean     @default(true)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
   tenants             Tenant[]
 }
 
@@ -304,27 +487,27 @@ model SystemSetting {
 // ============ AGENTES DE IA ============
 
 model Agent {
-  id               String      @id @default(cuid())
+  id               String         @id @default(cuid())
   tenantId         String
-  tenant           Tenant      @relation(fields: [tenantId], references: [id])
+  tenant           Tenant         @relation(fields: [tenantId], references: [id])
   name             String
   description      String?
-  systemPrompt     String      @db.Text
-  language         String      @default("pt-PT")
+  systemPrompt     String         @db.Text
+  language         String         @default("pt-PT")
   ttsVoiceId       String
-  sttModel         String      @default("default")
-  maxTurnSeconds   Int         @default(30)
-  maxCallSeconds   Int         @default(300)
+  sttModel         String         @default("default")
+  maxTurnSeconds   Int            @default(30)
+  maxCallSeconds   Int            @default(300)
   escalationNumber String?
   escalationRules  Json?
   variablesSchema  Json?
   greetingAudioRef String?
-  isApproved       Boolean     @default(false)
+  isApproved       Boolean        @default(false)
   approvedBy       String?
-  status           AgentStatus @default(DRAFT)
+  status           AgentStatus    @default(DRAFT)
   deletedAt        DateTime?
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
   calls            Call[]
   versions         AgentVersion[]
   campaigns        Campaign[]
@@ -395,43 +578,43 @@ model CallTurn {
 // ============ CAMPANHAS & CONTACTOS ============
 
 model Campaign {
-  id                String         @id @default(cuid())
+  id                String            @id @default(cuid())
   tenantId          String
-  tenant            Tenant         @relation(fields: [tenantId], references: [id])
+  tenant            Tenant            @relation(fields: [tenantId], references: [id])
   agentId           String?
-  agent             Agent?         @relation(fields: [agentId], references: [id])
-  mode              CampaignMode   @default(VOICE_AI)
-  scriptText        String?        @db.Text
+  agent             Agent?            @relation(fields: [agentId], references: [id])
+  mode              CampaignMode      @default(VOICE_AI)
+  scriptText        String?           @db.Text
   ttsVoiceId        String?
   name              String
-  status            CampaignStatus @default(DRAFT)
+  status            CampaignStatus    @default(DRAFT)
   scheduleJson      Json?
   retryPolicy       Json?
-  throttlePerMinute Int            @default(2)
-  totalContacts     Int            @default(0)
-  completed         Int            @default(0)
-  failedCount       Int            @default(0)
-  summary           String?        @db.Text
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  throttlePerMinute Int               @default(2)
+  totalContacts     Int               @default(0)
+  completed         Int               @default(0)
+  failedCount       Int               @default(0)
+  summary           String?           @db.Text
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
   calls             Call[]
   campaignContacts  CampaignContact[]
 }
 
 model Contact {
-  id         String    @id @default(cuid())
-  tenantId   String
-  tenant     Tenant    @relation(fields: [tenantId], references: [id])
-  phone      String
-  name       String?
-  attributes Json?
-  optedOutAt DateTime?
-  optOutReason String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  calls      Call[]
+  id               String            @id @default(cuid())
+  tenantId         String
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  phone            String
+  name             String?
+  attributes       Json?
+  optedOutAt       DateTime?
+  optOutReason     String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  calls            Call[]
   campaignContacts CampaignContact[]
-  smsMessages SmsMessage[]
+  smsMessages      SmsMessage[]
 
   @@unique([tenantId, phone])
 }
@@ -464,22 +647,22 @@ model SmsMessage {
 
 // Campanha de SMS em massa (espelha as campanhas de voz, mas para SMS).
 model SmsCampaign {
-  id              String         @id @default(cuid())
-  tenantId        String
-  tenant          Tenant         @relation(fields: [tenantId], references: [id])
-  name            String
-  body            String         @db.Text // template da mensagem (suporta {variáveis})
-  status          CampaignStatus @default(DRAFT)
-  totalRecipients Int            @default(0)
-  sentCount       Int            @default(0)
-  failedCount     Int            @default(0)
-  costCents       Int            @default(0)
-  throttlePerMinute Int          @default(60)
-  startedAt       DateTime?
-  completedAt     DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  messages        SmsMessage[]
+  id                String         @id @default(cuid())
+  tenantId          String
+  tenant            Tenant         @relation(fields: [tenantId], references: [id])
+  name              String
+  body              String         @db.Text // template da mensagem (suporta {variáveis})
+  status            CampaignStatus @default(DRAFT)
+  totalRecipients   Int            @default(0)
+  sentCount         Int            @default(0)
+  failedCount       Int            @default(0)
+  costCents         Int            @default(0)
+  throttlePerMinute Int            @default(60)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  messages          SmsMessage[]
 
   @@index([tenantId, createdAt])
 }

@@ -11,6 +11,10 @@ import type {
   CampaignStatus,
   Contact,
   DashboardMetrics,
+  Extension,
+  ExtensionGroup,
+  TelephonyRole,
+  TrunkView,
   ImportResult,
   LoginResponse,
   MeResponse,
@@ -315,6 +319,45 @@ export const pbxApi = {
 
   test: () =>
     post<{ ok: boolean; extensionsCount: number; extensions: { number: string; name: string }[] }>('/tenant/pbx/test'),
+};
+
+// ─── Telefonia (módulo PBX nativo: extensões, grupos, funções) ────────────────
+
+export const telephonyApi = {
+  // Extensões
+  listExtensions: () => get<Extension[]>('/tenant/extensions'),
+  getExtension: (id: string) => get<Extension>(`/tenant/extensions/${id}`),
+  createExtension: (data: {
+    number: string;
+    callerId?: string;
+    displayName?: string;
+    email?: string | null;
+    mobile?: string | null;
+    roleId?: string | null;
+  }) => post<Extension>('/tenant/extensions', data),
+  updateExtension: (id: string, data: Partial<Extension>) => put<Extension>(`/tenant/extensions/${id}`, data),
+  resetExtensionSip: (id: string) => post<Extension>(`/tenant/extensions/${id}/reset-sip`),
+  deleteExtension: (id: string) => del<void>(`/tenant/extensions/${id}`),
+
+  // Grupos
+  listGroups: () => get<ExtensionGroup[]>('/tenant/extension-groups'),
+  createGroup: (data: { name: string; isDefault?: boolean; memberIds?: string[] }) =>
+    post<ExtensionGroup>('/tenant/extension-groups', data),
+  updateGroup: (id: string, data: { name?: string; isDefault?: boolean; memberIds?: string[] }) =>
+    put<ExtensionGroup>(`/tenant/extension-groups/${id}`, data),
+  deleteGroup: (id: string) => del<void>(`/tenant/extension-groups/${id}`),
+
+  // Funções
+  listRoles: () => get<TelephonyRole[]>('/tenant/roles'),
+  createRole: (data: { name: string; permissions?: Record<string, unknown> }) =>
+    post<TelephonyRole>('/tenant/roles', data),
+  updateRole: (id: string, data: { name?: string; permissions?: Record<string, unknown> }) =>
+    put<TelephonyRole>(`/tenant/roles/${id}`, data),
+  deleteRole: (id: string) => del<void>(`/tenant/roles/${id}`),
+
+  // Trunk (só-leitura no produto Voice AI; editável no BYO-PBX)
+  listTrunks: () => get<{ productType: string; trunks: TrunkView[] }>('/tenant/trunks'),
+  updateTrunk: (id: string, data: Record<string, unknown>) => put<{ trunk: TrunkView }>(`/tenant/trunks/${id}`, data),
 };
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────

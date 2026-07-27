@@ -1,0 +1,44 @@
+import { prisma } from "@falai/db";
+
+/**
+ * Encaminhamento de chamadas do módulo PBX nativo (docs/sip_trunk.md §2).
+ * Substitui gradualmente o `outboundExtension.service` (baseado em TenantLine):
+ * a fonte de verdade passa a ser `Extension`, com fallback para TenantLine
+ * enquanto a migração (§6) não estiver concluída.
+ */
+
+/** Resolve a extensão de saída de um tenant a partir do modelo Extension. */
+export async function resolveOutboundFromExtensions(tenantId: string): Promise<string | null> {
+  const ext =
+    (await prisma.extension.findFirst({
+      where: { tenantId, isActive: true, isDefault: true },
+      select: { number: true },
+    })) ??
+    (await prisma.extension.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { number: "asc" },
+      select: { number: true },
+    }));
+  return ext?.number ?? null;
+}
+
+/** Resolve o destino de uma chamada de entrada a partir do DID. */
+export async function resolveInbound(
+  tenantId: string,
+  did: string,
+): Promise<{ destType: string; destValue: string } | null> {
+  // Correspondência exacta primeiro; depois padrão (prefixo) por ordem de criação.
+  const exact = await prisma.inboundRoute.findFirst({
+    where: { tenantId, didPattern: did },
+    select: { destType: true, destValue: true },
+  });
+  if (exact) return exact;
+
+  const routes = await prisma.inboundRoute.findMany({
+    where: { tenantId },
+    orderBy: { createdAt: "asc" },
+    select: { didPattern: true, destType: true, destValue: true },
+  });
+  const match = routes.find((r) => did.startsWith(r.didPattern));
+  return match ? { destType: match.destType, destValue: match.destValue } : null;
+}

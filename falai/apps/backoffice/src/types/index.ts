@@ -297,6 +297,45 @@ export interface AuditLog {
   createdAt: string;
 }
 
+// ─── Trunk SIP (módulo PBX nativo) ───────────────────────────────────────────
+
+export interface TrunkDid {
+  id: string;
+  did: string;
+  name: string | null;
+}
+
+export interface Trunk {
+  id: string;
+  tenantId: string | null;
+  shared: boolean;
+  name: string;
+  enabled: boolean;
+  itspTemplate: string;
+  type: 'REGISTER' | 'PEER';
+  transport: 'UDP' | 'TCP' | 'TLS';
+  host: string;
+  port: number;
+  domain: string | null;
+  authUser: string;
+  authName: string | null;
+  secretSet: boolean;
+  outboundProxy: string | null;
+  codecs: string[];
+  dtmfMode: string;
+  dtmfFmtp: string;
+  authErrorCodes: string;
+  authRegAttempts: number;
+  regRetryIntervalS: number;
+  callRestriction: string;
+  maxConcurrent: number | null;
+  voipFlags: Record<string, unknown> | null;
+  sipHeaders: Record<string, unknown> | null;
+  dids: TrunkDid[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─── Pagination ──────────────────────────────────────────────────────────────
 
 export interface Paginated<T> {

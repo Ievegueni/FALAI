@@ -1,4 +1,5 @@
 import { prisma } from "@falai/db";
+import { resolveOutboundFromExtensions } from "./callRouting.service.js";
 
 /**
  * Lançado quando um tenant tenta fazer uma chamada de saída sem ter
@@ -29,6 +30,11 @@ export async function resolveOutboundExtension(
 ): Promise<string> {
   const trimmed = explicit?.trim();
   if (trimmed) return trimmed;
+
+  // Fonte de verdade nova: modelo Extension (módulo PBX nativo). Se ainda não
+  // houver extensões, cai para TenantLine (compat durante a migração §6).
+  const fromExt = await resolveOutboundFromExtensions(tenantId);
+  if (fromExt) return fromExt;
 
   const line =
     (await prisma.tenantLine.findFirst({

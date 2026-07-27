@@ -40,7 +40,7 @@ export function CampaignDetailPage() {
     },
   });
 
-  function action(fn: () => Promise<unknown>, msg: string) {
+  function useAction(fn: () => Promise<unknown>, msg: string) {
     return useMutation({
       mutationFn: fn,
       onSuccess: () => { success(msg); void qc.invalidateQueries({ queryKey: ['campaigns', id] }); },
@@ -48,11 +48,11 @@ export function CampaignDetailPage() {
     });
   }
 
-  const launch = action(() => campaignsApi.launch(id!), t('campaigns.launched'));
-  const pause = action(() => campaignsApi.pause(id!), t('campaigns.detail.pausedShort'));
-  const resume = action(() => campaignsApi.resume(id!), t('campaigns.detail.resumedShort'));
-  const cancel = action(() => campaignsApi.cancel(id!), t('campaigns.detail.cancelledShort'));
-  const retry = action(() => campaignsApi.retry(id!), t('campaigns.retried'));
+  const launch = useAction(() => campaignsApi.launch(id!), t('campaigns.launched'));
+  const pause = useAction(() => campaignsApi.pause(id!), t('campaigns.detail.pausedShort'));
+  const resume = useAction(() => campaignsApi.resume(id!), t('campaigns.detail.resumedShort'));
+  const cancel = useAction(() => campaignsApi.cancel(id!), t('campaigns.detail.cancelledShort'));
+  const retry = useAction(() => campaignsApi.retry(id!), t('campaigns.retried'));
 
   if (isLoading) return <><Header title={t('campaigns.campaignTitle')} /><PageSpinner /></>;
   if (!campaign) return <><Header title={t('campaigns.campaignTitle')} /><div className="p-6 text-sm text-gray-500">{t('campaigns.notFound')}</div></>;

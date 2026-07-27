@@ -30,6 +30,7 @@ import { TeamPage } from '@/pages/team/TeamPage';
 import { DevelopersPage } from '@/pages/developers/DevelopersPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { PbxIntegrationPage } from '@/pages/settings/PbxIntegrationPage';
+import { TelephonyPage } from '@/pages/telephony/TelephonyPage';
 
 export default function App() {
   return (
@@ -79,6 +80,7 @@ export default function App() {
                 <Route path="/developers" element={<RequireFeature feature="developers"><DevelopersPage /></RequireFeature>} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/pbx" element={<PbxIntegrationPage />} />
+                <Route path="/telephony" element={<TelephonyPage />} />
               </Route>
 
               {/* Fallback */}

@@ -18,6 +18,7 @@ import { AuditPage } from '@/pages/audit/AuditPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { CallsPage } from '@/pages/calls/CallsPage';
 import { CallDetailPage } from '@/pages/calls/CallDetailPage';
+import { TrunksPage } from '@/pages/trunks/TrunksPage';
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
                 <Route path="/moderation" element={<ModerationPage />} />
                 <Route path="/calls" element={<CallsPage />} />
                 <Route path="/calls/:id" element={<CallDetailPage />} />
+                <Route path="/trunks" element={<TrunksPage />} />
                 <Route path="/finance" element={<FinancePage />} />
                 <Route path="/plans" element={<PlansPage />} />
                 <Route path="/health" element={<HealthPage />} />

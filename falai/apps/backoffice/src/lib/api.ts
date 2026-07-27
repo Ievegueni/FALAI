@@ -21,6 +21,7 @@ import type {
   TenantLineInput,
   TenantUser,
   TenantUserInput,
+  Trunk,
   WalletTransaction,
 } from '@/types';
 
@@ -266,6 +267,22 @@ export const plansApi = {
     patch<{ plan: RawPlan }>(`/admin/plans/${id}`, toRawPlanBody(data)).then((r) => toPlan(r.plan)),
 
   delete: (id: string) => del<void>(`/admin/plans/${id}`),
+};
+
+// ─── Trunks (módulo PBX nativo) ──────────────────────────────────────────────
+
+export type TrunkInput = Partial<Omit<Trunk, 'id' | 'shared' | 'dids' | 'secretSet' | 'createdAt' | 'updatedAt' | 'tenantId'>> & {
+  authSecret?: string;
+};
+
+export const trunksApi = {
+  list: () => get<{ trunks: Trunk[] }>('/admin/trunks').then((r) => r.trunks),
+  get: (id: string) => get<{ trunk: Trunk }>(`/admin/trunks/${id}`).then((r) => r.trunk),
+  create: (data: TrunkInput) => post<{ trunk: Trunk }>('/admin/trunks', data).then((r) => r.trunk),
+  update: (id: string, data: TrunkInput) => put<{ trunk: Trunk }>(`/admin/trunks/${id}`, data).then((r) => r.trunk),
+  delete: (id: string) => del<void>(`/admin/trunks/${id}`),
+  addDid: (id: string, did: string, name?: string) => post<{ did: { id: string; did: string; name: string | null } }>(`/admin/trunks/${id}/dids`, { did, name }),
+  removeDid: (id: string, didId: string) => del<void>(`/admin/trunks/${id}/dids/${didId}`),
 };
 
 // ─── System Settings ─────────────────────────────────────────────────────────
