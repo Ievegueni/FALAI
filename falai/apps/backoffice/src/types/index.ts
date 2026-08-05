@@ -344,3 +344,25 @@ export interface Paginated<T> {
   page: number;
   perPage: number;
 }
+
+// ─── Estado do motor SIP próprio (Asterisk) ──────────────────────────────────
+// Ver docs/PLANO-INDEPENDENCIA-PBX.txt — substitui o Yeastar no transporte da voz.
+
+export type TrunkRegistrationStatus = 'REGISTERED' | 'NOT_REGISTERED' | 'UNKNOWN';
+
+export interface EngineTrunkStatus {
+  name: string;
+  status: TrunkRegistrationStatus;
+  serverUri: string | null;
+  username: string | null;
+  expirationSecs: number | null;
+}
+
+export interface EngineStatus {
+  engineReachable: boolean;
+  version: string | null;
+  trunks: EngineTrunkStatus[];
+  activeCalls: number | null;
+  error: string | null;
+  checkedAt: string;
+}

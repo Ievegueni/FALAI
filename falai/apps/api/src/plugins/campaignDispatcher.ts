@@ -1,5 +1,4 @@
 import fp from "fastify-plugin";
-import type { YeastarAdapter } from "@falai/providers";
 import { CampaignDispatcher } from "../services/campaignDispatcher.js";
 
 declare module "fastify" {
@@ -10,7 +9,7 @@ declare module "fastify" {
 
 export default fp(async (fastify) => {
   const dispatcher = new CampaignDispatcher(
-    fastify.yeastar as YeastarAdapter,
+    fastify.telephony,
     fastify.callEngine,
     fastify.log
   );

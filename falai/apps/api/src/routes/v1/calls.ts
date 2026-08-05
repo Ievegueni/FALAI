@@ -1,6 +1,5 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, type Prisma } from "@falai/db";
-import type { YeastarAdapter } from "@falai/providers";
 import { reserveBalance, computeReservation, effectiveBillingMode } from "../../services/billing.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
 
@@ -76,7 +75,7 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
 
     let providerCallId: string;
     try {
-      const result = await (fastify.yeastar as YeastarAdapter).dial({
+      const result = await fastify.telephony.dial({
         fromExtension,
         to: body.toNumber,
         ref: call.id,

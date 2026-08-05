@@ -1,0 +1,24 @@
+;===============================================================================
+; AMI — usado pela API do Falaí para ler o estado do registo do trunk.
+;
+; O ARI (ari.conf) não expõe registos de saída; o AMI expõe. Daí usarmos os
+; dois: AMI para estado, ARI para controlo de chamadas (Etapa 3).
+;
+; Permissões mínimas: só leitura de sistema e reporting. Sem 'originate',
+; sem 'command' — se estas credenciais vazarem, não dá para fazer chamadas.
+;===============================================================================
+[general]
+enabled=yes
+webenabled=yes
+bindaddr=127.0.0.1
+
+[${AMI_USER}]
+secret=${AMI_PASSWORD}
+; O AMI valida as acções contra a autoridade de ESCRITA, mesmo para acções de
+; leitura como PJSIPShowRegistrationsOutbound — daí 'write' não poder ficar
+; vazio. Continua sem 'originate' e sem 'command': estas credenciais não
+; conseguem fazer chamadas nem executar comandos na consola.
+read=system,reporting
+write=system,reporting
+deny=0.0.0.0/0.0.0.0
+permit=0.0.0.0/0.0.0.0

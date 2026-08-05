@@ -3,12 +3,21 @@ import { prisma } from "@falai/db";
 import { z } from "zod";
 import { encryptSecret } from "../../services/crypto.service.js";
 import { serializeTrunk, trunkCreateSchema, trunkUpdateSchema, trunkDataFromBody } from "../../services/trunk.service.js";
+import { getAsteriskStatus } from "../../services/asteriskStatus.service.js";
+import { scheduleAllPbxSync } from "../../services/pbxSync.service.js";
 
 const didSchema = z.object({ did: z.string().min(3).max(32), name: z.string().max(64).optional().nullable() });
 
 export const adminTrunksRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.authenticate];
   const include = { dids: true } as const;
+
+  // GET /admin/trunks/engine-status — estado do motor SIP próprio (Asterisk).
+  // Responde ao pedido da ANGOVOIP de ver "registado / não registado".
+  // Declarado antes de "/:id" para não ser apanhado por esse padrão.
+  fastify.get("/engine-status", { preHandler }, async () => {
+    return getAsteriskStatus();
+  });
 
   // GET /admin/trunks — lista trunks partilhados (tenantId null) + BYO (para visão global)
   fastify.get("/", { preHandler }, async () => {
@@ -51,6 +60,8 @@ export const adminTrunksRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     await fastify.audit({ actorType: "ADMIN", actorId: admin.sub, action: "trunk.created", targetType: "Trunk", targetId: trunk.id, ip: request.ip });
+    // O trunk partilhado afecta todos os clientes — sincroniza tudo.
+    scheduleAllPbxSync();
     return reply.status(201).send({ trunk: serializeTrunk(trunk) });
   });
 
@@ -69,6 +80,7 @@ export const adminTrunksRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     await fastify.audit({ actorType: "ADMIN", actorId: admin.sub, action: "trunk.updated", targetType: "Trunk", targetId: trunk.id, ip: request.ip });
+    scheduleAllPbxSync();
     return { trunk: serializeTrunk(trunk) };
   });
 
@@ -83,6 +95,7 @@ export const adminTrunksRoutes: FastifyPluginAsync = async (fastify) => {
 
     await prisma.trunk.delete({ where: { id: existing.id } });
     await fastify.audit({ actorType: "ADMIN", actorId: admin.sub, action: "trunk.deleted", targetType: "Trunk", targetId: existing.id, ip: request.ip });
+    scheduleAllPbxSync();
     return reply.status(204).send();
   });
 

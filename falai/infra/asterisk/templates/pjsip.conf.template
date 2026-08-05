@@ -1,0 +1,33 @@
+;===============================================================================
+; PJSIP — apenas o que é específico da MÁQUINA.
+;
+; Trunks, extensões, autenticações e registos NÃO estão aqui: vêm da base de
+; dados do Falaí via realtime (ver sorcery.conf e extconfig.conf). Editar um
+; trunk no backoffice reflecte-se no motor sem tocar em ficheiros.
+;
+; Só ficam aqui os transportes, porque dependem do servidor (IP, NAT, portas) e
+; não do cliente.
+;===============================================================================
+
+[global]
+type=global
+user_agent=Falai
+; Permite que o Asterisk vá à base de dados quando recebe um pedido para um
+; endpoint que ainda não tem em memória.
+endpoint_identifier_order=ip,username,anonymous
+
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+${NAT_LINES}
+
+; Trunks e extensões: a API do Falaí gera este ficheiro a partir da base de
+; dados e manda recarregar por AMI. Editar no backoffice reflecte-se no motor
+; em segundos. Ver apps/api/src/services/asteriskRuntime.service.ts para a
+; explicação de porque não se usa PJSIP Realtime.
+;
+; LIMITAÇÃO: exige que a API e o Asterisk partilhem o sistema de ficheiros.
+; Se um dia forem para máquinas diferentes, isto tem de passar a ARI ou a um
+; volume partilhado.
+#include "generated/pjsip-falai.conf"

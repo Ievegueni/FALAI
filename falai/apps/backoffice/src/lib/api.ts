@@ -22,6 +22,7 @@ import type {
   TenantUser,
   TenantUserInput,
   Trunk,
+  EngineStatus,
   WalletTransaction,
 } from '@/types';
 
@@ -283,6 +284,23 @@ export const trunksApi = {
   delete: (id: string) => del<void>(`/admin/trunks/${id}`),
   addDid: (id: string, did: string, name?: string) => post<{ did: { id: string; did: string; name: string | null } }>(`/admin/trunks/${id}/dids`, { did, name }),
   removeDid: (id: string, didId: string) => del<void>(`/admin/trunks/${id}/dids/${didId}`),
+  engineStatus: () => get<EngineStatus>('/admin/trunks/engine-status'),
+};
+
+// ─── Chamada de teste ────────────────────────────────────────────────────────
+// Marca pelo caminho real (API → adaptador → trunk → operador), que é o mesmo
+// que as campanhas e o agente de IA usam. É a prova de que a plataforma
+// telefona — e não apenas de que o trunk está registado.
+
+export type TestCallResult = {
+  callId: string;
+  providerCallId: string;
+  status: string;
+  message: string;
+};
+
+export const testCallApi = {
+  dial: (toNumber: string) => post<TestCallResult>('/admin/test-call', { toNumber }),
 };
 
 // ─── System Settings ─────────────────────────────────────────────────────────

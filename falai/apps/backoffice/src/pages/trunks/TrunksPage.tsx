@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Pencil, Trash2, Radio, X } from 'lucide-react';
-import { trunksApi, type TrunkInput } from '@/lib/api';
+import { Plus, Pencil, Trash2, Radio, X, Server, ServerOff, RefreshCw, Loader2, PhoneCall } from 'lucide-react';
+import { trunksApi, testCallApi, type TrunkInput, type TestCallResult } from '@/lib/api';
 import { Card, Button, PageSpinner, EmptyState, Modal, Input, Select, Badge } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
 import type { Trunk } from '@/types';
@@ -122,6 +122,190 @@ function DidsModal({ trunk, onClose }: { trunk: Trunk; onClose: () => void }) {
   );
 }
 
+/**
+ * Estado do motor SIP próprio (Asterisk) e do registo do trunk na operadora.
+ * É o indicador "registado / não registado" pedido pela ANGOVOIP.
+ * Actualiza sozinho a cada 15s.
+ */
+function EngineStatusCard() {
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['admin', 'trunks', 'engine-status'],
+    queryFn: trunksApi.engineStatus,
+    refetchInterval: 15_000,
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <Loader2 className="h-4 w-4 animate-spin" /> A verificar o motor SIP…
+        </div>
+      </Card>
+    );
+  }
+
+  // Motor inacessível ou por configurar — informativo, não é erro do utilizador.
+  if (!data?.engineReachable) {
+    return (
+      <Card>
+        <div className="flex items-start gap-3">
+          <ServerOff className="h-5 w-5 text-gray-400 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-700">Motor SIP próprio indisponível</p>
+            <p className="text-xs text-gray-500 mt-0.5">{data?.error ?? 'Sem resposta do motor.'}</p>
+            <p className="text-xs text-gray-400 mt-1">
+              As chamadas continuam a passar pelo PBX externo. Ver <code className="bg-gray-100 px-1 rounded">infra/asterisk/README.md</code>.
+            </p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => void refetch()} icon={<RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />} />
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Server className="h-4 w-4 text-indigo-500" />
+          <h2 className="text-sm font-semibold text-gray-700">Motor SIP próprio</h2>
+          {data.version && <Badge className="bg-gray-100 text-gray-600 text-xs">Asterisk {data.version}</Badge>}
+        </div>
+        <div className="flex items-center gap-3">
+          {data.activeCalls != null && (
+            <span className="text-xs text-gray-500">{data.activeCalls} chamada{data.activeCalls === 1 ? '' : 's'} activa{data.activeCalls === 1 ? '' : 's'}</span>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => void refetch()} icon={<RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />} />
+        </div>
+      </div>
+
+      {data.trunks.length === 0 ? (
+        <p className="text-xs text-gray-500">O motor está a correr mas não tem nenhum trunk configurado.</p>
+      ) : (
+        <div className="space-y-2">
+          {data.trunks.map((t) => {
+            const ok = t.status === 'REGISTERED';
+            const unknown = t.status === 'UNKNOWN';
+            return (
+              <div key={t.name} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${ok ? 'border-emerald-200 bg-emerald-50' : unknown ? 'border-amber-200 bg-amber-50' : 'border-red-200 bg-red-50'}`}>
+                <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${ok ? 'bg-emerald-500' : unknown ? 'bg-amber-500' : 'bg-red-500'}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-900">{t.name}</span>
+                    <span className={`text-xs font-semibold ${ok ? 'text-emerald-700' : unknown ? 'text-amber-700' : 'text-red-700'}`}>
+                      {ok ? 'REGISTADO' : unknown ? 'ESTADO DESCONHECIDO' : 'NÃO REGISTADO'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5 truncate">
+                    {t.username && <><code className="bg-white/60 px-1 rounded">{t.username}</code> em </>}
+                    {t.serverUri?.replace('sip:', '')}
+                    {ok && t.expirationSecs != null && <> · renova a cada {Math.round(t.expirationSecs / 60)} min</>}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="text-xs text-gray-400 mt-3">
+        Verificado às {new Date(data.checkedAt).toLocaleTimeString('pt-PT')} · actualiza a cada 15s
+      </p>
+    </Card>
+  );
+}
+
+/**
+ * Aceita o número como a pessoa o escreve e devolve-o em E.164, que é o que a
+ * API valida. Quem está a testar escreve "923 456 789", não "+244923456789".
+ */
+function toE164(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (raw.trim().startsWith('+')) return `+${digits}`;
+  if (digits.length === 9) return `+244${digits}`;
+  if (digits.startsWith('244')) return `+${digits}`;
+  return `+${digits}`;
+}
+
+function TestCallCard() {
+  const toast = useToast();
+  const [number, setNumber] = useState('');
+  const [result, setResult] = useState<TestCallResult | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const dial = useMutation({
+    mutationFn: () => testCallApi.dial(toE164(number)),
+    onSuccess: (r) => {
+      setFailure(null);
+      setResult(r);
+      toast.success('Chamada iniciada.');
+    },
+    onError: (e: Error) => {
+      setResult(null);
+      setFailure(e.message);
+    },
+  });
+
+  const e164 = number.trim() ? toE164(number) : '';
+  const valid = /^\+[1-9]\d{6,14}$/.test(e164);
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-1">
+        <PhoneCall className="h-4 w-4 text-indigo-500" />
+        <h2 className="text-sm font-semibold text-gray-700">Chamada de teste</h2>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        Marca pelo caminho real — o mesmo que as campanhas e o agente de IA usam. Serve para provar
+        que a plataforma telefona, não só que o trunk está registado.
+      </p>
+
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <Input
+            label="Número"
+            value={number}
+            onChange={(e) => setNumber(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && valid && !dial.isPending) dial.mutate(); }}
+            placeholder="923 456 789"
+          />
+        </div>
+        <Button
+          loading={dial.isPending}
+          disabled={!valid}
+          icon={<PhoneCall className="h-4 w-4" />}
+          onClick={() => dial.mutate()}
+        >
+          Ligar
+        </Button>
+      </div>
+      {number.trim() !== '' && (
+        <p className="text-xs text-gray-400 mt-1.5">
+          {valid ? <>Vai marcar <code className="bg-gray-100 px-1 rounded">{e164}</code></> : 'Número incompleto.'}
+        </p>
+      )}
+
+      {result && (
+        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+          <p className="text-sm text-emerald-800">{result.message}</p>
+          <p className="text-xs text-emerald-700/70 mt-0.5">
+            Canal <code>{result.providerCallId}</code> · registada em Chamadas
+          </p>
+        </div>
+      )}
+
+      {failure && (
+        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
+          <p className="text-sm text-red-800">{failure}</p>
+          <p className="text-xs text-red-700/70 mt-1">
+            Causas comuns: número num formato que o operador não aceita (ver ASTERISK_DIAL_FORMAT),
+            conta sem saldo ou sem permissão de saída, ou trunk por registar.
+          </p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export function TrunksPage() {
   const qc = useQueryClient();
   const toast = useToast();
@@ -146,6 +330,10 @@ export function TrunksPage() {
         </div>
         <Button icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>Novo trunk</Button>
       </div>
+
+      <EngineStatusCard />
+
+      <TestCallCard />
 
       {isLoading ? (
         <PageSpinner />

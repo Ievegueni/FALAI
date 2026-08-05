@@ -10,12 +10,16 @@
 import { prisma } from "@falai/db";
 import { NoopTrunkRuntimeAdapter, type TrunkRuntimeAdapter, type PbxSyncPayload } from "@falai/providers";
 import { decryptSecret } from "./crypto.service.js";
+import { AsteriskRuntimeAdapter, isAsteriskConfigured } from "./asteriskRuntime.service.js";
 
-// Singleton do motor. Substituir a fábrica quando o motor real existir.
+// Singleton do motor. Usa o Asterisk quando está configurado (ASTERISK_AMI_*);
+// caso contrário fica no Noop, para que instalações sem motor próprio continuem
+// a funcionar com o PBX externo. Ver docs/PLANO-INDEPENDENCIA-PBX.txt §15.1.
 let engine: TrunkRuntimeAdapter | null = null;
 export function getTrunkRuntime(): TrunkRuntimeAdapter {
   if (!engine) {
-    engine = new NoopTrunkRuntimeAdapter((msg, meta) => console.log(`[pbx-runtime] ${msg}`, meta ?? ""));
+    const log = (msg: string, meta?: unknown) => console.log(`[pbx-runtime] ${msg}`, meta ?? "");
+    engine = isAsteriskConfigured() ? new AsteriskRuntimeAdapter(log) : new NoopTrunkRuntimeAdapter(log);
   }
   return engine;
 }
@@ -28,19 +32,29 @@ function safeDecrypt(v: string): string {
   }
 }
 
-/** Constrói o snapshot da config de um tenant, incluindo o trunk partilhado. */
-export async function buildPbxSyncPayload(tenantId: string): Promise<PbxSyncPayload> {
+/**
+ * Constrói o snapshot GLOBAL: todos os trunks e as extensões activas de todos
+ * os clientes activos.
+ *
+ * Era por tenant e estava errado — o motor tem um ficheiro só, por isso
+ * sincronizar um cliente apagava as extensões dos outros. Ver a nota em
+ * PbxSyncPayload (packages/providers).
+ */
+export async function buildPbxSyncPayload(): Promise<PbxSyncPayload> {
   const [trunks, extensions, outboundRoutes, inboundRoutes] = await Promise.all([
-    prisma.trunk.findMany({ where: { OR: [{ tenantId: null }, { tenantId }] }, include: { dids: true } }),
-    prisma.extension.findMany({ where: { tenantId, isActive: true } }),
-    prisma.outboundRoute.findMany({ where: { tenantId }, include: { permissions: { include: { extension: { select: { number: true } } } } } }),
-    prisma.inboundRoute.findMany({ where: { tenantId } }),
+    prisma.trunk.findMany({ include: { dids: true } }),
+    prisma.extension.findMany({
+      where: { isActive: true, tenant: { status: { not: "CLOSED" }, deletedAt: null } },
+      include: { tenant: { select: { name: true } } },
+    }),
+    prisma.outboundRoute.findMany({ include: { permissions: { include: { extension: { select: { number: true } } } } } }),
+    prisma.inboundRoute.findMany(),
   ]);
 
   return {
-    tenantId,
     trunks: trunks.map((t) => ({
       id: t.id,
+      tenantId: t.tenantId,
       name: t.name,
       enabled: t.enabled,
       type: t.type,
@@ -61,6 +75,8 @@ export async function buildPbxSyncPayload(tenantId: string): Promise<PbxSyncPayl
       const presence = (e.presence ?? {}) as { ringTimeoutS?: number };
       return {
         id: e.id,
+        tenantId: e.tenantId,
+        tenantName: e.tenant.name,
         number: e.number,
         callerId: e.callerId,
         sipAuthUser: e.sipAuthUser,
@@ -90,19 +106,41 @@ export async function buildPbxSyncPayload(tenantId: string): Promise<PbxSyncPayl
 }
 
 /**
- * Sincroniza a config do tenant com o motor. Fire-and-forget: regista erros
- * mas não os propaga (a mutação já foi persistida com sucesso).
+ * Projecta a configuração inteira no motor. Uma alteração num cliente obriga a
+ * reescrever tudo, porque o motor tem um ficheiro de configuração só.
+ *
+ * Não lança: quem chama vem de uma mutação já persistida com sucesso e não
+ * deve falhar por causa do motor. Mas REGISTA em condições — um sync falhado
+ * significa que o backoffice e a realidade ficaram diferentes, e isso não pode
+ * passar em silêncio.
+ */
+export async function syncAllPbx(): Promise<void> {
+  try {
+    const payload = await buildPbxSyncPayload();
+    const result = await getTrunkRuntime().sync(payload);
+    if (!result.ok) {
+      console.error("[pbx-runtime] sync NÃO aplicado — motor e backoffice estão diferentes", result.details);
+    }
+  } catch (err) {
+    console.error("[pbx-runtime] sync falhou", err);
+  }
+}
+
+/**
+ * Sincroniza depois de mexer na configuração de um cliente.
+ * O `tenantId` fica só para o registo: o que se projecta é sempre tudo.
  */
 export async function syncTenantPbx(tenantId: string): Promise<void> {
-  try {
-    const payload = await buildPbxSyncPayload(tenantId);
-    await getTrunkRuntime().sync(payload);
-  } catch (err) {
-    console.warn("[pbx-runtime] sync falhou", { tenantId, err });
-  }
+  console.log("[pbx-runtime] sync pedido por alteração no tenant", tenantId);
+  await syncAllPbx();
 }
 
 /** Wrapper não-bloqueante para usar nos handlers de rota após uma mutação. */
 export function scheduleTenantPbxSync(tenantId: string): void {
   void syncTenantPbx(tenantId);
+}
+
+/** Wrapper não-bloqueante para o backoffice. */
+export function scheduleAllPbxSync(): void {
+  void syncAllPbx();
 }

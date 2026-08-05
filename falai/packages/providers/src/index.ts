@@ -1,6 +1,15 @@
 export type { TelephonyProvider, DialParams, PlayPromptParams } from "./telephony/TelephonyProvider.js";
 export { YeastarAdapter, YeastarError } from "./telephony/YeastarAdapter.js";
 export type { YeastarConfig, YeastarCdrRecord } from "./telephony/YeastarAdapter.js";
+export { AsteriskAdapter, AsteriskError } from "./telephony/AsteriskAdapter.js";
+export type { AsteriskConfig } from "./telephony/AsteriskAdapter.js";
+export {
+  trunkEndpointId,
+  extensionEndpointId,
+  formatDialNumber,
+  parseDialFormat,
+} from "./telephony/asteriskNaming.js";
+export type { DialFormat } from "./telephony/asteriskNaming.js";
 export { NoopTrunkRuntimeAdapter } from "./telephony/TrunkRuntimeAdapter.js";
 export type {
   TrunkRuntimeAdapter,

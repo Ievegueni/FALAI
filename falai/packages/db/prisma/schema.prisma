@@ -14,6 +14,13 @@ enum ProductType {
   CRM_BYO_PBX // Só CRM: o cliente liga o PBX Yeastar dele (bring-your-own-PBX)
 }
 
+// Motor que transporta as chamadas deste tenant. Os dois coexistem durante a
+// migração para o PBX nativo — ver docs/PLANO-INDEPENDENCIA-PBX.txt §15.
+enum TelephonyEngine {
+  YEASTAR // PBX externo (a sair). Valor por omissão enquanto durar a migração.
+  ASTERISK // Motor próprio do Falaí, trunk directo à operadora.
+}
+
 enum BillingMode {
   PER_MINUTE // ceil(segundos/60) × pricePerMinuteCents (arredonda ao minuto)
   PER_SECOND // segundos × pricePerMinuteCents/60 (ao segundo exacto)
@@ -155,6 +162,10 @@ model Tenant {
   // Override do modo de cobrança do plano (null = usa o do plano)
   billingModeOverride  BillingMode?
   lines                TenantLine[]
+  // Motor de telefonia deste cliente. Permite migrar tenant a tenant para o
+  // motor próprio (Asterisk) e reverter mudando só este campo, sem redeploy.
+  // Ver docs/PLANO-INDEPENDENCIA-PBX.txt §15.2.
+  telephonyEngine      TelephonyEngine     @default(YEASTAR)
   // PBX próprio do cliente (bring-your-own-PBX) — só usado quando plan.productType = CRM_BYO_PBX
   pbxBaseUrl           String?
   pbxClientId          String?

@@ -8,7 +8,8 @@ import { Redis } from "ioredis";
 
 import { config } from "./config.js";
 import { resolveProviderConfig, type ResolvedProviderConfig } from "./services/providerConfig.service.js";
-import { YeastarAdapter } from "@falai/providers";
+import { YeastarAdapter, AsteriskAdapter, trunkEndpointId, parseDialFormat, type TelephonyProvider } from "@falai/providers";
+import { prisma } from "@falai/db";
 
 import redisPlugin from "./plugins/redis.js";
 import authPlugin from "./plugins/auth.js";
@@ -63,9 +64,22 @@ import { yeastarWebhookRoutes } from "./routes/webhooks/yeastar.js";
 import { pbxWebhookRoutes } from "./routes/webhooks/pbx.js";
 import { smsWebhookRoutes } from "./routes/webhooks/sms.js";
 import { registerYeastarWebSocket } from "./websocket/yeastar.js";
+import { syncAllPbx } from "./services/pbxSync.service.js";
 
 declare module "fastify" {
   interface FastifyInstance {
+    /**
+     * Motor de telefonia em uso. Tipado pela interface para que o motor possa
+     * ser trocado (Asterisk) sem tocar em quem o consome — ver
+     * docs/PLANO-INDEPENDENCIA-PBX.txt §15.2.
+     * Usar SEMPRE este decorador em código novo.
+     */
+    telephony: TelephonyProvider;
+    /**
+     * @deprecated Referência ao adaptador Yeastar concreto. Só para o código que
+     * usa funções fora da interface (webhooks, WebSocket de eventos, CDR e o
+     * produto BYO-PBX). Esse código é removido no fim da migração (§13.4).
+     */
     yeastar: YeastarAdapter;
     providerConfig: ResolvedProviderConfig;
   }
@@ -131,6 +145,38 @@ async function buildApp() {
     fastify.redis
   );
   fastify.decorate("yeastar", yeastar);
+
+  // Motor de telefonia activo. TELEPHONY_ENGINE=asterisk liga o motor próprio;
+  // qualquer outro valor (ou ausência) mantém o PBX externo. É o interruptor
+  // que permite migrar e reverter sem redeploy — ver plano §15.2.
+  const useAsterisk =
+    process.env["TELEPHONY_ENGINE"] === "asterisk" && Boolean(process.env["ASTERISK_ARI_URL"]);
+  const telephony: TelephonyProvider = useAsterisk
+    ? new AsteriskAdapter({
+        baseUrl: process.env["ASTERISK_ARI_URL"]!,
+        username: process.env["ASTERISK_ARI_USER"] ?? "falai",
+        password: process.env["ASTERISK_ARI_PASSWORD"] ?? "",
+        soundsDir: process.env["ASTERISK_SOUNDS_DIR"] ?? "",
+        dialFormat: parseDialFormat(process.env["ASTERISK_DIAL_FORMAT"]),
+        // Por onde sai uma chamada para a rede: o trunk activo na base de
+        // dados. Lido a pedido (com cache curta no adaptador) para mudar o
+        // trunk no backoffice não obrigar a reiniciar a API.
+        resolveTrunk: async () => {
+          const trunk = await prisma.trunk.findFirst({
+            where: { enabled: true },
+            orderBy: { createdAt: "asc" },
+            select: { name: true, authUser: true },
+          });
+          if (!trunk) return null;
+          return {
+            endpoint: trunkEndpointId(trunk.name),
+            callerId: process.env["ASTERISK_CALLER_ID"] || trunk.authUser,
+          };
+        },
+      })
+    : (yeastar as TelephonyProvider);
+  fastify.decorate("telephony", telephony);
+  fastify.log.info({ engine: useAsterisk ? "asterisk" : "yeastar" }, "telephony.engine_selected");
 
   // eventBus: multiplexor de eventos Yeastar (deve ser registado antes de callEngine e otpCallService)
   const { default: eventBusPlugin } = await import("./plugins/eventBus.js");
@@ -231,6 +277,13 @@ async function main() {
   const app = await buildApp();
   try {
     await app.listen({ port: config.PORT, host: config.HOST });
+
+    // Projecta a configuração PBX para o motor próprio. Fire-and-forget: se o
+    // motor estiver em baixo, a API arranca na mesma e as chamadas continuam a
+    // sair pelo PBX externo.
+    void syncAllPbx()
+      .then(() => app.log.info("pbx_sync.boot_complete"))
+      .catch((err) => app.log.warn({ err }, "pbx_sync.boot_failed"));
   } catch (err) {
     app.log.fatal(err);
     process.exit(1);

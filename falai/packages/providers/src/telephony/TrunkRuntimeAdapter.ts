@@ -11,6 +11,8 @@
 
 export interface SipTrunkConfig {
   id: string;
+  /** null = trunk partilhado do operador; preenchido = trunk próprio do cliente. */
+  tenantId: string | null;
   name: string;
   enabled: boolean;
   type: "REGISTER" | "PEER";
@@ -30,6 +32,9 @@ export interface SipTrunkConfig {
 
 export interface SipExtensionConfig {
   id: string;
+  tenantId: string;
+  /** Nome do cliente — só para o ficheiro gerado ficar legível a quem o abre. */
+  tenantName?: string;
   number: string;
   callerId: string;
   sipAuthUser: string;
@@ -58,9 +63,17 @@ export interface InboundRouteConfig {
   destValue: string;
 }
 
-/** Snapshot completo da config de um tenant, pronto a materializar no motor. */
+/**
+ * Snapshot GLOBAL da configuração — todos os trunks e todas as extensões, de
+ * todos os clientes.
+ *
+ * Foi um snapshot por tenant até 28/07/2026 e estava errado: o motor tem UM
+ * ficheiro de configuração só, por isso sincronizar o cliente B apagava as
+ * extensões do cliente A que lá estavam. Com quatro clientes activos, o último
+ * a sincronizar ficava a ganhar e os outros desapareciam do motor sem aviso.
+ * O motor é global; o snapshot também tem de ser.
+ */
 export interface PbxSyncPayload {
-  tenantId: string;
   trunks: SipTrunkConfig[];
   extensions: SipExtensionConfig[];
   outboundRoutes: OutboundRouteConfig[];
@@ -90,7 +103,6 @@ export class NoopTrunkRuntimeAdapter implements TrunkRuntimeAdapter {
 
   async sync(payload: PbxSyncPayload): Promise<PbxSyncResult> {
     this.log?.("pbx.runtime.sync (noop)", {
-      tenantId: payload.tenantId,
       trunks: payload.trunks.length,
       extensions: payload.extensions.length,
       outboundRoutes: payload.outboundRoutes.length,
