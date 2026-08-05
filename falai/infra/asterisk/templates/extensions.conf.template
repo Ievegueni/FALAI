@@ -1,0 +1,93 @@
+;===============================================================================
+; DIALPLAN — prova de conceito (Etapa 1)
+;
+; Ficheiro gerado a partir do template. Na Fase 3 este dialplan é substituído
+; pelo controlo via ARI a partir da API do Falaí (docs/PLANO-INDEPENDENCIA-PBX.txt
+; §14, Etapa 3) — o Asterisk deixa de decidir o encaminhamento.
+;===============================================================================
+
+[general]
+static=yes
+writeprotect=yes
+
+[globals]
+; TRUNK_ENDPOINT e TRUNK_USER vêm daqui — escritos pela API a partir da base de
+; dados, tal como os trunks. Antes estavam por definir e o ${TRUNK_USER} do
+; contexto "sair" resolvia para vazio: as chamadas saíam sem Caller ID.
+#include "generated/globals-falai.conf"
+
+;------------------------------------------------------------------------------
+; SAÍDA — do softphone interno para a rede, através do trunk ANGOVOIP
+;
+; O formato de numeração a enviar ainda não está confirmado com a ANGOVOIP
+; (plano §9.4). Por isso aceitamos os três formatos e normalizamos para o
+; nacional (9XXXXXXXX), que é o mais provável num trunk angolano.
+; Se eles exigirem E.164, trocar a normalização em ${SAIDA}.
+;------------------------------------------------------------------------------
+[from-internal]
+
+; Formato nacional: 9XXXXXXXX (9 dígitos)
+exten => _9XXXXXXXX,1,NoOp(Saida nacional para ${EXTEN})
+ same => n,Set(SAIDA=${EXTEN})
+ same => n,Goto(sair,1)
+
+; Com indicativo do país sem +: 244XXXXXXXXX
+exten => _244XXXXXXXXX,1,NoOp(Saida com indicativo para ${EXTEN})
+ same => n,Set(SAIDA=${EXTEN:3})
+ same => n,Goto(sair,1)
+
+; E.164 com +: +244XXXXXXXXX
+exten => _+244XXXXXXXXX,1,NoOp(Saida E164 para ${EXTEN})
+ same => n,Set(SAIDA=${EXTEN:4})
+ same => n,Goto(sair,1)
+
+; NOTA: não há regra de chamada entre extensões por número. Os endpoints
+; passaram a chamar-se como o utilizador SIP (e não "1000"), porque é assim que
+; o PJSIP identifica quem se regista e porque o número repete-se entre clientes.
+; Chamadas internas são, no novo modelo, da responsabilidade da ANGOVOIP —
+; ver docs/AVALIACAO-MODELO-SIP-ANGOVOIP.txt.
+
+; Teste de áudio local — não sai para a rede, não custa nada.
+; Marcar 600: o Asterisk toca uma demonstração e valida o RTP nos dois sentidos.
+exten => 600,1,NoOp(Teste de eco — valida audio bidireccional)
+ same => n,Answer()
+ same => n,Wait(1)
+ same => n,Playback(demo-echotest)
+ same => n,Echo()
+ same => n,Hangup()
+
+; Ponto único de saída pelo trunk
+exten => sair,1,NoOp(A enviar ${SAIDA} pelo trunk ${TRUNK_ENDPOINT})
+ same => n,GotoIf($["${TRUNK_ENDPOINT}" = ""]?sem_trunk)
+ same => n,Set(CALLERID(num)=${TRUNK_USER})
+ same => n,Dial(PJSIP/${SAIDA}@${TRUNK_ENDPOINT},60)
+ same => n,NoOp(Resultado: ${DIALSTATUS})
+ same => n,Hangup()
+; Sem trunk activo na base de dados não há por onde sair. Dizer isso em voz
+; alta é melhor do que desligar sem explicação.
+ same => n(sem_trunk),NoOp(SEM TRUNK ACTIVO — verificar o backoffice)
+ same => n,Answer()
+ same => n,Playback(ss-noservice)
+ same => n,Hangup()
+
+;------------------------------------------------------------------------------
+; ENTRADA — chamadas vindas do trunk
+;
+; O trunk de teste está configurado como OUTBOUND (só saída) e a ANGOVOIP disse
+; que o DID é opcional. Ou seja: por agora não esperamos receber chamadas.
+; Este contexto existe para o caso de activarem a entrada — e para registarmos
+; no log se algo chegar.
+;------------------------------------------------------------------------------
+[from-trunk]
+
+; Entrega à aplicação Stasis: é a API do Falaí que decide o que fazer com a
+; chamada (agente de IA, extensão, grupo). Se a API estiver em baixo, o
+; Stasis falha e caímos no eco, para a chamada não morrer em silêncio.
+exten => _.,1,NoOp(ENTRADA do trunk: de ${CALLERID(num)} para ${EXTEN})
+ same => n,Stasis(falai,inbound,${EXTEN})
+ same => n,NoOp(Stasis terminou: ${STASISSTATUS})
+ same => n,GotoIf($["${STASISSTATUS}" = "SUCCESS"]?fim)
+ same => n,Answer()
+ same => n,Playback(demo-echotest)
+ same => n,Echo()
+ same => n(fim),Hangup()

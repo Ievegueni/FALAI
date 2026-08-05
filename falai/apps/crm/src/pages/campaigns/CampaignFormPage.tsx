@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { formatAOA, daysOfWeekLabel } from '@/lib/utils';
-import type { CampaignMode } from '@/types';
+import type { CallStatus, CampaignMode } from '@/types';
 
 const RETRY_STATUSES = ['NO_ANSWER', 'FAILED'] as const;
 
@@ -62,7 +62,7 @@ export function CampaignFormPage() {
       ...(mode === 'VOICE_AI' ? { agentId } : { scriptText }),
       contactIds: selectedContactIds,
       scheduleJson: { startHour, endHour, timezone: 'Africa/Luanda', daysOfWeek },
-      retryPolicy: { maxAttempts, delayMinutes, retryOn: retryOn as any },
+      retryPolicy: { maxAttempts, delayMinutes, retryOn: retryOn as CallStatus[] },
       throttlePerMinute,
     };
   }

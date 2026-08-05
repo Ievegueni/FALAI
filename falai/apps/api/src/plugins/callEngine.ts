@@ -2,7 +2,6 @@ import fp from "fastify-plugin";
 import { Queue } from "bullmq";
 import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter } from "@falai/providers";
 import type { TtsProvider } from "@falai/providers";
-import type { YeastarAdapter } from "@falai/providers";
 import { prisma } from "@falai/db";
 import { config } from "../config.js";
 import { QUEUES, JOBS } from "@falai/shared";
@@ -48,14 +47,14 @@ export default fp(async (fastify) => {
 
   const defaultVoiceId = useMacTts ? "Joana" : providers.elevenlabs.defaultVoiceId;
 
-  const audioCache = new AudioCache(fastify.redis, tts, fastify.yeastar as YeastarAdapter, defaultVoiceId);
-  const turnProcessor = new TurnProcessor(stt, llm, tts, fastify.yeastar as YeastarAdapter, audioCache);
+  const audioCache = new AudioCache(fastify.redis, tts, fastify.telephony, defaultVoiceId);
+  const turnProcessor = new TurnProcessor(stt, llm, tts, fastify.telephony, audioCache);
   const webhooksQueue = new Queue(QUEUES.WEBHOOKS_OUT, {
     connection: { url: config.REDIS_URL },
   });
 
   const callEngine = new CallEngineService({
-    telephony: fastify.yeastar as YeastarAdapter,
+    telephony: fastify.telephony,
     turnProcessor,
     audioCache,
     log: fastify.log,

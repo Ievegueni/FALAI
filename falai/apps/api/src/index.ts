@@ -8,7 +8,8 @@ import { Redis } from "ioredis";
 
 import { config } from "./config.js";
 import { resolveProviderConfig, type ResolvedProviderConfig } from "./services/providerConfig.service.js";
-import { YeastarAdapter } from "@falai/providers";
+import { YeastarAdapter, AsteriskAdapter, trunkEndpointId, parseDialFormat, type TelephonyProvider } from "@falai/providers";
+import { prisma } from "@falai/db";
 
 import redisPlugin from "./plugins/redis.js";
 import authPlugin from "./plugins/auth.js";
@@ -34,6 +35,12 @@ import { tenantTeamRoutes } from "./routes/tenant/team.js";
 import { tenantCampaignsRoutes } from "./routes/tenant/campaigns.js";
 import { tenantWalletRoutes } from "./routes/tenant/wallet.js";
 import { tenantPbxRoutes } from "./routes/tenant/pbx.js";
+import { tenantExtensionsRoutes } from "./routes/tenant/extensions.js";
+import { tenantExtensionGroupsRoutes } from "./routes/tenant/extension-groups.js";
+import { tenantRolesRoutes } from "./routes/tenant/roles.js";
+import { tenantTrunksRoutes } from "./routes/tenant/trunks.js";
+import { tenantRoutingRoutes } from "./routes/tenant/routing.js";
+import { adminTrunksRoutes } from "./routes/admin/trunks.js";
 import { tenantBillingRoutes } from "./routes/tenant/billing.js";
 import { tenantApiKeysRoutes } from "./routes/tenant/api-keys.js";
 import { tenantWebhookEventsRoutes } from "./routes/tenant/webhook-events.js";
@@ -57,9 +64,22 @@ import { yeastarWebhookRoutes } from "./routes/webhooks/yeastar.js";
 import { pbxWebhookRoutes } from "./routes/webhooks/pbx.js";
 import { smsWebhookRoutes } from "./routes/webhooks/sms.js";
 import { registerYeastarWebSocket } from "./websocket/yeastar.js";
+import { syncAllPbx } from "./services/pbxSync.service.js";
 
 declare module "fastify" {
   interface FastifyInstance {
+    /**
+     * Motor de telefonia em uso. Tipado pela interface para que o motor possa
+     * ser trocado (Asterisk) sem tocar em quem o consome — ver
+     * docs/PLANO-INDEPENDENCIA-PBX.txt §15.2.
+     * Usar SEMPRE este decorador em código novo.
+     */
+    telephony: TelephonyProvider;
+    /**
+     * @deprecated Referência ao adaptador Yeastar concreto. Só para o código que
+     * usa funções fora da interface (webhooks, WebSocket de eventos, CDR e o
+     * produto BYO-PBX). Esse código é removido no fim da migração (§13.4).
+     */
     yeastar: YeastarAdapter;
     providerConfig: ResolvedProviderConfig;
   }
@@ -126,6 +146,38 @@ async function buildApp() {
   );
   fastify.decorate("yeastar", yeastar);
 
+  // Motor de telefonia activo. TELEPHONY_ENGINE=asterisk liga o motor próprio;
+  // qualquer outro valor (ou ausência) mantém o PBX externo. É o interruptor
+  // que permite migrar e reverter sem redeploy — ver plano §15.2.
+  const useAsterisk =
+    process.env["TELEPHONY_ENGINE"] === "asterisk" && Boolean(process.env["ASTERISK_ARI_URL"]);
+  const telephony: TelephonyProvider = useAsterisk
+    ? new AsteriskAdapter({
+        baseUrl: process.env["ASTERISK_ARI_URL"]!,
+        username: process.env["ASTERISK_ARI_USER"] ?? "falai",
+        password: process.env["ASTERISK_ARI_PASSWORD"] ?? "",
+        soundsDir: process.env["ASTERISK_SOUNDS_DIR"] ?? "",
+        dialFormat: parseDialFormat(process.env["ASTERISK_DIAL_FORMAT"]),
+        // Por onde sai uma chamada para a rede: o trunk activo na base de
+        // dados. Lido a pedido (com cache curta no adaptador) para mudar o
+        // trunk no backoffice não obrigar a reiniciar a API.
+        resolveTrunk: async () => {
+          const trunk = await prisma.trunk.findFirst({
+            where: { enabled: true },
+            orderBy: { createdAt: "asc" },
+            select: { name: true, authUser: true },
+          });
+          if (!trunk) return null;
+          return {
+            endpoint: trunkEndpointId(trunk.name),
+            callerId: process.env["ASTERISK_CALLER_ID"] || trunk.authUser,
+          };
+        },
+      })
+    : (yeastar as TelephonyProvider);
+  fastify.decorate("telephony", telephony);
+  fastify.log.info({ engine: useAsterisk ? "asterisk" : "yeastar" }, "telephony.engine_selected");
+
   // eventBus: multiplexor de eventos Yeastar (deve ser registado antes de callEngine e otpCallService)
   const { default: eventBusPlugin } = await import("./plugins/eventBus.js");
   await fastify.register(eventBusPlugin);
@@ -148,6 +200,7 @@ async function buildApp() {
   await fastify.register(adminSimulateRoutes, { prefix: "/admin/simulate-conversation" });
   await fastify.register(adminPlansRoutes, { prefix: "/admin/plans" });
   await fastify.register(adminTenantsRoutes, { prefix: "/admin/tenants" });
+  await fastify.register(adminTrunksRoutes, { prefix: "/admin/trunks" });
   await fastify.register(adminAgentsModerationRoutes, { prefix: "/admin/agents" });
   await fastify.register(adminAuditRoutes);
   await fastify.register(adminDashboardRoutes, { prefix: "/admin" });
@@ -163,6 +216,11 @@ async function buildApp() {
   await fastify.register(tenantCampaignsRoutes, { prefix: "/tenant/campaigns" });
   await fastify.register(tenantWalletRoutes, { prefix: "/tenant/wallet" });
   await fastify.register(tenantPbxRoutes, { prefix: "/tenant/pbx" });
+  await fastify.register(tenantExtensionsRoutes, { prefix: "/tenant/extensions" });
+  await fastify.register(tenantExtensionGroupsRoutes, { prefix: "/tenant/extension-groups" });
+  await fastify.register(tenantRolesRoutes, { prefix: "/tenant/roles" });
+  await fastify.register(tenantTrunksRoutes, { prefix: "/tenant/trunks" });
+  await fastify.register(tenantRoutingRoutes, { prefix: "/tenant/routing" });
   await fastify.register(tenantBillingRoutes, { prefix: "/tenant/billing" });
   await fastify.register(tenantTeamRoutes, { prefix: "/tenant/team" });
   await fastify.register(tenantApiKeysRoutes);
@@ -219,6 +277,13 @@ async function main() {
   const app = await buildApp();
   try {
     await app.listen({ port: config.PORT, host: config.HOST });
+
+    // Projecta a configuração PBX para o motor próprio. Fire-and-forget: se o
+    // motor estiver em baixo, a API arranca na mesma e as chamadas continuam a
+    // sair pelo PBX externo.
+    void syncAllPbx()
+      .then(() => app.log.info("pbx_sync.boot_complete"))
+      .catch((err) => app.log.warn({ err }, "pbx_sync.boot_failed"));
   } catch (err) {
     app.log.fatal(err);
     process.exit(1);

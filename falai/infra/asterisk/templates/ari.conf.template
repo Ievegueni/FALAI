@@ -1,0 +1,16 @@
+;===============================================================================
+; ARI — interface REST pela qual a API do Falaí vai comandar as chamadas.
+;
+; Ainda não é usado para originar chamadas (isso é a Etapa 3 do plano). Fica
+; activo desde já porque é a mesma ligação que servirá para dial/hangup/transfer
+; e, mais tarde, para o externalMedia que alimenta a IA (Etapa 4).
+;===============================================================================
+[general]
+enabled=yes
+pretty=yes
+allowed_origins=*
+
+[${ARI_USER}]
+type=user
+read_only=no
+password=${ARI_PASSWORD}

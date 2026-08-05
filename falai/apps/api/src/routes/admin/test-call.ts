@@ -1,7 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import { testCallSchema } from "@falai/shared";
-import type { YeastarAdapter } from "@falai/providers";
 
 const DEFAULT_TEST_MESSAGE = "Isto é um teste da plataforma Falaí. A ligação foi estabelecida com sucesso.";
 
@@ -18,9 +17,20 @@ export const adminTestCallRoutes: FastifyPluginAsync = async (fastify) => {
 
     fastify.log.info({ action: "test_call.initiated", toNumber: body.toNumber, adminId: admin.sub });
 
+    // Primeiro os pré-requisitos, só depois se marca. Ao contrário: a chamada
+    // saía, o telefone tocava, e a API respondia erro — deixando uma chamada
+    // real sem registo nenhum na base de dados.
+    const tenantId = await getFirstActiveTenantId();
+    if (!tenantId) {
+      return reply.status(400).send({ error: "Nenhum cliente activo. Cria um cliente antes de testar." });
+    }
+    // O agente é opcional: uma chamada de teste serve para provar a telefonia,
+    // não a IA. Sem agente aprovado a chamada faz-se na mesma.
+    const agentId = await getTestAgentId();
+
     let providerCallId: string;
     try {
-      const result = await (fastify.yeastar as YeastarAdapter).dial({
+      const result = await fastify.telephony.dial({
         fromExtension,
         to: body.toNumber,
         ref: `test_${Date.now()}`,
@@ -28,17 +38,10 @@ export const adminTestCallRoutes: FastifyPluginAsync = async (fastify) => {
       providerCallId = result.providerCallId;
     } catch (err) {
       fastify.log.error({ err }, "test_call.dial_failed");
-      return reply.status(502).send({ error: "Falha ao iniciar chamada de teste. Verifica a configuração do PBX." });
-    }
-
-    let tenantId: string;
-    let agentId: string;
-    try {
-      tenantId = await getFirstActiveTenantId();
-      agentId = await getTestAgentId();
-    } catch (err) {
-      fastify.log.warn({ err }, "test_call.no_tenant_or_agent");
-      return reply.status(400).send({ error: "Nenhum tenant/agente activo. Cria um tenant e agente primeiro." });
+      const details = err instanceof Error ? err.message : String(err);
+      return reply
+        .status(502)
+        .send({ error: `O motor recusou a chamada: ${details}` });
     }
 
     const call = await prisma.call.create({
@@ -73,20 +76,18 @@ export const adminTestCallRoutes: FastifyPluginAsync = async (fastify) => {
   });
 };
 
-async function getFirstActiveTenantId(): Promise<string> {
+async function getFirstActiveTenantId(): Promise<string | null> {
   const tenant = await prisma.tenant.findFirst({
     where: { status: "ACTIVE", deletedAt: null },
     select: { id: true },
   });
-  if (!tenant) throw new Error("No active tenant");
-  return tenant.id;
+  return tenant?.id ?? null;
 }
 
-async function getTestAgentId(): Promise<string> {
+async function getTestAgentId(): Promise<string | null> {
   const agent = await prisma.agent.findFirst({
     where: { status: "ACTIVE", isApproved: true },
     select: { id: true },
   });
-  if (!agent) throw new Error("No active agent");
-  return agent.id;
+  return agent?.id ?? null;
 }

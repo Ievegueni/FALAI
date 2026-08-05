@@ -33,7 +33,7 @@ function CampaignCard({ c }: { c: Campaign }) {
   const qc = useQueryClient();
   const { success, error } = useToast();
 
-  function action(fn: () => Promise<unknown>, msg: string) {
+  function useAction(fn: () => Promise<unknown>, msg: string) {
     return useMutation({
       mutationFn: fn,
       onSuccess: () => { success(msg); void qc.invalidateQueries({ queryKey: ['campaigns'] }); },
@@ -41,11 +41,11 @@ function CampaignCard({ c }: { c: Campaign }) {
     });
   }
 
-  const launch = action(() => campaignsApi.launch(c.id), t('campaigns.launched'));
-  const pause = action(() => campaignsApi.pause(c.id), t('campaigns.paused'));
-  const resume = action(() => campaignsApi.resume(c.id), t('campaigns.resumed'));
-  const cancel = action(() => campaignsApi.cancel(c.id), t('campaigns.cancelled'));
-  const retry = action(() => campaignsApi.retry(c.id), t('campaigns.retried'));
+  const launch = useAction(() => campaignsApi.launch(c.id), t('campaigns.launched'));
+  const pause = useAction(() => campaignsApi.pause(c.id), t('campaigns.paused'));
+  const resume = useAction(() => campaignsApi.resume(c.id), t('campaigns.resumed'));
+  const cancel = useAction(() => campaignsApi.cancel(c.id), t('campaigns.cancelled'));
+  const retry = useAction(() => campaignsApi.retry(c.id), t('campaigns.retried'));
 
   const answered = c.answeredCount;
   const answerRate = c.completedCount > 0 ? Math.round((answered / c.completedCount) * 100) : 0;

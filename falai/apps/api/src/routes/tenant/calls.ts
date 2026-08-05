@@ -247,7 +247,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
 
     let providerCallId: string;
     try {
-      const result = await (fastify.yeastar as YeastarAdapter).dial({
+      const result = await fastify.telephony.dial({
         fromExtension,
         to: body.to,
         ref: call.id,
@@ -300,7 +300,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (existing.yeastarCallId) {
       try {
-        await (fastify.yeastar as YeastarAdapter).hangup(existing.yeastarCallId);
+        await fastify.telephony.hangup(existing.yeastarCallId);
       } catch (err) {
         fastify.log.warn({ err }, "tenant.calls.cancel_hangup_failed");
       }

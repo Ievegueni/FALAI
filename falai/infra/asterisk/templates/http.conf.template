@@ -1,0 +1,13 @@
+;===============================================================================
+; Servidor HTTP interno do Asterisk — serve o AMI (estado) e o ARI (controlo).
+;
+; SEGURANÇA: esta porta NUNCA deve ser exposta à internet. No servidor
+; definitivo, restringir ao IP da API do Falaí ou usar rede interna do Docker.
+; Ver docs/PLANO-INDEPENDENCIA-PBX.txt §16.4.
+;===============================================================================
+[general]
+enabled=yes
+bindaddr=0.0.0.0
+bindport=8088
+prefix=
+enablestatic=no

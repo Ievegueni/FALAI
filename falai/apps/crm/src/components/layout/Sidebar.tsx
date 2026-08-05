@@ -13,6 +13,7 @@ import {
   Code2,
   Settings,
   Server,
+  Network,
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -34,6 +35,7 @@ const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: F
 ];
 const settingsItem = { to: '/settings', icon: Settings, labelKey: 'nav.settings' };
 const smsItem = { to: '/sms', icon: MessageSquare, labelKey: 'nav.sms' };
+const telephonyItem = { to: '/telephony', icon: Network, labelKey: 'nav.telephony' };
 
 export function Sidebar() {
   const { t } = useTranslation();
@@ -53,6 +55,7 @@ export function Sidebar() {
     dashboardItem,
     ...featureItems.filter((i) => isOn(i.feature)),
     ...(smsOn ? [smsItem] : []),
+    telephonyItem,
     settingsItem,
     ...(ownPbx ? [{ to: '/settings/pbx', icon: Server, labelKey: 'nav.pbx' }] : []),
   ];

@@ -21,6 +21,8 @@ import type {
   TenantLineInput,
   TenantUser,
   TenantUserInput,
+  Trunk,
+  EngineStatus,
   WalletTransaction,
 } from '@/types';
 
@@ -266,6 +268,39 @@ export const plansApi = {
     patch<{ plan: RawPlan }>(`/admin/plans/${id}`, toRawPlanBody(data)).then((r) => toPlan(r.plan)),
 
   delete: (id: string) => del<void>(`/admin/plans/${id}`),
+};
+
+// ─── Trunks (módulo PBX nativo) ──────────────────────────────────────────────
+
+export type TrunkInput = Partial<Omit<Trunk, 'id' | 'shared' | 'dids' | 'secretSet' | 'createdAt' | 'updatedAt' | 'tenantId'>> & {
+  authSecret?: string;
+};
+
+export const trunksApi = {
+  list: () => get<{ trunks: Trunk[] }>('/admin/trunks').then((r) => r.trunks),
+  get: (id: string) => get<{ trunk: Trunk }>(`/admin/trunks/${id}`).then((r) => r.trunk),
+  create: (data: TrunkInput) => post<{ trunk: Trunk }>('/admin/trunks', data).then((r) => r.trunk),
+  update: (id: string, data: TrunkInput) => put<{ trunk: Trunk }>(`/admin/trunks/${id}`, data).then((r) => r.trunk),
+  delete: (id: string) => del<void>(`/admin/trunks/${id}`),
+  addDid: (id: string, did: string, name?: string) => post<{ did: { id: string; did: string; name: string | null } }>(`/admin/trunks/${id}/dids`, { did, name }),
+  removeDid: (id: string, didId: string) => del<void>(`/admin/trunks/${id}/dids/${didId}`),
+  engineStatus: () => get<EngineStatus>('/admin/trunks/engine-status'),
+};
+
+// ─── Chamada de teste ────────────────────────────────────────────────────────
+// Marca pelo caminho real (API → adaptador → trunk → operador), que é o mesmo
+// que as campanhas e o agente de IA usam. É a prova de que a plataforma
+// telefona — e não apenas de que o trunk está registado.
+
+export type TestCallResult = {
+  callId: string;
+  providerCallId: string;
+  status: string;
+  message: string;
+};
+
+export const testCallApi = {
+  dial: (toNumber: string) => post<TestCallResult>('/admin/test-call', { toNumber }),
 };
 
 // ─── System Settings ─────────────────────────────────────────────────────────

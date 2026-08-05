@@ -1,6 +1,5 @@
 import fp from "fastify-plugin";
 import type { CallEvent } from "@falai/shared";
-import type { YeastarAdapter } from "@falai/providers";
 
 type EventHandler = (event: CallEvent) => Promise<void>;
 
@@ -22,7 +21,7 @@ export default fp(async (fastify) => {
     handlers.push(handler);
   });
 
-  await (fastify.yeastar as YeastarAdapter).subscribeToEvents(async (event) => {
+  await fastify.telephony.subscribeToEvents(async (event) => {
     await Promise.all(
       handlers.map((h) =>
         h(event).catch((err) => fastify.log.error({ err, event }, "eventBus.handler_error"))

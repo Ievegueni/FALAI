@@ -1,0 +1,34 @@
+# Prova de conceito do motor SIP (Etapa 1 do docs/PLANO-INDEPENDENCIA-PBX.txt).
+#
+# ISOLADO: não toca na API, no CRM, no backoffice nem na base de dados do Falaí.
+# Serve apenas para validar que o trunk da ANGOVOIP regista e completa chamadas
+# sem passar pelo Yeastar.
+#
+#   Arrancar:  docker compose -f infra/asterisk/docker-compose.yml up --build
+#   Consola:   docker exec -it falai-asterisk asterisk -rvvv
+#   Parar:     docker compose -f infra/asterisk/docker-compose.yml down
+
+services:
+  asterisk:
+    build:
+      context: .
+    container_name: falai-asterisk
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./templates:/templates:ro
+      # Registos de trunk gerados pela API a partir da base de dados — ver
+      # a nota em templates/pjsip.conf.template.
+      - ./generated:/etc/asterisk/generated
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "10000-10100:10000-10100/udp"
+      # AMI/ARI — só para a API do Falaí. Ligado a 127.0.0.1 de propósito:
+      # nunca expor esta porta à internet (plano §16.4).
+      - "127.0.0.1:8088:8088/tcp"
+    # No servidor Linux definitivo, preferir network_mode: host — evita a
+    # tradução de portas do Docker, que é uma causa comum de áudio só num
+    # sentido. Em macOS o host networking não funciona, daí o mapeamento acima.
+    # network_mode: host

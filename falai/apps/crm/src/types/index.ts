@@ -360,6 +360,77 @@ export interface TenantSettings {
   lowBalanceAlertPhone: string | null;
 }
 
+// ─── Telefonia (módulo PBX nativo) ───────────────────────────────────────────
+
+export interface Extension {
+  id: string;
+  number: string;
+  callerId: string;
+  displayName: string | null;
+  email: string | null;
+  mobile: string | null;
+  roleId: string | null;
+  sipAuthUser: string;
+  sipSecretSet: boolean;
+  maxIpRegs: number;
+  maxWebRegs: number;
+  presence: Record<string, unknown> | null;
+  voicemail: Record<string, unknown> | null;
+  features: Record<string, unknown> | null;
+  voip: Record<string, unknown> | null;
+  security: Record<string, unknown> | null;
+  isActive: boolean;
+  isDefault: boolean;
+  phoneNumber: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Só presente na resposta de criar / reset-sip — mostrar uma única vez. */
+  sipAuthSecret?: string;
+}
+
+export interface ExtensionGroupMemberRef {
+  id: string;
+  number: string;
+  callerId: string;
+}
+
+export interface ExtensionGroup {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  permissions: Record<string, unknown> | null;
+  members: ExtensionGroupMemberRef[];
+  total: number;
+}
+
+export interface TelephonyRole {
+  id: string;
+  name: string;
+  permissions: Record<string, unknown>;
+  _count?: { extensions: number };
+}
+
+export interface TrunkView {
+  id: string;
+  tenantId: string | null;
+  shared: boolean;
+  editable: boolean;
+  name: string;
+  enabled: boolean;
+  type: 'REGISTER' | 'PEER';
+  transport: 'UDP' | 'TCP' | 'TLS';
+  host: string;
+  port: number;
+  domain: string | null;
+  authUser: string;
+  authName: string | null;
+  secretSet: boolean;
+  codecs: string[];
+  dtmfMode: string;
+  maxConcurrent: number | null;
+  dids: { id: string; did: string; name: string | null }[];
+}
+
 // ─── Pagination ──────────────────────────────────────────────────────────────
 
 export interface Paginated<T> {

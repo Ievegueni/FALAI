@@ -1,0 +1,673 @@
+================================================================================
+FALAÍ — AVALIAÇÃO DA NOVA DIRECÇÃO
+"O FALAÍ É APENAS UM CLIENTE SIP DA ANGOVOIP"
+================================================================================
+Data: 28 de Julho de 2026
+Estado: AVALIAÇÃO — nada foi alterado no código. Documento para ler e decidir.
+Substitui (se aprovado) a direcção de docs/PLANO-INDEPENDENCIA-PBX.txt
+
+
+--------------------------------------------------------------------------------
+0. O QUE FOI PEDIDO (como eu percebi)
+--------------------------------------------------------------------------------
+1. O sistema passa a ter UMA ligação apenas: SIP para a ANGOVOIP.
+2. Cada cliente (tenant) é configurado do lado da ANGOVOIP, na plataforma deles.
+3. O Falaí não configura telefonia — só guarda as credenciais que a ANGOVOIP
+   entregar, introduzidas no backoffice.
+4. O endpoint (host/porta/domínio SIP) é o que a ANGOVOIP fornecer.
+5. O Falaí regista cada tenant como um SIP user contra a ANGOVOIP.
+
+Traduzindo para arquitectura: a ANGOVOIP fica dona da central telefónica
+(numeração, encaminhamento, IVR, filas, tarifação de operador). O Falaí fica
+dono da IA, do CRM, das campanhas, do SMS e dos relatórios — e liga-se à voz
+como um softphone multi-conta, uma conta por cliente.
+
+Se esta leitura estiver errada num ponto, corrige-me antes de avançarmos: as
+consequências no código são muito diferentes conforme a resposta à secção 3.
+
+
+--------------------------------------------------------------------------------
+1. AVALIAÇÃO EM UMA LINHA
+--------------------------------------------------------------------------------
+É uma SIMPLIFICAÇÃO GRANDE E BOA. Elimina a parte mais cara e mais arriscada do
+plano anterior (o Falaí ter de se tornar uma central telefónica completa, com
+IVR, filas, grupos de toque, voicemail, softphone) e mantém intacto tudo aquilo
+que é o nosso valor real: a IA, o CRM e as campanhas.
+
+MAS tem um ponto que não desaparece e que convém ficar claro desde já:
+
+  MESMO SENDO "APENAS UM CLIENTE SIP", O FALAÍ CONTINUA A PRECISAR DE UM MOTOR
+  SIP PRÓPRIO A CORRER NUM SERVIDOR NOSSO.
+
+Porquê: um agente de IA não é um telefone. Para a IA falar e ouvir, alguém tem
+de terminar o áudio (RTP), enviá-lo para o Deepgram (transcrição) e injectar de
+volta o áudio da ElevenLabs (voz). Isso obriga a ter um processo que fala SIP e
+RTP. "Configuração SIP" sozinha não faz chamadas nem transporta áudio.
+
+A boa notícia: esse motor já está montado (Asterisk em Docker, infra/asterisk) e
+neste modelo passa a ser MUITO mais simples do que o plano anterior previa —
+deixa de precisar de dialplan, de rotas, de IVR e de filas. Fica reduzido a:
+registar contas SIP, atender/originar chamadas e passar o áudio para a IA.
+
+
+--------------------------------------------------------------------------------
+2. O QUE MUDA FACE AO PLANO ANTERIOR
+--------------------------------------------------------------------------------
+                            PLANO ANTERIOR            NOVO MODELO
+  Trunk para a operadora    Falaí (1 trunk Africell)  ANGOVOIP
+  Numeração / DID           Falaí gere               ANGOVOIP gere
+  Extensões dos clientes    Falaí cria e regista      ANGOVOIP cria
+  IVR / filas / grupos      Falaí tinha de construir  ANGOVOIP já tem
+  Voicemail / softphone     Falaí tinha de construir  ANGOVOIP já tem
+  Encaminhamento (rotas)    Falaí decide              ANGOVOIP decide
+  Tarifação de operador     Falaí                     ANGOVOIP
+  IA de voz                 Falaí                     Falaí  (inalterado)
+  CRM / campanhas / SMS     Falaí                     Falaí  (inalterado)
+  Motor SIP/RTP             Falaí (PBX completo)      Falaí (só cliente SIP)
+
+Trabalho que DESAPARECE do nosso lado: todo o módulo de paridade com o Yeastar
+(secção 8 do plano antigo) — estimado em vários meses. É o maior ganho aqui.
+
+Trabalho que APARECE: gerir N registos SIP (um por tenant) em vez de 1 trunk,
+e reconciliar a nossa contabilidade com a da ANGOVOIP (secção 6).
+
+
+--------------------------------------------------------------------------------
+3. A PERGUNTA CRÍTICA A FAZER À ANGOVOIP
+--------------------------------------------------------------------------------
+Tudo depende de o que é, para eles, "o Falaí regista cada tenant como SIP user".
+Há dois cenários possíveis e o código muda conforme a resposta:
+
+CENÁRIO A — UMA CONTA SIP POR TENANT  (o que eu li do pedido)
+  A ANGOVOIP cria, na plataforma deles, uma extensão/conta SIP por cada cliente
+  nosso, e entrega-nos utilizador + password + endpoint. O nosso Asterisk faz N
+  registos, um por cliente. As chamadas de um cliente saem sempre pela conta
+  dele — logo, a ANGOVOIP consegue atribuir consumo por cliente e o CLI (número
+  apresentado) é o do cliente.
+
+  Vantagens: isolamento real por cliente, tarifação deles bate com a nossa,
+  o cliente pode continuar a ter os telefones normais dele em paralelo.
+  Custo para nós: gerir N registos e o estado de cada um.
+
+CENÁRIO B — UM ÚNICO TRUNK PARTILHADO
+  A ANGOVOIP dá-nos uma só ligação e nós distinguimos os clientes por prefixo,
+  header SIP ou caller-ID. É mais simples de operar mas fura a ideia de "cada
+  tenant configurado na ANGOVOIP" e obriga-nos a fazer nós a contabilidade toda.
+
+O pedido aponta claramente para o CENÁRIO A. Este documento assume A.
+Se for B, dizer-me — é menos trabalho, mas perde-se o isolamento.
+
+PERGUNTAS CONCRETAS A ENVIAR (lista completa na secção 9):
+  - Cada tenant leva conta SIP própria, ou é uma só ligação partilhada?
+  - Quantos registos simultâneos aguentam do mesmo IP?
+  - Uma conta pode registar-se em mais de um sítio (nós + telefone do cliente)?
+  - As chamadas de entrada de um DID chegam à conta SIP do tenant, ou temos de
+    expor algo público (webhook / IP autorizado)?
+
+
+--------------------------------------------------------------------------------
+4. O QUE JÁ TEMOS CONSTRUÍDO QUE SERVE (não se deita nada fora)
+--------------------------------------------------------------------------------
+A boa notícia: o trabalho recente do módulo PBX nativo encaixa quase todo, e o
+que não encaixa apaga-se (é menos código, não é código a refazer).
+
+APROVEITA-SE TAL E QUAL:
+  packages/db  modelo Trunk (host, porta, transporte, authUser, authSecret
+               encriptado, codecs, DTMF, DIDs) — é exactamente a ficha de uma
+               conta SIP. Já tem tenantId opcional, ou seja, já suporta
+               "uma conta por tenant".
+  infra/asterisk/          Docker, transportes, RTP, ARI, AMI — feito e a correr.
+  asteriskRuntime.service  gera a config PJSIP a partir da base de dados e manda
+                           recarregar. É a peça que passa a criar os N registos.
+  asteriskStatus.service   lê o estado dos registos por AMI (mostrar ao operador
+                           se a conta de cada cliente está registada ou em erro).
+  AsteriskAdapter (ARI)    originar/atender/desligar chamadas pela API.
+  Backoffice /trunks       ecrã já existente para introduzir os dados SIP.
+  telephonyEngine no Tenant  interruptor por cliente para migrar um a um.
+
+DEIXA DE FAZER SENTIDO (apagar ou congelar):
+  - Extension, ExtensionGroup, Role, OutboundRoute, InboundRoute,
+    OutboundRoutePermission — configuração de central. Passa a ser da ANGOVOIP.
+    (Nota: se algum cliente CRM quiser softphone no browser, isto volta — mas
+    como funcionalidade separada, não como central.)
+  - extensions.conf com dialplan de saída/entrada e normalização de números:
+    quem normaliza passa a ser a ANGOVOIP. Fica só a entrega ao Stasis.
+  - Toda a paridade Yeastar por construir (IVR, filas, voicemail, conferência).
+
+SAI DE CENA POR COMPLETO:
+  - YeastarAdapter e tudo o que lhe pende (websocket/yeastar.ts,
+    routes/webhooks/yeastar.ts, tenantTelephony.service, OtpCallService tipado a
+    Yeastar, o cast em routes/tenant/calls.ts:342). São ~800 linhas hoje ligadas
+    a um PBX que já ninguém usa (está em stub). Isto é dívida a apagar.
+  - O produto CRM_BYO_PBX ("o cliente traz o PBX dele") entra em conflito com o
+    novo modelo e tem de ser decidido — ver 8.3.
+
+
+--------------------------------------------------------------------------------
+5. ARQUITECTURA ALVO (proposta)
+--------------------------------------------------------------------------------
+  CLIENTE (tenant)
+       |
+       | usa o CRM / campanhas / agente de IA
+       v
+  FALAÍ  (servidor nosso)
+    +-- API Fastify .... decide, factura, guarda CDR, corre a conversa
+    +-- Asterisk ....... só cliente SIP: N registos, RTP, ARI
+    |                    (sem dialplan, sem IVR, sem filas)
+    v  SIP/RTP — uma conta por tenant
+  ANGOVOIP  (plataforma deles)
+    +-- extensões/contas por cliente, DIDs, encaminhamento, IVR, filas
+    v
+  AFRICELL  (rede)
+
+REGRA DE OURO DO NOVO MODELO:
+  A ANGOVOIP é a fonte de verdade da telefonia. O Falaí não inventa
+  configuração — só guarda o que lhe derem e usa-o para registar e chamar.
+  Se um dado não vier da ANGOVOIP, não existe campo para ele no Falaí.
+
+MODELO DE DADOS PROPOSTO (mínimo):
+  SipAccount (ou reaproveitar o Trunk actual, renomeado)
+    tenantId       obrigatório — uma conta por cliente
+    label          nome legível
+    host/port      endpoint que a ANGOVOIP fornecer
+    transport      UDP/TCP/TLS
+    domain         domínio SIP (se diferente do host)
+    authUser       utilizador dado pela ANGOVOIP
+    authSecret     password, encriptada AES-256-GCM (como já está)
+    callerId       número a apresentar (dado pela ANGOVOIP)
+    dids[]         números de entrada atribuídos
+    maxConcurrent  limite de canais que eles autorizarem
+    registered     estado do último registo (só leitura, vem do AMI)
+  Tudo isto já existe no modelo Trunk. Na prática é uma limpeza de campos e
+  tornar tenantId obrigatório — não é um modelo novo de raiz.
+
+
+--------------------------------------------------------------------------------
+6. PONTOS QUE PRECISAM DE DECISÃO (não são detalhes)
+--------------------------------------------------------------------------------
+6.1 QUEM CONTA OS MINUTOS
+    Hoje o Falaí factura pela duração que o motor reporta. A ANGOVOIP vai
+    facturar pela duração que a plataforma deles reporta. Vão divergir sempre um
+    pouco (momento do atendimento, arredondamentos). É preciso definir: qual das
+    duas é a boa para o cliente final, e com que periodicidade se reconcilia.
+    Sem isto acordado, há discussão de facturas ao segundo mês.
+
+6.2 LIMITE DE CHAMADAS EM SIMULTÂNEO
+    Campanhas do Falaí disparam chamadas em paralelo. Se a conta SIP do cliente
+    tiver limite do lado deles (ex.: 2 canais), temos de o respeitar ANTES de
+    marcar — senão apanhamos 503 e a campanha falha em massa. Precisamos do
+    limite por conta, e de o guardar no maxConcurrent.
+
+6.3 CHAMADAS DE ENTRADA
+    Já temos screen-pop e registo de entrada no CRM. Para funcionar, a chamada
+    do DID tem de chegar ao nosso Asterisk pela conta SIP do tenant. Se a
+    ANGOVOIP encaminhar o DID para outro sítio (telefone físico do cliente, IVR
+    deles), o Falaí nunca vê a chamada. Tem de ser desenhado com eles, DID a DID.
+
+6.4 IP FIXO E ALLOWLIST
+    Vamos ter um IP público fixo. Eles têm de o autorizar. Se mudarmos de
+    servidor, param todos os clientes de uma vez. Convém prever dois IPs.
+
+6.5 CÓDECS
+    G.729 poupa banda mas degrada a transcrição da IA. Precisamos de alaw/ulaw
+    permitidos nas contas, senão a qualidade da IA cai — é um requisito, não uma
+    preferência.
+
+6.6 CRIAÇÃO DE CLIENTES: MANUAL OU AUTOMÁTICA
+    No modelo pedido, dar entrada a um cliente novo passa por: alguém na
+    ANGOVOIP cria a conta -> envia-nos as credenciais -> alguém nossa introduz no
+    backoffice. É manual e não escala além de algumas dezenas de clientes.
+    Perguntar se têm API de provisionamento. Se tiverem, automatizamos depois;
+    se não, começamos manual (aceitável para arrancar) e fica em lista.
+
+6.7 SEGREDOS DE CLIENTES
+    Passamos a guardar a password SIP de cada cliente. Já encriptamos (AES-256-
+    GCM) e nunca mostramos em claro na UI — mas convém estar escrito no acordo
+    quem responde por elas.
+
+
+--------------------------------------------------------------------------------
+7. IMPACTO NO CÓDIGO — INVENTÁRIO
+--------------------------------------------------------------------------------
+APAGAR (dívida do Yeastar, ~800 linhas)
+  packages/providers/src/telephony/YeastarAdapter.ts
+  apps/api/src/websocket/yeastar.ts
+  apps/api/src/routes/webhooks/yeastar.ts
+  apps/api/src/services/tenantTelephony.service.ts
+  apps/api/src/index.ts:137-160   (deixa de haver escolha de motor)
+  routes/tenant/calls.ts:342      (cast a YeastarAdapter)
+  services/OtpCallService.ts      (tipar a TelephonyProvider)
+  enum TelephonyEngine + Tenant.telephonyEngine  (deixa de haver dois motores)
+
+SIMPLIFICAR
+  packages/db/prisma/schema.prisma
+      Trunk -> conta SIP por tenant (tenantId obrigatório)
+      remover Extension, ExtensionGroup, Role, OutboundRoute, InboundRoute
+      remover campos pbx* do Tenant se CRM_BYO_PBX sair (ver 8.3)
+  services/asteriskRuntime.service.ts
+      gera N endpoints+auth+registration, um por tenant. Sai a parte de
+      extensões e de rotas. Fica mais curto do que está.
+  infra/asterisk/templates/extensions.conf.template
+      fica só: chamadas de entrada -> Stasis(falai). Sem normalização de
+      números, sem contexto de saída, sem eco de teste em produção.
+  apps/backoffice  TrunksPage -> "Contas SIP", com selector de tenant e
+      indicador de registado/não registado.
+
+MANTER SEM TOCAR
+  Todo o motor de conversa (TurnProcessor, CallEngineService, AudioCache),
+  campanhas, SMS, CRM, billing, relatórios, webhooks. A interface
+  TelephonyProvider isola-os disto tudo — foi a decisão certa e paga-se agora.
+
+FALTA CONSTRUIR (independente da ANGOVOIP, é o nosso lado)
+  externalMedia: ligar o áudio do Asterisk ao STT/TTS em tempo real. Já estava
+  identificado como Etapa 4 no plano antigo e continua a ser o único bloqueio
+  técnico real para a IA falar por SIP. Hoje o áudio só toca ficheiros.
+  Sem isto, nada do resto interessa — é a primeira coisa a atacar.
+
+
+--------------------------------------------------------------------------------
+8. RISCOS E RESERVAS HONESTAS
+--------------------------------------------------------------------------------
+8.1 DEPENDÊNCIA
+    Passamos a depender inteiramente da ANGOVOIP para a voz. Se a plataforma
+    deles falhar, o Falaí não faz uma chamada. O plano anterior tirava-nos essa
+    dependência; este devolve-a. É uma escolha legítima de negócio (velocidade e
+    foco contra autonomia) — mas é uma escolha, não um detalhe técnico.
+    Mitigação: manter a camada TelephonyProvider genérica, para um dia se poder
+    ligar a outro operador sem refazer o produto. Custo de a manter: ~zero.
+
+8.2 O QUE PERDEMOS EM CIMA DA MESA DA PARCERIA
+    No plano antigo o Falaí trazia "a plataforma inteira". Neste, traz "a IA e o
+    CRM por cima da plataforma deles". É menos peso negocial. Vale a pena entrar
+    na negociação com isso já pensado.
+
+8.3 O SEGUNDO PRODUTO (CRM_BYO_PBX) FICA EM CONTRADIÇÃO
+    Existe hoje um produto em que o cliente traz o PBX próprio (Yeastar dele) e o
+    Falaí liga-se lá. Se tudo passa a ser SIP para a ANGOVOIP, ou esse produto
+    morre, ou passa também a ser "conta SIP genérica" (o que é fácil: o mesmo
+    modelo, com credenciais do PBX do cliente em vez das da ANGOVOIP).
+    RECOMENDAÇÃO: transformá-lo em "conta SIP genérica". Custo baixo, mantém a
+    porta aberta a clientes fora da ANGOVOIP.
+
+8.4 ESCALA DOS REGISTOS
+    N clientes = N registos SIP permanentes do nosso IP. Alguns operadores
+    limitam registos por IP ou tratam isto como abuso. Confirmar antes, não
+    depois de ter 50 clientes.
+
+8.5 QUALIDADE DE ÁUDIO E LATÊNCIA
+    Cada salto extra (nós -> eles -> Africell) acrescenta latência. Numa
+    conversa com IA, latência acumulada nota-se. Medir cedo, com chamadas reais.
+
+
+--------------------------------------------------------------------------------
+9. O QUE PEDIR À ANGOVOIP (documento a enviar)
+--------------------------------------------------------------------------------
+GLOBAL (uma vez)
+  [ ] Modelo confirmado: conta SIP por cliente (A) ou ligação partilhada (B)?
+  [ ] Endpoint SIP: host/IP, porta, transporte (UDP/TCP/TLS), domínio SIP
+  [ ] Outbound proxy, se existir
+  [ ] Códecs permitidos (precisamos de alaw e/ou ulaw — ver 6.5)
+  [ ] DTMF (esperamos RFC4733)
+  [ ] IP nosso a autorizar em allowlist (damos dois)
+  [ ] Máximo de registos SIP do mesmo IP
+  [ ] Pode a mesma conta estar registada em dois sítios em simultâneo?
+  [ ] Formato de numeração a enviar: 9XXXXXXXX, 244..., ou +244...?
+  [ ] Existe API de provisionamento (criar conta/DID por API)? Documentação.
+  [ ] Existe API/ficheiro de CDR do lado deles, para reconciliação? (ver 6.1)
+  [ ] Ambiente de testes separado da produção?
+  [ ] Contacto técnico e canal de suporte, com tempo de resposta
+
+POR CADA CLIENTE (repetido a cada cliente novo)
+  [ ] Nome do cliente
+  [ ] Utilizador SIP / nome de registo
+  [ ] Password SIP
+  [ ] Nome de autenticação, se diferente do utilizador
+  [ ] Caller ID a apresentar nas chamadas de saída
+  [ ] DID(s) de entrada atribuídos
+  [ ] Chamadas simultâneas autorizadas
+  [ ] O DID entrega na conta SIP (chega ao Falaí) ou noutro destino?
+
+
+--------------------------------------------------------------------------------
+9-B. VERIFICAÇÃO DA RESPOSTA DO IT DA ANGOVOIP (28/07/2026)
+--------------------------------------------------------------------------------
+Recebido: um screenshot do ecrã "Registar" de um endpoint SIP (telefone IP /
+softphone, interface tipo Grandstream/Fanvil) e a frase:
+  "Feita no end point (telefone, softphone, desktop) o q deves ter ai"
+
+LEITURA: eles confirmam que a configuração do cliente é feita DO LADO DO
+EQUIPAMENTO, com credenciais SIP que eles emitem. Ou seja, para a ANGOVOIP o
+Falaí é "mais um endpoint". Isso valida a direcção deste documento.
+
+O QUE O SCREENSHOT CONFIRMA
+  - Modelo de registo (REGISTER), não peer/IP. Confirma o CENÁRIO A.
+  - Transporte UDP, porta 5060, expiração 3600s, 3 tentativas.
+  - Campos que eles emitem por conta: Nome de registo, Nome de utilizador,
+    Senha, e o Nome do visor / etiqueta (que é o Caller ID exibido).
+  - Existe separador de Códecs e de Avançado (NAT/STUN).
+  Todos estes campos já existem no nosso modelo Trunk. Confirma-se a secção 5:
+  não é modelo novo, é limpeza do que já temos.
+
+O QUE O SCREENSHOT **NÃO** É — ATENÇÃO
+  Não são credenciais reais nem dados de ligação nossos. É o ecrã com os valores
+  de FÁBRICA do equipamento:
+  - Server Host = 192.168.1.1 é um endereço de rede local (RFC1918), o valor por
+    omissão destes telefones. Não é alcançável a partir do nosso servidor.
+  - Extensão/utilizador = 1000 é o valor por omissão.
+  - "Estado de registo: Registrando" = ainda não registou.
+  - SIP Server 2 tem exactamente os mesmos dados do SIP Server 1, o que é o
+    default de fábrica e não um servidor secundário a sério.
+  Ou seja: isto mostra ONDE se põem os dados, não QUAIS são os dados. Continuamos
+  sem o endereço real do servidor SIP deles.
+
+DIFERENÇA NOVA QUE ISTO REVELA (não estava prevista)
+  O ecrã tem DOIS servidores SIP (failover). O nosso modelo Trunk só guarda um
+  host/porta. Se eles usarem mesmo dois, é preciso acrescentar host/porta
+  secundários — o Asterisk suporta, mas o campo não existe hoje.
+
+PERGUNTAS QUE A RESPOSTA DELES LEVANTA (acrescentar à lista da secção 9)
+  [ ] O Server Host é público ou está em rede privada? Se for privado (como o
+      192.168.1.1 sugere), a nossa ligação exige VPN/interligação — muda o
+      desenho e o prazo. Precisamos do host público ou do domínio SIP real.
+  [ ] Existe mesmo um SIP Server 2 (failover)? Com que endereço?
+  [ ] "Endpoint (telefone, softphone, desktop)": a mesma conta pode estar
+      registada em dois sítios ao mesmo tempo (no Falaí E no telefone do
+      cliente)? Se não puder, o cliente tem de escolher — ou precisamos de uma
+      conta dedicada ao Falaí por cliente, além da que ele já usa.
+      ESTA É A PERGUNTA MAIS IMPORTANTE DAS DUAS PÁGINAS.
+  [ ] Um telefone regista uma conta. Nós vamos registar N contas (uma por
+      cliente) a partir do MESMO IP. Isso é aceite? Há limite? (ver 8.4)
+  [ ] Que códecs estão activos na conta? Precisamos de alaw/ulaw (ver 6.5).
+  [ ] Precisamos de STUN, ou o nosso IP público directo chega?
+
+CONCLUSÃO DESTA VERIFICAÇÃO
+  A resposta é coerente com o novo modelo e não contradiz nada deste documento.
+  Mas não é ainda informação accionável: com o que está no screenshot não
+  conseguimos registar nada. O que falta pedir está na secção 9 e nas perguntas
+  acima. Continua a valer a regra da Etapa 0: não se escreve código antes de ter
+  o endereço real e uma conta de teste.
+
+
+--------------------------------------------------------------------------------
+9-C. DUAS CLARIFICAÇÕES QUE MUDAM COISAS (28/07/2026)
+--------------------------------------------------------------------------------
+Recebido:
+  (1) "O Server Host é público, porque é o mesmo para vários clientes; apenas
+      mudam os acessos."
+  (2) "Tem que ser possível usar num software no telemóvel, como o LINKUS."
+
+
+9-C.1  HOST PÚBLICO E PARTILHADO — SIMPLIFICA O MODELO
+  Fecha a dúvida do 9-B: não há rede privada nem VPN. Um só endereço SIP para
+  todos os clientes; o que distingue cada cliente é apenas utilizador+senha.
+
+  CONSEQUÊNCIA NO MODELO DE DADOS (melhora a proposta da secção 5):
+    LIGAÇÃO ANGOVOIP — configuração global, introduzida UMA vez no backoffice
+      host, porta, transporte, domínio SIP
+      host/porta secundários (o "SIP Server 2", se existir)
+      códecs, DTMF, expiração do registo
+    CONTA SIP — por tenant, é só isto
+      authUser, senha (encriptada), callerId, DID(s), maxConcurrent
+  Dar entrada a um cliente novo passa a ser preencher 2-3 campos, não uma ficha
+  de trunk inteira. E se eles mudarem de servidor, muda-se num sítio só, não
+  cliente a cliente. Mantém-se a possibilidade de override por tenant, para o
+  caso de um cliente vir de outro operador (ver 8.3).
+
+
+9-C.2  SOFTPHONE NO TELEMÓVEL — É AQUI QUE ESTÁ O PROBLEMA A SÉRIO
+  Primeiro, um facto a esclarecer: o LINKUS é a aplicação da YEASTAR e só
+  funciona contra um PBX Yeastar. Não se regista num servidor SIP qualquer.
+  Como a plataforma da ANGOVOIP É Yeastar, o Linkus funciona com eles de forma
+  nativa — mas é a aplicação DELES, não uma coisa que o Falaí controle.
+  "Um software no telemóvel como o Linkus" pode então significar duas coisas
+  muito diferentes, e convém escolher qual:
+     (i) o cliente usa o Linkus da ANGOVOIP, e o Falaí vive ao lado; ou
+    (ii) o Falaí tem o seu próprio softphone (web no CRM + app), registado com
+         as mesmas credenciais.
+
+  O PONTO CRÍTICO, EM UMA FRASE:
+    Uma chamada feita no softphone vai directa do telemóvel para a ANGOVOIP.
+    NÃO PASSA PELO FALAÍ. Logo, por omissão, essa chamada não fica no CRM, não
+    faz screen-pop, não é gravada, não é facturada por nós e não tem IA.
+
+  Isto não é um defeito a corrigir: é como o SIP funciona. Há três saídas.
+
+  OPÇÃO A — SOFTPHONE À PARTE (custo zero)
+    O softphone é tratado como o telemóvel do cliente: existe, funciona, e o
+    Falaí não sabe nada dele. O CRM regista só as chamadas que o Falaí faz
+    (campanhas, agente de IA, clique-para-ligar).
+    Bom para arrancar. Mau como argumento de venda: o cliente vai perguntar
+    porque é que metade das chamadas dele não aparece no CRM.
+
+  OPÇÃO B — LER O HISTÓRICO DA ANGOVOIP (custo médio, depende deles)
+    A plataforma deles é Yeastar e tem API de CDR. O Falaí puxa periodicamente o
+    registo de chamadas e mostra-o no CRM.
+    Dá histórico completo e relatórios certos. NÃO dá screen-pop em tempo real,
+    nem gravação nossa, nem IA nessas chamadas.
+    NOTA IMPORTANTE, E CORRIJO O QUE ESCREVI NA SECÇÃO 7: se formos por aqui,
+    a parte do código Yeastar que lê CDR (YeastarAdapter + pbxSync.service) NÃO
+    se apaga — é exactamente o que faz isto, e já está escrito e testado. O que
+    se apaga é só a parte de controlo de chamadas (websocket, webhooks, dial).
+
+  OPÇÃO C — O SOFTPHONE É NOSSO E PASSA PELO FALAÍ (custo alto)
+    O softphone regista-se no NOSSO Asterisk, e o nosso Asterisk é que fala com
+    a ANGOVOIP. Todas as chamadas do cliente atravessam o Falaí.
+    Dá tudo: screen-pop, gravação, CRM em tempo real, passar a chamada para a IA
+    a meio, IA a transferir para a pessoa certa. É o produto completo.
+    Custo: precisamos de softphone web (WebRTC no CRM) e de app móvel; o
+    Asterisk deixa de ser "só cliente SIP" e passa a intermediário de chamadas;
+    e há que resolver notificações push no telemóvel (a parte mais chata de
+    qualquer softphone móvel — sem push, o telefone não toca com a app fechada).
+
+  RECOMENDAÇÃO: A agora, B a seguir, C só como decisão de produto assumida.
+  A opção C é meio caminho para voltarmos a ser uma central — o que este novo
+  modelo queria evitar. Se o softphone é para ser um argumento de venda do
+  Falaí, é C e tem de entrar no orçamento; se é só "o cliente também tem de
+  conseguir atender no telemóvel", é A e resolve-se com a app deles.
+
+  PERGUNTA A FAZER À ANGOVOIP (continua a ser a mais importante):
+    A mesma conta SIP pode estar registada em vários sítios ao mesmo tempo —
+    Linkus no telemóvel + Falaí no servidor? (No Yeastar isto normalmente
+    permite-se: a mesma extensão aceita telemóvel, desktop e telefone de
+    secretária em simultâneo. Se confirmarem, ficamos bem.)
+    E, mesmo que permitam, RECOMENDO PEDIR UMA CONTA SIP DEDICADA AO FALAÍ por
+    cliente, separada das contas das pessoas. Assim a IA nunca rouba a chamada a
+    ninguém, e o consumo do robô fica separado do consumo das pessoas na factura
+    deles — o que também resolve metade do problema de reconciliação do 6.1.
+
+
+--------------------------------------------------------------------------------
+9-D. ÂMBITO FECHADO (28/07/2026) — SÓ CHAMADAS DE TESTE
+--------------------------------------------------------------------------------
+Decisões tomadas, que reduzem o âmbito imediato:
+  - O SOFTPHONE é da ANGOVOIP. Eles estão a desenvolvê-lo e nós ligamo-nos ao
+    que eles fizerem, tal como com o Linkus. SAI do nosso âmbito: nada de
+    WebRTC, nada de app móvel, nada de push. (A opção C do 9-C fica arrumada.)
+  - O HISTÓRICO das chamadas feitas fora do Falaí NÃO se trata agora.
+    (A opção B do 9-C fica adiada — não se apaga nem se constrói, congela-se.)
+  - OBJECTIVO ÚNICO NESTE MOMENTO: ter todas as condições para fazer chamadas
+    de teste reais pela ANGOVOIP.
+
+ESTADO VERIFICADO HOJE, NA MÁQUINA (não é estimativa, foi medido)
+  [OK]    Asterisk a correr (contentor falai-asterisk, 13h de uptime)
+  [OK]    REGISTADO na ANGOVOIP em 87.238.224.117:5060/UDP, exp. 3400s
+          conta de teste 878007792000 — confirma que as credenciais funcionam
+          e que o host público é alcançável do nosso lado
+  [OK]    Latência de sinalização 258 ms (aceitável; a vigiar com a IA)
+  [OK]    Portas RTP 10000-10100/udp e 5060 mapeadas no Docker
+  [OK]    1 chamada já processada pelo motor
+  [OK]    A API do Falaí está LIGADA ao motor por ARI — a aplicação "falai"
+          aparece registada no Asterisk (TELEPHONY_ENGINE=asterisk no .env).
+          Ou seja, o caminho para a plataforma originar chamadas já existe.
+  [OK]    5 extensões (1000-1004) prontas para um softphone se registar.
+          NOTA: estavam escritas no ficheiro gerado mas NÃO carregadas em
+          memória — o Asterisk tinha só o trunk. Foi preciso um "pjsip reload"
+          à mão. Confirma que o recarregamento automático por AMI não está a
+          acontecer, ou não aconteceu da última vez. A verificar quando se mexer
+          no asteriskRuntime.service — é um bug latente: mexer no backoffice
+          pode não chegar ao motor.
+  [FALTA] EXTERNAL_IP está VAZIO e a máquina está atrás de NAT
+          (IP público 102.130.202.155). external_media_address e
+          external_signaling_address vêm vazios no transporte.
+          É a causa número um de "áudio só num sentido" ou "sem áudio".
+  [FALTA] Encaminhamento de portas no router: 5060/udp e 10000-10100/udp têm de
+          apontar para esta máquina, senão o áudio de retorno não entra.
+  [FALTA] Um softphone registado numa extensão local para originar o teste
+          (Zoiper/Linphone) — a extensão 1000 já existe na config gerada.
+  [FALTA] Confirmação do formato de numeração a marcar e do Caller ID.
+
+Ou seja: a metade difícil já está feita — o registo funciona. O que falta para
+chamadas de teste é NAT/áudio e três respostas da ANGOVOIP.
+
+
+--------------------------------------------------------------------------------
+9-E. TRABALHO FEITO EM 28/07/2026 — CONDIÇÕES PARA CHAMADAS DE TESTE
+--------------------------------------------------------------------------------
+Alterações aplicadas e verificadas na máquina. Typecheck limpo em toda a
+monorepo; API e Asterisk reiniciados.
+
+BUGS ENCONTRADOS E CORRIGIDOS (nenhum era conhecido antes de hoje)
+
+  1. A CONFIGURAÇÃO DE UNS CLIENTES APAGAVA A DOS OUTROS
+     O snapshot enviado ao motor era construído POR TENANT, mas o motor tem um
+     ficheiro de configuração só. Sincronizar o cliente B reescrevia o ficheiro
+     sem as extensões do cliente A. Com quatro clientes activos, ganhava o
+     último a sincronizar e os outros desapareciam do motor sem aviso.
+     -> O snapshot passou a ser global (todos os trunks, todas as extensões).
+
+  2. MEXER NO BACKOFFICE NÃO CHEGAVA AO MOTOR
+     A API mandava recarregar três módulos em rajada. O Asterisk trata um
+     recarregamento de cada vez e responde "Success" a pedidos que descarta por
+     já ter outro em curso — os três anulavam-se. Medido e reproduzido: com o
+     ficheiro esvaziado, os endpoints continuavam de pé; um pedido isolado
+     aplicava-se em segundos.
+     -> Recarregamentos espaçados 2s. Falhas passam a ser registadas e o sync
+        devolve erro em vez de dizer que correu bem.
+
+  3. AS CHAMADAS DA PLATAFORMA NÃO PODIAM SAIR
+     O `dial` do adaptador ARI marcava `PJSIP/<numero>@<extensão de origem>` —
+     uma extensão não tem ligação nenhuma ao operador. Uma chamada de campanha
+     ou do agente de IA nunca chegaria à rede.
+     -> Passa a sair pelo endpoint do trunk activo, lido da base de dados com
+        cache de 30s (mudar o trunk no backoffice não obriga a reiniciar a API).
+
+  4. CHAMADAS DE SOFTPHONE SAÍAM SEM CALLER ID E PARA UM TRUNK INEXISTENTE
+     O dialplan marcava `PJSIP/${SAIDA}@angovoip` — nome que nunca existiu — e
+     usava um ${TRUNK_USER} que não estava definido em lado nenhum.
+     -> A API passa a gerar `globals-falai.conf` com TRUNK_ENDPOINT e
+        TRUNK_USER a partir da base de dados. Sem trunk activo, o dialplan diz
+        que não há serviço em vez de desligar sem explicação.
+
+  5. REGISTO DE SOFTPHONE IA FALHAR
+     Os endpoints chamavam-se pelo número ("ext_1000"), mas o PJSIP identifica
+     quem se regista pelo UTILIZADOR SIP. Um softphone com o utilizador
+     "FAWFyFTRBv" não encontrava endpoint nenhum. E, com o snapshot global, dois
+     clientes com a extensão 1000 iam colidir.
+     -> Endpoints passam a chamar-se pelo utilizador SIP, único por natureza.
+
+  6. O HEALTH CHECK RECARREGAVA O MOTOR
+     Cada sondagem de saúde disparava três recarregamentos de módulos — uma
+     forma discreta de perturbar quem estivesse a falar.
+     -> Passa a só confirmar que o AMI responde.
+
+OUTRAS ALTERAÇÕES
+
+  - NAT resolvido: EXTERNAL_IP=102.130.202.155 no infra/asterisk/.env. O
+    transporte anuncia agora o IP público no SDP (external_media_address e
+    external_signaling_address), que é o que evita "áudio só num sentido".
+  - Formato dos números configurável por ASTERISK_DIAL_FORMAT
+    (national | cc | e164). Quando a ANGOVOIP responder, muda-se aqui — sem
+    tocar no código. Por omissão: nacional de 9 dígitos.
+  - Caller ID configurável (ASTERISK_CALLER_ID); vazio = utilizador do trunk.
+  - Novo `infra/asterisk/test-call.sh <numero>` — chamada de teste originada
+    pelo motor, pelo ARI, tal como a API faz.
+  - README do Asterisk actualizado (registo de softphone, diagnóstico do sync).
+  - Arrumados nove servidores de API deixados a correr por sessões anteriores;
+    ficou um só.
+
+VERIFICAÇÃO FEITA (medida, não presumida)
+
+  - Registo na ANGOVOIP mantém-se: "Registered", exp. 3576s, RTT 220 ms.
+  - Ciclo completo testado: motor esvaziado -> API reiniciada -> as 6
+    configurações voltaram sozinhas ao motor.
+  - CHAMADA DE SAÍDA REAL TESTADA (número inválido, para não incomodar
+    ninguém). O diálogo SIP com a ANGOVOIP foi:
+        INVITE  ->  401 Unauthorized  ->  INVITE com autenticação
+                ->  100 Trying        ->  480 Temporarily Not Available
+    Ou seja: autenticação aceite, INVITE aceite, o operador processou e
+    respondeu que aquele número não está disponível — que é a resposta certa
+    para um número inválido. O caminho de saída FUNCIONA. O que falta provar é
+    uma chamada para um número real e o áudio nos dois sentidos.
+
+O QUE NÃO FOI FEITO, DE PROPÓSITO
+
+  - Endpoint global + conta SIP por tenant no backoffice (9-C.1): é uma
+    migração de base de dados e não é preciso para chamadas de teste. Faz-se
+    quando a ANGOVOIP entregar as contas reais, e aí já se sabe o formato certo.
+  - Limpeza da camada Yeastar: não bloqueia nada e mexer nela agora só
+    acrescenta risco a um teste que se quer limpo.
+  - externalMedia (a IA falar e ouvir): continua por construir. É o passo
+    seguinte depois do teste de voz humana.
+
+
+--------------------------------------------------------------------------------
+10. PLANO — CAMINHO MAIS CURTO ATÉ À CHAMADA DE TESTE
+--------------------------------------------------------------------------------
+PASSO 1 — PEDIR À ANGOVOIP (curto, só o que bloqueia o teste)
+  [ ] Formato do número a marcar: 9XXXXXXXX, 244XXXXXXXXX ou +244XXXXXXXXX?
+  [ ] Caller ID a apresentar nesta conta de teste
+  [ ] A conta de teste tem saldo/permissão para chamadas reais para telemóvel?
+  [ ] O IP 102.130.202.155 precisa de entrar em allowlist?
+  [ ] Há DID atribuído a esta conta, para testarmos entrada? (opcional agora)
+  [ ] A mesma conta pode estar registada em dois sítios em simultâneo?
+      (importa já: se o softphone deles usar a mesma conta que o Falaí)
+
+PASSO 2 — RESOLVER O NAT DO NOSSO LADO (nós, ~1 hora)
+  Preencher EXTERNAL_IP no infra/asterisk/.env e reiniciar o contentor;
+  abrir 5060/udp e 10000-10100/udp no router para esta máquina.
+  Nota: se o teste de áudio correr bem sem isto (há servidores que fazem RTP
+  simétrico e safam-se), não se mexe. Testar primeiro, ajustar depois.
+
+PASSO 3 — CHAMADA DE TESTE, POR ESTA ORDEM
+  a) marcar 600 no softphone — teste de eco, valida áudio local nos dois
+     sentidos, não gasta minutos
+  b) chamada entre duas extensões locais — valida o encaminhamento
+  c) chamada real para um telemóvel — o teste verdadeiro, sai pela ANGOVOIP
+  d) se houver DID: chamada de entrada de um telemóvel para o DID
+  Em cada passo: ouve-se dos dois lados? Há atraso? Corta?
+
+PASSO 4 — CHAMADA ORIGINADA PELO FALAÍ (não por um softphone)
+  Botão "chamada de teste" no backoffice a marcar pelo Asterisk via ARI.
+  A peça já existe (AsteriskAdapter). É o que prova que a plataforma — e não
+  uma pessoa com um softphone — consegue telefonar.
+
+DEPOIS DISTO (fora do âmbito de hoje, para não perder de vista)
+  - Limpeza da camada Yeastar de controlo de chamadas
+  - Endpoint global + conta SIP por tenant no backoffice (ver 9-C.1)
+  - externalMedia: a IA a falar e a ouvir na chamada. Continua a ser o único
+    bloqueio técnico real entre "fazemos chamadas" e "o produto funciona".
+
+
+--------------------------------------------------------------------------------
+11. RECOMENDAÇÃO
+--------------------------------------------------------------------------------
+Avançar com o novo modelo. É mais simples, mais rápido e concentra-nos naquilo
+que só nós temos (IA + CRM).
+
+ACTUALIZADO EM 28/07 (ver 9-B, 9-C e 9-D):
+  - Cenário A (conta SIP por cliente, registo) está confirmado pelo IT deles.
+  - Host público e partilhado: a ligação passa a ser configuração global, e por
+    cliente ficam só as credenciais.
+  - Softphone é da ANGOVOIP; histórico externo fica congelado.
+  - O âmbito imediato é um só: chamadas de teste reais. Ver secção 10.
+  - Fica de pé a reserva da secção 8.1 (dependência total deles para a voz).
+    A mitigação continua a ser barata: manter a camada TelephonyProvider
+    genérica, para um dia se poder ligar a outro operador.
+
+E um aviso para não haver surpresas: mesmo neste modelo mais leve, o Asterisk
+continua a existir e a IA a falar por SIP (Etapa 4) continua por construir. Isso
+não muda com a decisão de negócio.
+
+================================================================================
+FIM
+================================================================================
