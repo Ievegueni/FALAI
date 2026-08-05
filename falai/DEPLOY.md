@@ -239,6 +239,22 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
     }
+
+    # Sinalização SIP/WebRTC do webphone — proxy directo para o Asterisk
+    # (porta interna 127.0.0.1:8089, só loopback, ver infra/asterisk/docker-compose.yml).
+    # Mesmo domínio/certificado do CRM, sem listen/server{} novo.
+    # RTP/ICE (áudio) NÃO passa por aqui — vai directo do browser ao Asterisk
+    # nas portas 10000-10100/udp já expostas ao host.
+    location /webphone-ws {
+        proxy_pass http://127.0.0.1:8089;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        # WS de sinalização SIP fica aberto durante toda a sessão registada
+        # (não é um request/response curto) — timeout alargado.
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
 }
 ```
 

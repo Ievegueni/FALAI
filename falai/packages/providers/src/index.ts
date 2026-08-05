@@ -6,6 +6,7 @@ export type { AsteriskConfig } from "./telephony/AsteriskAdapter.js";
 export {
   trunkEndpointId,
   extensionEndpointId,
+  extensionWebEndpointId,
   formatDialNumber,
   parseDialFormat,
 } from "./telephony/asteriskNaming.js";

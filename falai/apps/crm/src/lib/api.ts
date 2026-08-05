@@ -25,6 +25,7 @@ import type {
   TenantSettings,
   TopupResponse,
   WalletTransaction,
+  WebphoneCredentials,
 } from '@/types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -295,6 +296,13 @@ export const callsApi = {
 
   directStatus: async (callId: string) =>
     get<{ active: boolean }>(`/tenant/calls/direct/status/${encodeURIComponent(callId)}`),
+};
+
+// ─── Webphone (WebRTC no browser) ────────────────────────────────────────────
+
+export const webphoneApi = {
+  getCredentials: (extensionId: string) =>
+    get<WebphoneCredentials>(`/tenant/extensions/${encodeURIComponent(extensionId)}/webphone-credentials`),
 };
 
 // ─── Integração PBX (bring-your-own-PBX) ─────────────────────────────────────

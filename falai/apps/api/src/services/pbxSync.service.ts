@@ -82,6 +82,7 @@ export async function buildPbxSyncPayload(): Promise<PbxSyncPayload> {
         sipAuthUser: e.sipAuthUser,
         sipAuthSecret: safeDecrypt(e.sipAuthSecret),
         maxIpRegs: e.maxIpRegs,
+        maxWebRegs: e.maxWebRegs,
         disallowIntl: security.disallowIntl ?? true,
         ringTimeoutS: presence.ringTimeoutS ?? 30,
       };

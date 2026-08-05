@@ -28,6 +28,9 @@ services:
       # AMI/ARI — só para a API do Falaí. Ligado a 127.0.0.1 de propósito:
       # nunca expor esta porta à internet (plano §16.4).
       - "127.0.0.1:8088:8088/tcp"
+      # Sinalização WS do webphone — só para o nginx do host fazer proxy
+      # (TLS terminado lá). Nunca expor esta porta directamente à internet.
+      - "127.0.0.1:8089:8089/tcp"
     # No servidor Linux definitivo, preferir network_mode: host — evita a
     # tradução de portas do Docker, que é uma causa comum de áudio só num
     # sentido. Em macOS o host networking não funciona, daí o mapeamento acima.

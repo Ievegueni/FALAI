@@ -33,6 +33,18 @@ export function extensionEndpointId(sipAuthUser: string): string {
 }
 
 /**
+ * Endpoint WebRTC (webphone) da mesma extensão, separado do endpoint de
+ * hardphone acima. Necessário porque `webrtc=yes` obriga a media_encryption
+ * DTLS/ICE, que um hardphone UDP simples não fala — não dá para partilhar o
+ * mesmo endpoint/AOR sem quebrar um dos dois lados, nem partilhar o AOR
+ * (remove_existing derrubaria o registo um do outro). O par sipAuthUser/
+ * segredo é o mesmo do hardphone; só o nome do objecto muda.
+ */
+export function extensionWebEndpointId(sipAuthUser: string): string {
+  return `extweb_${safe(sipAuthUser)}`;
+}
+
+/**
  * Formato em que os números são entregues ao operador. Enquanto a ANGOVOIP não
  * confirmar qual aceita, muda-se por variável de ambiente sem tocar no código.
  *   national -> 912345678      (9 dígitos, o mais provável em Angola)

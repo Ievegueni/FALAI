@@ -42,3 +42,26 @@ export async function resolveInbound(
   const match = routes.find((r) => did.startsWith(r.didPattern));
   return match ? { destType: match.destType, destValue: match.destValue } : null;
 }
+
+/**
+ * Igual a `resolveInbound`, mas sem tenant conhecido à partida — é o caso de
+ * uma chamada a chegar do trunk (router ARI/Stasis de entrada): só se sabe o
+ * DID, o tenant é o que a rota disser. Devolve também o tenantId, para quem
+ * chama poder ir buscar a Extension certa.
+ */
+export async function resolveInboundGlobal(
+  did: string,
+): Promise<{ tenantId: string; destType: string; destValue: string } | null> {
+  const exact = await prisma.inboundRoute.findFirst({
+    where: { didPattern: did },
+    select: { tenantId: true, destType: true, destValue: true },
+  });
+  if (exact) return exact;
+
+  const routes = await prisma.inboundRoute.findMany({
+    orderBy: { createdAt: "asc" },
+    select: { tenantId: true, didPattern: true, destType: true, destValue: true },
+  });
+  const match = routes.find((r) => did.startsWith(r.didPattern));
+  return match ? { tenantId: match.tenantId, destType: match.destType, destValue: match.destValue } : null;
+}

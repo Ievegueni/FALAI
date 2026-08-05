@@ -40,7 +40,8 @@
     "logout": "Sign out",
     "reports": "Reports",
     "sms": "SMS",
-    "telephony": "Telephony"
+    "telephony": "Telephony",
+    "webphone": "Webphone"
   },
   "login": {
     "subtitle": "Sign in to your account",
@@ -781,6 +782,34 @@
     "recipients": "{{count}} recipient(s)",
     "sentCount": "{{count}} sent",
     "failedCount": "{{count}} failed"
+  },
+  "webphone": {
+    "title": "Webphone",
+    "selectExtension": "Line",
+    "noLine": "No extensions configured for this tenant.",
+    "status": {
+      "unregistered": "Not registered",
+      "registering": "Registering…",
+      "registered": "Registered",
+      "failed": "Registration failed"
+    },
+    "dialPlaceholder": "Number to dial",
+    "call": "Call",
+    "hangup": "Hang up",
+    "answer": "Answer",
+    "reject": "Reject",
+    "mute": "Mute",
+    "unmute": "Unmute",
+    "clear": "Clear",
+    "incomingCall": "Incoming call",
+    "callState": {
+      "calling": "Calling",
+      "ringing": "Ringing",
+      "in-call": "On call with",
+      "incoming": "Call from",
+      "ended": "Call ended",
+      "idle": ""
+    }
   },
   "telephony": {
     "title": "Telephony",

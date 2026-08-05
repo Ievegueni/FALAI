@@ -1,8 +1,11 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma, Prisma } from "@falai/db";
 import { z } from "zod";
+import { extensionWebEndpointId } from "@falai/providers";
 import { EXTENSION_DEFAULTS, generateSipCredentials, serializeExtension } from "../../services/sipProvisioning.service.js";
 import { scheduleTenantPbxSync } from "../../services/pbxSync.service.js";
+import { decryptSecret } from "../../services/crypto.service.js";
+import { config } from "../../config.js";
 
 // Blocos de config por aba — Json livre validado como objeto (a UI garante a forma).
 const jsonObject = z.record(z.string(), z.unknown());
@@ -182,6 +185,41 @@ export const tenantExtensionsRoutes: FastifyPluginAsync = async (fastify) => {
 
     scheduleTenantPbxSync(tenantId);
     return { ...serializeExtension(updated), sipAuthSecret: creds.sipAuthSecretPlain };
+  });
+
+  // GET /tenant/extensions/:id/webphone-credentials — credenciais prontas a
+  // usar no JsSIP do CRM (endpoint WebRTC, não o hardphone). Sem
+  // requireManager: qualquer agente do tenant pode pedir a extensão que
+  // escolheu no dropdown do webphone, tal como já podia usá-la no
+  // click-to-call (DirectCallPage).
+  fastify.get<{ Params: { id: string } }>("/:id/webphone-credentials", { preHandler }, async (request, reply) => {
+    const { tenantId, sub } = request.tenantUser!;
+    const ext = await prisma.extension.findFirst({ where: { id: request.params.id, tenantId } });
+    if (!ext) return reply.status(404).send({ error: "Extensão não encontrada" });
+    if (!ext.isActive) return reply.status(400).send({ error: "Extensão inactiva" });
+    if (!config.PUBLIC_WEBPHONE_WSS_URL || !config.PUBLIC_WEBPHONE_SIP_DOMAIN) {
+      return reply.status(503).send({ error: "Webphone não configurado neste ambiente" });
+    }
+
+    await fastify.audit({
+      actorType: "TENANT_USER",
+      actorId: sub,
+      action: "tenant.extension.webphone_credentials_read",
+      targetType: "Extension",
+      targetId: ext.id,
+      ip: request.ip,
+    });
+
+    return {
+      // Nome do ENDPOINT web (não o sipAuthUser cru) — é isto que o PJSIP
+      // casa no REGISTER (endpoint_identifier_order=...,username,...).
+      sipAuthUser: extensionWebEndpointId(ext.sipAuthUser),
+      sipAuthSecret: decryptSecret(ext.sipAuthSecret),
+      wsUri: config.PUBLIC_WEBPHONE_WSS_URL,
+      sipDomain: config.PUBLIC_WEBPHONE_SIP_DOMAIN,
+      displayName: ext.displayName,
+      number: ext.number,
+    };
   });
 
   // DELETE /tenant/extensions/:id

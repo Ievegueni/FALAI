@@ -35,6 +35,7 @@ const FEATURE_LABELS: { key: FeatureKey; label: string; hint?: string; needsAi?:
   { key: 'calls', label: 'Histórico de chamadas', hint: 'Ver registo e detalhe de chamadas' },
   { key: 'directCall', label: 'Chamada directa', hint: 'Click-to-call de uma extensão para um número' },
   { key: 'otpCall', label: 'OTP por voz', hint: 'Entrega de códigos OTP por chamada' },
+  { key: 'webphone', label: 'Webphone', hint: 'Telefone no browser (WebRTC) — atende e liga sem hardphone' },
   { key: 'wallet', label: 'Carteira', hint: 'Saldo e movimentos' },
   { key: 'team', label: 'Equipa', hint: 'Gestão de utilizadores do cliente' },
   { key: 'developers', label: 'Developers / API', hint: 'API keys, webhooks e documentação' },
