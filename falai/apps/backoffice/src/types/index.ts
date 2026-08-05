@@ -53,6 +53,7 @@ export type FeatureKey =
   | 'calls'
   | 'directCall'
   | 'otpCall'
+  | 'webphone'
   | 'wallet'
   | 'team'
   | 'developers';

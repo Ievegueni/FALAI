@@ -29,7 +29,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TrunkRuntimeAdapter, PbxSyncPayload, PbxSyncResult } from "@falai/providers";
-import { trunkEndpointId, extensionEndpointId } from "@falai/providers";
+import { trunkEndpointId, extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
 
 const AMI_URL = process.env["ASTERISK_AMI_URL"] ?? "";
 const AMI_USER = process.env["ASTERISK_AMI_USER"] ?? "";
@@ -205,6 +205,38 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         "rtp_symmetric=yes",
         "force_rport=yes",
         "rewrite_contact=yes",
+        `callerid=${e.callerId} <${e.number}>`,
+        ""
+      );
+
+      // Endpoint irmão, dedicado ao webphone (WebRTC) do CRM. Mesmo par
+      // sipAuthUser/segredo (reaproveita o bloco [auth] acima), mas objecto
+      // separado: webrtc=yes obriga a DTLS/ICE, que o hardphone acima não
+      // fala, e um AOR partilhado faria o registo de um derrubar o outro
+      // (remove_existing=yes). Ver extensionWebEndpointId().
+      const webId = extensionWebEndpointId(e.sipAuthUser);
+      L.push(
+        `[${webId}]`,
+        "type=aor",
+        `max_contacts=${e.maxWebRegs}`,
+        "remove_existing=yes",
+        "",
+        `[${webId}]`,
+        "type=endpoint",
+        "transport=transport-wss",
+        `aors=${webId}`,
+        `auth=${auth}`,
+        "context=from-internal",
+        "webrtc=yes",
+        "dtls_auto_generate_cert=yes",
+        "media_encryption=dtls",
+        "ice_support=yes",
+        "rtcp_mux=yes",
+        "use_avpf=yes",
+        "direct_media=no",
+        "disallow=all",
+        "allow=opus,ulaw,alaw",
+        "dtmf_mode=rfc4733",
         `callerid=${e.callerId} <${e.number}>`,
         ""
       );

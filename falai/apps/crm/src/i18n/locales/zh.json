@@ -40,7 +40,8 @@
     "logout": "退出登录",
     "reports": "报告",
     "sms": "短信",
-    "telephony": "电话"
+    "telephony": "电话",
+    "webphone": "网络电话"
   },
   "login": {
     "subtitle": "登录您的账户",
@@ -781,6 +782,34 @@
     "recipients": "{{count}} 位收件人",
     "sentCount": "已发送 {{count}}",
     "failedCount": "失败 {{count}}"
+  },
+  "webphone": {
+    "title": "网络电话",
+    "selectExtension": "线路",
+    "noLine": "此租户未配置任何分机。",
+    "status": {
+      "unregistered": "未注册",
+      "registering": "正在注册…",
+      "registered": "已注册",
+      "failed": "注册失败"
+    },
+    "dialPlaceholder": "拨打的号码",
+    "call": "拨打",
+    "hangup": "挂断",
+    "answer": "接听",
+    "reject": "拒接",
+    "mute": "静音",
+    "unmute": "取消静音",
+    "clear": "清除",
+    "incomingCall": "来电",
+    "callState": {
+      "calling": "正在呼叫",
+      "ringing": "正在振铃",
+      "in-call": "通话中",
+      "incoming": "来自",
+      "ended": "通话结束",
+      "idle": ""
+    }
   },
   "telephony": {
     "title": "电话",

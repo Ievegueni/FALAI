@@ -22,6 +22,17 @@ protocol=udp
 bind=0.0.0.0:5060
 ${NAT_LINES}
 
+; Sinalização do webphone (WebRTC) do CRM. Chama-se "wss" para bater certo
+; com a documentação/variáveis de ambiente e com o que o browser liga
+; (wss://), mas aqui dentro é só "ws" em texto simples: o TLS é terminado
+; no nginx do host (mesmo certificado do domínio do CRM), que faz proxy
+; para 127.0.0.1:${WS_PORT}. Não expor esta porta fora do loopback — ver
+; infra/asterisk/docker-compose.yml.
+[transport-wss]
+type=transport
+protocol=ws
+bind=127.0.0.1:${WS_PORT}
+
 ; Trunks e extensões: a API do Falaí gera este ficheiro a partir da base de
 ; dados e manda recarregar por AMI. Editar no backoffice reflecte-se no motor
 ; em segundos. Ver apps/api/src/services/asteriskRuntime.service.ts para a

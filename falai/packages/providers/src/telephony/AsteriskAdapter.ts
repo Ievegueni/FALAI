@@ -48,12 +48,27 @@ export class AsteriskError extends Error {
   }
 }
 
+/**
+ * "Ring group" simples para chamadas de entrada: várias pernas (ex. hardphone
+ * + webphone da mesma extensão) a tocar em simultâneo. A primeira a atender
+ * (ChannelStateChange → Up) dispara onAnswer; quem chama trata de desligar as
+ * restantes. Se todas caírem sem ninguém atender, dispara onAllFailed.
+ */
+interface RingGroup {
+  remaining: Set<string>;
+  settled: boolean;
+  onAnswer: (answeredChannelId: string) => void;
+  onAllFailed: () => void;
+}
+
 export class AsteriskAdapter implements TelephonyProvider {
   private ws: WebSocket | null = null;
   private handler: ((event: CallEvent) => void) | null = null;
   private closing = false;
   /** providerCallId → instante em que atendeu, para calcular a duração. */
   private answeredAt = new Map<string, number>();
+  /** channelId (perna do ring group) → grupo partilhado entre as pernas. */
+  private ringGroups = new Map<string, RingGroup>();
 
   private readonly app: string;
   private readonly context: string;
@@ -123,6 +138,68 @@ export class AsteriskAdapter implements TelephonyProvider {
     const ch = await this.api<{ id: string }>(`/channels?${q}`, { method: "POST" });
     this.handler?.({ type: "CALL_INITIATED", providerCallId: ch.id, ref: params.ref });
     return { providerCallId: ch.id };
+  }
+
+  /**
+   * Origina um canal directamente para um endpoint PJSIP pelo NOME (ex.
+   * "ext_xxx"/"extweb_xxx"), ao contrário de `dial()` que marca
+   * "número@endpoint-do-trunk". Usado pelo router de chamadas de entrada
+   * para tocar num ramal específico (hardphone e/ou webphone).
+   */
+  async originateToPjsipEndpoint(
+    endpointId: string,
+    appArgs: string,
+    callerId: string | undefined,
+    timeoutSecs: number
+  ): Promise<{ id: string }> {
+    const q = new URLSearchParams({
+      endpoint: `PJSIP/${endpointId}`,
+      app: this.app,
+      appArgs,
+      timeout: String(timeoutSecs),
+      ...(callerId ? { callerId } : {}),
+    });
+    return this.api<{ id: string }>(`/channels?${q}`, { method: "POST" });
+  }
+
+  async answerChannel(providerCallId: string): Promise<void> {
+    await this.api(`/channels/${encodeURIComponent(providerCallId)}/answer`, { method: "POST" });
+  }
+
+  async createBridge(): Promise<{ id: string }> {
+    return this.api<{ id: string }>(`/bridges?type=mixing`, { method: "POST" });
+  }
+
+  async addChannelToBridge(bridgeId: string, channelId: string): Promise<void> {
+    await this.api(
+      `/bridges/${encodeURIComponent(bridgeId)}/addChannel?channel=${encodeURIComponent(channelId)}`,
+      { method: "POST" }
+    );
+  }
+
+  /** Ver RingGroup — regista as pernas de uma chamada de entrada com destino a mais de um endpoint. */
+  registerRingGroup(
+    memberChannelIds: string[],
+    onAnswer: (answeredChannelId: string) => void,
+    onAllFailed: () => void
+  ): void {
+    const group: RingGroup = { remaining: new Set(memberChannelIds), settled: false, onAnswer, onAllFailed };
+    for (const id of memberChannelIds) this.ringGroups.set(id, group);
+  }
+
+  /**
+   * Sem rota conhecida (ou destino ainda não suportado) para uma chamada de
+   * entrada — toca um aviso em vez de deixar a chamada morrer em silêncio,
+   * espelhando o "sem_trunk" já existente no dialplan de saída.
+   */
+  async noRouteFallback(providerCallId: string): Promise<void> {
+    try {
+      await this.answerChannel(providerCallId);
+      await this.playPrompt({ providerCallId, number: "", prompts: ["ss-noservice"] });
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    } finally {
+      await this.hangup(providerCallId).catch(() => {});
+    }
   }
 
   async hangup(providerCallId: string): Promise<void> {
@@ -197,7 +274,9 @@ export class AsteriskAdapter implements TelephonyProvider {
 
   private onAriEvent(e: Record<string, unknown>): void {
     const type = e["type"] as string;
-    const channel = e["channel"] as { id?: string; state?: string } | undefined;
+    const channel = e["channel"] as
+      | { id?: string; state?: string; caller?: { number?: string } }
+      | undefined;
     const id = channel?.id ?? (e["playback"] as { target_uri?: string } | undefined)?.target_uri?.split(":")[1];
     if (!id || !this.handler) return;
 
@@ -206,17 +285,57 @@ export class AsteriskAdapter implements TelephonyProvider {
         if (channel?.state === "Ringing" || channel?.state === "Ring") {
           this.handler({ type: "CALL_RINGING", providerCallId: id });
         } else if (channel?.state === "Up") {
+          // Perna de um ring group (secção 6 do plano do webphone): a
+          // primeira a atender ganha, não é uma "chamada" genérica do
+          // call engine — não emitir CALL_ANSWERED para isto.
+          const ring = this.ringGroups.get(id);
+          if (ring && !ring.settled) {
+            ring.settled = true;
+            for (const memberId of ring.remaining) this.ringGroups.delete(memberId);
+            ring.onAnswer(id);
+            break;
+          }
           this.answeredAt.set(id, Date.now());
           this.handler({ type: "CALL_ANSWERED", providerCallId: id, answeredAt: new Date() });
         }
         break;
 
-      case "StasisStart":
-        this.handler({ type: "CALL_RINGING", providerCallId: id });
+      case "StasisStart": {
+        // args[0] === "inbound" identifica um canal que chegou do dialplan
+        // [from-trunk] (Stasis(falai,inbound,${EXTEN})) — ainda não corresponde
+        // a nenhuma sessão nossa, ao contrário de um canal que nós originámos
+        // via dial(). Ver extensions.conf.template, contexto [from-trunk].
+        const args = (e["args"] as string[] | undefined) ?? [];
+        if (args[0] === "inbound") {
+          const callerIdNum = channel?.caller?.number;
+          this.handler({
+            type: "INBOUND_CALL_STARTED",
+            providerCallId: id,
+            did: args[1] ?? "",
+            ...(callerIdNum ? { callerIdNum } : {}),
+          });
+        } else {
+          this.handler({ type: "CALL_RINGING", providerCallId: id });
+        }
         break;
+      }
 
       case "StasisEnd":
       case "ChannelDestroyed": {
+        // Perna de ring group que caiu (timeout ou nós próprios a desligar as
+        // que perderam) — não tem sessão de call engine associada, só
+        // contabiliza para saber se TODAS falharam.
+        const ring = this.ringGroups.get(id);
+        if (ring) {
+          this.ringGroups.delete(id);
+          ring.remaining.delete(id);
+          if (!ring.settled && ring.remaining.size === 0) {
+            ring.settled = true;
+            ring.onAllFailed();
+          }
+          break;
+        }
+
         const start = this.answeredAt.get(id);
         this.answeredAt.delete(id);
         const cause = String((e["cause_txt"] as string) ?? (e["cause"] as number) ?? "normal");

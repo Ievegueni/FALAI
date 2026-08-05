@@ -41,6 +41,7 @@ export interface SipExtensionConfig {
   /** Segredo de registo em texto (já desencriptado). */
   sipAuthSecret: string;
   maxIpRegs: number;
+  maxWebRegs: number;
   disallowIntl: boolean;
   ringTimeoutS: number;
 }

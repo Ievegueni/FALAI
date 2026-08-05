@@ -12,6 +12,7 @@ export ARI_USER="${ARI_USER:-falai}"
 export ARI_PASSWORD="${ARI_PASSWORD:?ARI_PASSWORD em falta — ver .env.example}"
 export RTP_START="${RTP_START:-10000}"
 export RTP_END="${RTP_END:-10100}"
+export WS_PORT="${WS_PORT:-8089}"
 
 # NAT: quando o Asterisk está atrás de router/Docker, precisa de anunciar o
 # endereço público no SDP. Se EXTERNAL_IP estiver vazio, as linhas ficam
@@ -29,7 +30,7 @@ fi
 # esta lista explícita, o envsubst esvaziaria ${EXTEN}, ${DIALSTATUS} e
 # ${CALLERID(num)} — o dialplan deixaria de funcionar de forma silenciosa.
 # Só as variáveis aqui listadas são substituídas; as do Asterisk ficam intactas.
-SUBST_VARS='${NAT_LINES} ${AMI_USER} ${AMI_PASSWORD} ${ARI_USER} ${ARI_PASSWORD}'
+SUBST_VARS='${NAT_LINES} ${AMI_USER} ${AMI_PASSWORD} ${ARI_USER} ${ARI_PASSWORD} ${WS_PORT}'
 
 mkdir -p /etc/asterisk /etc/asterisk/generated
 # Os dois ficheiros que a API gera. Criados vazios para o Asterisk arrancar

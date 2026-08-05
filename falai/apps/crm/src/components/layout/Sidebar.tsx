@@ -15,6 +15,7 @@ import {
   Server,
   Network,
   LogOut,
+  PhoneCall,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { clsx } from '@/lib/utils';
@@ -28,6 +29,7 @@ const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: F
   { to: '/campaigns', icon: Megaphone, labelKey: 'nav.campaigns', feature: 'campaigns' },
   { to: '/contacts', icon: Users, labelKey: 'nav.contacts', feature: 'contacts' },
   { to: '/calls', icon: Phone, labelKey: 'nav.calls', feature: 'calls' },
+  { to: '/webphone', icon: PhoneCall, labelKey: 'nav.webphone', feature: 'webphone' },
   { to: '/reports', icon: BarChart3, labelKey: 'nav.reports', feature: 'calls' },
   { to: '/wallet', icon: Wallet, labelKey: 'nav.wallet', feature: 'wallet' },
   { to: '/team', icon: UserCheck, labelKey: 'nav.team', feature: 'team' },

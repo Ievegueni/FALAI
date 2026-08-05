@@ -19,6 +19,7 @@ export type FeatureKey =
   | 'calls'
   | 'directCall'
   | 'otpCall'
+  | 'webphone'
   | 'wallet'
   | 'team'
   | 'developers';
@@ -386,6 +387,16 @@ export interface Extension {
   updatedAt: string;
   /** Só presente na resposta de criar / reset-sip — mostrar uma única vez. */
   sipAuthSecret?: string;
+}
+
+/** Credenciais prontas a usar no JsSIP do webphone (endpoint WebRTC, não o hardphone). */
+export interface WebphoneCredentials {
+  sipAuthUser: string;
+  sipAuthSecret: string;
+  wsUri: string;
+  sipDomain: string;
+  displayName: string | null;
+  number: string;
 }
 
 export interface ExtensionGroupMemberRef {

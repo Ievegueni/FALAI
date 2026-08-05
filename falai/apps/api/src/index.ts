@@ -9,6 +9,7 @@ import { Redis } from "ioredis";
 import { config } from "./config.js";
 import { resolveProviderConfig, type ResolvedProviderConfig } from "./services/providerConfig.service.js";
 import { YeastarAdapter, AsteriskAdapter, trunkEndpointId, parseDialFormat, type TelephonyProvider } from "@falai/providers";
+import { registerInboundCallRouter } from "./services/inboundCallRouter.service.js";
 import { prisma } from "@falai/db";
 
 import redisPlugin from "./plugins/redis.js";
@@ -151,7 +152,7 @@ async function buildApp() {
   // que permite migrar e reverter sem redeploy — ver plano §15.2.
   const useAsterisk =
     process.env["TELEPHONY_ENGINE"] === "asterisk" && Boolean(process.env["ASTERISK_ARI_URL"]);
-  const telephony: TelephonyProvider = useAsterisk
+  const asteriskAdapter = useAsterisk
     ? new AsteriskAdapter({
         baseUrl: process.env["ASTERISK_ARI_URL"]!,
         username: process.env["ASTERISK_ARI_USER"] ?? "falai",
@@ -174,13 +175,21 @@ async function buildApp() {
           };
         },
       })
-    : (yeastar as TelephonyProvider);
+    : null;
+  const telephony: TelephonyProvider = asteriskAdapter ?? (yeastar as TelephonyProvider);
   fastify.decorate("telephony", telephony);
   fastify.log.info({ engine: useAsterisk ? "asterisk" : "yeastar" }, "telephony.engine_selected");
 
   // eventBus: multiplexor de eventos Yeastar (deve ser registado antes de callEngine e otpCallService)
   const { default: eventBusPlugin } = await import("./plugins/eventBus.js");
   await fastify.register(eventBusPlugin);
+
+  // Router de chamadas de entrada (ARI/Stasis) — só faz sentido com o motor
+  // Asterisk nativo; o Yeastar tem o seu próprio fluxo de entrada. Ver
+  // services/inboundCallRouter.service.ts.
+  if (asteriskAdapter) {
+    registerInboundCallRouter(fastify.onCallEvent, asteriskAdapter, fastify.log);
+  }
 
   // Call engine wires STT/LLM/TTS e regista no eventBus
   await fastify.register(callEnginePlugin);

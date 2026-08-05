@@ -13,6 +13,10 @@ export type YeastarEventCode =
 // Internal normalised call event (provider-agnostic)
 export type CallEvent =
   | { type: "CALL_INITIATED"; providerCallId: string; ref: string }
+  // Chamada de entrada nova, ainda sem nenhum Call/ref conhecido no engine —
+  // distinto de CALL_RINGING (que é sempre uma chamada já originada por nós
+  // via dial()). did = número/EXTEN que o dialplan entregou ao Stasis.
+  | { type: "INBOUND_CALL_STARTED"; providerCallId: string; did: string; callerIdNum?: string }
   | { type: "CALL_RINGING"; providerCallId: string }
   | { type: "CALL_ANSWERED"; providerCallId: string; answeredAt: Date }
   | { type: "CALL_ENDED"; providerCallId: string; endedAt: Date; durationSecs: number; hangupCause: string }

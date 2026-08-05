@@ -13,6 +13,13 @@ const envSchema = z.object({
   // fica bloqueado a cross-origin (adequado quando FE e API partilham origem/proxy).
   ALLOWED_ORIGINS: z.string().optional(),
 
+  // Webphone (WebRTC) — URL pública da sinalização WS (nginx do host faz
+  // proxy para o Asterisk, ver DEPLOY.md secção 8) e domínio SIP a usar no
+  // REGISTER. Sem isto configurado, o endpoint de credenciais do webphone
+  // não funciona (ver routes/tenant/extensions.ts).
+  PUBLIC_WEBPHONE_WSS_URL: z.string().optional(),
+  PUBLIC_WEBPHONE_SIP_DOMAIN: z.string().optional(),
+
   YEASTAR_BASE_URL: z.string().optional(),
   YEASTAR_CLIENT_ID: z.string().optional(),
   YEASTAR_CLIENT_SECRET: z.string().optional(),

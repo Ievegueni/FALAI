@@ -15,7 +15,6 @@
     "@falai/db": "workspace:*",
     "@falai/providers": "workspace:*",
     "@falai/shared": "workspace:*",
-    "@fastify/cookie": "^11.1.1",
     "@fastify/cors": "^11.3.0",
     "@fastify/jwt": "^10.2.0",
     "@fastify/multipart": "^10.1.0",

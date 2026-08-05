@@ -40,7 +40,8 @@
     "logout": "Terminar sessão",
     "reports": "Relatórios",
     "sms": "SMS",
-    "telephony": "Telefonia"
+    "telephony": "Telefonia",
+    "webphone": "Webphone"
   },
   "login": {
     "subtitle": "Inicie sessão na sua conta",
@@ -781,6 +782,34 @@
     "recipients": "{{count}} destinatário(s)",
     "sentCount": "{{count}} enviado(s)",
     "failedCount": "{{count}} falhado(s)"
+  },
+  "webphone": {
+    "title": "Webphone",
+    "selectExtension": "Linha",
+    "noLine": "Sem extensões configuradas para este tenant.",
+    "status": {
+      "unregistered": "Não registado",
+      "registering": "A registar…",
+      "registered": "Registado",
+      "failed": "Falha no registo"
+    },
+    "dialPlaceholder": "Número a marcar",
+    "call": "Ligar",
+    "hangup": "Desligar",
+    "answer": "Atender",
+    "reject": "Rejeitar",
+    "mute": "Silenciar",
+    "unmute": "Reactivar som",
+    "clear": "Apagar",
+    "incomingCall": "Chamada a entrar",
+    "callState": {
+      "calling": "A ligar para",
+      "ringing": "A tocar para",
+      "in-call": "Em chamada com",
+      "incoming": "Chamada de",
+      "ended": "Chamada terminada",
+      "idle": ""
+    }
   },
   "telephony": {
     "title": "Telefonia",
