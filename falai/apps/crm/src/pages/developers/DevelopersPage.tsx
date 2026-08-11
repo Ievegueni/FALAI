@@ -293,14 +293,15 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
       {
         method: 'POST', path: '/v1/calls', descKey: 'developers.ep.callsCreate', scope: 'calls:write',
         body: `{
-  "agent_id": "agt_abc123",   // obrigatório
-  "to": "+244923000000",       // obrigatório — número E.164
-  "metadata": { "ref": "ord_99" } // opcional
+  "agentId": "agt_abc123",          // obrigatório
+  "toNumber": "+244923000000",      // obrigatório — número E.164
+  "variables": { "ref": "ord_99" }, // opcional — variáveis disponíveis ao agente
+  "contactId": "cnt_001"            // opcional — associa a chamada a um contacto existente
 }`,
         response: `{
   "id": "call_xyz789",
-  "status": "dialing",
-  "to": "+244923000000",
+  "status": "DIALING",
+  "toNumber": "+244923000000",
   "agentId": "agt_abc123",
   "createdAt": "2026-07-20T15:00:00.000Z"
 }`,
@@ -310,28 +311,32 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
         params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.callId' }],
         response: `{
   "id": "call_xyz789",
+  "agentId": "agt_abc123",
+  "toNumber": "+244923000000",
   "status": "COMPLETED",
-  "to": "+244923000000",
-  "durationSeconds": 42,
-  "transcript": "Olá, ligo da Falaí...",
-  "result": "SALE",
-  "sentiment": "POSITIVE",
-  "createdAt": "2026-07-20T15:00:00.000Z"
+  "outcome": "SALE",
+  "durationSecs": 42,
+  "costCents": 1500,
+  "summary": "Cliente confirmou pagamento até sexta-feira.",
+  "startedAt": "2026-07-20T15:00:00.000Z",
+  "answeredAt": "2026-07-20T15:00:05.000Z",
+  "endedAt": "2026-07-20T15:00:47.000Z",
+  "createdAt": "2026-07-20T15:00:00.000Z",
+  "variables": { "ref": "ord_99" }
 }`,
       },
       {
         method: 'GET', path: '/v1/calls', descKey: 'developers.ep.callsList', scope: 'calls:read',
         params: [
           { name: 'status', type: 'string', descKey: 'developers.param.callStatus' },
-          { name: 'agentId', type: 'string', descKey: 'developers.param.agentIdFilter' },
-          { name: 'page', type: 'number', descKey: 'developers.param.page' },
           { name: 'limit', type: 'number', descKey: 'developers.param.limit' },
+          { name: 'offset', type: 'number', descKey: 'developers.param.offset' },
         ],
         response: `{
-  "data": [ { "id": "call_xyz789", "status": "COMPLETED", ... } ],
+  "data": [ { "id": "call_xyz789", "agentId": "agt_abc123", "toNumber": "+244923000000", "status": "COMPLETED", "durationSecs": 42, "costCents": 1500, "startedAt": "...", "endedAt": "...", "createdAt": "..." } ],
   "total": 142,
-  "page": 1,
-  "limit": 20
+  "limit": 20,
+  "offset": 0
 }`,
       },
     ],
@@ -408,16 +413,16 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
       {
         method: 'POST', path: '/v1/contacts', descKey: 'developers.ep.contactsCreate', scope: 'contacts:write',
         body: `{
-  "name": "Maria Santos",      // obrigatório
-  "phone": "+244912000001",    // obrigatório — E.164
-  "email": "maria@exemplo.ao", // opcional
-  "tags": ["cliente", "vip"],  // opcional
-  "customFields": { "empresa": "ACME" } // opcional
+  "phone": "+244912000001",    // obrigatório — normalizado automaticamente (aceita 9 dígitos, 244... ou 00244...)
+  "name": "Maria Santos",      // opcional
+  "attributes": { "empresa": "ACME", "divida": 15000 } // opcional — dados livres (chave/valor)
 }`,
         response: `{
   "id": "cnt_001",
-  "name": "Maria Santos",
   "phone": "+244912000001",
+  "name": "Maria Santos",
+  "attributes": { "empresa": "ACME", "divida": 15000 },
+  "optedOutAt": null,
   "createdAt": "2026-07-20T10:00:00.000Z"
 }`,
       },
@@ -425,15 +430,14 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
         method: 'GET', path: '/v1/contacts', descKey: 'developers.ep.contactsList', scope: 'contacts:read',
         params: [
           { name: 'search', type: 'string', descKey: 'developers.param.contactSearch' },
-          { name: 'tag', type: 'string', descKey: 'developers.param.tag' },
-          { name: 'page', type: 'number', descKey: 'developers.param.page' },
           { name: 'limit', type: 'number', descKey: 'developers.param.limit' },
+          { name: 'offset', type: 'number', descKey: 'developers.param.offset' },
         ],
         response: `{
-  "data": [ { "id": "cnt_001", "name": "Maria Santos", "phone": "+244912000001" } ],
+  "data": [ { "id": "cnt_001", "phone": "+244912000001", "name": "Maria Santos", "attributes": {}, "optedOutAt": null, "createdAt": "..." } ],
   "total": 87,
-  "page": 1,
-  "limit": 20
+  "limit": 20,
+  "offset": 0
 }`,
       },
       {
@@ -441,28 +445,35 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
         params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.contactId' }],
         response: `{
   "id": "cnt_001",
-  "name": "Maria Santos",
   "phone": "+244912000001",
-  "email": "maria@exemplo.ao",
-  "tags": ["cliente"],
-  "totalCalls": 5,
-  "lastCallAt": "2026-07-18T14:30:00.000Z"
+  "name": "Maria Santos",
+  "attributes": { "empresa": "ACME" },
+  "optedOutAt": null,
+  "optOutReason": null,
+  "createdAt": "2026-07-20T10:00:00.000Z",
+  "updatedAt": "2026-07-20T10:00:00.000Z"
 }`,
       },
       {
         method: 'PATCH', path: '/v1/contacts/:id', descKey: 'developers.ep.contactsUpdate', scope: 'contacts:write',
         params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.contactId' }],
         body: `{
-  "name": "Maria A. Santos",   // opcional
-  "email": "novo@exemplo.ao",  // opcional
-  "tags": ["cliente", "vip"]   // opcional — substitui todas as tags
+  "name": "Maria A. Santos",         // opcional
+  "attributes": { "divida": 12000 }  // opcional — substitui o objecto attributes
 }`,
-        response: `{ "id": "cnt_001", "name": "Maria A. Santos", ... }`,
+        response: `{
+  "id": "cnt_001",
+  "phone": "+244912000001",
+  "name": "Maria A. Santos",
+  "attributes": { "divida": 12000 },
+  "optedOutAt": null,
+  "updatedAt": "2026-07-20T11:00:00.000Z"
+}`,
       },
       {
         method: 'DELETE', path: '/v1/contacts/:id', descKey: 'developers.ep.contactsDelete', scope: 'contacts:write',
         params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.contactId' }],
-        response: `{ "deleted": true }`,
+        response: `204 No Content — sem corpo`,
       },
     ],
   },
@@ -472,28 +483,57 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
       {
         method: 'POST', path: '/v1/campaigns', descKey: 'developers.ep.campaignsCreate', scope: 'campaigns:write',
         body: `{
-  "name": "Recuperação Julho",  // obrigatório
-  "agentId": "agt_abc123",      // obrigatório
-  "contactIds": ["cnt_001"],    // obrigatório — lista de contactos
-  "scheduledAt": "2026-07-25T09:00:00Z" // opcional
+  "name": "Recuperação Julho",   // obrigatório
+  "mode": "FIXED_SCRIPT",         // opcional — "VOICE_AI" (default) ou "FIXED_SCRIPT"
+  "scriptText": "Olá, ligamos em nome da Empresa X sobre uma pendência em aberto...", // obrigatório se mode=FIXED_SCRIPT (mín. 10 caracteres)
+  "agentId": "agt_abc123",        // obrigatório se mode=VOICE_AI
+  "ttsVoiceId": "pt-AO-female-1", // opcional — só usado em FIXED_SCRIPT
+  "scheduleJson": { "startHour": 8, "endHour": 20 }, // opcional — janela horária de chamadas
+  "retryPolicy": { "maxAttempts": 3, "retryDelayMinutes": 30 }, // opcional
+  "throttlePerMinute": 5          // opcional — chamadas simultâneas por minuto (default 2)
 }`,
         response: `{
   "id": "cmp_001",
   "name": "Recuperação Julho",
   "status": "DRAFT",
-  "totalContacts": 1,
+  "mode": "FIXED_SCRIPT",
+  "agentId": null,
   "createdAt": "2026-07-20T10:00:00.000Z"
+}`,
+      },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/contacts', descKey: 'developers.ep.campaignsAddContacts', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        body: `{
+  "contactIds": ["cnt_001", "cnt_002"]  // obrigatório — IDs de contactos já criados (até 5000 por pedido)
+}`,
+        response: `{
+  "added": 2,
+  "skipped": 0,
+  "skippedIds": []
+}`,
+      },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/launch', descKey: 'developers.ep.campaignsLaunch', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        response: `{
+  "ok": true,
+  "status": "RUNNING",
+  "pendingContacts": 2
 }`,
       },
       {
         method: 'GET', path: '/v1/campaigns', descKey: 'developers.ep.campaignsList', scope: 'campaigns:read',
         params: [
           { name: 'status', type: 'string', descKey: 'developers.param.campaignStatus' },
-          { name: 'page', type: 'number', descKey: 'developers.param.page' },
+          { name: 'limit', type: 'number', descKey: 'developers.param.limit' },
+          { name: 'offset', type: 'number', descKey: 'developers.param.offset' },
         ],
         response: `{
-  "data": [ { "id": "cmp_001", "name": "Recuperação Julho", "status": "RUNNING" } ],
-  "total": 12
+  "data": [ { "id": "cmp_001", "name": "Recuperação Julho", "status": "RUNNING", "mode": "FIXED_SCRIPT" } ],
+  "total": 12,
+  "limit": 20,
+  "offset": 0
 }`,
       },
       {
@@ -502,11 +542,13 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
         response: `{
   "id": "cmp_001",
   "name": "Recuperação Julho",
-  "status": "FINISHED",
+  "status": "RUNNING",
+  "mode": "FIXED_SCRIPT",
   "totalContacts": 150,
   "completed": 132,
-  "failed": 18,
-  "conversionRate": 0.24
+  "failedCount": 18,
+  "throttlePerMinute": 5,
+  "createdAt": "2026-07-20T10:00:00.000Z"
 }`,
       },
     ],
@@ -636,7 +678,7 @@ function EndpointRow({ ep, baseUrl }: { ep: EndpointDef; baseUrl: string }) {
   const [open, setOpen] = useState(false);
 
   const curlExample = ep.method === 'GET'
-    ? `curl ${baseUrl}${ep.path.replace(':id', '<id>')}${ep.params?.filter(p => !p.required).length ? '?page=1&limit=20' : ''} \\
+    ? `curl ${baseUrl}${ep.path.replace(':id', '<id>')}${ep.params?.some(p => p.name === 'limit') ? '?limit=20&offset=0' : ''} \\
   -H "X-API-Key: fal_live_..."`
     : ep.method === 'DELETE'
     ? `curl -X DELETE ${baseUrl}${ep.path.replace(':id', '<id>')} \\
