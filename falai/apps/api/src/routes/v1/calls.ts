@@ -79,6 +79,7 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
         fromExtension,
         to: body.toNumber,
         ref: call.id,
+        tenantId,
       });
       providerCallId = result.providerCallId;
       await prisma.call.update({ where: { id: call.id }, data: { yeastarCallId: providerCallId } });

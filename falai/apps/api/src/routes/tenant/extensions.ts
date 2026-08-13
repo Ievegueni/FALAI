@@ -212,8 +212,12 @@ export const tenantExtensionsRoutes: FastifyPluginAsync = async (fastify) => {
 
     return {
       // Nome do ENDPOINT web (não o sipAuthUser cru) — é isto que o PJSIP
-      // casa no REGISTER (endpoint_identifier_order=...,username,...).
-      sipAuthUser: extensionWebEndpointId(ext.sipAuthUser),
+      // casa no REGISTER (endpoint_identifier_order=...,username,...) e o que
+      // vai no URI/From do JsSIP.
+      sipUser: extensionWebEndpointId(ext.sipAuthUser),
+      // Utilizador do Digest: o endpoint web reutiliza o objecto `auth` do
+      // hardphone, cujo username é o sipAuthUser CRU (sem prefixo extweb_).
+      sipAuthUser: ext.sipAuthUser,
       sipAuthSecret: decryptSecret(ext.sipAuthSecret),
       wsUri: config.PUBLIC_WEBPHONE_WSS_URL,
       sipDomain: config.PUBLIC_WEBPHONE_SIP_DOMAIN,

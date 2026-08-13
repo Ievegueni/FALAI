@@ -30,7 +30,13 @@ fi
 # esta lista explícita, o envsubst esvaziaria ${EXTEN}, ${DIALSTATUS} e
 # ${CALLERID(num)} — o dialplan deixaria de funcionar de forma silenciosa.
 # Só as variáveis aqui listadas são substituídas; as do Asterisk ficam intactas.
-SUBST_VARS='${NAT_LINES} ${AMI_USER} ${AMI_PASSWORD} ${ARI_USER} ${ARI_PASSWORD} ${WS_PORT}'
+export FALAI_CDR_URL="${FALAI_CDR_URL:-}"
+export FALAI_CDR_SECRET="${FALAI_CDR_SECRET:-}"
+if [ -z "${FALAI_CDR_URL}" ]; then
+  echo '[entrypoint] AVISO: FALAI_CDR_URL vazio — as chamadas marcadas no telefone NAO sao contabilizadas'
+fi
+
+SUBST_VARS='${NAT_LINES} ${AMI_USER} ${AMI_PASSWORD} ${ARI_USER} ${ARI_PASSWORD} ${WS_PORT} ${FALAI_CDR_URL} ${FALAI_CDR_SECRET}'
 
 mkdir -p /etc/asterisk /etc/asterisk/generated
 # Os dois ficheiros que a API gera. Criados vazios para o Asterisk arrancar
@@ -45,11 +51,47 @@ for tpl in /templates/*.template; do
   echo "[entrypoint] gerado ${out}"
 done
 
-cat <<EOF > /etc/asterisk/rtp.conf
-[general]
-rtpstart=${RTP_START}
-rtpend=${RTP_END}
-EOF
+# ─── RTP / ICE ────────────────────────────────────────────────────────────────
+# O webphone (WebRTC) usa ICE. Dentro do Docker, o Asterisk só conhece o IP
+# INTERNO do container (ex.: 192.168.16.2) e era esse o único candidato que
+# anunciava:
+#     a=candidate:Hc0a81002 1 UDP 2130706431 192.168.16.2 10078 typ host
+# Esse endereço é inalcançável a partir do browser (no macOS o host não
+# encaminha para a rede interna do Docker), por isso o ICE nunca fechava e não
+# havia áudio em nenhum sentido — apesar de a chamada estabelecer.
+#
+# [ice_host_candidates] reescreve o endereço anunciado nos candidatos host para
+# o endereço onde as portas RTP estão realmente publicadas. Não muda o socket:
+# o Asterisk continua à escuta no IP do container, só ANUNCIA o outro.
+# ",include_local_address" mantém também o candidato original — útil quando o
+# cliente está na mesma rede do container (ex.: outro container).
+#
+# WEBRTC_MEDIA_ADDRESS permite separar isto do EXTERNAL_IP do trunk SIP:
+# em produção são o mesmo IP público, em dev pode interessar divergir.
+export WEBRTC_MEDIA_ADDRESS="${WEBRTC_MEDIA_ADDRESS:-${EXTERNAL_IP:-}}"
+
+{
+  echo "[general]"
+  echo "rtpstart=${RTP_START}"
+  echo "rtpend=${RTP_END}"
+  # Explícito de propósito: sem ICE o webphone não estabelece media.
+  echo "icesupport=yes"
+
+  if [ -n "${WEBRTC_MEDIA_ADDRESS}" ]; then
+    echo ""
+    echo "[ice_host_candidates]"
+    # O IP do container muda a cada recriação — tem de ser lido no arranque.
+    for ip in $(hostname -I 2>/dev/null || true); do
+      case "${ip}" in
+        *:*|127.*) continue ;;  # IPv6 e loopback não interessam aqui
+      esac
+      echo "${ip} => ${WEBRTC_MEDIA_ADDRESS},include_local_address"
+      echo "[entrypoint] ICE: candidato host ${ip} anunciado como ${WEBRTC_MEDIA_ADDRESS}" >&2
+    done
+  else
+    echo "[entrypoint] ICE sem remapeamento (WEBRTC_MEDIA_ADDRESS/EXTERNAL_IP vazios) — o webphone só terá áudio se o browser alcançar o IP do container" >&2
+  fi
+} > /etc/asterisk/rtp.conf
 
 echo "[entrypoint] a arrancar Asterisk — trunks/extensões gerados pela API em /etc/asterisk/generated"
 exec asterisk -f -vvv -U asterisk -G asterisk

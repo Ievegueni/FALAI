@@ -65,8 +65,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { message?: string };
-    throw new ApiError(res.status, body.message ?? 'Erro desconhecido');
+    // A API devolve `{ error }` na generalidade das rotas e `{ message }` nos
+    // erros de validação do Fastify — aceitar ambos.
+    const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
+    throw new ApiError(res.status, body.error ?? body.message ?? 'Erro desconhecido');
   }
 
   if (res.status === 204) return undefined as T;
@@ -404,6 +406,7 @@ function mapCampaign(raw: Record<string, unknown>): Campaign {
     ttsVoiceId: (raw.ttsVoiceId as string | null) ?? null,
     // Backend stores `days`/`retryDelayMinutes`; normalize + default so the UI never reads null.
     scheduleJson: {
+      mode: (s.mode as 'NOW' | 'WINDOW') ?? 'WINDOW',
       startHour: (s.startHour as number) ?? 8,
       endHour: (s.endHour as number) ?? 20,
       timezone: (s.timezone as string) ?? 'Africa/Luanda',
@@ -449,9 +452,11 @@ export const campaignsApi = {
       ...(data.ttsVoiceId && { ttsVoiceId: data.ttsVoiceId }),
       throttlePerMinute: data.throttlePerMinute,
       schedule: {
+        mode: data.scheduleJson.mode ?? 'WINDOW',
         startHour: data.scheduleJson.startHour,
         endHour: data.scheduleJson.endHour,
         days: data.scheduleJson.daysOfWeek,
+        timezone: data.scheduleJson.timezone,
       },
       retryPolicy: {
         maxAttempts: data.retryPolicy.maxAttempts,

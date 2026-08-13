@@ -6,3 +6,6 @@ dist/
 coverage/
 .DS_Store
 infra/asterisk/generated/
+
+# Prompts TTS gerados pela API para o Asterisk — artefactos, não código.
+infra/asterisk/sounds/*.wav

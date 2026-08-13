@@ -381,7 +381,10 @@
       "errSelectAgent": "请选择座席",
       "errSelectContact": "请至少选择一个联系人",
       "errHourOrder": "开始时间必须早于结束时间",
-      "errScriptRequired": "请填写消息文本"
+      "errScriptRequired": "请填写消息文本",
+      "scheduleNow": "立即",
+      "scheduleWindow": "时间窗口",
+      "scheduleNowHint": "活动启动后立即开始呼叫，无需等待时间窗口。"
     },
     "detail": {
       "overallProgress": "整体进度",

@@ -381,7 +381,10 @@
       "errSelectAgent": "Seleccione um agente",
       "errSelectContact": "Seleccione pelo menos um contacto",
       "errHourOrder": "Hora de início deve ser anterior à hora de fim",
-      "errScriptRequired": "Escreva o texto da mensagem"
+      "errScriptRequired": "Escreva o texto da mensagem",
+      "scheduleNow": "Agora",
+      "scheduleWindow": "Janela horária",
+      "scheduleNowHint": "As chamadas começam assim que a campanha for lançada, sem esperar por horário."
     },
     "detail": {
       "overallProgress": "Progresso geral",

@@ -78,6 +78,9 @@ async function handleInboundCall(
   if (channelIds.length === 0) {
     log.warn({ did: event.did, targets }, "inbound_call_router.no_target_reachable");
     await asterisk.noRouteFallback(event.providerCallId);
+    // A bridge já existe: sem isto ficava órfã no Asterisk a cada chamada de
+    // entrada que não encontra ninguém.
+    await asterisk.destroyBridge(bridge.id).catch(() => {});
     return;
   }
 
@@ -92,6 +95,7 @@ async function handleInboundCall(
     () => {
       log.info({ did: event.did }, "inbound_call_router.nobody_answered");
       asterisk.noRouteFallback(event.providerCallId).catch(() => {});
+      asterisk.destroyBridge(bridge.id).catch(() => {});
     }
   );
 }

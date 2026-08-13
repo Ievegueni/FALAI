@@ -3,9 +3,14 @@ import { prisma } from "@falai/db";
 import { z } from "zod";
 
 const scheduleSchema = z.object({
+  // "NOW" ignora a janela: a campanha liga assim que for lançada. Sem isto, uma
+  // campanha lançada fora do horário ficava parada sem explicação.
+  mode: z.enum(["NOW", "WINDOW"]).default("WINDOW"),
   startHour: z.number().int().min(0).max(23).default(8),
   endHour: z.number().int().min(0).max(23).default(20),
   days: z.array(z.number().int().min(0).max(6)).optional(),
+  // A janela é avaliada no fuso do cliente, não no do servidor.
+  timezone: z.string().max(64).default("Africa/Luanda"),
 });
 
 const createSchema = z.object({

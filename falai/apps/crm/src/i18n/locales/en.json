@@ -381,7 +381,10 @@
       "errSelectAgent": "Select an agent",
       "errSelectContact": "Select at least one contact",
       "errHourOrder": "Start time must be before end time",
-      "errScriptRequired": "Please write the message text"
+      "errScriptRequired": "Please write the message text",
+      "scheduleNow": "Now",
+      "scheduleWindow": "Time window",
+      "scheduleNowHint": "Calls start as soon as the campaign is launched, with no schedule to wait for."
     },
     "detail": {
       "overallProgress": "Overall progress",

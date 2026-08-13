@@ -10,6 +10,7 @@ import { config } from "./config.js";
 import { resolveProviderConfig, type ResolvedProviderConfig } from "./services/providerConfig.service.js";
 import { YeastarAdapter, AsteriskAdapter, trunkEndpointId, parseDialFormat, type TelephonyProvider } from "@falai/providers";
 import { registerInboundCallRouter } from "./services/inboundCallRouter.service.js";
+import { startDirectCallSweeper, registerDirectCallEvents } from "./services/directCall.service.js";
 import { prisma } from "@falai/db";
 
 import redisPlugin from "./plugins/redis.js";
@@ -63,6 +64,7 @@ import { v1OtpRoutes } from "./routes/v1/otp.js";
 import { v1SmsRoutes } from "./routes/v1/sms.js";
 import { yeastarWebhookRoutes } from "./routes/webhooks/yeastar.js";
 import { pbxWebhookRoutes } from "./routes/webhooks/pbx.js";
+import { asteriskWebhookRoutes } from "./routes/webhooks/asterisk.js";
 import { smsWebhookRoutes } from "./routes/webhooks/sms.js";
 import { registerYeastarWebSocket } from "./websocket/yeastar.js";
 import { syncAllPbx } from "./services/pbxSync.service.js";
@@ -82,6 +84,14 @@ declare module "fastify" {
      * produto BYO-PBX). Esse código é removido no fim da migração (§13.4).
      */
     yeastar: YeastarAdapter;
+    /**
+     * O motor Asterisk nativo, ou null se estiver desligado
+     * (TELEPHONY_ENGINE != asterisk). Necessário para as funções que vivem
+     * fora da interface TelephonyProvider — bridges, ring groups e originate
+     * para um endpoint PJSIP concreto — usadas pelas chamadas directas e pelo
+     * router de entrada.
+     */
+    asterisk: AsteriskAdapter | null;
     providerConfig: ResolvedProviderConfig;
   }
 }
@@ -162,10 +172,16 @@ async function buildApp() {
         // Por onde sai uma chamada para a rede: o trunk activo na base de
         // dados. Lido a pedido (com cache curta no adaptador) para mudar o
         // trunk no backoffice não obrigar a reiniciar a API.
-        resolveTrunk: async () => {
+        // O trunk do PRÓPRIO cliente tem precedência; na falta dele usa-se um
+        // partilhado (tenantId nulo). Nunca o de outro cliente — antes isto era
+        // "o primeiro trunk activo", e um cliente saía pelo trunk e com o
+        // Caller ID de outro. Sem tenant conhecido só se aceitam partilhados.
+        resolveTrunk: async (tenantId?: string) => {
           const trunk = await prisma.trunk.findFirst({
-            where: { enabled: true },
-            orderBy: { createdAt: "asc" },
+            where: tenantId
+              ? { enabled: true, OR: [{ tenantId }, { tenantId: null }] }
+              : { enabled: true, tenantId: null },
+            orderBy: [{ tenantId: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }],
             select: { name: true, authUser: true },
           });
           if (!trunk) return null;
@@ -178,7 +194,11 @@ async function buildApp() {
     : null;
   const telephony: TelephonyProvider = asteriskAdapter ?? (yeastar as TelephonyProvider);
   fastify.decorate("telephony", telephony);
+  fastify.decorate("asterisk", asteriskAdapter);
   fastify.log.info({ engine: useAsterisk ? "asterisk" : "yeastar" }, "telephony.engine_selected");
+  // Expira sessões esquecidas em memória e fecha registos DIRECT pendurados
+  // (por exemplo os de antes de um reinício, que perde o mapa de sessões).
+  if (asteriskAdapter) startDirectCallSweeper(asteriskAdapter, fastify.log);
 
   // eventBus: multiplexor de eventos Yeastar (deve ser registado antes de callEngine e otpCallService)
   const { default: eventBusPlugin } = await import("./plugins/eventBus.js");
@@ -189,6 +209,9 @@ async function buildApp() {
   // services/inboundCallRouter.service.ts.
   if (asteriskAdapter) {
     registerInboundCallRouter(fastify.onCallEvent, asteriskAdapter, fastify.log);
+    // Fecha a chamada directa quando quem desliga é o outro lado — sem isto só
+    // o botão do CRM a fechava e o registo ficava "Em curso" para sempre.
+    registerDirectCallEvents(fastify.onCallEvent, asteriskAdapter, fastify.log);
   }
 
   // Call engine wires STT/LLM/TTS e regista no eventBus
@@ -263,6 +286,8 @@ async function buildApp() {
   // ── Webhooks ────────────────────────────────────────────────────────────
   await fastify.register(yeastarWebhookRoutes, { prefix: "/webhooks/yeastar" });
   await fastify.register(pbxWebhookRoutes, { prefix: "/webhooks/pbx" });
+  // CDR das chamadas marcadas no telefone — chamado pelo dialplan do Asterisk
+  await fastify.register(asteriskWebhookRoutes, { prefix: "/webhooks/asterisk" });
   await fastify.register(smsWebhookRoutes, { prefix: "/webhooks/sms" });
   await fastify.register(proxypayWebhookRoutes, { prefix: "/webhooks/proxypay" });
 
