@@ -280,6 +280,8 @@ export interface Campaign {
 }
 
 export interface CampaignSchedule {
+  /** "NOW" liga assim que a campanha for lançada, ignorando hora e dias. */
+  mode?: 'NOW' | 'WINDOW';
   startHour: number;
   endHour: number;
   timezone: string;
@@ -391,6 +393,9 @@ export interface Extension {
 
 /** Credenciais prontas a usar no JsSIP do webphone (endpoint WebRTC, não o hardphone). */
 export interface WebphoneCredentials {
+  /** Utilizador do URI/From SIP — nome do endpoint web (extweb_...). */
+  sipUser: string;
+  /** Utilizador do Digest — sipAuthUser cru, sem prefixo. */
   sipAuthUser: string;
   sipAuthSecret: string;
   wsUri: string;

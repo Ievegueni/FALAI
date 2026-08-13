@@ -13,6 +13,8 @@
  * como no Yeastar. O streaming em tempo real para a IA (externalMedia) é a
  * Etapa 4 e não faz parte deste adaptador.
  */
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { WebSocket } from "ws";
 import type { CallEvent } from "@falai/shared";
 import type { TelephonyProvider, DialParams, PlayPromptParams } from "./TelephonyProvider.js";
@@ -35,8 +37,13 @@ export interface AsteriskConfig {
    * relido de vez em quando, para uma alteração no backoffice não obrigar a
    * reiniciar a API. Sem isto, o `dial` tentava sair pela extensão de origem —
    * que não tem ligação nenhuma ao operador — e a chamada nunca saía.
+   *
+   * Recebe o tenant da chamada: um trunk pode ser exclusivo de um cliente
+   * (Trunk.tenantId) ou partilhado (tenantId nulo). Sem este argumento a
+   * escolha era "o primeiro trunk activo", o que fazia um cliente sair pelo
+   * trunk — e com o Caller ID — de outro.
    */
-  resolveTrunk?: () => Promise<{ endpoint: string; callerId: string } | null>;
+  resolveTrunk?: (tenantId?: string) => Promise<{ endpoint: string; callerId: string } | null>;
   /** Formato dos números entregues ao operador. Ver asteriskNaming.ts. */
   dialFormat?: DialFormat;
 }
@@ -69,11 +76,17 @@ export class AsteriskAdapter implements TelephonyProvider {
   private answeredAt = new Map<string, number>();
   /** channelId (perna do ring group) → grupo partilhado entre as pernas. */
   private ringGroups = new Map<string, RingGroup>();
+  /**
+   * Chamadas de "só tocar um áudio e desligar" (campanhas de script fixo).
+   * channelId → o que falta tocar. Ver playPrompt().
+   */
+  private promptSessions = new Map<string, { prompts: string[]; index: number; remainingLoops: number }>();
 
   private readonly app: string;
   private readonly context: string;
   /** Trunk em cache, com o instante em que foi lido (ver TRUNK_TTL_MS). */
-  private trunkCache: { value: { endpoint: string; callerId: string } | null; at: number } | null = null;
+  /** Cache do trunk POR TENANT — trunks diferentes por cliente não se podem misturar. */
+  private trunkCache = new Map<string, { value: { endpoint: string; callerId: string } | null; at: number }>();
 
   constructor(private readonly cfg: AsteriskConfig) {
     this.app = cfg.appName ?? "falai";
@@ -84,20 +97,20 @@ export class AsteriskAdapter implements TelephonyProvider {
    *  para não ir à base de dados a cada chamada de uma campanha. */
   private static readonly TRUNK_TTL_MS = 30_000;
 
-  private async trunk(): Promise<{ endpoint: string; callerId: string } | null> {
+  private async trunk(tenantId?: string): Promise<{ endpoint: string; callerId: string } | null> {
     if (!this.cfg.resolveTrunk) return null;
+    const key = tenantId ?? "";
     const now = Date.now();
-    if (this.trunkCache && now - this.trunkCache.at < AsteriskAdapter.TRUNK_TTL_MS) {
-      return this.trunkCache.value;
-    }
+    const cached = this.trunkCache.get(key);
+    if (cached && now - cached.at < AsteriskAdapter.TRUNK_TTL_MS) return cached.value;
     try {
-      const value = await this.cfg.resolveTrunk();
-      this.trunkCache = { value, at: now };
+      const value = await this.cfg.resolveTrunk(tenantId);
+      this.trunkCache.set(key, { value, at: now });
       return value;
     } catch {
       // Falha a ler a base de dados não deve derrubar a chamada se já houve
-      // uma leitura boa antes.
-      return this.trunkCache?.value ?? null;
+      // uma leitura boa antes — mas só a deste tenant.
+      return cached?.value ?? null;
     }
   }
 
@@ -124,7 +137,7 @@ export class AsteriskAdapter implements TelephonyProvider {
     // Um número externo sai SEMPRE pelo endpoint do trunk do operador. A
     // extensão de origem só serve para o Caller ID quando não há trunk (caso
     // das chamadas internas, entre extensões).
-    const trunk = await this.trunk();
+    const trunk = await this.trunk(params.tenantId);
     const endpoint = trunk?.endpoint ?? params.dialPermission ?? params.fromExtension;
     const to = trunk ? formatDialNumber(params.to, this.cfg.dialFormat) : params.to;
 
@@ -168,6 +181,19 @@ export class AsteriskAdapter implements TelephonyProvider {
 
   async createBridge(): Promise<{ id: string }> {
     return this.api<{ id: string }>(`/bridges?type=mixing`, { method: "POST" });
+  }
+
+  /**
+   * Larga a bridge. Sem isto cada chamada deixava uma bridge ARI viva no
+   * Asterisk para sempre — incluindo as que falhavam antes de alguém atender.
+   */
+  async destroyBridge(bridgeId: string): Promise<void> {
+    try {
+      await this.api(`/bridges/${encodeURIComponent(bridgeId)}`, { method: "DELETE" });
+    } catch (err) {
+      // 404 = já não existe. Não é erro para quem chama.
+      if (!(err instanceof AsteriskError && err.status === 404)) throw err;
+    }
   }
 
   async addChannelToBridge(bridgeId: string, channelId: string): Promise<void> {
@@ -221,24 +247,91 @@ export class AsteriskAdapter implements TelephonyProvider {
    * na pasta partilhada; aqui só validamos que há para onde escrever, porque
    * quem grava é o AudioCache (tem o buffer e a cache).
    */
-  async uploadPrompt(_name: string, _wavBuffer: Buffer): Promise<void> {
+  /**
+   * Grava o WAV na pasta de sons partilhada com o contentor. Antes isto era um
+   * no-op com um comentário a dizer que o AudioCache escrevia o ficheiro — o
+   * que não acontecia. Resultado: as campanhas de script fixo tentavam tocar um
+   * áudio que nunca existiu.
+   */
+  async uploadPrompt(name: string, wavBuffer: Buffer): Promise<void> {
     if (!this.cfg.soundsDir) {
       throw new AsteriskError("soundsDir não configurado — não há onde guardar os prompts");
     }
-    // Escrita feita pelo AudioCache directamente na pasta partilhada.
+    await mkdir(this.cfg.soundsDir, { recursive: true });
+    await writeFile(join(this.cfg.soundsDir, `${name}.wav`), wavBuffer);
   }
 
+  /**
+   * Nome com que o Asterisk conhece um prompt nosso. A pasta partilhada está
+   * montada em /var/lib/asterisk/sounds/custom, e é assim que o ARI a resolve.
+   */
+  private mediaFor(prompt: string): string {
+    return `sound:custom/${prompt}`;
+  }
+
+  /**
+   * Toca prompts numa chamada. Dois modos:
+   *   - com `providerCallId`: toca num canal que já existe (fluxo do agente IA);
+   *   - com `number`: origina a chamada, espera que atendam, toca e desliga.
+   *
+   * O segundo modo é o das campanhas de script fixo. Existia na interface
+   * (herdada do Yeastar, onde o PBX faz tudo isto sozinho) mas aqui atirava
+   * "playPrompt no Asterisk exige providerCallId" — ou seja, nenhuma campanha
+   * de script fixo chegava a ligar seja a quem for.
+   */
   async playPrompt(params: PlayPromptParams): Promise<void> {
     const id = params.providerCallId;
-    if (!id) throw new AsteriskError("playPrompt no Asterisk exige providerCallId");
+    if (!id) {
+      if (!params.number) {
+        throw new AsteriskError("playPrompt exige providerCallId ou number");
+      }
+      const { providerCallId } = await this.dial({
+        fromExtension: params.dialPermission ?? "",
+        to: params.number,
+        ref: `prompt_${Date.now()}`,
+        autoAnswer: "no",
+        ...(params.tenantId ? { tenantId: params.tenantId } : {}),
+      });
+      // O áudio só arranca quando atenderem — ver handleEvent, ramo "Up".
+      this.promptSessions.set(providerCallId, {
+        prompts: params.prompts,
+        index: 0,
+        remainingLoops: params.count ?? 1,
+      });
+      return;
+    }
 
     for (let i = 0; i < (params.count ?? 1); i++) {
       for (const p of params.prompts) {
-        const q = new URLSearchParams({ media: `sound:${p}` });
+        const q = new URLSearchParams({ media: this.mediaFor(p) });
         await this.api(`/channels/${encodeURIComponent(id)}/play?${q}`, { method: "POST" });
       }
     }
     // O fim real chega pelo evento PlaybackFinished do ARI.
+  }
+
+  /** Toca o próximo prompt de uma chamada de script fixo; desliga no fim. */
+  private advancePromptSession(channelId: string): void {
+    const s = this.promptSessions.get(channelId);
+    if (!s) return;
+
+    if (s.index >= s.prompts.length) {
+      s.remainingLoops -= 1;
+      s.index = 0;
+      if (s.remainingLoops <= 0) {
+        this.promptSessions.delete(channelId);
+        void this.hangup(channelId).catch(() => {});
+        return;
+      }
+    }
+
+    const prompt = s.prompts[s.index++]!;
+    const q = new URLSearchParams({ media: this.mediaFor(prompt) });
+    void this.api(`/channels/${encodeURIComponent(channelId)}/play?${q}`, { method: "POST" }).catch(() => {
+      // Falhar a tocar não pode deixar a chamada aberta a custar dinheiro.
+      this.promptSessions.delete(channelId);
+      void this.hangup(channelId).catch(() => {});
+    });
   }
 
   async subscribeToEvents(handler: (event: CallEvent) => void): Promise<void> {
@@ -295,6 +388,12 @@ export class AsteriskAdapter implements TelephonyProvider {
             ring.onAnswer(id);
             break;
           }
+          // Campanha de script fixo: atenderam, começa o áudio.
+          if (this.promptSessions.has(id)) {
+            this.answeredAt.set(id, Date.now());
+            this.advancePromptSession(id);
+            break;
+          }
           this.answeredAt.set(id, Date.now());
           this.handler({ type: "CALL_ANSWERED", providerCallId: id, answeredAt: new Date() });
         }
@@ -336,6 +435,7 @@ export class AsteriskAdapter implements TelephonyProvider {
           break;
         }
 
+        this.promptSessions.delete(id);
         const start = this.answeredAt.get(id);
         this.answeredAt.delete(id);
         const cause = String((e["cause_txt"] as string) ?? (e["cause"] as number) ?? "normal");
@@ -355,6 +455,12 @@ export class AsteriskAdapter implements TelephonyProvider {
       }
 
       case "PlaybackFinished":
+        // Script fixo: encadeia o prompt seguinte (ou desliga) sem envolver o
+        // motor de IA, que não tem sessão para esta chamada.
+        if (this.promptSessions.has(id)) {
+          this.advancePromptSession(id);
+          break;
+        }
         this.handler({ type: "PROMPT_FINISHED", providerCallId: id });
         break;
 

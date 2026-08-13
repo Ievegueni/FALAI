@@ -140,7 +140,19 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         "direct_media=no",
         "rtp_symmetric=yes",
         "force_rport=yes",
-        "rewrite_contact=yes",
+        // NÃO reescrever o Contact/route-set do operador. Num trunk quem está
+        // atrás de NAT somos nós, não ele: o operador anuncia endereços
+        // públicos válidos (Contact e Record-Route) e devemos usá-los tal como
+        // vêm. Com rewrite_contact=yes o res_pjsip_nat reescreve o route set
+        // para o endereço de ORIGEM do pacote recebido — que, com o Docker no
+        // macOS, é o gateway interno (192.168.65.1). O ACK ao 200 OK ia parar
+        // a esse endereço morto, o operador retransmitia o 200 OK sem parar e
+        // a chamada caía por timeout logo depois de atendida. Evidência:
+        //   Record-Route: <sip:87.238.224.117;lr;ep;...>
+        //   ACK ... Route: <sip:192.168.65.1:16167;lr;ep;...>
+        // O rewrite_contact continua ligado nas EXTENSÕES, onde é correcto —
+        // aí é o softphone que está atrás de NAT.
+        "rewrite_contact=no",
         `from_user=${t.authUser}`,
         `from_domain=${t.domain || t.host}`,
         "",
@@ -223,7 +235,10 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         "",
         `[${webId}]`,
         "type=endpoint",
-        "transport=transport-wss",
+        // Sem `transport=`: o transporte WebSocket é criado dinamicamente pelo
+        // res_pjsip_transport_websocket sobre o servidor HTTP (http.conf:8088).
+        // Fixar um transport nomeado que não escuta em lado nenhum quebra o
+        // INVITE de saída para o webphone.
         `aors=${webId}`,
         `auth=${auth}`,
         "context=from-internal",

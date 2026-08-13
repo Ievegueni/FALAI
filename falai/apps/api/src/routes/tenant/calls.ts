@@ -3,7 +3,13 @@ import { prisma, type Prisma } from "@falai/db";
 import { z } from "zod";
 import { YeastarAdapter } from "@falai/providers";
 import { reserveBalance, computeReservation, effectiveBillingMode } from "../../services/billing.service.js";
-import { getTenantTelephony } from "../../services/tenantTelephony.service.js";
+import { getTenantTelephony, getTenantAsterisk } from "../../services/tenantTelephony.service.js";
+import {
+  startAsteriskDirectCall,
+  hangupAsteriskDirectCall,
+  isAsteriskDirectCallActive,
+  DirectCallError,
+} from "../../services/directCall.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
 import { ensureCdrSynced, mapPbxCall, PBX_CALL_SELECT, activeInboundCalls } from "../../services/pbxCdr.service.js";
 
@@ -251,6 +257,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
         fromExtension,
         to: body.to,
         ref: call.id,
+        tenantId,
       });
       providerCallId = result.providerCallId;
       await prisma.call.update({ where: { id: call.id }, data: { yeastarCallId: providerCallId } });
@@ -338,6 +345,9 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get<{ Params: { callId: string } }>("/direct/status/:callId", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     try {
+      if (await getTenantAsterisk(fastify, tenantId)) {
+        return { active: isAsteriskDirectCallActive(request.params.callId) };
+      }
       const telephony = await getTenantTelephony(fastify, tenantId);
       const active = await (telephony as YeastarAdapter).isCallActive(request.params.callId);
       return { active };
@@ -365,13 +375,30 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     fastify.log.info({ action: "direct_call.initiated", from: body.fromExtension, to: body.to, tenantId });
 
     try {
-      const telephony = await getTenantTelephony(fastify, tenantId);
-      const result = await telephony.dial({
-        fromExtension: body.fromExtension,
-        to: body.to,
-        ref: `direct_${Date.now()}`,
-        autoAnswer: "no",
-      });
+      const ref = `direct_${Date.now()}`;
+      // Com o motor próprio ligado a chamada TEM de sair pelo nosso Asterisk.
+      // Antes ia sempre por getTenantTelephony() (Yeastar), o que a mandava
+      // para um PBX externo e o telemóvel nunca tocava — ver
+      // services/directCall.service.ts.
+      // Só os tenants SEM PBX próprio vão pelo nosso Asterisk — ver
+      // getTenantAsterisk(). Usar fastify.asterisk directamente atropelava a
+      // escolha por tenant.
+      const asterisk = await getTenantAsterisk(fastify, tenantId);
+      const result = asterisk
+        ? await startAsteriskDirectCall({
+            asterisk,
+            tenantId,
+            fromExtension: body.fromExtension,
+            to: body.to,
+            ref,
+            log: fastify.log,
+          })
+        : await (await getTenantTelephony(fastify, tenantId)).dial({
+            fromExtension: body.fromExtension,
+            to: body.to,
+            ref,
+            autoAnswer: "no",
+          });
 
       // Persiste no histórico do CRM para aparecer na lista de chamadas
       prisma.call
@@ -391,6 +418,9 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(202).send({ providerCallId: result.providerCallId, from: body.fromExtension, to: body.to });
     } catch (err) {
       fastify.log.error({ err }, "tenant.calls.direct_dial_failed");
+      // Extensão sem telefone registado / inexistente é erro de quem pede, e a
+      // mensagem concreta poupa uma ida ao log.
+      if (err instanceof DirectCallError) return reply.status(422).send({ error: err.message });
       return reply.status(502).send({ error: "Não foi possível iniciar a chamada. Verifica a extensão e o número." });
     }
   });
@@ -400,8 +430,13 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     const { tenantId } = request.tenantUser!;
     const body = hangupSchema.parse(request.body);
     try {
-      const telephony = await getTenantTelephony(fastify, tenantId);
-      await telephony.hangup(body.providerCallId);
+      const asterisk = await getTenantAsterisk(fastify, tenantId);
+      if (asterisk) {
+        await hangupAsteriskDirectCall(asterisk, body.providerCallId);
+      } else {
+        const telephony = await getTenantTelephony(fastify, tenantId);
+        await telephony.hangup(body.providerCallId);
+      }
 
       // Fecha o registo da chamada directa (fire-and-forget)
       prisma.call

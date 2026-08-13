@@ -8,21 +8,54 @@ import { resolveOutboundExtension, NoOutboundLineError } from "./outboundExtensi
 const DISPATCH_INTERVAL_MS = 30_000; // every 30 seconds
 
 interface ScheduleWindow {
+  /**
+   * "NOW" → liga assim que a campanha arranca, sem esperar por janela nenhuma.
+   * "WINDOW" (ou ausente, por compatibilidade) → respeita hora e dias.
+   */
+  mode?: "NOW" | "WINDOW";
   startHour: number; // 0-23
   endHour: number;
-  days?: number[];   // 0=Sun, 1=Mon, ... 6=Sat; undefined = all days
+  /** 0=Dom, 1=Seg, ... 6=Sáb. Ausente = todos os dias. */
+  daysOfWeek?: number[];
+  /** Aceite por compatibilidade com campanhas antigas. */
+  days?: number[];
+  timezone?: string;
+}
+
+/** Hora e dia da semana no fuso da campanha (por omissão, Luanda). */
+function localParts(now: Date, timezone: string): { hour: number; day: number } {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "numeric",
+    hour12: false,
+    weekday: "short",
+  });
+  const parts = fmt.formatToParts(now);
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? now.getHours());
+  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const day = days.indexOf(weekday);
+  return { hour: hour % 24, day: day >= 0 ? day : now.getDay() };
 }
 
 function isWithinWindow(schedule: unknown, now: Date): boolean {
   if (!schedule || typeof schedule !== "object") return true;
   const s = schedule as Partial<ScheduleWindow>;
-  const hour = now.getHours();
-  const day = now.getDay();
+
+  // Modo "agora": quem lança a campanha quer que ela ligue já.
+  if (s.mode === "NOW") return true;
+
+  // O fuso do servidor não é necessariamente o do cliente. Sem isto, uma janela
+  // "08h–18h" era avaliada na hora da máquina onde a API corre.
+  const { hour, day } = localParts(now, s.timezone || "Africa/Luanda");
 
   if (s.startHour !== undefined && s.endHour !== undefined) {
     if (hour < s.startHour || hour >= s.endHour) return false;
   }
-  if (s.days && !s.days.includes(day)) return false;
+  // O CRM envia `daysOfWeek`; o código só lia `days` e por isso a restrição de
+  // dias NUNCA se aplicava — uma campanha de dias úteis ligava ao domingo.
+  const allowedDays = s.daysOfWeek ?? s.days;
+  if (allowedDays && allowedDays.length > 0 && !allowedDays.includes(day)) return false;
   return true;
 }
 
@@ -177,7 +210,16 @@ export class CampaignDispatcher {
         status: { in: ["DIALING", "RINGING", "IN_PROGRESS"] },
       },
     });
-    if (activeCalls >= tenant.maxConcurrent) return;
+    if (activeCalls >= tenant.maxConcurrent) {
+      // Sem este log a campanha ficava "Activa" e parada sem explicação — foi
+      // exactamente o que aconteceu com chamadas presas em IN_PROGRESS a
+      // ocuparem os slots todos.
+      this.log.warn(
+        { campaignId: campaign.id, tenantId: campaign.tenantId, activeCalls, maxConcurrent: tenant.maxConcurrent },
+        "dispatcher.campaign_waiting_for_slot"
+      );
+      return;
+    }
 
     const slotsAvailable = Math.min(
       tenant.maxConcurrent - activeCalls,
@@ -275,6 +317,7 @@ export class CampaignDispatcher {
         fromExtension,
         to: contact.phone,
         ref: `cmp_${campaign.id}_${contact.id}`,
+        tenantId: campaign.tenantId,
       });
 
       const call = await prisma.call.create({
@@ -394,6 +437,7 @@ export class CampaignDispatcher {
         dialPermission: fromExtension,
         autoAnswer: "no",
         count: 1,
+        tenantId: campaign.tenantId,
       });
 
       // Create a settled call record immediately (fire-and-forget call, no live engine)

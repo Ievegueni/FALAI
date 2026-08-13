@@ -40,6 +40,33 @@ export function hasOwnPbx(tenant: {
   );
 }
 
+/**
+ * Devolve o motor Asterisk SÓ se ele estiver ligado E o tenant não tiver PBX
+ * próprio. O decorador `fastify.asterisk` é global ao processo; usá-lo directo
+ * numa rota atropela a escolha por tenant e manda as chamadas de um cliente com
+ * PBX próprio para o nosso trunk — com o callerID de outro cliente.
+ *
+ * Regra: quem tem PBX próprio manda no seu PBX; os restantes vão pelo motor
+ * activo da plataforma.
+ */
+export async function getTenantAsterisk(
+  fastify: FastifyInstance,
+  tenantId: string,
+): Promise<FastifyInstance["asterisk"]> {
+  if (!fastify.asterisk) return null;
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: {
+      pbxBaseUrl: true,
+      pbxClientId: true,
+      pbxClientSecret: true,
+      plan: { select: { productType: true } },
+    },
+  });
+  if (!tenant) throw new Error("Tenant não encontrado");
+  return hasOwnPbx(tenant) ? null : fastify.asterisk;
+}
+
 export async function getTenantTelephony(fastify: FastifyInstance, tenantId: string): Promise<YeastarAdapter> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },

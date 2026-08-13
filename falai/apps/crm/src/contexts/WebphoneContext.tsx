@@ -120,7 +120,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
         ]);
         const ua = new JsSIP.UA({
           sockets: [new JsSIP.WebSocketInterface(creds.wsUri)],
-          uri: `sip:${creds.sipAuthUser}@${creds.sipDomain}`,
+          uri: `sip:${creds.sipUser}@${creds.sipDomain}`,
           authorization_user: creds.sipAuthUser,
           password: creds.sipAuthSecret,
           display_name: creds.displayName ?? creds.number,

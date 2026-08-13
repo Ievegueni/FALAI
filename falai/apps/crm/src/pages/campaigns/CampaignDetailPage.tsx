@@ -170,18 +170,24 @@ export function CampaignDetailPage() {
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <div>
               <span className="text-gray-500">{t('campaigns.detail.windowLabel')}</span>{' '}
-              <span className="text-gray-900">{String(c.scheduleJson.startHour).padStart(2, '0')}h — {String(c.scheduleJson.endHour).padStart(2, '0')}h</span>
+              <span className="text-gray-900">
+                {c.scheduleJson.mode === 'NOW'
+                  ? t('campaigns.form.scheduleNow')
+                  : `${String(c.scheduleJson.startHour).padStart(2, '0')}h — ${String(c.scheduleJson.endHour).padStart(2, '0')}h`}
+              </span>
             </div>
             <div>
               <span className="text-gray-500">{t('campaigns.detail.rateLabel')}</span>{' '}
               <span className="text-gray-900">{t('campaigns.detail.callsPerMinUnit', { n: c.throttlePerMinute })}</span>
             </div>
-            <div className="col-span-2">
-              <span className="text-gray-500">{t('campaigns.detail.daysLabel')}</span>{' '}
-              <span className="text-gray-900">
-                {c.scheduleJson.daysOfWeek.map((d) => daysOfWeekLabel()[d]).join(', ')}
-              </span>
-            </div>
+            {c.scheduleJson.mode !== 'NOW' && (
+              <div className="col-span-2">
+                <span className="text-gray-500">{t('campaigns.detail.daysLabel')}</span>{' '}
+                <span className="text-gray-900">
+                  {c.scheduleJson.daysOfWeek.map((d) => daysOfWeekLabel()[d]).join(', ')}
+                </span>
+              </div>
+            )}
             <div>
               <span className="text-gray-500">{t('campaigns.detail.maxAttemptsLabel')}</span>{' '}
               <span className="text-gray-900">{c.retryPolicy.maxAttempts}</span>

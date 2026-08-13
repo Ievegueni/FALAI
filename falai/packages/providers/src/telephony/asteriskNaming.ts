@@ -45,6 +45,17 @@ export function extensionWebEndpointId(sipAuthUser: string): string {
 }
 
 /**
+ * Caminho inverso dos dois anteriores: do nome do endpoint para o utilizador
+ * SIP. Necessário para saber de QUEM é uma chamada que o Asterisk nos reporta
+ * — no CDR do dialplan só temos o nome do endpoint.
+ * Devolve null se o nome não for de uma extensão (ex.: um trunk).
+ */
+export function sipAuthUserFromEndpointId(endpointId: string): string | null {
+  const m = /^ext(?:web)?_(.+)$/.exec(endpointId);
+  return m?.[1] ?? null;
+}
+
+/**
  * Formato em que os números são entregues ao operador. Enquanto a ANGOVOIP não
  * confirmar qual aceita, muda-se por variável de ambiente sem tocar no código.
  *   national -> 912345678      (9 dígitos, o mais provável em Angola)

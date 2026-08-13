@@ -59,6 +59,13 @@ exten => 600,1,NoOp(Teste de eco — valida audio bidireccional)
 ; Ponto único de saída pelo trunk
 exten => sair,1,NoOp(A enviar ${SAIDA} pelo trunk ${TRUNK_ENDPOINT})
  same => n,GotoIf($["${TRUNK_ENDPOINT}" = ""]?sem_trunk)
+; Guarda quem marcou ANTES de o CALLERID passar a ser o do trunk — é assim que
+; a API sabe de que cliente é a chamada.
+ same => n,Set(FALAI_ENDPOINT=${CHANNEL(endpoint)})
+; O handler corre quando a chamada termina, seja qual for o desfecho. É o que
+; permite contabilizar as chamadas marcadas no webphone, que nunca passam pela
+; API — ver services/webphoneCdr.service.ts.
+ same => n,Set(CHANNEL(hangup_handler_push)=falai-cdr,s,1)
  same => n,Set(CALLERID(num)=${TRUNK_USER})
  same => n,Dial(PJSIP/${SAIDA}@${TRUNK_ENDPOINT},60)
  same => n,NoOp(Resultado: ${DIALSTATUS})
@@ -69,6 +76,28 @@ exten => sair,1,NoOp(A enviar ${SAIDA} pelo trunk ${TRUNK_ENDPOINT})
  same => n,Answer()
  same => n,Playback(ss-noservice)
  same => n,Hangup()
+
+;------------------------------------------------------------------------------
+; CDR — entrega da chamada terminada à API do Falaí
+;
+; Só as chamadas originadas pelo CRM (click-to-call, via ARI) tinham registo. As
+; marcadas no teclado do webphone ou num hardphone falam directamente com o
+; Asterisk: não apareciam na lista de chamadas, não contavam nos relatórios e
+; não eram cobradas. Este handler fecha esse buraco.
+;
+; ${BILLSEC} é o tempo de conversa (0 se não atenderam) e ${UNIQUEID} torna a
+; entrega idempotente do lado da API. Falha a chamar? A chamada não é afectada:
+; o handler corre depois de o áudio ter terminado.
+;------------------------------------------------------------------------------
+[falai-cdr]
+exten => s,1,NoOp(CDR de ${FALAI_ENDPOINT} para ${SAIDA} — ${BILLSEC}s, ${DIALSTATUS})
+ same => n,GotoIf($["${FALAI_CDR_URL}" = ""]?fim)
+ same => n,Set(CURLOPT(httpheader)=X-Falai-Cdr-Secret: ${FALAI_CDR_SECRET})
+ same => n,Set(CURLOPT(conntimeout)=2)
+ same => n,Set(CURLOPT(dnstimeout)=2)
+ same => n,Set(RESPOSTA=${CURL(${FALAI_CDR_URL},endpoint=${FALAI_ENDPOINT}&to=${SAIDA}&billsec=${BILLSEC}&disposition=${DIALSTATUS}&uniqueid=${UNIQUEID})})
+ same => n,NoOp(API respondeu: ${RESPOSTA})
+ same => n(fim),Return()
 
 ;------------------------------------------------------------------------------
 ; ENTRADA — chamadas vindas do trunk

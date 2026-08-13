@@ -21,6 +21,13 @@ services:
       # Registos de trunk gerados pela API a partir da base de dados — ver
       # a nota em templates/pjsip.conf.template.
       - ./generated:/etc/asterisk/generated
+      # Prompts TTS escritos pela API (campanhas de script fixo e agente de IA).
+      # O ARI resolve-os como sound:custom/<nome>. O caminho é este e não
+      # /var/lib/asterisk/sounds porque nesta build o "data directory" é
+      # /usr/share/asterisk, onde `custom` é um symlink para
+      # /usr/local/share/asterisk/sounds. Montar no sítio errado dava
+      # "does not exist in any format" com o ficheiro visível no contentor.
+      - ./sounds:/usr/local/share/asterisk/sounds
     ports:
       - "5060:5060/udp"
       - "5060:5060/tcp"

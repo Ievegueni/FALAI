@@ -25,6 +25,7 @@ export function CampaignFormPage() {
   const [agentId, setAgentId] = useState('');
   const [scriptText, setScriptText] = useState('');
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
+  const [scheduleMode, setScheduleMode] = useState<'NOW' | 'WINDOW'>('NOW');
   const [startHour, setStartHour] = useState(8);
   const [endHour, setEndHour] = useState(18);
   const [daysOfWeek, setDaysOfWeek] = useState([1, 2, 3, 4, 5]);
@@ -61,7 +62,7 @@ export function CampaignFormPage() {
       mode,
       ...(mode === 'VOICE_AI' ? { agentId } : { scriptText }),
       contactIds: selectedContactIds,
-      scheduleJson: { startHour, endHour, timezone: 'Africa/Luanda', daysOfWeek },
+      scheduleJson: { mode: scheduleMode, startHour, endHour, timezone: 'Africa/Luanda', daysOfWeek },
       retryPolicy: { maxAttempts, delayMinutes, retryOn: retryOn as CallStatus[] },
       throttlePerMinute,
     };
@@ -106,7 +107,7 @@ export function CampaignFormPage() {
     if (mode === 'VOICE_AI' && !agentId) { error(t('campaigns.form.errSelectAgent')); return false; }
     if (mode === 'FIXED_SCRIPT' && !scriptText.trim()) { error(t('campaigns.form.errScriptRequired')); return false; }
     if (selectedContactIds.length === 0) { error(t('campaigns.form.errSelectContact')); return false; }
-    if (startHour >= endHour) { error(t('campaigns.form.errHourOrder')); return false; }
+    if (scheduleMode === 'WINDOW' && startHour >= endHour) { error(t('campaigns.form.errHourOrder')); return false; }
     return true;
   }
 
@@ -239,6 +240,28 @@ export function CampaignFormPage() {
 
         <Card>
           <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('campaigns.form.timeWindow')}</h2>
+          {/* "Agora" evita o caso em que a campanha é lançada fora da janela e
+              fica parada sem explicação nenhuma para quem a lançou. */}
+          <div className="flex gap-2 mb-4">
+            {(['NOW', 'WINDOW'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setScheduleMode(m)}
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  scheduleMode === m
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {m === 'NOW' ? t('campaigns.form.scheduleNow') : t('campaigns.form.scheduleWindow')}
+              </button>
+            ))}
+          </div>
+          {scheduleMode === 'NOW' ? (
+            <p className="text-sm text-gray-500">{t('campaigns.form.scheduleNowHint')}</p>
+          ) : (
+          <>
           <div className="grid grid-cols-2 gap-4 mb-4">
             <Select
               label={t('campaigns.form.startH')}
@@ -278,6 +301,8 @@ export function CampaignFormPage() {
               ))}
             </div>
           </div>
+          </>
+          )}
         </Card>
 
         <Card>

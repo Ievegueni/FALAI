@@ -1,0 +1,26 @@
+; Módulos do Asterisk.
+;
+; CRÍTICO: sem este ficheiro o Asterisk usa o modules.conf de exemplo do pacote,
+; que tem autoload=yes e carrega o chan_sip (driver SIP antigo, descontinuado).
+; O chan_sip regista o sub-protocolo WebSocket "sip" ANTES do PJSIP, o que faz
+; o res_pjsip_transport_websocket recusar-se a carregar ("declined to load").
+; Resultado: o REGISTER do webphone chega ao chan_sip — que não conhece as
+; extensões (vivem no PJSIP) — e é rejeitado com "Wrong password".
+[modules]
+autoload=yes
+
+; O Falaí é 100% PJSIP. O chan_sip não pode coexistir com o WebSocket do PJSIP.
+noload => chan_sip.so
+
+; WebRTC: o transporte ws/wss é servido pelo servidor HTTP interno (http.conf).
+load => res_http_websocket.so
+load => res_pjsip_transport_websocket.so
+
+; Não usados — evitam erros de arranque que sujam o reload global.
+noload => res_config_ldap.so
+noload => res_geolocation.so
+noload => chan_skinny.so
+noload => chan_unistim.so
+noload => pbx_dundi.so
+
+[global]

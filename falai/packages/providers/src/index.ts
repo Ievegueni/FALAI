@@ -7,6 +7,7 @@ export {
   trunkEndpointId,
   extensionEndpointId,
   extensionWebEndpointId,
+  sipAuthUserFromEndpointId,
   formatDialNumber,
   parseDialFormat,
 } from "./telephony/asteriskNaming.js";
