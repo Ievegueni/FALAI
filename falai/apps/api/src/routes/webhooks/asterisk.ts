@@ -16,7 +16,16 @@ import { recordWebphoneCall } from "../../services/webphoneCdr.service.js";
 const cdrSchema = z.object({
   endpoint: z.string().min(1),
   to: z.string().min(1),
-  billsec: z.coerce.number().int().min(0).max(86_400),
+  // z.coerce sozinho aceitava string vazia, porque Number("") é 0. Se o
+  // dialplan mandasse um campo por resolver (foi o que aconteceu com um
+  // ${BILLSEC} que não existe), a chamada entrava com 0 segundos e custo zero
+  // — registada, mas nunca cobrada, e sem ninguém dar por isso. Exigir dígitos
+  // faz a rota responder 400 e o erro aparecer no log em vez de na factura.
+  billsec: z
+    .string()
+    .regex(/^\d+$/, "billsec tem de ser um inteiro em dígitos")
+    .transform(Number)
+    .pipe(z.number().int().min(0).max(86_400)),
   disposition: z.string().default(""),
   uniqueid: z.string().min(1),
 });

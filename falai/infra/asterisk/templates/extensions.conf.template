@@ -91,17 +91,17 @@ exten => sair,1,NoOp(A enviar ${SAIDA} pelo trunk ${TRUNK_ENDPOINT})
 ; Asterisk: não apareciam na lista de chamadas, não contavam nos relatórios e
 ; não eram cobradas. Este handler fecha esse buraco.
 ;
-; ${BILLSEC} é o tempo de conversa (0 se não atenderam) e ${UNIQUEID} torna a
+; ${CDR(billsec)} é o tempo de conversa (0 se não atenderam) e ${UNIQUEID} torna a
 ; entrega idempotente do lado da API. Falha a chamar? A chamada não é afectada:
 ; o handler corre depois de o áudio ter terminado.
 ;------------------------------------------------------------------------------
 [falai-cdr]
-exten => s,1,NoOp(CDR de ${FALAI_ENDPOINT} para ${SAIDA} — ${BILLSEC}s, ${DIALSTATUS})
+exten => s,1,NoOp(CDR de ${FALAI_ENDPOINT} para ${SAIDA} — ${CDR(billsec)}s, ${DIALSTATUS})
  same => n,GotoIf($["${FALAI_CDR_URL}" = ""]?fim)
  same => n,Set(CURLOPT(httpheader)=X-Falai-Cdr-Secret: ${FALAI_CDR_SECRET})
  same => n,Set(CURLOPT(conntimeout)=2)
  same => n,Set(CURLOPT(dnstimeout)=2)
- same => n,Set(RESPOSTA=${CURL(${FALAI_CDR_URL},endpoint=${FALAI_ENDPOINT}&to=${SAIDA}&billsec=${BILLSEC}&disposition=${DIALSTATUS}&uniqueid=${UNIQUEID})})
+ same => n,Set(RESPOSTA=${CURL(${FALAI_CDR_URL},endpoint=${FALAI_ENDPOINT}&to=${SAIDA}&billsec=${CDR(billsec)}&disposition=${DIALSTATUS}&uniqueid=${UNIQUEID})})
  same => n,NoOp(API respondeu: ${RESPOSTA})
  same => n(fim),Return()
 
