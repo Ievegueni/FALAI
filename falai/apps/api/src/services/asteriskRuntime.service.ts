@@ -26,7 +26,7 @@
  * ficheiros (hoje, o mesmo servidor). Se um dia forem para máquinas separadas,
  * isto passa a ter de ir por ARI ou por um volume partilhado.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { chown, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TrunkRuntimeAdapter, PbxSyncPayload, PbxSyncResult } from "@falai/providers";
 import { trunkEndpointId, extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
@@ -43,6 +43,35 @@ const GENERATED_DIR = process.env["ASTERISK_GENERATED_DIR"] ?? "";
  * ninguém à espera.
  */
 const RELOAD_GAP_MS = 2000;
+
+/**
+ * Dono a dar aos ficheiros gerados. A API corre como root e o `mode` do
+ * writeFile só se aplica quando o ficheiro é criado — um ficheiro novo fica
+ * root:root 0640, que o Asterisk (que corre como `asterisk`) não consegue ler.
+ * O sintoma é mudo: o #include falha e o contexto de entrada do cliente
+ * simplesmente não existe, pelo que a chamada cai em "context not found".
+ *
+ * Resolvido a partir do /etc/passwd em vez de um uid fixo — varia por distro.
+ * Devolve null se não houver utilizador `asterisk` (ambiente de dev, contentor
+ * com outro nome), e aí não se toca no dono.
+ */
+const ASTERISK_USER = process.env["ASTERISK_SYSTEM_USER"] ?? "asterisk";
+let cachedOwner: { uid: number; gid: number } | null | undefined;
+
+async function asteriskOwner(): Promise<{ uid: number; gid: number } | null> {
+  if (cachedOwner !== undefined) return cachedOwner;
+  try {
+    const passwd = await readFile("/etc/passwd", "utf8");
+    const line = passwd.split("\n").find((l) => l.startsWith(`${ASTERISK_USER}:`));
+    const parts = line?.split(":");
+    const uid = Number(parts?.[2]);
+    const gid = Number(parts?.[3]);
+    cachedOwner = Number.isInteger(uid) && Number.isInteger(gid) ? { uid, gid } : null;
+  } catch {
+    cachedOwner = null;
+  }
+  return cachedOwner;
+}
 
 /**
  * Nome do contexto de entrada de um trunk exclusivo de um cliente.
@@ -66,13 +95,22 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
   async sync(payload: PbxSyncPayload): Promise<PbxSyncResult> {
     try {
       await mkdir(GENERATED_DIR, { recursive: true });
-      await writeFile(join(GENERATED_DIR, "pjsip-falai.conf"), this.buildConfig(payload), { mode: 0o640 });
+      const owner = await asteriskOwner();
+      const write = async (name: string, contents: string): Promise<void> => {
+        const path = join(GENERATED_DIR, name);
+        await writeFile(path, contents, { mode: 0o640 });
+        // Só falha quando não somos root; aí o dono já tem de estar certo de
+        // fora, e rebentar aqui deixaria o motor sem configuração nenhuma.
+        if (owner) await chown(path, owner.uid, owner.gid).catch(() => {});
+      };
+
+      await write("pjsip-falai.conf", this.buildConfig(payload));
       // O dialplan é estático mas precisa de saber por onde sai uma chamada.
       // Em vez de lá escrever o nome do trunk à mão, damos-lhe as variáveis.
-      await writeFile(join(GENERATED_DIR, "globals-falai.conf"), this.buildGlobals(payload), { mode: 0o640 });
+      await write("globals-falai.conf", this.buildGlobals(payload));
       // Um contexto de entrada por cliente com trunk exclusivo. Tem de ser
       // gerado porque os clientes mudam; o resto do dialplan é estático.
-      await writeFile(join(GENERATED_DIR, "extensions-falai.conf"), this.buildDialplan(payload), { mode: 0o640 });
+      await write("extensions-falai.conf", this.buildDialplan(payload));
     } catch (err) {
       this.log?.("pbx.runtime.write_failed", { err: String(err) });
       return { ok: false, engine: "asterisk", details: `não foi possível escrever a configuração: ${String(err)}` };
