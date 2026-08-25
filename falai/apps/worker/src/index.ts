@@ -1,7 +1,7 @@
 import { Worker, Queue } from "bullmq";
 import { createHmac } from "crypto";
 import pino from "pino";
-import { prisma, type Prisma, runMonthlyBilling } from "@falai/db";
+import { prisma, type Prisma, runMonthlyBilling, reconcileStaleCalls } from "@falai/db";
 import { QUEUES, JOBS } from "@falai/shared";
 
 const isDev = process.env["NODE_ENV"] === "development";
@@ -187,16 +187,23 @@ contactImportWorker.on("failed", (job, err) => log.error({ jobId: job?.id, err }
 const purgeWorker = new Worker(
   QUEUES.PURGE,
   async (job) => {
-    if (job.name !== JOBS.MONTHLY_FEE) {
-      log.warn({ jobName: job.name }, "purge.unknown_job");
-      return;
+    switch (job.name) {
+      case JOBS.MONTHLY_FEE: {
+        log.info({ jobId: job.id }, "monthly_fee.started");
+        const result = await runMonthlyBilling();
+        log.info({ jobId: job.id, ...result }, "monthly_fee.done");
+        break;
+      }
+      case JOBS.RECONCILE_STALE_CALLS: {
+        const result = await reconcileStaleCalls();
+        if (result.closed > 0) {
+          log.warn({ jobId: job.id, ...result }, "reconcile_stale_calls.closed");
+        }
+        break;
+      }
+      default:
+        log.warn({ jobName: job.name }, "purge.unknown_job");
     }
-
-    log.info({ jobId: job.id }, "monthly_fee.started");
-
-    const result = await runMonthlyBilling();
-
-    log.info({ jobId: job.id, ...result }, "monthly_fee.done");
   },
   { connection, concurrency: 1 }
 );
@@ -207,6 +214,12 @@ purgeWorker.on("failed", (job, err) => log.error({ jobId: job?.id, err }, "purge
 const purgeQueue = new Queue(QUEUES.PURGE, { connection });
 purgeQueue
   .add(JOBS.MONTHLY_FEE, {}, { repeat: { pattern: "0 2 1 * *" }, jobId: "monthly-fee-recurring" })
+  .catch((err) => log.error({ err }, "purge.schedule_failed"));
+
+// Reconcilia chamadas presas em DIALING/RINGING/IN_PROGRESS sem evento de fim
+// — corre a cada 5 min (ver packages/db/src/calls.ts)
+purgeQueue
+  .add(JOBS.RECONCILE_STALE_CALLS, {}, { repeat: { pattern: "*/5 * * * *" }, jobId: "reconcile-stale-calls-recurring" })
   .catch((err) => log.error({ err }, "purge.schedule_failed"));
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────

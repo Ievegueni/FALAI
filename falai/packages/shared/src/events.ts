@@ -45,4 +45,5 @@ export const JOBS = {
   IMPORT_CONTACTS: "import-contacts",
   DISPATCH_CAMPAIGN: "dispatch-campaign",
   MONTHLY_FEE: "monthly-fee",
+  RECONCILE_STALE_CALLS: "reconcile-stale-calls",
 } as const;
