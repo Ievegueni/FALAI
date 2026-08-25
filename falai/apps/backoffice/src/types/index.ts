@@ -25,7 +25,7 @@ export interface AdminLoginResponse {
 
 // ─── Tenant ───────────────────────────────────────────────────────────────────
 
-export type ProductType = 'VOICE_AI' | 'CRM_BYO_PBX';
+export type ProductType = 'VOICE_AI' | 'CRM_BYO_PBX' | 'API_BYOM';
 
 export type BillingMode = 'PER_MINUTE' | 'PER_SECOND' | 'PER_CALL';
 
@@ -90,6 +90,48 @@ export interface TenantUser {
   lastLoginAt: string | null;
   twoFaEnabled?: boolean;
   createdAt?: string;
+}
+
+export type ModelProtocol = 'FALAI_TURN' | 'OPENAI_CHAT' | 'ANTHROPIC_MESSAGES';
+
+/**
+ * Modelo de inferência do próprio cliente (produto API_BYOM). Ele treina onde
+ * quiser; connosco regista o endereço. Segredos nunca voltam na API.
+ */
+export interface TenantModel {
+  id: string;
+  tenantId: string;
+  name: string;
+  endpointUrl: string;
+  protocol: ModelProtocol;
+  modelName: string | null;
+  authType: string;
+  timeoutMs: number;
+  maxReplyChars: number;
+  status: AgentStatus;
+  approvedBy: string | null;
+  lastHealthAt: string | null;
+  lastLatencyMs: number | null;
+  lastError: string | null;
+  violations: number;
+  createdAt: string;
+  updatedAt: string;
+  tenant?: { id: string; name: string };
+  _count?: { agents: number };
+  agents?: Array<{ id: string; name: string; status: AgentStatus }>;
+}
+
+/** Chave de API de um cliente, vista do backoffice. A chave em claro só existe na resposta de criação. */
+export interface TenantApiKey {
+  id: string;
+  label: string;
+  prefix: string;
+  scopes: string[];
+  /** Origens permitidas (IP ou CIDR). Vazio = qualquer origem. */
+  allowedCidrs: string[];
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
 }
 
 export interface TenantUserInput {

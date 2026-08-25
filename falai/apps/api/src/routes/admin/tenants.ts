@@ -106,7 +106,11 @@ function mapTenant(t: any) {
     maxConcurrentCalls: t.maxConcurrent,
     billingModeOverride: t.billingModeOverride ?? null,
     // features efectivas (o que o cliente vê) + overrides crus (o que o operador definiu)
-    features: computeFeatures({ overrides: t.features, aiAgentsEnabled: t.plan?.aiAgentsEnabled }),
+    features: computeFeatures({
+      overrides: t.features,
+      aiAgentsEnabled: t.plan?.aiAgentsEnabled,
+      productType: t.plan?.productType,
+    }),
     featureOverrides: (t.features ?? {}) as Record<string, boolean>,
     ...(t.lines !== undefined && { lines: t.lines }),
     createdAt: t.createdAt,
@@ -559,7 +563,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const existing = await prisma.tenant.findFirst({
       where: { id: request.params.id, deletedAt: null },
-      include: { plan: { select: { aiAgentsEnabled: true } } },
+      include: { plan: { select: { aiAgentsEnabled: true, productType: true } } },
     });
     if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
 
@@ -574,7 +578,11 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
 
     return {
       featureOverrides: overrides,
-      features: computeFeatures({ overrides, aiAgentsEnabled: existing.plan?.aiAgentsEnabled }),
+      features: computeFeatures({
+        overrides,
+        aiAgentsEnabled: existing.plan?.aiAgentsEnabled,
+        productType: existing.plan?.productType,
+      }),
     };
   });
 

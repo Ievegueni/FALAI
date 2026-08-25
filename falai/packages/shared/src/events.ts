@@ -16,7 +16,11 @@ export type CallEvent =
   // Chamada de entrada nova, ainda sem nenhum Call/ref conhecido no engine —
   // distinto de CALL_RINGING (que é sempre uma chamada já originada por nós
   // via dial()). did = número/EXTEN que o dialplan entregou ao Stasis.
-  | { type: "INBOUND_CALL_STARTED"; providerCallId: string; did: string; callerIdNum?: string }
+  // tenantId vem preenchido quando a chamada entrou por um trunk exclusivo de
+  // um cliente (peering por IP): aí sabe-se de quem é a chamada pelo caminho
+  // por onde entrou, sem depender de o DID ser único entre clientes. Ausente
+  // num trunk partilhado, onde o tenant se resolve a partir do DID.
+  | { type: "INBOUND_CALL_STARTED"; providerCallId: string; did: string; callerIdNum?: string; tenantId?: string }
   | { type: "CALL_RINGING"; providerCallId: string }
   | { type: "CALL_ANSWERED"; providerCallId: string; answeredAt: Date }
   | { type: "CALL_ENDED"; providerCallId: string; endedAt: Date; durationSecs: number; hangupCause: string }

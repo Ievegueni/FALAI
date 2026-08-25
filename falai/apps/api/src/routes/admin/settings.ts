@@ -6,6 +6,10 @@ import {
   upsertSetting,
   deleteSetting,
 } from "../../services/settings.service.js";
+import {
+  BANNED_PHRASES_SETTING,
+  invalidateBannedPhrasesCache,
+} from "../../services/guardrail.service.js";
 
 export const adminSettingsRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.authenticate];
@@ -48,6 +52,11 @@ export const adminSettingsRoutes: FastifyPluginAsync = async (fastify) => {
       updatedBy: admin.sub,
     });
 
+    // A lista de frases proibidas é lida a cada turno de cada chamada, com
+    // cache de 60s. Sem isto, uma frase acrescentada aqui só valia no minuto
+    // seguinte — inaceitável para uma regra que se está a pôr por urgência.
+    if (body.key === BANNED_PHRASES_SETTING) invalidateBannedPhrasesCache();
+
     await fastify.audit({
       actorType: "ADMIN",
       actorId: admin.sub,
@@ -73,6 +82,7 @@ export const adminSettingsRoutes: FastifyPluginAsync = async (fastify) => {
     if (before === null) return reply.status(404).send({ error: "Setting não encontrada" });
 
     await deleteSetting(request.params.key);
+    if (request.params.key === BANNED_PHRASES_SETTING) invalidateBannedPhrasesCache();
 
     await fastify.audit({
       actorType: "ADMIN",

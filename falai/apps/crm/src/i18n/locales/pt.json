@@ -654,6 +654,10 @@
     "webhooksHint": "Clica num evento para ver o payload. Configura a URL em <0>Definições → Integrações</0>.",
     "payloadNote": "Payload entregue via HTTP POST à tua URL de webhook:",
     "errorCodes": "Códigos de erro",
+    "originsLabel": "Origens permitidas (opcional)",
+    "originsHint": "IPs ou blocos CIDR separados por vírgula. Deixa vazio para aceitar qualquer origem.",
+    "originsRestricted": "Só de: {{list}}",
+    "originsAny": "Qualquer origem",
     "scopes": {
       "callsWrite": "Criar chamadas",
       "callsRead": "Ler chamadas",

@@ -12,6 +12,19 @@ const envSchema = z.object({
   // Origens permitidas em produção (lista separada por vírgulas). Se vazio, o CORS
   // fica bloqueado a cross-origin (adequado quando FE e API partilham origem/proxy).
   ALLOWED_ORIGINS: z.string().optional(),
+  /**
+   * Proxies em que confiamos para nos dizer o IP de origem, separados por
+   * vírgula (IP ou CIDR — ex.: "127.0.0.1,10.0.0.0/8").
+   *
+   * Isto é uma fronteira de segurança, não uma afinação: `request.ip` alimenta
+   * a allowlist de IP das chaves de API (plugins/apiKeyAuth.ts). Confiar em
+   * qualquer proxy deixaria qualquer pessoa forjar o IP de origem com um
+   * cabeçalho `X-Forwarded-For` e contornar a allowlist inteira.
+   *
+   * Vazio = não confiar em ninguém; `request.ip` passa a ser o IP do socket.
+   * Em produção atrás de nginx, pôr aqui o IP do nginx.
+   */
+  TRUSTED_PROXIES: z.string().optional(),
 
   // Webphone (WebRTC) — URL pública da sinalização WS (nginx do host faz
   // proxy para o Asterisk, ver DEPLOY.md secção 8) e domínio SIP a usar no

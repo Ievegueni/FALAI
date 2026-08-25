@@ -188,7 +188,7 @@ Os planos definem o que um tenant pode fazer e quanto paga:
 
 ## Webhooks
 
-Quando uma chamada termina, a plataforma tenta entregar um evento POST ao `webhookUrl` configurado pelo tenant. O payload inclui o estado final, duração, custo e transcrição. Em caso de falha, há retry com backoff exponencial (gerido por BullMQ).
+Quando uma chamada termina, a plataforma tenta entregar um evento `call.ended` POST ao `webhookUrl` configurado pelo tenant. O payload inclui `callId`, `tenantId`, `status`, `durationSecs` e, quando a chamada pertence a uma campanha, `campaignId`/`contactId` (caso contrário vêm a `null`). Em caso de falha, há retry com backoff exponencial (gerido por BullMQ).
 
 O tenant configura também um `webhookSecret` para validar a assinatura HMAC dos eventos recebidos.
 

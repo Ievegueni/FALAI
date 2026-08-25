@@ -19,6 +19,9 @@ import type {
   TenantFeatures,
   TenantLine,
   TenantLineInput,
+  AgentStatus,
+  TenantApiKey,
+  TenantModel,
   TenantUser,
   TenantUserInput,
   Trunk,
@@ -179,6 +182,18 @@ export const tenantsApi = {
 
   saveSmsConfig: (id: string, data: { apiKey?: string; senderId?: string; priceSegmentCents?: number }) =>
     put<{ ok: boolean }>(`/admin/tenants/${id}/sms`, data),
+
+  // Chaves de API — no produto API_BYOM é aqui que se provisiona o acesso do cliente
+  apiKeys: (id: string) =>
+    get<{ data: TenantApiKey[]; validScopes: string[] }>(`/admin/tenants/${id}/api-keys`),
+
+  createApiKey: (id: string, data: { label: string; scopes: string[]; allowedCidrs: string[] }) =>
+    post<TenantApiKey & { key: string; warning: string }>(`/admin/tenants/${id}/api-keys`, data),
+
+  updateApiKey: (id: string, keyId: string, data: { scopes?: string[]; allowedCidrs?: string[] }) =>
+    patch<TenantApiKey>(`/admin/tenants/${id}/api-keys/${keyId}`, data),
+
+  revokeApiKey: (id: string, keyId: string) => del<void>(`/admin/tenants/${id}/api-keys/${keyId}`),
 };
 
 // ─── Agents (Moderation) ─────────────────────────────────────────────────────
@@ -197,6 +212,33 @@ export const moderationApi = {
 
   block: (id: string, reason: string) =>
     post<ModerationResult>(`/admin/agents/${id}/block`, { reason }),
+};
+
+// ─── Modelos dos clientes (API_BYOM) ─────────────────────────────────────────
+// Mesmo ciclo de moderação dos agentes. Nenhum modelo entra numa chamada real
+// sem passar por aqui.
+
+export const modelsApi = {
+  list: (params?: { page?: number; perPage?: number; status?: AgentStatus; tenantId?: string }) =>
+    get<Paginated<TenantModel>>(
+      `/admin/models${qs({
+        page: params?.page ?? 1,
+        perPage: params?.perPage ?? 20,
+        status: params?.status,
+        tenantId: params?.tenantId,
+      })}`,
+    ),
+
+  get: (id: string) => get<{ model: TenantModel }>(`/admin/models/${id}`),
+
+  approve: (id: string) => post<ModerationResult>(`/admin/models/${id}/approve`),
+
+  reject: (id: string, reason: string) => post<ModerationResult>(`/admin/models/${id}/reject`, { reason }),
+
+  block: (id: string, reason: string) => post<ModerationResult>(`/admin/models/${id}/block`, { reason }),
+
+  test: (id: string) =>
+    post<{ ok: boolean; latencyMs: number; details: string | null }>(`/admin/models/${id}/test`),
 };
 
 interface ModerationResult {

@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import { encryptSecret } from "../../services/crypto.service.js";
-import { serializeTrunk, trunkCreateSchema, trunkUpdateSchema, trunkDataFromBody } from "../../services/trunk.service.js";
+import { serializeTrunk, trunkCreateSchema, trunkUpdateSchema, trunkDataFromBody, validateTrunkAuth } from "../../services/trunk.service.js";
 import { scheduleTenantPbxSync } from "../../services/pbxSync.service.js";
 
 /**
@@ -52,7 +52,9 @@ export const tenantTrunksRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(403).send({ error: "O plano actual não permite gerir o trunk (é gerido pelo operador)" });
     }
     const body = trunkCreateSchema.parse(request.body);
-    if (!body.authSecret) return reply.status(400).send({ error: "Indique o segredo (palavra-passe) do trunk" });
+    // Num trunk PEER não há senha nenhuma — a autenticação é o endereço.
+    const authProblem = validateTrunkAuth(body);
+    if (authProblem) return reply.status(400).send({ error: authProblem });
 
     const trunk = await prisma.trunk.create({
       data: {
@@ -60,7 +62,7 @@ export const tenantTrunksRoutes: FastifyPluginAsync = async (fastify) => {
         name: body.name,
         host: body.host,
         authUser: body.authUser,
-        authSecret: encryptSecret(body.authSecret),
+        authSecret: body.authSecret ? encryptSecret(body.authSecret) : "",
         ...(body.type !== undefined ? { type: body.type } : {}),
         ...(body.transport !== undefined ? { transport: body.transport } : {}),
         ...(body.port !== undefined ? { port: body.port } : {}),
@@ -87,6 +89,10 @@ export const tenantTrunksRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const body = trunkUpdateSchema.parse(request.body);
+    // Mudar o tipo ou o host muda a forma como o trunk se autentica.
+    const authProblem = validateTrunkAuth(body, existing);
+    if (authProblem) return reply.status(400).send({ error: authProblem });
+
     const trunk = await prisma.trunk.update({ where: { id: existing.id }, data: trunkDataFromBody(body, encryptSecret), include });
     await fastify.audit({ actorType: "TENANT_USER", actorId: sub, action: "tenant.trunk.updated", targetType: "Trunk", targetId: trunk.id, ip: request.ip });
     scheduleTenantPbxSync(tenantId);

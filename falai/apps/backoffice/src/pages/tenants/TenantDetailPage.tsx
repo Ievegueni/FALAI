@@ -277,6 +277,7 @@ export function TenantDetailPage() {
           { key: 'lines', label: 'Linhas' },
           { key: 'features', label: 'Funcionalidades' },
           { key: 'sms', label: 'SMS' },
+          { key: 'api-keys', label: 'Chaves de API' },
           { key: 'calls', label: 'Chamadas' },
           { key: 'wallet', label: 'Carteira' },
         ]}
@@ -285,6 +286,7 @@ export function TenantDetailPage() {
       />
 
       {tab === 'sms' && <SmsConfigTab tenantId={id!} />}
+      {tab === 'api-keys' && <ApiKeysTab tenantId={id!} />}
 
       {tab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -744,6 +746,231 @@ export function TenantDetailPage() {
             <option value="VIEWER">Leitura</option>
           </Select>
         </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ─── Chaves de API do cliente ────────────────────────────────────────────────
+// No produto API_BYOM o cliente não tem CRM: a chave, os scopes e os IPs de
+// origem são definidos aqui. Nos outros produtos isto é uma segunda via — o
+// cliente também as gere em Developers no CRM dele.
+
+/** "1.2.3.4, 10.0.0.0/8" → ["1.2.3.4", "10.0.0.0/8"]. Aceita vírgulas ou linhas. */
+function parseOrigins(text: string): string[] {
+  return text.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+}
+
+function ApiKeysTab({ tenantId }: { tenantId: string }) {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['tenant-api-keys', tenantId],
+    queryFn: () => tenantsApi.apiKeys(tenantId),
+  });
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [label, setLabel] = useState('');
+  const [scopes, setScopes] = useState<string[]>([]);
+  const [origins, setOrigins] = useState('');
+  const [rawKey, setRawKey] = useState('');
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editOrigins, setEditOrigins] = useState('');
+
+  const create = useMutation({
+    mutationFn: () =>
+      tenantsApi.createApiKey(tenantId, { label, scopes, allowedCidrs: parseOrigins(origins) }),
+    onSuccess: (key) => {
+      setRawKey(key.key);
+      void qc.invalidateQueries({ queryKey: ['tenant-api-keys', tenantId] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const updateOrigins = useMutation({
+    mutationFn: (keyId: string) =>
+      tenantsApi.updateApiKey(tenantId, keyId, { allowedCidrs: parseOrigins(editOrigins) }),
+    onSuccess: () => {
+      toast.success('Origens actualizadas');
+      setEditing(null);
+      void qc.invalidateQueries({ queryKey: ['tenant-api-keys', tenantId] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const revoke = useMutation({
+    mutationFn: (keyId: string) => tenantsApi.revokeApiKey(tenantId, keyId),
+    onSuccess: () => {
+      toast.success('Chave revogada');
+      void qc.invalidateQueries({ queryKey: ['tenant-api-keys', tenantId] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function closeCreate() {
+    setShowCreate(false);
+    setLabel('');
+    setScopes([]);
+    setOrigins('');
+    setRawKey('');
+  }
+
+  if (isLoading || !data) return <PageSpinner />;
+
+  const keys = data.data;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">
+          {keys.length === 0 ? 'Sem chaves' : `${keys.length} chave(s)`}
+        </p>
+        <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setShowCreate(true)}>
+          Nova chave
+        </Button>
+      </div>
+
+      {keys.length === 0 ? (
+        <EmptyState
+          icon={<KeyRound className="h-6 w-6" />}
+          title="Sem chaves de API"
+          description="Cria uma chave para este cliente aceder à API /v1. Fixa os IPs de origem para restringir o acesso."
+        />
+      ) : (
+        <Card padding={false}>
+          <div className="divide-y divide-gray-100">
+            {keys.map((k) => (
+              <div key={k.id} className="px-5 py-3">
+                <div className="flex items-start gap-4">
+                  <KeyRound className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-400" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-900">{k.label}</p>
+                      <code className="rounded bg-gray-100 px-1.5 text-xs text-gray-500">{k.prefix}…</code>
+                      {k.revokedAt && <Badge className="bg-red-100 text-red-700">Revogada</Badge>}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {k.scopes.map((s) => (
+                        <Badge key={s} className="bg-blue-50 text-xs text-blue-700">{s}</Badge>
+                      ))}
+                    </div>
+                    {editing === k.id ? (
+                      <div className="mt-2 flex items-center gap-2">
+                        <Input
+                          value={editOrigins}
+                          onChange={(e) => setEditOrigins(e.target.value)}
+                          placeholder="102.130.202.155, 10.0.0.0/8"
+                        />
+                        <Button size="sm" loading={updateOrigins.isPending} onClick={() => updateOrigins.mutate(k.id)}>
+                          Guardar
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancelar</Button>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-xs text-gray-500">
+                        {k.allowedCidrs.length > 0 ? (
+                          <>Só de: <code className="text-gray-700">{k.allowedCidrs.join(', ')}</code></>
+                        ) : (
+                          <span className="text-amber-600">Qualquer origem — sem restrição de IP</span>
+                        )}
+                        {!k.revokedAt && (
+                          <button
+                            className="ml-2 text-blue-600 hover:underline"
+                            onClick={() => { setEditing(k.id); setEditOrigins(k.allowedCidrs.join(', ')); }}
+                          >
+                            editar
+                          </button>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0 text-right text-xs text-gray-400">
+                    <p>{k.lastUsedAt ? `Usada ${formatDate(k.lastUsedAt)}` : 'Nunca usada'}</p>
+                    <p className="mt-0.5">Criada {formatDate(k.createdAt)}</p>
+                  </div>
+                  {!k.revokedAt && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<Trash2 className="h-4 w-4 text-red-500" />}
+                      loading={revoke.isPending}
+                      onClick={() => { if (confirm(`Revogar a chave "${k.label}"? O corte é imediato.`)) revoke.mutate(k.id); }}
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Modal
+        open={showCreate}
+        onClose={closeCreate}
+        title="Nova chave de API"
+        footer={
+          rawKey ? (
+            <Button onClick={closeCreate}>Fechar</Button>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={closeCreate}>Cancelar</Button>
+              <Button
+                loading={create.isPending}
+                disabled={label.trim().length < 2 || scopes.length === 0}
+                onClick={() => create.mutate()}
+              >
+                Criar
+              </Button>
+            </>
+          )
+        }
+      >
+        {rawKey ? (
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-emerald-600">Chave criada.</p>
+            <div className="rounded-lg bg-gray-900 p-4">
+              <p className="break-all font-mono text-sm text-emerald-400">{rawKey}</p>
+            </div>
+            <p className="text-xs font-medium text-red-600">
+              Copia agora — não volta a ser mostrada. Entrega-a ao cliente por um canal seguro.
+            </p>
+            <Button size="sm" variant="outline" onClick={() => { void navigator.clipboard.writeText(rawKey); toast.success('Copiada'); }}>
+              Copiar
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Input label="Nome" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="ex.: Integração ERP" required />
+            <div>
+              <p className="mb-2 text-sm font-medium text-gray-700">Permissões</p>
+              <div className="grid grid-cols-2 gap-2">
+                {data.validScopes.map((s) => (
+                  <label key={s} className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={scopes.includes(s)}
+                      onChange={() => setScopes((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}
+                      className="rounded"
+                    />
+                    <code className="text-xs">{s}</code>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700" htmlFor="new-key-origins">Origens permitidas</label>
+              <Input
+                id="new-key-origins"
+                value={origins}
+                onChange={(e) => setOrigins(e.target.value)}
+                placeholder="102.130.202.155, 10.0.0.0/8"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                IPs ou blocos CIDR separados por vírgula. Vazio = a chave funciona de qualquer sítio.
+              </p>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

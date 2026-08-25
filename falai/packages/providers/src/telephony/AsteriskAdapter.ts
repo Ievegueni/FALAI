@@ -401,17 +401,24 @@ export class AsteriskAdapter implements TelephonyProvider {
 
       case "StasisStart": {
         // args[0] === "inbound" identifica um canal que chegou do dialplan
-        // [from-trunk] (Stasis(falai,inbound,${EXTEN})) — ainda não corresponde
-        // a nenhuma sessão nossa, ao contrário de um canal que nós originámos
-        // via dial(). Ver extensions.conf.template, contexto [from-trunk].
+        // (Stasis(falai,inbound,${EXTEN}[,tenantId])) — ainda não corresponde a
+        // nenhuma sessão nossa, ao contrário de um canal que nós originámos via
+        // dial(). Ver extensions.conf.template e o ficheiro de contextos gerado.
+        //
+        // args[2], quando existe, é o tenant dono do trunk por onde a chamada
+        // entrou. Só vem nos trunks exclusivos de um cliente (peering por IP);
+        // num trunk partilhado não há resposta a dar aqui e o tenant resolve-se
+        // pelo DID, mais à frente.
         const args = (e["args"] as string[] | undefined) ?? [];
         if (args[0] === "inbound") {
           const callerIdNum = channel?.caller?.number;
+          const tenantId = args[2];
           this.handler({
             type: "INBOUND_CALL_STARTED",
             providerCallId: id,
             did: args[1] ?? "",
             ...(callerIdNum ? { callerIdNum } : {}),
+            ...(tenantId ? { tenantId } : {}),
           });
         } else {
           this.handler({ type: "CALL_RINGING", providerCallId: id });

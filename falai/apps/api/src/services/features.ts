@@ -4,7 +4,8 @@
  * As features efectivas resultam de três camadas, por ordem:
  *   1. DEFAULT_FEATURES  — valores base da plataforma
  *   2. overrides do tenant (Tenant.features)  — decisão explícita do operador
- *   3. limite do plano  — se o plano não tem IA, agentes/campanhas ficam sempre off
+ *   3. limite do plano  — se o plano não tem IA, agentes/campanhas ficam sempre off;
+ *      se o produto é API_BYOM, o cliente não tem UI nossa de todo
  */
 
 export const FEATURE_KEYS = [
@@ -56,6 +57,7 @@ export const DEFAULT_FEATURES: Features = {
 export function computeFeatures(input: {
   overrides?: unknown;
   aiAgentsEnabled?: boolean;
+  productType?: string;
 }): Features {
   const result: Features = { ...DEFAULT_FEATURES };
 
@@ -71,6 +73,13 @@ export function computeFeatures(input: {
   if (input.aiAgentsEnabled === false) {
     result.agents = false;
     result.campaigns = false;
+  }
+
+  // 3b. API_BYOM: o cliente tem o CRM dele e fala connosco só por API. Nenhum
+  // override liga a nossa UI — só fica a área de developers (chaves e IPs).
+  if (input.productType === "API_BYOM") {
+    for (const key of FEATURE_KEYS) result[key] = false;
+    result.developers = true;
   }
 
   return result;

@@ -12,7 +12,8 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@falai/shared": "workspace:*",
@@ -26,6 +27,7 @@
   "devDependencies": {
     "typescript": "^5.5.0",
     "@types/node": "^22.0.0",
-    "@types/ws": "^8.5.12"
+    "@types/ws": "^8.5.12",
+    "vitest": "^2.0.0"
   }
 }

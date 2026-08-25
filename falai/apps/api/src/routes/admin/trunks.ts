@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import { z } from "zod";
 import { encryptSecret } from "../../services/crypto.service.js";
-import { serializeTrunk, trunkCreateSchema, trunkUpdateSchema, trunkDataFromBody } from "../../services/trunk.service.js";
+import { serializeTrunk, trunkCreateSchema, trunkUpdateSchema, trunkDataFromBody, validateTrunkAuth } from "../../services/trunk.service.js";
 import { getAsteriskStatus } from "../../services/asteriskStatus.service.js";
 import { scheduleAllPbxSync } from "../../services/pbxSync.service.js";
 
@@ -32,19 +32,35 @@ export const adminTrunksRoutes: FastifyPluginAsync = async (fastify) => {
     return { trunk: serializeTrunk(trunk) };
   });
 
-  // POST /admin/trunks — cria trunk partilhado do operador (tenantId = null)
+  // POST /admin/trunks — trunk partilhado do operador (sem tenantId) ou
+  // exclusivo de um cliente (com tenantId).
+  //
+  // O exclusivo é o que serve o produto API_BYOM: o cliente liga o PBX dele ao
+  // nosso IP, sem registo, e passamos a saber de quem é cada chamada de entrada
+  // pelo trunk por onde entrou. Esse cliente não tem CRM nosso, portanto é aqui
+  // que se provisiona — a rota /tenant/trunks exige CRM_BYO_PBX.
   fastify.post("/", { preHandler }, async (request, reply) => {
     const admin = request.adminUser!;
     const body = trunkCreateSchema.parse(request.body);
-    if (!body.authSecret) return reply.status(400).send({ error: "Indique o segredo (palavra-passe) do trunk" });
+    // Num trunk PEER não há senha nenhuma — a autenticação é o endereço.
+    const authProblem = validateTrunkAuth(body);
+    if (authProblem) return reply.status(400).send({ error: authProblem });
+
+    if (body.tenantId) {
+      const tenant = await prisma.tenant.findFirst({
+        where: { id: body.tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!tenant) return reply.status(400).send({ error: "Cliente não encontrado" });
+    }
 
     const trunk = await prisma.trunk.create({
       data: {
-        tenantId: null,
+        tenantId: body.tenantId ?? null,
         name: body.name,
         host: body.host,
         authUser: body.authUser,
-        authSecret: encryptSecret(body.authSecret),
+        authSecret: body.authSecret ? encryptSecret(body.authSecret) : "",
         ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
         ...(body.itspTemplate !== undefined ? { itspTemplate: body.itspTemplate } : {}),
         ...(body.type !== undefined ? { type: body.type } : {}),
@@ -72,6 +88,11 @@ export const adminTrunksRoutes: FastifyPluginAsync = async (fastify) => {
 
     const existing = await prisma.trunk.findUnique({ where: { id: request.params.id } });
     if (!existing) return reply.status(404).send({ error: "Trunk não encontrado" });
+
+    // Passar um trunk para PEER, ou mudar-lhe o host, muda a forma como ele se
+    // autentica — tem de ser validado outra vez, não só na criação.
+    const authProblem = validateTrunkAuth(body, existing);
+    if (authProblem) return reply.status(400).send({ error: authProblem });
 
     const trunk = await prisma.trunk.update({
       where: { id: existing.id },

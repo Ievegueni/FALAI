@@ -15,7 +15,7 @@ import { extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
 import type { CallEvent } from "@falai/shared";
 import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "@falai/db";
-import { resolveInboundGlobal } from "./callRouting.service.js";
+import { resolveInboundGlobal, resolveInboundForTenant } from "./callRouting.service.js";
 
 const RING_TIMEOUT_SECS = 25;
 
@@ -40,9 +40,17 @@ async function handleInboundCall(
   asterisk: AsteriskAdapter,
   log: FastifyBaseLogger
 ): Promise<void> {
-  const route = await resolveInboundGlobal(event.did);
+  // Quando a chamada entrou por um trunk exclusivo de um cliente (peering por
+  // IP), o tenant vem no evento e a rota procura-se só dentro dele. É mais
+  // correcto do que procurar pelo DID em toda a plataforma: num peering a
+  // numeração é interna do cliente e repete-se entre clientes — sem isto, a
+  // chamada de um cliente podia tocar na extensão de outro.
+  const route = event.tenantId
+    ? await resolveInboundForTenant(event.tenantId, event.did)
+    : await resolveInboundGlobal(event.did);
+
   if (!route || route.destType !== "EXTENSION") {
-    log.info({ did: event.did, route }, "inbound_call_router.no_route");
+    log.info({ did: event.did, tenantId: event.tenantId ?? null, route }, "inbound_call_router.no_route");
     await asterisk.noRouteFallback(event.providerCallId);
     return;
   }

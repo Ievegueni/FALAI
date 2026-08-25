@@ -16,6 +16,13 @@ const BILLING_LABELS: Record<BillingMode, string> = {
 const PRODUCT_LABELS: Record<ProductType, string> = {
   VOICE_AI: 'Operador (PBX + IA)',
   CRM_BYO_PBX: 'CRM (PBX do cliente)',
+  API_BYOM: 'API (modelo do cliente)',
+};
+
+const PRODUCT_BADGE: Record<ProductType, string> = {
+  VOICE_AI: 'bg-blue-100 text-blue-700',
+  CRM_BYO_PBX: 'bg-purple-100 text-purple-700',
+  API_BYOM: 'bg-teal-100 text-teal-700',
 };
 
 
@@ -79,6 +86,7 @@ function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
         <Select label="Tipo de produto" value={productType} onChange={(e) => setProductType(e.target.value as ProductType)}>
           <option value="VOICE_AI">{PRODUCT_LABELS.VOICE_AI}</option>
           <option value="CRM_BYO_PBX">{PRODUCT_LABELS.CRM_BYO_PBX}</option>
+          <option value="API_BYOM">{PRODUCT_LABELS.API_BYOM}</option>
         </Select>
         <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
           <input
@@ -193,7 +201,7 @@ export function PlansPage() {
                 <div>
                   <h3 className="text-base font-semibold text-gray-900">{plan.name}</h3>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    <Badge className={plan.productType === 'CRM_BYO_PBX' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}>
+                    <Badge className={PRODUCT_BADGE[plan.productType] ?? PRODUCT_BADGE.VOICE_AI}>
                       {PRODUCT_LABELS[plan.productType]}
                     </Badge>
                     <Badge className={plan.aiAgentsEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}>
