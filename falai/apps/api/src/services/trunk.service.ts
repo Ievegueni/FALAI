@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 import type { Prisma } from "@falai/db";
+import { normalizeIp } from "./ipAllowlist.js";
 
 type TrunkWithDids = Prisma.TrunkGetPayload<{ include: { dids: true } }>;
 
@@ -44,6 +45,11 @@ export function serializeTrunk(trunk: TrunkWithDids) {
 
 export const trunkCreateSchema = z.object({
   name: z.string().min(2).max(64),
+  /**
+   * Cliente dono do trunk. Só o backoffice o envia; a rota do tenant ignora-o
+   * e usa sempre o tenant da sessão. Ausente = trunk partilhado do operador.
+   */
+  tenantId: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   itspTemplate: z.string().max(64).optional(),
   type: z.enum(["REGISTER", "PEER"]).optional(),
@@ -69,6 +75,41 @@ export const trunkCreateSchema = z.object({
 });
 
 export const trunkUpdateSchema = trunkCreateSchema.partial();
+
+/**
+ * Regras de autenticação de um trunk, que dependem do tipo.
+ *
+ * REGISTER: registamo-nos no provider com utilizador e senha — o segredo é
+ * obrigatório.
+ *
+ * PEER: não há registo nem senha; as duas pontas conhecem-se pelo endereço.
+ * Isso significa que o `host` É a autenticação — quem ligar daquele IP entra.
+ * Daí exigir-se um IP literal e não um nome: um nome resolve-se, e quem
+ * controlar a resolução passa a poder entrar. Devolve a mensagem de erro ou
+ * null se estiver tudo bem.
+ */
+export function validateTrunkAuth(
+  body: z.infer<typeof trunkUpdateSchema>,
+  existing?: { type: string; authSecret: string | null },
+): string | null {
+  const type = body.type ?? existing?.type ?? "REGISTER";
+
+  if (type === "PEER") {
+    const host = body.host ?? "";
+    // Na criação o host vem sempre; num update parcial pode não vir, e nesse
+    // caso o que está guardado já foi validado quando entrou.
+    if (host && normalizeIp(host) === null) {
+      return (
+        "Num trunk de peering (PEER) o host tem de ser um endereço IP, não um nome. " +
+        "O endereço é a única autenticação que existe neste tipo de ligação."
+      );
+    }
+    return null;
+  }
+
+  const hasSecret = Boolean(body.authSecret) || Boolean(existing?.authSecret);
+  return hasSecret ? null : "Indique o segredo (palavra-passe) do trunk";
+}
 
 /** Constrói o objeto `data` do Prisma a partir do body validado (só campos enviados). */
 export function trunkDataFromBody(

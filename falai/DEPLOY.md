@@ -110,6 +110,12 @@ NODE_ENV=production
 LOG_LEVEL=info
 # domínios do frontend autorizados (CORS), separados por vírgula
 ALLOWED_ORIGINS=https://crm.teu-dominio.com,https://admin.teu-dominio.com
+# proxies em que confiamos para nos dizer o IP de origem (IP ou CIDR).
+# OBRIGATÓRIO atrás de nginx se usares allowlist de IP nas chaves de API:
+# sem isto, request.ip é o do nginx e as chaves restritas recusam tudo.
+# NUNCA pôr um valor demasiado largo — quem estiver fora da lista pode forjar
+# X-Forwarded-For e contornar a allowlist com uma chave roubada.
+TRUSTED_PROXIES=127.0.0.1
 
 # Telefonia Yeastar (podes deixar vazio e configurar depois no backoffice → Configurações)
 YEASTAR_BASE_URL=
@@ -363,7 +369,7 @@ Faz também backup seguro do `.env` (em especial `ENCRYPTION_KEY` e `JWT_SECRET`
 
 - [ ] Node 20 + pnpm 9 + Docker + nginx + certbot instalados
 - [ ] Postgres + Redis a correr (`docker compose ... up -d`), portas em `127.0.0.1`
-- [ ] `.env` com `JWT_SECRET`, `ENCRYPTION_KEY`, `DATABASE_URL`, `ALLOWED_ORIGINS`, `YEASTAR_STUB_MODE=false`
+- [ ] `.env` com `JWT_SECRET`, `ENCRYPTION_KEY`, `DATABASE_URL`, `ALLOWED_ORIGINS`, `TRUSTED_PROXIES`, `YEASTAR_STUB_MODE=false`
 - [ ] `pnpm install && db:generate && db:migrate:prod && build`
 - [ ] Serviços `falai-api` e `falai-worker` activos (systemd)
 - [ ] nginx a servir CRM + Backoffice com TLS

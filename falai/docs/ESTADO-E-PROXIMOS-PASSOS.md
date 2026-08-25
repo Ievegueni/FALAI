@@ -3,8 +3,8 @@
 > **Este é o ficheiro para ler no início de cada sessão.** Diz o que está feito,
 > o que falta e por onde continuar. Actualizar no fim de cada sessão.
 >
-> Última actualização: **29/07/2026**
-> Branch actual: `docs/deploy-guide` · Último commit: `7a668e3` (módulo PBX nativo)
+> Última actualização: **21/08/2026**
+> Branch actual: `docs/deploy-guide` · Último commit: `9876bf1`
 > **Atenção: há trabalho não commitado** (ver secção 6).
 
 ---
@@ -70,6 +70,29 @@ Documento de referência completo: `docs/AVALIACAO-MODELO-SIP-ANGOVOIP.txt`
 | Módulo Clínica (flag `clinicEnabled`, ficha em `Contact.attributes`) | ✅ |
 | Guia de deploy em VPS | ✅ `DEPLOY.md` |
 
+### 3.1b Terceiro produto: `API_BYOM` — construído em 21/08, por correr
+
+O cliente liga-se **só por API**, tem o CRM dele e traz o **modelo dele**. O
+Falaí fica com telefonia, STT, TTS, orquestração e o controlo. Documento de
+integração pronto a entregar: `docs/API-BYOM.md`.
+
+| Peça | Onde |
+|---|---|
+| Allowlist de IP por chave (`ApiKey.allowedCidrs`) | `services/ipAllowlist.ts`, `plugins/apiKeyAuth.ts` |
+| `TRUSTED_PROXIES` — sem isto a allowlist é forjável por `X-Forwarded-For` | `config.ts`, `index.ts`, `DEPLOY.md` |
+| Modelo do cliente (`TenantModel`, 3 protocolos, segredos encriptados) | `schema.prisma`, `services/modelResolver.service.ts` |
+| Adaptador HTTP + anti-SSRF em 2 camadas (URL + `lookup` pós-DNS) | `packages/providers/src/llm/{RemoteModelAdapter,urlGuard}.ts` |
+| Guardrails sobre a RESPOSTA (não sobre o prompt) | `services/guardrail.service.ts` |
+| Moderação + kill switch (corta chamadas em curso) | `routes/admin/models-moderation.ts`, backoffice `/models` |
+| API do cliente: modelos, agentes (escrita), simulador, uso, estado | `routes/v1/{models,agents,usage}.ts` |
+| Chaves de API geridas pelo operador (o cliente não tem CRM) | `routes/admin/tenant-api-keys.ts` + aba no detalhe do tenant |
+| Peering SIP por IP: trunk PEER sem auth, contexto de entrada por cliente | `asteriskRuntime.service.ts`, `callRouting.service.ts`, `inboundCallRouter.service.ts` |
+
+**87 testes** (`apps/api`: ipAllowlist, guardrail, trunkPeering ·
+`packages/providers`: urlGuard, safeLookup, RemoteModelAdapter). Typecheck limpo.
+
+**Nunca correu contra base de dados** — ver secção 4.0.
+
 ### 3.2 Motor de telefonia Asterisk — verificado na máquina em 28/07
 
 - ✅ `infra/asterisk/` — Docker, transportes, RTP, ARI, AMI. Contentor
@@ -105,6 +128,43 @@ Documento de referência completo: `docs/AVALIACAO-MODELO-SIP-ANGOVOIP.txt`
 ---
 
 ## 4. O QUE FALTA FAZER
+
+### 4.0 API_BYOM — validar contra base de dados (fazer primeiro, é rápido)
+
+Todo o produto foi escrito sem a base de dados de pé (a porta 5435 do `.env`
+está ocupada pelo `facilita_postgres` de outro projecto). **Duas migrações por
+aplicar:**
+
+```bash
+docker compose up -d          # subir o Postgres do Falaí
+pnpm --filter @falai/db exec prisma migrate deploy
+```
+
+Depois, percorrer `docs/API-BYOM.md` de fio a pavio com `curl` — se o documento
+não chegar sozinho para um cliente se integrar, não está pronto. Verificar em
+particular:
+
+- [ ] chave com `allowedCidrs` → 200 de dentro, 403 de fora + `SystemEvent`
+- [ ] registar modelo → testar → simular → submeter → aprovar → chamada real
+- [ ] endpoint que devolve lixo → guardrail corrige e conta
+- [ ] endpoint desligado → ouve-se a frase de recurso, não silêncio
+- [ ] bloquear o modelo com uma chamada a decorrer → corta no turno seguinte
+
+### 4.0b Buracos conhecidos do API_BYOM
+
+- [ ] **Peering SIP nunca foi testado com um PBX a sério.** O código está feito
+      (endpoint PEER sem auth, `type=identify match=<ip>`, contexto
+      `from-peer-<tenantId>`, `Stasis(falai,inbound,${EXTEN},<tenantId>)`), mas
+      só se prova com uma central do outro lado. Depende de 4.3.
+- [ ] **Sem UI no backoffice para criar um trunk de cliente.** A API já aceita
+      `tenantId` em `POST /admin/trunks`; a página de Trunks ainda não o
+      oferece. Até lá, provisiona-se por `curl`.
+- [ ] **Corte imediato só nesta instância** — `invalidateModel` é memória do
+      processo. Com mais do que uma API, as outras cortam quando a cache de 30s
+      expirar. Resolve-se com um PUBLISH no Redis (já existe no projecto).
+- [ ] **Sem UI para a lista global de frases proibidas** — o guardrail lê
+      `GUARDRAIL_BANNED_PHRASES` de `SystemSetting`, mas o backoffice não tem
+      campo para a editar. Enquanto assim for, essa regra está sempre vazia.
 
 ### 4.1 BLOQUEADO — respostas a pedir à ANGOVOIP
 
@@ -231,6 +291,7 @@ mudar código, sem esperar que se peça.
 | `ESTADO-E-PROXIMOS-PASSOS.md` | **este** — ponto de partida de cada sessão |
 | `AVALIACAO-MODELO-SIP-ANGOVOIP.txt` | direcção em vigor, detalhe técnico e decisões datadas |
 | `PLATAFORMA.md` | descrição de negócio dos dois produtos e arquitectura |
+| `API-BYOM.md` | **entrega-se ao cliente** — integração por API com modelo próprio |
 | `DADOS-CONEXAO-API-PROVIDER.txt` | dados de ligação do provedor |
 | `../DEPLOY.md` | pôr a plataforma numa VPS |
 | `../infra/asterisk/README.md` | operar o motor SIP |

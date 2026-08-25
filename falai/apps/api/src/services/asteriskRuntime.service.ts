@@ -44,6 +44,17 @@ const GENERATED_DIR = process.env["ASTERISK_GENERATED_DIR"] ?? "";
  */
 const RELOAD_GAP_MS = 2000;
 
+/**
+ * Nome do contexto de entrada de um trunk exclusivo de um cliente.
+ *
+ * Os identificadores do Falaí são cuid (letras, dígitos), mas o nome do
+ * contexto acaba dentro de um ficheiro de configuração do Asterisk — limpa-se
+ * o que não for seguro em vez de confiar no formato.
+ */
+export function peerContextName(tenantId: string): string {
+  return `from-peer-${tenantId.replace(/[^A-Za-z0-9_-]/g, "")}`;
+}
+
 /** Está o motor próprio configurado? Se não, o chamador fica com o Noop. */
 export function isAsteriskConfigured(): boolean {
   return Boolean(AMI_URL && AMI_USER && AMI_PASSWORD && GENERATED_DIR);
@@ -59,6 +70,9 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
       // O dialplan é estático mas precisa de saber por onde sai uma chamada.
       // Em vez de lá escrever o nome do trunk à mão, damos-lhe as variáveis.
       await writeFile(join(GENERATED_DIR, "globals-falai.conf"), this.buildGlobals(payload), { mode: 0o640 });
+      // Um contexto de entrada por cliente com trunk exclusivo. Tem de ser
+      // gerado porque os clientes mudam; o resto do dialplan é estático.
+      await writeFile(join(GENERATED_DIR, "extensions-falai.conf"), this.buildDialplan(payload), { mode: 0o640 });
     } catch (err) {
       this.log?.("pbx.runtime.write_failed", { err: String(err) });
       return { ok: false, engine: "asterisk", details: `não foi possível escrever a configuração: ${String(err)}` };
@@ -95,6 +109,54 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
     ].join("\n");
   }
 
+  /**
+   * Contextos de entrada dos trunks exclusivos de clientes (peering por IP).
+   *
+   * Cada um faz o mesmo que o `[from-trunk]` partilhado, com uma diferença que
+   * é o objectivo todo: passa o `tenantId` ao Stasis. A API passa a saber de
+   * quem é a chamada pelo caminho por onde entrou, em vez de o adivinhar pelo
+   * DID — que num peering com numeração interna colide entre clientes.
+   */
+  private buildDialplan(payload: PbxSyncPayload): string {
+    const tenantIds = [
+      ...new Set(payload.trunks.filter((t) => t.enabled && t.tenantId).map((t) => t.tenantId!)),
+    ];
+
+    const L: string[] = [
+      ";==============================================================================",
+      "; GERADO PELA API DO FALAÍ — NÃO EDITAR À MÃO.",
+      "; Contextos de entrada dos trunks exclusivos de cada cliente.",
+      `; Última actualização: ${new Date().toISOString()}`,
+      ";==============================================================================",
+      "",
+    ];
+
+    if (tenantIds.length === 0) {
+      L.push("; Nenhum cliente com trunk exclusivo. Só o [from-trunk] partilhado está em uso.", "");
+      return L.join("\n");
+    }
+
+    for (const tenantId of tenantIds) {
+      L.push(
+        `[${peerContextName(tenantId)}]`,
+        `exten => _.,1,NoOp(ENTRADA do cliente ${tenantId}: de \${CALLERID(num)} para \${EXTEN})`,
+        // O quarto argumento é o que distingue isto do contexto partilhado.
+        ` same => n,Stasis(falai,inbound,\${EXTEN},${tenantId})`,
+        ` same => n,NoOp(Stasis terminou: \${STASISSTATUS})`,
+        ` same => n,GotoIf($["\${STASISSTATUS}" = "SUCCESS"]?fim)`,
+        // Mesma rede de segurança do contexto partilhado: com a API em baixo a
+        // chamada não morre em silêncio.
+        " same => n,Answer()",
+        " same => n,Playback(demo-echotest)",
+        " same => n,Echo()",
+        " same => n(fim),Hangup()",
+        "",
+      );
+    }
+
+    return L.join("\n");
+  }
+
   /** Traduz a configuração do Falaí para a sintaxe do PJSIP. */
   private buildConfig(payload: PbxSyncPayload): string {
     const L: string[] = [
@@ -115,14 +177,32 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
       const codecs = t.codecs.length > 0 ? t.codecs.join(",") : "alaw,ulaw";
       const dtmf = (t.dtmfMode || "rfc4733").toLowerCase();
 
+      // Peering por IP: as duas pontas conhecem-se pelo endereço, não há
+      // utilizador nem senha. Emitir um bloco `type=auth` vazio faria o PJSIP
+      // exigir autenticação numa ligação que, por desenho, não a tem — o
+      // operador do outro lado veria 401 em cada INVITE.
+      const isPeer = t.type === "PEER";
+
+      // Contexto de entrada. Um trunk exclusivo de um cliente entra no contexto
+      // dele, e é assim que se sabe de quem é a chamada: pelo caminho por onde
+      // entrou, não pelo DID (que se pode repetir entre clientes, e num peering
+      // com numeração interna repete-se quase de certeza).
+      const context = t.tenantId ? peerContextName(t.tenantId) : "from-trunk";
+
+      L.push(`; ─── Trunk: ${t.name}${t.tenantId ? ` (exclusivo do cliente ${t.tenantId})` : " (partilhado)"} ───`);
+
+      if (!isPeer) {
+        L.push(
+          `[${auth}]`,
+          "type=auth",
+          "auth_type=userpass",
+          `username=${t.authName || t.authUser}`,
+          `password=${t.authSecret}`,
+          "",
+        );
+      }
+
       L.push(
-        `; ─── Trunk: ${t.name} ───`,
-        `[${auth}]`,
-        "type=auth",
-        "auth_type=userpass",
-        `username=${t.authName || t.authUser}`,
-        `password=${t.authSecret}`,
-        "",
         `[${id}]`,
         "type=aor",
         `contact=sip:${t.host}:${t.port}`,
@@ -132,8 +212,8 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         "type=endpoint",
         "transport=transport-udp",
         `aors=${id}`,
-        `outbound_auth=${auth}`,
-        "context=from-trunk",
+        ...(isPeer ? [] : [`outbound_auth=${auth}`]),
+        `context=${context}`,
         "disallow=all",
         `allow=${codecs}`,
         `dtmf_mode=${dtmf}`,
@@ -157,6 +237,9 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         `from_domain=${t.domain || t.host}`,
         "",
         // Reconhece as chamadas vindas do IP do operador como sendo deste trunk.
+        // Num trunk PEER esta é a ÚNICA forma de autenticação que existe: quem
+        // liga daquele endereço é ele, quem liga de outro não entra. Daí a
+        // importância de `host` estar certo — ver validação em trunk.service.
         `[${id}]`,
         "type=identify",
         `endpoint=${id}`,

@@ -65,3 +65,30 @@ export async function resolveInboundGlobal(
   const match = routes.find((r) => did.startsWith(r.didPattern));
   return match ? { tenantId: match.tenantId, destType: match.destType, destValue: match.destValue } : null;
 }
+
+/**
+ * Rota de entrada de um tenant conhecido à partida — o caso do peering por IP,
+ * em que o cliente se identifica pelo trunk por onde a chamada entrou.
+ *
+ * Ao contrário de `resolveInboundGlobal`, nunca sai deste tenant: numa
+ * numeração interna o mesmo DID existe em vários clientes, e procurar em toda
+ * a plataforma faria a chamada de um tocar na extensão de outro.
+ *
+ * Devolve a rota, ou — se o cliente não tiver rota nenhuma para este número mas
+ * tiver uma extensão com esse número — a própria extensão. Num peering é isso
+ * que o cliente espera: ele marca a extensão dele e ela toca, sem ter de
+ * declarar uma rota de entrada por cada número interno.
+ */
+export async function resolveInboundForTenant(
+  tenantId: string,
+  did: string,
+): Promise<{ tenantId: string; destType: string; destValue: string } | null> {
+  const route = await resolveInbound(tenantId, did);
+  if (route) return { tenantId, ...route };
+
+  const ext = await prisma.extension.findFirst({
+    where: { tenantId, number: did, isActive: true },
+    select: { number: true },
+  });
+  return ext ? { tenantId, destType: "EXTENSION", destValue: ext.number } : null;
+}

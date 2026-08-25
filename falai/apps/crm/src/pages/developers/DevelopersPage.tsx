@@ -28,16 +28,25 @@ const ALL_SCOPES = [
   { key: 'agents:read', labelKey: 'developers.scopes.agentsRead' },
 ];
 
+/** "1.2.3.4, 10.0.0.0/8" → ["1.2.3.4", "10.0.0.0/8"]. Aceita vírgulas ou linhas. */
+function parseOrigins(text: string): string[] {
+  return text
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { success, error } = useToast();
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<string[]>(['calls:write', 'calls:read']);
+  const [origins, setOrigins] = useState('');
   const [rawKey, setRawKey] = useState('');
 
   const create = useMutation({
-    mutationFn: () => apiKeysApi.create({ name, scopes }),
+    mutationFn: () => apiKeysApi.create({ name, scopes, allowedCidrs: parseOrigins(origins) }),
     onSuccess: (key) => {
       void qc.invalidateQueries({ queryKey: ['api-keys'] });
       if (key.rawKey) setRawKey(key.rawKey);
@@ -52,6 +61,7 @@ function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void 
   function handleClose() {
     setName('');
     setScopes(['calls:write', 'calls:read']);
+    setOrigins('');
     setRawKey('');
     onClose();
   }
@@ -97,6 +107,20 @@ function CreateKeyModal({ open, onClose }: { open: boolean; onClose: () => void 
                 </label>
               ))}
             </div>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700" htmlFor="key-origins">
+              {t('developers.originsLabel')}
+            </label>
+            <textarea
+              id="key-origins"
+              rows={2}
+              value={origins}
+              onChange={(e) => setOrigins(e.target.value)}
+              placeholder="102.130.202.155, 10.0.0.0/8"
+              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:border-gray-900 focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-gray-500">{t('developers.originsHint')}</p>
           </div>
         </div>
       ) : (
@@ -171,6 +195,11 @@ function ApiKeysList() {
                       <Badge key={s} className="bg-blue-50 text-blue-700 text-xs">{s}</Badge>
                     ))}
                   </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {k.allowedCidrs?.length
+                      ? t('developers.originsRestricted', { list: k.allowedCidrs.join(', ') })
+                      : t('developers.originsAny')}
+                  </p>
                 </div>
                 <div className="text-right text-xs text-gray-400">
                   <p>{k.lastUsedAt ? t('developers.usedAt', { date: formatDate(k.lastUsedAt) }) : t('developers.neverUsed')}</p>

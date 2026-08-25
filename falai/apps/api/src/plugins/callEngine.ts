@@ -64,13 +64,27 @@ export default fp(async (fastify) => {
         .catch((err) => fastify.log.error({ err, callId }, "settlement.failed"));
 
       // Enqueue webhook delivery if tenant has a URL configured
-      prisma.tenant
-        .findUnique({ where: { id: tenantId }, select: { webhookUrl: true } })
-        .then((tenant) => {
+      Promise.all([
+        prisma.tenant.findUnique({ where: { id: tenantId }, select: { webhookUrl: true } }),
+        prisma.call.findUnique({ where: { id: callId }, select: { campaignId: true, contactId: true } }),
+      ])
+        .then(([tenant, call]) => {
           if (!tenant?.webhookUrl) return;
           return webhooksQueue.add(
             JOBS.DELIVER_WEBHOOK,
-            { callId, tenantId, event: "call.ended", payload: { callId, tenantId, status, durationSecs } },
+            {
+              callId,
+              tenantId,
+              event: "call.ended",
+              payload: {
+                callId,
+                tenantId,
+                status,
+                durationSecs,
+                campaignId: call?.campaignId ?? null,
+                contactId: call?.contactId ?? null,
+              },
+            },
             { attempts: 3, backoff: { type: "exponential", delay: 5000 } }
           );
         })

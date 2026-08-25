@@ -563,13 +563,21 @@ export const apiKeysApi = {
     return raw.data.map((k) => ({ ...k, name: k.label }));
   },
 
-  create: async (data: { name: string; scopes: string[] }) => {
+  create: async (data: { name: string; scopes: string[]; allowedCidrs?: string[] }) => {
     // Backend expects `label` and returns the raw key under `key`.
     const raw = await post<Omit<ApiKey, 'name' | 'rawKey'> & { label: string; key: string }>(
       '/tenant/api-keys',
-      { label: data.name, scopes: data.scopes },
+      { label: data.name, scopes: data.scopes, allowedCidrs: data.allowedCidrs ?? [] },
     );
     return { ...raw, name: raw.label, rawKey: raw.key } as ApiKey;
+  },
+
+  update: async (id: string, data: { scopes?: string[]; allowedCidrs?: string[] }) => {
+    const raw = await patch<Omit<ApiKey, 'name' | 'rawKey'> & { label: string }>(
+      `/tenant/api-keys/${id}`,
+      data,
+    );
+    return { ...raw, name: raw.label } as ApiKey;
   },
 
   delete: (id: string) => del<void>(`/tenant/api-keys/${id}`),

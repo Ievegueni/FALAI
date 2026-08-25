@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
-  productType: z.enum(["VOICE_AI", "CRM_BYO_PBX"]).default("VOICE_AI"),
+  productType: z.enum(["VOICE_AI", "CRM_BYO_PBX", "API_BYOM"]).default("VOICE_AI"),
   aiAgentsEnabled: z.boolean().default(true),
   clinicEnabled: z.boolean().default(false),
   smsEnabled: z.boolean().default(false),

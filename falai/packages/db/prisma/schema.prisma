@@ -12,6 +12,7 @@ datasource db {
 enum ProductType {
   VOICE_AI // Operador: PBX + IA da plataforma, faturado por minuto
   CRM_BYO_PBX // Só CRM: o cliente liga o PBX Yeastar dele (bring-your-own-PBX)
+  API_BYOM // Só API: o cliente tem o CRM e o modelo dele; nós damos voz, orquestração e controlo
 }
 
 // Motor que transporta as chamadas deste tenant. Os dois coexistem durante a
@@ -189,6 +190,7 @@ model Tenant {
   apiKeys              ApiKey[]
   users                TenantUser[]
   agents               Agent[]
+  models               TenantModel[]
   calls                Call[]
   campaigns            Campaign[]
   transactions         WalletTransaction[]
@@ -424,17 +426,20 @@ model PbxCall {
 }
 
 model ApiKey {
-  id         String    @id @default(cuid())
-  tenantId   String
-  tenant     Tenant    @relation(fields: [tenantId], references: [id])
-  label      String
-  keyHash    String    @unique
-  prefix     String
-  scopes     String[]
-  lastUsedAt DateTime?
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  label        String
+  keyHash      String    @unique
+  prefix       String
+  scopes       String[]
+  // Origens permitidas (IP ou CIDR, ex.: "102.130.202.155", "10.0.0.0/8").
+  // Lista vazia = sem restrição de origem. Ver services/ipAllowlist.ts.
+  allowedCidrs String[]  @default([])
+  lastUsedAt   DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 }
 
 model TenantUser {
@@ -497,6 +502,51 @@ model SystemSetting {
 
 // ============ AGENTES DE IA ============
 
+// Como falamos com o modelo do cliente. FALAI_TURN é o nosso contrato nativo
+// (o mais simples de implementar do lado dele); os outros dois existem para
+// apontar directamente a um modelo servido por vLLM/Ollama/compatível, sem ele
+// escrever adaptador nenhum. Ver packages/providers/src/llm/RemoteModelAdapter.ts
+enum ModelProtocol {
+  FALAI_TURN
+  OPENAI_CHAT
+  ANTHROPIC_MESSAGES
+}
+
+// Modelo de inferência do próprio cliente (produto API_BYOM). Ele treina onde
+// quiser; connosco regista só o endereço e as credenciais. Passa pela mesma
+// moderação dos agentes: nada entra numa chamada real sem status = ACTIVE.
+model TenantModel {
+  id            String        @id @default(cuid())
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  name          String
+  endpointUrl   String // validado contra SSRF em packages/providers/src/llm/urlGuard.ts
+  protocol      ModelProtocol @default(FALAI_TURN)
+  modelName     String? // exigido por OPENAI_CHAT / ANTHROPIC_MESSAGES
+  authType      String        @default("BEARER") // BEARER | HEADER | NONE
+  authSecret    String? // encriptado (AES-256-GCM) via crypto.service
+  authHeader    String? // nome do cabeçalho quando authType = HEADER
+  timeoutMs     Int           @default(4000)
+  maxReplyChars Int           @default(800)
+  // Segredo com que assinamos os pedidos que lhe fazemos (HMAC), para ele
+  // confirmar que o pedido vem mesmo de nós. Encriptado.
+  signingSecret String?
+  status        AgentStatus   @default(DRAFT)
+  approvedBy    String?
+  lastHealthAt  DateTime?
+  lastLatencyMs Int?
+  lastError     String?
+  // Respostas recusadas pelos guardrails. Ao fim de GUARDRAIL_AUTO_BLOCK o
+  // modelo é bloqueado sozinho — ver services/guardrail.service.ts
+  violations    Int           @default(0)
+  deletedAt     DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  agents        Agent[]
+
+  @@index([tenantId])
+}
+
 model Agent {
   id               String         @id @default(cuid())
   tenantId         String
@@ -516,6 +566,9 @@ model Agent {
   isApproved       Boolean        @default(false)
   approvedBy       String?
   status           AgentStatus    @default(DRAFT)
+  // Modelo do cliente a usar neste agente. Null = motor da plataforma (Claude).
+  modelId          String?
+  model            TenantModel?   @relation(fields: [modelId], references: [id])
   deletedAt        DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
@@ -570,18 +623,24 @@ model Call {
 }
 
 model CallTurn {
-  id        String   @id @default(cuid())
-  callId    String
-  call      Call     @relation(fields: [callId], references: [id])
-  seq       Int
-  role      TurnRole
-  text      String   @db.Text
-  audioRef  String?
-  sttMs     Int?
-  llmMs     Int?
-  ttsMs     Int?
-  playMs    Int?
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  callId         String
+  call           Call     @relation(fields: [callId], references: [id])
+  seq            Int
+  role           TurnRole
+  text           String   @db.Text
+  audioRef       String?
+  sttMs          Int?
+  llmMs          Int?
+  ttsMs          Int?
+  playMs         Int?
+  // Que modelo respondeu neste turno. Null = motor da plataforma. Guardado
+  // turno a turno para se poder responsabilizar uma resposta concreta.
+  modelId        String?
+  // Guardrails que este turno violou, se algum (ex.: ["reply_too_long"]).
+  // Null = passou limpo. Ver services/guardrail.service.ts
+  guardrailFlags Json?
+  createdAt      DateTime @default(now())
 
   @@unique([callId, seq])
 }

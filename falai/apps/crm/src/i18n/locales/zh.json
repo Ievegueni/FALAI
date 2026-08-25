@@ -654,6 +654,10 @@
     "webhooksHint": "点击事件以查看载荷。在 <0>设置 → 集成</0> 中配置 URL。",
     "payloadNote": "通过 HTTP POST 投递到您的 Webhook URL 的载荷：",
     "errorCodes": "错误代码",
+    "originsLabel": "允许的来源（可选）",
+    "originsHint": "IP 或 CIDR 网段，用逗号分隔。留空则接受任何来源。",
+    "originsRestricted": "仅限：{{list}}",
+    "originsAny": "任何来源",
     "scopes": {
       "callsWrite": "创建通话",
       "callsRead": "读取通话",

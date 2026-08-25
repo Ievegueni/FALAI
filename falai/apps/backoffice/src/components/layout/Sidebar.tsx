@@ -10,6 +10,7 @@ import {
   ScrollText,
   Phone,
   Radio,
+  Cpu,
 } from 'lucide-react';
 import { clsx } from '@/lib/utils';
 
@@ -17,6 +18,7 @@ const NAV = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/tenants', icon: Building2, label: 'Tenants' },
   { to: '/moderation', icon: ShieldCheck, label: 'Moderação' },
+  { to: '/models', icon: Cpu, label: 'Modelos' },
   { to: '/calls', icon: Phone, label: 'Chamadas' },
   { to: '/trunks', icon: Radio, label: 'Trunks' },
   { to: '/finance', icon: BarChart3, label: 'Financeiro' },

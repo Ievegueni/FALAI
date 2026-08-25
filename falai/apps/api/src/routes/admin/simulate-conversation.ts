@@ -60,6 +60,7 @@ export const adminSimulateRoutes: FastifyPluginAsync = async (fastify) => {
       {
         callId: call.id,
         agentId: agent.id,
+        tenantId: agent.tenantId,
         toNumber: body.toNumber,
         providerCallId: `sim_${call.id}`,
         systemPrompt: agent.systemPrompt,
@@ -99,6 +100,7 @@ export const adminSimulateRoutes: FastifyPluginAsync = async (fastify) => {
         {
           callId: call.id,
           agentId: agent.id,
+          tenantId: agent.tenantId,
           toNumber: body.toNumber,
           providerCallId: `sim_${call.id}`,
           systemPrompt: agent.systemPrompt,

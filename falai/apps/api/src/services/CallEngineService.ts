@@ -2,11 +2,12 @@ import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "@falai/db";
 import type { CallStatus, BillingMode } from "@falai/db";
 import type { CallEvent } from "@falai/shared";
-import type { TelephonyProvider, TurnMessage } from "@falai/providers";
+import type { TelephonyProvider, TurnMessage, LlmProvider } from "@falai/providers";
 import { VadDetector } from "./VadDetector.js";
 import type { TurnProcessor } from "./TurnProcessor.js";
 import type { AudioCache } from "./AudioCache.js";
 import { settleCall } from "./billing.service.js";
+import { resolveModelForAgent, isModelBlocked } from "./modelResolver.service.js";
 
 type AudioCacheKey = Parameters<AudioCache["getPromptName"]>[0];
 
@@ -23,6 +24,13 @@ interface CallSession {
   maxCallSeconds: number;
   maxTurnSeconds: number;
   escalationNumber: string | null;
+  // Motor de IA desta chamada. Resolvido uma vez no arranque da sessão: sem
+  // isto seria uma ida à base de dados por turno. Null = motor da plataforma.
+  llm: LlmProvider | null;
+  modelId: string | null;
+  maxReplyChars: number | null;
+  /** Números para onde esta chamada pode ser transferida (guardrail de escalate). */
+  allowedEscalationNumbers: string[];
   // Billing
   reservedCents: number;
   billingMode: BillingMode;
@@ -74,6 +82,40 @@ export class CallEngineService {
     pricePerMinuteCents?: number;
     pricePerCallCents?: number;
   }): Promise<void> {
+    // Registar uma chamada era uma operação puramente em memória e não pode
+    // deixar de o ser na prática: se a base de dados estiver lenta ou em baixo,
+    // a chamada tem de continuar a ser registada. Em caso de falha usa-se o
+    // motor da plataforma e só o número de escalate do agente — mais restrito,
+    // nunca mais permissivo.
+    let model = { llm: null, modelId: null } as Awaited<ReturnType<typeof resolveModelForAgent>>;
+    let allowedEscalationNumbers: string[] = [];
+
+    try {
+      // Que motor responde nesta chamada — o nosso ou o do cliente. Resolvido
+      // aqui, uma vez, e não a cada turno. Um modelo que não esteja ACTIVE cai
+      // para o motor da plataforma; ver modelResolver.service.ts.
+      model = await resolveModelForAgent(params.agentId);
+
+      // Para onde é lícito transferir esta chamada. Sem isto, um modelo do
+      // cliente podia devolver `escalate` para um número qualquer e desviar a
+      // chamada do cliente final. Ver guardrail.service.ts.
+      const lines = await prisma.tenantLine.findMany({
+        where: { tenantId: params.tenantId, isActive: true },
+        select: { phoneNumber: true, extension: true },
+      });
+      allowedEscalationNumbers = [
+        params.escalationNumber,
+        ...lines.map((l) => l.phoneNumber),
+        ...lines.map((l) => l.extension),
+      ].filter((n): n is string => typeof n === "string" && n.trim() !== "");
+    } catch (err) {
+      this.cfg.log.error(
+        { err, callId: params.callId, agentId: params.agentId },
+        "call_engine.model_resolve_failed"
+      );
+      allowedEscalationNumbers = params.escalationNumber ? [params.escalationNumber] : [];
+    }
+
     const session: CallSession = {
       callId: params.callId,
       agentId: params.agentId,
@@ -86,6 +128,10 @@ export class CallEngineService {
       maxCallSeconds: params.maxCallSeconds ?? 300,
       maxTurnSeconds: params.maxTurnSeconds ?? 30,
       escalationNumber: params.escalationNumber ?? null,
+      llm: model.llm,
+      modelId: model.modelId,
+      maxReplyChars: model.maxReplyChars ?? null,
+      allowedEscalationNumbers,
       reservedCents: params.reservedCents ?? 0,
       billingMode: params.billingMode ?? "PER_MINUTE",
       pricePerMinuteCents: params.pricePerMinuteCents ?? 0,
@@ -102,7 +148,14 @@ export class CallEngineService {
 
     this.sessions.set(params.providerCallId, session);
     this.callIndex.set(params.callId, params.providerCallId);
-    this.cfg.log.info({ callId: params.callId, providerCallId: params.providerCallId }, "call_engine.registered");
+    this.cfg.log.info(
+      {
+        callId: params.callId,
+        providerCallId: params.providerCallId,
+        modelId: model.modelId ?? "platform",
+      },
+      "call_engine.registered"
+    );
   }
 
   async handleEvent(event: CallEvent): Promise<void> {
@@ -192,10 +245,25 @@ export class CallEngineService {
     }
     session.turnSeq++;
 
+    // Kill switch a meio da chamada. O modelo foi resolvido no arranque e vive
+    // na sessão; sem esta verificação, bloqueá-lo no backoffice não calava
+    // as chamadas que já estavam a decorrer. A chamada não cai — passa a
+    // responder pelo motor da plataforma a partir do turno seguinte.
+    if (session.modelId && isModelBlocked(session.modelId)) {
+      this.cfg.log.warn(
+        { callId: session.callId, modelId: session.modelId },
+        "call_engine.model_blocked_midcall"
+      );
+      session.llm = null;
+      session.modelId = null;
+      session.maxReplyChars = null;
+    }
+
     try {
       const result = await this.cfg.turnProcessor.processTurn(audioBuffer, {
         callId: session.callId,
         agentId: session.agentId,
+        tenantId: session.tenantId,
         toNumber: session.toNumber,
         providerCallId: session.providerCallId,
         systemPrompt: session.systemPrompt,
@@ -203,6 +271,10 @@ export class CallEngineService {
         variables: session.variables,
         history: session.history,
         seq: session.turnSeq,
+        modelId: session.modelId,
+        allowedEscalationNumbers: session.allowedEscalationNumbers,
+        ...(session.llm !== null && { llm: session.llm }),
+        ...(session.maxReplyChars !== null && { maxReplyChars: session.maxReplyChars }),
       });
 
       this.cfg.log.info({
@@ -363,13 +435,27 @@ export class CallEngineService {
     });
   }
 
-  /** Text-only LLM simulation — no audio, no telephony. Used by simulators. */
+  /**
+   * Text-only LLM simulation — no audio, no telephony. Used by simulators.
+   *
+   * `llm` permite simular contra o modelo do próprio cliente antes de este
+   * estar aprovado. Os guardrails correm na mesma e os que dispararem vêm em
+   * `guardrailFlags`, para quem está a afinar ver ao que fica sujeito.
+   */
   async simulateTurn(params: {
     userText: string;
     systemPrompt: string;
     history: TurnMessage[];
     variables: Record<string, unknown>;
-  }): Promise<{ reply: string; action: import("@falai/shared").LlmTurnResponse["action"]; llmMs: number }> {
+    llm?: LlmProvider;
+    tenantId?: string;
+    maxReplyChars?: number;
+  }): Promise<{
+    reply: string;
+    action: import("@falai/shared").LlmTurnResponse["action"];
+    llmMs: number;
+    guardrailFlags: string[];
+  }> {
     return this.cfg.turnProcessor.simulateTurn(params);
   }
 

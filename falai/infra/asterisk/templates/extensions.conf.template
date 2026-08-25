@@ -16,6 +16,12 @@ writeprotect=yes
 ; contexto "sair" resolvia para vazio: as chamadas saíam sem Caller ID.
 #include "generated/globals-falai.conf"
 
+; Contextos de entrada dos clientes com trunk exclusivo (peering por IP),
+; um por cliente: [from-peer-<tenantId>]. Gerados pela API a partir dos trunks.
+; Sem isto, uma chamada que entre por um trunk de cliente cai em "context not
+; found" e o Asterisk desliga-a sem dizer nada.
+#include "generated/extensions-falai.conf"
+
 ;------------------------------------------------------------------------------
 ; SAÍDA — do softphone interno para a rede, através do trunk ANGOVOIP
 ;

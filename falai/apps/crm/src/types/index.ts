@@ -323,6 +323,8 @@ export interface ApiKey {
   name: string;
   prefix: string;
   scopes: string[];
+  /** Origens permitidas (IP ou CIDR). Vazio = a chave aceita qualquer origem. */
+  allowedCidrs: string[];
   lastUsedAt: string | null;
   createdAt: string;
   rawKey?: string;

@@ -27,7 +27,9 @@ import { adminCallsRoutes } from "./routes/admin/calls.js";
 import { adminSimulateRoutes } from "./routes/admin/simulate-conversation.js";
 import { adminPlansRoutes } from "./routes/admin/plans.js";
 import { adminTenantsRoutes } from "./routes/admin/tenants.js";
+import { adminTenantApiKeysRoutes } from "./routes/admin/tenant-api-keys.js";
 import { adminAgentsModerationRoutes } from "./routes/admin/agents-moderation.js";
+import { adminModelsModerationRoutes } from "./routes/admin/models-moderation.js";
 import { tenantAuthRoutes } from "./routes/tenant/auth.js";
 import { tenantAgentsRoutes } from "./routes/tenant/agents.js";
 import { tenantDashboardRoutes } from "./routes/tenant/dashboard.js";
@@ -62,6 +64,8 @@ import { v1CampaignsRoutes } from "./routes/v1/campaigns.js";
 import { v1WalletRoutes } from "./routes/v1/wallet.js";
 import { v1OtpRoutes } from "./routes/v1/otp.js";
 import { v1SmsRoutes } from "./routes/v1/sms.js";
+import { v1ModelsRoutes } from "./routes/v1/models.js";
+import { v1UsageRoutes } from "./routes/v1/usage.js";
 import { yeastarWebhookRoutes } from "./routes/webhooks/yeastar.js";
 import { pbxWebhookRoutes } from "./routes/webhooks/pbx.js";
 import { asteriskWebhookRoutes } from "./routes/webhooks/asterisk.js";
@@ -96,13 +100,31 @@ declare module "fastify" {
   }
 }
 
+/**
+ * Lê TRUSTED_PROXIES para o formato que o Fastify entende.
+ * `false` (não confiar em ninguém) é o valor por omissão de propósito: numa
+ * configuração mal feita, o pior que acontece é a allowlist ver o IP do proxy
+ * e recusar pedidos legítimos — falha ruidosa e óbvia, em vez de uma porta
+ * aberta em silêncio.
+ */
+function parseTrustedProxies(raw: string | undefined): string[] | false {
+  const list = (raw ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return list.length > 0 ? list : false;
+}
+
 async function buildApp() {
   const fastify = Fastify({
     logger:
       config.NODE_ENV === "development"
         ? { level: config.LOG_LEVEL, transport: { target: "pino-pretty", options: { colorize: true } } }
         : { level: config.LOG_LEVEL },
-    trustProxy: true,
+    // Confiar SÓ nos proxies declarados. Com `trustProxy: true` o Fastify
+    // aceitava o `X-Forwarded-For` de quem quer que fosse, e como o
+    // `request.ip` alimenta a allowlist de IP das chaves de API, bastava um
+    // cabeçalho forjado para contornar essa allowlist com uma chave roubada.
+    // Sem TRUSTED_PROXIES definido usa-se o IP do socket, que é sempre seguro
+    // (em dev não há proxy; em produção define-se o IP do nginx).
+    trustProxy: parseTrustedProxies(config.TRUSTED_PROXIES),
   });
 
   // ── Core plugins ───────────────────────────────────────────────────────
@@ -232,8 +254,10 @@ async function buildApp() {
   await fastify.register(adminSimulateRoutes, { prefix: "/admin/simulate-conversation" });
   await fastify.register(adminPlansRoutes, { prefix: "/admin/plans" });
   await fastify.register(adminTenantsRoutes, { prefix: "/admin/tenants" });
+  await fastify.register(adminTenantApiKeysRoutes, { prefix: "/admin/tenants" });
   await fastify.register(adminTrunksRoutes, { prefix: "/admin/trunks" });
   await fastify.register(adminAgentsModerationRoutes, { prefix: "/admin/agents" });
+  await fastify.register(adminModelsModerationRoutes, { prefix: "/admin/models" });
   await fastify.register(adminAuditRoutes);
   await fastify.register(adminDashboardRoutes, { prefix: "/admin" });
   await fastify.register(adminFinanceRoutes, { prefix: "/admin" });
@@ -281,6 +305,8 @@ async function buildApp() {
     await v1.register(v1WalletRoutes);
     await v1.register(v1OtpRoutes);
     await v1.register(v1SmsRoutes);
+    await v1.register(v1ModelsRoutes);
+    await v1.register(v1UsageRoutes);
   });
 
   // ── Webhooks ────────────────────────────────────────────────────────────

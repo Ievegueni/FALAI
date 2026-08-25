@@ -24,15 +24,16 @@ const tenantClientSelect = {
 } as const;
 
 // Substitui o campo `features` cru (overrides) pelas features efectivas calculadas
-function shapeTenant<T extends { features: unknown; plan: { aiAgentsEnabled: boolean } | null }>(
-  tenant: T | null,
-) {
+function shapeTenant<
+  T extends { features: unknown; plan: { aiAgentsEnabled: boolean; productType?: string } | null },
+>(tenant: T | null) {
   if (!tenant) return null;
   return {
     ...tenant,
     features: computeFeatures({
       overrides: tenant.features,
       aiAgentsEnabled: tenant.plan?.aiAgentsEnabled ?? true,
+      ...(tenant.plan?.productType !== undefined && { productType: tenant.plan.productType }),
     }),
   };
 }
