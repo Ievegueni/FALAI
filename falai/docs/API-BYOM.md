@@ -12,7 +12,7 @@ controlo da plataforma.
 | Chamadas (SIP/RTP), STT, TTS, gestão de turnos | O modelo e o treino dele |
 | Guardrails, moderação, auditoria, facturação da voz | A tua interface e os teus utilizadores |
 
-Não há interface nossa para usares. Tudo o que se segue é `https://api.falai.ao`.
+Não há interface nossa para usares. Tudo o que se segue é `https://falai.comunica.ao`.
 
 ---
 
@@ -168,7 +168,7 @@ seguidas suspendem os pedidos ao teu endpoint durante 30 segundos.
 ### Passo 1 — registar o modelo
 
 ```bash
-curl -X POST https://api.falai.ao/v1/models \
+curl -X POST https://falai.comunica.ao/v1/models \
   -H "X-API-Key: fal_live_..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -189,7 +189,7 @@ faz é atender chamadas.
 ### Passo 2 — testar
 
 ```bash
-curl -X POST https://api.falai.ao/v1/models/mdl_abc/test \
+curl -X POST https://falai.comunica.ao/v1/models/mdl_abc/test \
   -H "X-API-Key: fal_live_..."
 ```
 
@@ -202,7 +202,7 @@ Repete à vontade: o teste não conta para as falhas que suspendem o endpoint.
 ### Passo 3 — criar o agente e apontá-lo ao modelo
 
 ```bash
-curl -X POST https://api.falai.ao/v1/agents \
+curl -X POST https://falai.comunica.ao/v1/agents \
   -H "X-API-Key: fal_live_..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -223,7 +223,7 @@ Conversa em texto, sem telefonia e sem custo de voz. Funciona com o agente em
 `DRAFT`, que é precisamente o objectivo.
 
 ```bash
-curl -X POST https://api.falai.ao/v1/agents/agt_xyz/simulate \
+curl -X POST https://falai.comunica.ao/v1/agents/agt_xyz/simulate \
   -H "X-API-Key: fal_live_..." \
   -H "Content-Type: application/json" \
   -d '{ "userText": "Bom dia, queria saber o estado da encomenda 4471." }'
@@ -249,8 +249,8 @@ Repara em dois campos:
 ### Passo 5 — submeter a aprovação
 
 ```bash
-curl -X POST https://api.falai.ao/v1/models/mdl_abc/submit -H "X-API-Key: fal_live_..."
-curl -X POST https://api.falai.ao/v1/agents/agt_xyz/submit -H "X-API-Key: fal_live_..."
+curl -X POST https://falai.comunica.ao/v1/models/mdl_abc/submit -H "X-API-Key: fal_live_..."
+curl -X POST https://falai.comunica.ao/v1/agents/agt_xyz/submit -H "X-API-Key: fal_live_..."
 ```
 
 Passam a `PENDING_REVIEW`. Nós revemos e aprovamos. **Só a partir daí é que
@@ -262,7 +262,7 @@ volta a `DRAFT` — o que aprovámos foi aquela configuração. Submete outra ve
 ### Passo 6 — telefonar
 
 ```bash
-curl -X POST https://api.falai.ao/v1/calls \
+curl -X POST https://falai.comunica.ao/v1/calls \
   -H "X-API-Key: fal_live_..." \
   -H "Content-Type: application/json" \
   -d '{ "agentId": "agt_xyz", "toNumber": "+244923000000" }'
