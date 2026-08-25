@@ -70,7 +70,7 @@ function TrunkModal({ trunk, onClose }: { trunk?: Trunk; onClose: () => void }) 
   });
 
   return (
-    <Modal open onClose={onClose} title={trunk ? `Editar trunk — ${trunk.name}` : 'Novo trunk partilhado'} size="lg"
+    <Modal open onClose={onClose} title={trunk ? `Editar trunk — ${trunk.name}` : 'Novo trunk'} size="lg"
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button loading={mut.isPending} onClick={() => mut.mutate()}>Guardar</Button></>}>
       <div className="grid grid-cols-2 gap-4">
         <Input label="Nome" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="TESTE.ANGOLA.AGV" />
@@ -403,7 +403,7 @@ export function TrunksPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-gray-900">Trunks SIP</h1>
-          <p className="text-sm text-gray-500">Trunks partilhados do operador. Os do cliente (BYO) aparecem aqui como referência.</p>
+          <p className="text-sm text-gray-500">Trunks do operador e os exclusivos de cada cliente (peering IP-to-IP e BYO-PBX).</p>
         </div>
         <Button icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>Novo trunk</Button>
       </div>
@@ -443,16 +443,22 @@ export function TrunksPage() {
                   <td className="px-5 py-2.5">
                     <Badge className={t.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}>{t.enabled ? 'Activo' : 'Inactivo'}</Badge>
                   </td>
+                  {/* Antes, um trunk com dono mostrava "gerido pelo cliente" e mais
+                      nada. Isso valia quando esses trunks só nasciam no CRM do
+                      próprio cliente (BYO-PBX). Um cliente API_BYOM não tem CRM
+                      nenhum: o trunk de peering dele é provisionado aqui, e sem
+                      estes botões ficava sem ninguém que o pudesse editar. */}
                   <td className="px-5 py-2.5 text-right whitespace-nowrap">
-                    {t.shared ? (
-                      <div className="flex items-center justify-end gap-1">
-                        <Button size="sm" variant="ghost" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing(t)} />
-                        <Button size="sm" variant="ghost" icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
-                          onClick={() => { if (confirm(`Eliminar o trunk ${t.name}?`)) remove.mutate(t.id); }} />
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-400">gerido pelo cliente</span>
-                    )}
+                    <div className="flex items-center justify-end gap-1">
+                      <Button size="sm" variant="ghost" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing(t)} />
+                      <Button size="sm" variant="ghost" icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
+                        onClick={() => {
+                          const aviso = t.shared
+                            ? `Eliminar o trunk ${t.name}?`
+                            : `O trunk ${t.name} é de um cliente. Eliminar mesmo assim?`;
+                          if (confirm(aviso)) remove.mutate(t.id);
+                        }} />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -460,7 +466,7 @@ export function TrunksPage() {
           </table>
         </Card>
       ) : (
-        <EmptyState icon={<Radio className="h-6 w-6" />} title="Sem trunks" description="Cria o primeiro trunk partilhado." action={{ label: 'Novo trunk', onClick: () => setCreating(true) }} />
+        <EmptyState icon={<Radio className="h-6 w-6" />} title="Sem trunks" description="Cria o primeiro trunk." action={{ label: 'Novo trunk', onClick: () => setCreating(true) }} />
       )}
 
       {creating && <TrunkModal onClose={() => setCreating(false)} />}
