@@ -7,7 +7,10 @@
 ;===============================================================================
 [general]
 enabled=yes
-bindaddr=0.0.0.0
+; 25/08/2026: era 0.0.0.0 e o ARI (controlo total da central) estava exposto
+; à internet, só com a senha à frente. A API e o proxy WSS do nginx falam com
+; isto pelo laço local, portanto não há razão para escutar mais longe.
+bindaddr=127.0.0.1
 bindport=8088
 prefix=
 enablestatic=no
