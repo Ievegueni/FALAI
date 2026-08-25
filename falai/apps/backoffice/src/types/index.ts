@@ -401,10 +401,26 @@ export interface EngineTrunkStatus {
   expirationSecs: number | null;
 }
 
+/**
+ * Estado de um trunk de peering (IP-to-IP). Não se regista, por isso nunca
+ * aparece em `trunks` — o sinal de vida é o OPTIONS que mandamos de minuto a
+ * minuto e a resposta que vem (ou não vem) do outro lado.
+ */
+export interface EnginePeerStatus {
+  endpoint: string;
+  trunkName: string;
+  tenantId: string | null;
+  host: string;
+  status: 'REACHABLE' | 'UNREACHABLE' | 'UNKNOWN';
+  uri: string | null;
+  latencyMs: number | null;
+}
+
 export interface EngineStatus {
   engineReachable: boolean;
   version: string | null;
   trunks: EngineTrunkStatus[];
+  peers: EnginePeerStatus[];
   activeCalls: number | null;
   error: string | null;
   checkedAt: string;

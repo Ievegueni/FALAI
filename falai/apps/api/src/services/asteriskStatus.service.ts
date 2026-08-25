@@ -21,16 +21,55 @@ export interface AsteriskTrunkStatus {
   expirationSecs: number | null;
 }
 
+/** Resposta ao último OPTIONS que mandámos ao outro lado. */
+export type PeerReachability = "REACHABLE" | "UNREACHABLE" | "UNKNOWN";
+
+/**
+ * Estado de um trunk de peering (IP-to-IP).
+ *
+ * Um trunk PEER não se regista — é essa a natureza dele — por isso nunca
+ * aparece na lista de registos de saída e não há um "REGISTERED" para mostrar.
+ * O sinal de vida equivalente é o qualify: o Asterisk manda um OPTIONS de
+ * 60 em 60 segundos (qualify_frequency no AOR gerado) e guarda se houve
+ * resposta e quanto demorou. Sem isto não havia forma nenhuma de saber que o
+ * peering de um cliente caiu, a não ser quando ele telefonasse a reclamar.
+ */
+export interface AsteriskPeerStatus {
+  /** Nome do endpoint PJSIP (trunk_<NOME>). */
+  endpoint: string;
+  /** Nome do trunk como aparece no backoffice. */
+  trunkName: string;
+  /** Cliente dono, quando é um trunk exclusivo. */
+  tenantId: string | null;
+  /** IP configurado do outro lado. */
+  host: string;
+  status: PeerReachability;
+  /** URI do contacto que o Asterisk sondou. */
+  uri: string | null;
+  /** Latência do último OPTIONS, em milissegundos. */
+  latencyMs: number | null;
+}
+
 export interface AsteriskStatus {
   /** false = motor não configurado ou inacessível. */
   engineReachable: boolean;
   /** Versão do Asterisk, quando acessível. */
   version: string | null;
   trunks: AsteriskTrunkStatus[];
+  /** Trunks de peering (IP-to-IP), que não têm registo — ver AsteriskPeerStatus. */
+  peers: AsteriskPeerStatus[];
   activeCalls: number | null;
   /** Mensagem legível quando algo falha — mostrada na UI. */
   error: string | null;
   checkedAt: string;
+}
+
+/** O que o chamador tem de dizer sobre cada trunk PEER a sondar. */
+export interface PeerTrunkRef {
+  endpoint: string;
+  trunkName: string;
+  tenantId: string | null;
+  host: string;
 }
 
 const AMI_URL = process.env["ASTERISK_AMI_URL"] ?? "";
@@ -43,10 +82,21 @@ function offline(error: string): AsteriskStatus {
     engineReachable: false,
     version: null,
     trunks: [],
+    peers: [],
     activeCalls: null,
     error,
     checkedAt: new Date().toISOString(),
   };
+}
+
+function mapReachability(raw: string | undefined): PeerReachability {
+  if (!raw) return "UNKNOWN";
+  const v = raw.toLowerCase();
+  if (v === "reachable" || v === "created" || v === "updated") return "REACHABLE";
+  // NonQualified aparece quando o qualify está desligado: não sabemos, e dizer
+  // "inalcançável" seria mentir sobre um trunk que pode estar perfeitamente bom.
+  if (v === "nonqualified" || v === "unknown") return "UNKNOWN";
+  return "UNREACHABLE";
 }
 
 async function amiRequest(path: string, cookie?: string): Promise<{ body: string; cookie: string | null }> {
@@ -94,7 +144,7 @@ function mapStatus(raw: string | undefined): TrunkRegistrationStatus {
  * Estado actual do motor. Nunca lança — devolve sempre um objecto utilizável
  * para a UI poder distinguir "não configurado" de "configurado mas em baixo".
  */
-export async function getAsteriskStatus(): Promise<AsteriskStatus> {
+export async function getAsteriskStatus(peerTrunks: PeerTrunkRef[] = []): Promise<AsteriskStatus> {
   if (!AMI_URL || !AMI_USER || !AMI_PASSWORD) {
     return offline("Motor SIP próprio ainda não configurado (ASTERISK_AMI_* em falta).");
   }
@@ -127,6 +177,34 @@ export async function getAsteriskStatus(): Promise<AsteriskStatus> {
         expirationSecs: e["Expiration"] ? Number(e["Expiration"]) : null,
       }));
 
+    // Um pedido por trunk PEER: o ContactStatusDetail só vem no
+    // PJSIPShowEndpoint singular — a versão plural devolve apenas a lista de
+    // nomes. São poucos (um por cliente de peering), por isso vão em paralelo.
+    const peers: AsteriskPeerStatus[] = await Promise.all(
+      peerTrunks.map(async (t) => {
+        const base = { endpoint: t.endpoint, trunkName: t.trunkName, tenantId: t.tenantId, host: t.host };
+        try {
+          const res = await amiRequest(
+            `/rawman?action=PJSIPShowEndpoint&Endpoint=${encodeURIComponent(t.endpoint)}`,
+            cookie
+          );
+          const contact = parseEvents(res.body).find((e) => e["Event"] === "ContactStatusDetail");
+          if (!contact) return { ...base, status: "UNKNOWN" as const, uri: null, latencyMs: null };
+          const usec = Number(contact["RoundtripUsec"]);
+          return {
+            ...base,
+            status: mapReachability(contact["Status"]),
+            uri: contact["URI"] ?? null,
+            // O Asterisk dá microssegundos; 0 significa "sem medição", não 0ms.
+            latencyMs: Number.isFinite(usec) && usec > 0 ? Math.round(usec / 1000) : null,
+          };
+        } catch {
+          // Um trunk que não responde não pode derrubar o cartão inteiro.
+          return { ...base, status: "UNKNOWN" as const, uri: null, latencyMs: null };
+        }
+      })
+    );
+
     const coreEvent = parseEvents(core.body).find((e) => e["CoreCurrentCalls"] !== undefined);
     // A versão vem do CoreSettings (AsteriskVersion), não do CoreStatus.
     const version = /AsteriskVersion:\s*([^\s~]+)/i.exec(settings.body)?.[1] ?? null;
@@ -135,6 +213,7 @@ export async function getAsteriskStatus(): Promise<AsteriskStatus> {
       engineReachable: true,
       version,
       trunks,
+      peers,
       activeCalls: coreEvent?.["CoreCurrentCalls"] ? Number(coreEvent["CoreCurrentCalls"]) : null,
       error: null,
       checkedAt: new Date().toISOString(),

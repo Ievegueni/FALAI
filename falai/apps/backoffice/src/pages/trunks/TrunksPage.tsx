@@ -219,7 +219,7 @@ function EngineStatusCard() {
         </div>
       </div>
 
-      {data.trunks.length === 0 ? (
+      {data.trunks.length === 0 && data.peers.length === 0 ? (
         <p className="text-xs text-gray-500">O motor está a correr mas não tem nenhum trunk configurado.</p>
       ) : (
         <div className="space-y-2">
@@ -247,6 +247,43 @@ function EngineStatusCard() {
           })}
         </div>
       )}
+
+      {/* Peering (IP-to-IP). Secção à parte porque o estado NÃO é um registo:
+          estes trunks não se registam. O que se mostra é a resposta ao último
+          OPTIONS, que é o único sinal de vida que existe numa ligação por IP. */}
+      {data.peers.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-medium text-gray-500 mb-2">
+            Peering IP-to-IP <span className="font-normal text-gray-400">— sem registo; estado medido por OPTIONS a cada 60s</span>
+          </p>
+          <div className="space-y-2">
+            {data.peers.map((p) => {
+              const up = p.status === 'REACHABLE';
+              const unknown = p.status === 'UNKNOWN';
+              return (
+                <div key={p.endpoint} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${up ? 'border-emerald-200 bg-emerald-50' : unknown ? 'border-amber-200 bg-amber-50' : 'border-red-200 bg-red-50'}`}>
+                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${up ? 'bg-emerald-500' : unknown ? 'bg-amber-500' : 'bg-red-500'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900">{p.trunkName}</span>
+                      <span className={`text-xs font-semibold ${up ? 'text-emerald-700' : unknown ? 'text-amber-700' : 'text-red-700'}`}>
+                        {up ? 'UP' : unknown ? 'SEM MEDIÇÃO' : 'EM BAIXO'}
+                      </span>
+                      {p.tenantId && <Badge className="bg-gray-100 text-gray-600 text-xs">exclusivo</Badge>}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">
+                      <code className="bg-white/60 px-1 rounded">{p.host}</code>
+                      {p.latencyMs != null && <> · {p.latencyMs} ms</>}
+                      {!up && !unknown && <> · sem resposta ao OPTIONS — confirmar o 5060/udp do lado do cliente</>}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <p className="text-xs text-gray-400 mt-3">
         Verificado às {new Date(data.checkedAt).toLocaleTimeString('pt-PT')} · actualiza a cada 15s
       </p>
