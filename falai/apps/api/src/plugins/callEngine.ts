@@ -1,14 +1,12 @@
 import fp from "fastify-plugin";
-import { Queue } from "bullmq";
 import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter } from "@falai/providers";
 import type { TtsProvider } from "@falai/providers";
 import { prisma } from "@falai/db";
-import { config } from "../config.js";
-import { QUEUES, JOBS } from "@falai/shared";
 import { AudioCache } from "../services/AudioCache.js";
 import { TurnProcessor } from "../services/TurnProcessor.js";
 import { CallEngineService } from "../services/CallEngineService.js";
 import { settleCampaignContact } from "../services/callSettlement.service.js";
+import { emitWebhook } from "../services/webhookEmitter.service.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -49,9 +47,6 @@ export default fp(async (fastify) => {
 
   const audioCache = new AudioCache(fastify.redis, tts, fastify.telephony, defaultVoiceId);
   const turnProcessor = new TurnProcessor(stt, llm, tts, fastify.telephony, audioCache);
-  const webhooksQueue = new Queue(QUEUES.WEBHOOKS_OUT, {
-    connection: { url: config.REDIS_URL },
-  });
 
   const callEngine = new CallEngineService({
     telephony: fastify.telephony,
@@ -63,31 +58,35 @@ export default fp(async (fastify) => {
       settleCampaignContact({ callId, tenantId, status, log: fastify.log })
         .catch((err) => fastify.log.error({ err, callId }, "settlement.failed"));
 
-      // Enqueue webhook delivery if tenant has a URL configured
-      Promise.all([
-        prisma.tenant.findUnique({ where: { id: tenantId }, select: { webhookUrl: true } }),
-        prisma.call.findUnique({ where: { id: callId }, select: { campaignId: true, contactId: true } }),
-      ])
-        .then(([tenant, call]) => {
-          if (!tenant?.webhookUrl) return;
-          return webhooksQueue.add(
-            JOBS.DELIVER_WEBHOOK,
-            {
-              callId,
-              tenantId,
-              event: "call.ended",
-              payload: {
-                callId,
-                tenantId,
-                status,
-                durationSecs,
-                campaignId: call?.campaignId ?? null,
-                contactId: call?.contactId ?? null,
-              },
-            },
-            { attempts: 3, backoff: { type: "exponential", delay: 5000 } }
-          );
+      // Webhook call.ended — inclui o desfecho e o motivo de falha para o cliente
+      // poder classificar o contacto sem ter de voltar a chamar a API.
+      prisma.call
+        .findUnique({
+          where: { id: callId },
+          select: {
+            campaignId: true, contactId: true, toNumber: true,
+            outcome: true, failReason: true, costCents: true, recordingUrl: true,
+          },
         })
+        .then((call) =>
+          emitWebhook({
+            tenantId,
+            callId,
+            event: "call.ended",
+            payload: {
+              callId,
+              status,
+              durationSecs,
+              outcome: call?.outcome ?? null,
+              failReason: call?.failReason ?? null,
+              costCents: call?.costCents ?? 0,
+              recordingUrl: call?.recordingUrl ?? null,
+              toNumber: call?.toNumber ?? null,
+              campaignId: call?.campaignId ?? null,
+              contactId: call?.contactId ?? null,
+            },
+          })
+        )
         .catch((err) => fastify.log.error({ err, callId }, "webhook.enqueue_failed"));
     },
   });

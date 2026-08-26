@@ -409,7 +409,39 @@
       "cancelConfirm": "Cancel campaign?",
       "pausedShort": "Paused",
       "resumedShort": "Resumed",
-      "cancelledShort": "Cancelled"
+      "cancelledShort": "Cancelled",
+      "skipped": "Not called",
+      "optedOut": "Opted out"
+    },
+    "retryFailed": "Retry failed only",
+    "retryAllConfirm": "Retrying the whole campaign calls everyone again, including those who already answered. Continue?",
+    "contacts": {
+      "title": "Participants",
+      "searchPlaceholder": "Name or phone",
+      "allStatuses": "All statuses",
+      "exportCsv": "Export CSV",
+      "empty": "No participants match these filters.",
+      "colContact": "Contact",
+      "colStatus": "Status",
+      "colAttempts": "Attempts",
+      "colResult": "Result",
+      "colDuration": "Duration",
+      "colCost": "Cost",
+      "remove": "Remove from campaign",
+      "removeConfirm": "Remove this contact from the campaign?",
+      "removed": "Contact removed from campaign",
+      "viewCall": "View call",
+      "answered": "Answered",
+      "retryScheduled": "Retry scheduled",
+      "status": {
+        "PENDING": "Not called yet",
+        "QUEUED": "Queued",
+        "IN_PROGRESS": "In progress",
+        "COMPLETED": "Completed",
+        "FAILED": "Failed",
+        "OPTED_OUT": "Opted out",
+        "SKIPPED": "Not called"
+      }
     }
   },
   "calls": {
@@ -488,7 +520,8 @@
       "customer": "Customer",
       "variablesUsed": "Variables used",
       "otpVerification": "OTP verification",
-      "directCall": "Direct call"
+      "directCall": "Direct call",
+      "failReason": "Failure reason"
     },
     "inbound": "Inbound"
   },

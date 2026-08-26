@@ -409,7 +409,39 @@
       "cancelConfirm": "Cancelar campanha?",
       "pausedShort": "Pausada",
       "resumedShort": "Retomada",
-      "cancelledShort": "Cancelada"
+      "cancelledShort": "Cancelada",
+      "skipped": "Não contactados",
+      "optedOut": "Opt-out"
+    },
+    "retryFailed": "Repetir só falhados",
+    "retryAllConfirm": "Repetir a campanha inteira volta a ligar a todos, incluindo quem já atendeu. Continuar?",
+    "contacts": {
+      "title": "Participantes",
+      "searchPlaceholder": "Nome ou telefone",
+      "allStatuses": "Todos os estados",
+      "exportCsv": "Exportar CSV",
+      "empty": "Sem participantes com estes filtros.",
+      "colContact": "Contacto",
+      "colStatus": "Estado",
+      "colAttempts": "Tentativas",
+      "colResult": "Resultado",
+      "colDuration": "Duração",
+      "colCost": "Custo",
+      "remove": "Remover da campanha",
+      "removeConfirm": "Remover este contacto da campanha?",
+      "removed": "Contacto removido da campanha",
+      "viewCall": "Ver chamada",
+      "answered": "Atendeu",
+      "retryScheduled": "Nova tentativa agendada",
+      "status": {
+        "PENDING": "Por contactar",
+        "QUEUED": "Em fila",
+        "IN_PROGRESS": "A decorrer",
+        "COMPLETED": "Concluído",
+        "FAILED": "Falhou",
+        "OPTED_OUT": "Opt-out",
+        "SKIPPED": "Não contactado"
+      }
     }
   },
   "calls": {
@@ -488,7 +520,8 @@
       "customer": "Cliente",
       "variablesUsed": "Variáveis usadas",
       "otpVerification": "Verificação OTP",
-      "directCall": "Chamada directa"
+      "directCall": "Chamada directa",
+      "failReason": "Motivo da falha"
     },
     "inbound": "Entrada"
   },

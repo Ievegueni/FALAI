@@ -226,6 +226,8 @@ export interface Call {
   party?: string;
   status: CallStatus;
   outcome: string | null;
+  /** Motivo técnico da falha (ex.: número inválido, sem saldo). Só em chamadas FAILED. */
+  failReason?: string | null;
   durationSecs: number | null;
   costCents: number | null;
   startedAt: string | null;
@@ -268,6 +270,11 @@ export interface Campaign {
   completedCount: number;
   failedCount: number;
   answeredCount: number;
+  /** Nunca tentados: campanha cancelada ou contacto removido. */
+  skippedCount: number;
+  optedOutCount: number;
+  /** Base de cálculo da taxa de atendimento: só quem foi realmente contactado. */
+  attemptedCount: number;
   estimatedCostCents: number | null;
   actualCostCents: number;
   scheduleJson: CampaignSchedule;
@@ -277,6 +284,38 @@ export interface Campaign {
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
+}
+
+export type CampaignContactStatus =
+  | 'PENDING'
+  | 'QUEUED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'OPTED_OUT'
+  | 'SKIPPED';
+
+/** Um participante da campanha com o desfecho da respectiva chamada. */
+export interface CampaignContactRow {
+  id: string;
+  contactId: string;
+  name: string | null;
+  phone: string;
+  status: CampaignContactStatus;
+  attempts: number;
+  nextRetryAt: string | null;
+  optedOutAt: string | null;
+  optOutReason: string | null;
+  updatedAt: string;
+  callId: string | null;
+  callStatus: CallStatus | null;
+  outcome: string | null;
+  failReason: string | null;
+  durationSecs: number | null;
+  costCents: number | null;
+  recordingUrl: string | null;
+  answeredAt: string | null;
+  endedAt: string | null;
 }
 
 export interface CampaignSchedule {

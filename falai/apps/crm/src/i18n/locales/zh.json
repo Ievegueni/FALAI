@@ -409,7 +409,39 @@
       "cancelConfirm": "取消活动？",
       "pausedShort": "已暂停",
       "resumedShort": "已恢复",
-      "cancelledShort": "已取消"
+      "cancelledShort": "已取消",
+      "skipped": "未呼叫",
+      "optedOut": "已退订"
+    },
+    "retryFailed": "仅重试失败",
+    "retryAllConfirm": "重跑整个活动会再次呼叫所有人，包括已接听的联系人。是否继续？",
+    "contacts": {
+      "title": "参与者",
+      "searchPlaceholder": "姓名或电话",
+      "allStatuses": "全部状态",
+      "exportCsv": "导出 CSV",
+      "empty": "没有符合筛选条件的参与者。",
+      "colContact": "联系人",
+      "colStatus": "状态",
+      "colAttempts": "尝试次数",
+      "colResult": "结果",
+      "colDuration": "时长",
+      "colCost": "费用",
+      "remove": "从活动中移除",
+      "removeConfirm": "将此联系人从活动中移除？",
+      "removed": "联系人已从活动中移除",
+      "viewCall": "查看通话",
+      "answered": "已接听",
+      "retryScheduled": "已安排重试",
+      "status": {
+        "PENDING": "尚未呼叫",
+        "QUEUED": "排队中",
+        "IN_PROGRESS": "进行中",
+        "COMPLETED": "已完成",
+        "FAILED": "失败",
+        "OPTED_OUT": "已退订",
+        "SKIPPED": "未呼叫"
+      }
     }
   },
   "calls": {
@@ -488,7 +520,8 @@
       "customer": "客户",
       "variablesUsed": "使用的变量",
       "otpVerification": "OTP 验证",
-      "directCall": "直接呼叫"
+      "directCall": "直接呼叫",
+      "failReason": "失败原因"
     },
     "inbound": "来电"
   },

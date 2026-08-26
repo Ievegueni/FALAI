@@ -123,7 +123,8 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
       where: { id },
       select: {
         id: true, tenantId: true, agentId: true, toNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, summary: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, summary: true,
+        campaignId: true, contactId: true, recordingUrl: true,
         startedAt: true, answeredAt: true, endedAt: true, createdAt: true,
         variables: true,
       },
@@ -139,22 +140,33 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /v1/calls
   fastify.get("/v1/calls", { preHandler: [fastify.verifyScope("calls:read")] }, async (request, reply) => {
     const tenantId = request.apiKey!.tenantId;
-    const query = request.query as { limit?: string; offset?: string; status?: string };
+    const query = request.query as {
+      limit?: string; offset?: string; status?: string; campaignId?: string; contactId?: string;
+    };
     const limit = Math.min(parseInt(query.limit ?? "20", 10), 100);
     const offset = parseInt(query.offset ?? "0", 10);
+    // Filtrar por campanha/contacto é o caminho directo para "como correu esta
+    // campanha" e "o que aconteceu a este cliente".
+    const where = {
+      tenantId,
+      ...(query.status && { status: query.status as never }),
+      ...(query.campaignId && { campaignId: query.campaignId }),
+      ...(query.contactId && { contactId: query.contactId }),
+    };
 
     const [calls, total] = await Promise.all([
       prisma.call.findMany({
-        where: { tenantId, ...(query.status && { status: query.status as never }) },
+        where,
         select: {
           id: true, agentId: true, toNumber: true, status: true,
+          outcome: true, failReason: true, campaignId: true, contactId: true,
           durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
         },
         orderBy: { createdAt: "desc" },
         take: limit,
         skip: offset,
       }),
-      prisma.call.count({ where: { tenantId, ...(query.status && { status: query.status as never }) } }),
+      prisma.call.count({ where }),
     ]);
 
     return reply.send({ data: calls, total, limit, offset });

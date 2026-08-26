@@ -6,6 +6,7 @@ import type {
   Call,
   CallStatus,
   Campaign,
+  CampaignContactRow,
   CampaignMode,
   CampaignSchedule,
   CampaignStatus,
@@ -400,6 +401,9 @@ function mapCampaign(raw: Record<string, unknown>): Campaign {
     failedCount: failed,
     answeredCount: (raw.answeredCount as number | undefined) ?? 0,
     pendingCount: (raw.pendingCount as number | undefined) ?? Math.max(0, total - completed - failed),
+    skippedCount: (raw.skippedCount as number | undefined) ?? 0,
+    optedOutCount: (raw.optedOutCount as number | undefined) ?? 0,
+    attemptedCount: (raw.attemptedCount as number | undefined) ?? completed + failed,
     actualCostCents: (raw.actualCostCents as number | undefined) ?? 0,
     mode: (raw.mode as Campaign['mode']) ?? 'VOICE_AI',
     scriptText: (raw.scriptText as string | null) ?? null,
@@ -476,7 +480,28 @@ export const campaignsApi = {
   delete: (id: string) => del<void>(`/tenant/campaigns/${id}`),
 
   addContacts: (id: string, contactIds: string[]) =>
-    post<{ added: number }>(`/tenant/campaigns/${id}/contacts`, { contactIds }),
+    post<{ added: number; totalContacts: number }>(`/tenant/campaigns/${id}/contacts`, { contactIds }),
+
+  /** Participantes da campanha, um a um, com o desfecho de cada chamada. */
+  contacts: (id: string, params?: { page?: number; status?: string; search?: string }) => {
+    const page = params?.page ?? 1;
+    return get<{ contacts: CampaignContactRow[]; total: number }>(
+      `/tenant/campaigns/${id}/contacts${qs({
+        ...pageRange(page),
+        status: params?.status,
+        search: params?.search,
+      })}`,
+    );
+  },
+
+  removeContact: (id: string, contactId: string) =>
+    del<{ ok: boolean; totalContacts: number }>(`/tenant/campaigns/${id}/contacts/${contactId}`),
+
+  removeContacts: (id: string, contactIds: string[]) =>
+    post<{ removed: number; skipped: number; totalContacts: number }>(
+      `/tenant/campaigns/${id}/contacts/remove`,
+      { contactIds },
+    ),
 
   report: async (id: string) => {
     const raw = await get<Record<string, unknown>>(`/tenant/campaigns/${id}/report`);
@@ -488,7 +513,28 @@ export const campaignsApi = {
   pause: (id: string) => post<Campaign>(`/tenant/campaigns/${id}/pause`),
   resume: (id: string) => post<Campaign>(`/tenant/campaigns/${id}/resume`),
   cancel: (id: string) => post<Campaign>(`/tenant/campaigns/${id}/cancel`),
-  retry: (id: string) => post<{ ok: boolean; totalContacts: number }>(`/tenant/campaigns/${id}/retry`),
+  /** scope=FAILED repete só quem falhou ou ficou por tentar; ALL repete tudo. */
+  retry: (id: string, scope: 'ALL' | 'FAILED' = 'ALL') =>
+    post<{ ok: boolean; totalContacts: number; resetCount: number }>(
+      `/tenant/campaigns/${id}/retry`,
+      { scope },
+    ),
+
+  /** Descarrega a lista completa de participantes em CSV (abre com o token na query). */
+  exportContactsCsv: async (id: string, name: string) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/campaigns/${id}/contacts?format=csv`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Falha ao exportar CSV');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `campanha-${name.replace(/[^\w-]+/g, '_')}-contactos.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // ─── Wallet ──────────────────────────────────────────────────────────────────

@@ -188,9 +188,19 @@ Os planos definem o que um tenant pode fazer e quanto paga:
 
 ## Webhooks
 
-Quando uma chamada termina, a plataforma tenta entregar um evento `call.ended` POST ao `webhookUrl` configurado pelo tenant. O payload inclui `callId`, `tenantId`, `status`, `durationSecs` e, quando a chamada pertence a uma campanha, `campaignId`/`contactId` (caso contrário vêm a `null`). Em caso de falha, há retry com backoff exponencial (gerido por BullMQ).
+A plataforma entrega eventos por POST ao `webhookUrl` configurado pelo tenant. Todos os eventos têm a forma `{ event, timestamp, data }` e todos os que dizem respeito a uma campanha trazem `campaignId` e `contactId` no `data`, para o cliente poder correlacionar cada evento com o contacto certo.
 
-O tenant configura também um `webhookSecret` para validar a assinatura HMAC dos eventos recebidos.
+| Evento | Quando | Campos próprios |
+|---|---|---|
+| `call.started` | a chamada foi marcada | `callId`, `toNumber`, `attempt` |
+| `call.ended` | a chamada terminou | `status`, `durationSecs`, `outcome`, `failReason`, `costCents`, `recordingUrl` |
+| `call.failed` | não foi possível marcar (número inválido, sem linha, sem saldo) | `failReason`, `attempt`, `willRetry` |
+| `campaign.paused` | campanha pausada manualmente ou automaticamente | `reason` (`manual`, `insufficient_balance`, `no_outbound_line`, `tts_failed`), `auto` |
+| `campaign.completed` | todos os contactos foram resolvidos | `completed`, `failed`, `skipped`, `optedOut`, `total` |
+
+Em caso de falha de entrega há retry com backoff exponencial (3 tentativas, gerido por BullMQ). Esgotadas as tentativas, o erro fica registado e é consultável pelo cliente em `GET /tenant/webhook-events`.
+
+O tenant configura também um `webhookSecret`; cada pedido leva o header `X-Falai-Signature: sha256=<hmac>` calculado sobre o corpo, para validação de autenticidade.
 
 ---
 
@@ -199,10 +209,23 @@ O tenant configura também um `webhookSecret` para validar a assinatura HMAC dos
 Acessível com API Key (prefixo `fal_`). Permite integração com sistemas externos:
 
 - `GET/POST /v1/agents` — listar e criar agentes
-- `GET/POST /v1/calls` — histórico e iniciar chamadas
+- `GET/POST /v1/calls` — histórico e iniciar chamadas (filtrável por `campaignId` e `contactId`; devolve `outcome` e `failReason`)
 - `GET/POST /v1/campaigns` — gestão de campanhas
 - `GET/POST /v1/contacts` — gestão de contactos e opt-out
 - `GET /v1/wallet` — consultar saldo e transacções
+
+Controlo e acompanhamento de campanhas:
+
+| Rota | Efeito |
+|---|---|
+| `POST /v1/campaigns/:id/launch` | inicia e dispara já |
+| `POST /v1/campaigns/:id/pause` \| `/resume` \| `/cancel` | controla a campanha a meio; ao cancelar, quem ficou por tentar fica `SKIPPED` (não conta como falha) |
+| `GET /v1/campaigns/:id/contacts` | participante a participante: estado, tentativas, `outcome`, `failReason`, duração, custo e gravação |
+| `GET /v1/campaigns/:id/report` | agregados: pendentes, concluídos, falhados, não contactados, opt-outs, custo e duração |
+| `POST /v1/campaigns/:id/contacts` | acrescenta contactos (também com a campanha a decorrer) |
+| `DELETE /v1/campaigns/:id/contacts/:contactId` | retira um contacto ainda não contactado |
+| `POST /v1/campaigns/:id/contacts/remove` | remoção em lote |
+| `DELETE /v1/campaigns/:id` | apaga a campanha (as chamadas ficam no histórico) |
 
 ---
 

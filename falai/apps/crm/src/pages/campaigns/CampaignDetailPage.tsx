@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
+import { CampaignContactsTable } from './CampaignContactsTable';
 import { campaignStatusLabel, campaignStatusColor, formatDate, formatAOA, daysOfWeekLabel } from '@/lib/utils';
 
 function ProgressBar({ value, max, color = 'blue' }: { value: number; max: number; color?: string }) {
@@ -52,13 +53,17 @@ export function CampaignDetailPage() {
   const pause = useAction(() => campaignsApi.pause(id!), t('campaigns.detail.pausedShort'));
   const resume = useAction(() => campaignsApi.resume(id!), t('campaigns.detail.resumedShort'));
   const cancel = useAction(() => campaignsApi.cancel(id!), t('campaigns.detail.cancelledShort'));
-  const retry = useAction(() => campaignsApi.retry(id!), t('campaigns.retried'));
+  const retry = useAction(() => campaignsApi.retry(id!, 'ALL'), t('campaigns.retried'));
+  // Repetir só quem falhou evita voltar a ligar a quem já atendeu.
+  const retryFailed = useAction(() => campaignsApi.retry(id!, 'FAILED'), t('campaigns.retried'));
 
   if (isLoading) return <><Header title={t('campaigns.campaignTitle')} /><PageSpinner /></>;
   if (!campaign) return <><Header title={t('campaigns.campaignTitle')} /><div className="p-6 text-sm text-gray-500">{t('campaigns.notFound')}</div></>;
 
   const c = campaign;
-  const answerRate = c.completedCount > 0 ? Math.round((c.answeredCount / c.completedCount) * 100) : 0;
+  // Taxa medida sobre quem foi realmente contactado — cancelados e opt-outs
+  // não entram na base, senão cancelar uma campanha afundava a taxa.
+  const answerRate = c.attemptedCount > 0 ? Math.round((c.answeredCount / c.attemptedCount) * 100) : 0;
 
   return (
     <>
@@ -71,7 +76,7 @@ export function CampaignDetailPage() {
         }
       />
 
-      <div className="p-6 max-w-3xl space-y-6">
+      <div className="p-6 max-w-5xl space-y-6">
         {/* Status */}
         <Card>
           <div className="flex items-center justify-between mb-4">
@@ -101,15 +106,28 @@ export function CampaignDetailPage() {
                 </Button>
               )}
               {['CANCELLED', 'COMPLETED'].includes(c.status) && (
-                <Button
-                  size="sm"
-                  className="bg-blue-600 hover:bg-blue-700 text-white border-0"
-                  icon={<RotateCcw className="h-3.5 w-3.5" />}
-                  loading={retry.isPending}
-                  onClick={() => retry.mutate()}
-                >
-                  {t('campaigns.retry')}
-                </Button>
+                <>
+                  {c.failedCount + c.skippedCount > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={<RotateCcw className="h-3.5 w-3.5" />}
+                      loading={retryFailed.isPending}
+                      onClick={() => retryFailed.mutate()}
+                    >
+                      {t('campaigns.retryFailed')}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700 text-white border-0"
+                    icon={<RotateCcw className="h-3.5 w-3.5" />}
+                    loading={retry.isPending}
+                    onClick={() => { if (confirm(t('campaigns.retryAllConfirm'))) retry.mutate(); }}
+                  >
+                    {t('campaigns.retry')}
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -130,6 +148,13 @@ export function CampaignDetailPage() {
             { label: t('campaigns.detail.answered'), value: c.answeredCount, color: 'text-emerald-600' },
             { label: t('campaigns.detail.failed'), value: c.failedCount, color: 'text-red-600' },
             { label: t('campaigns.detail.pending'), value: c.pendingCount, color: 'text-amber-600' },
+            // Só aparecem quando existem — não poluem o ecrã do caso normal.
+            ...(c.skippedCount > 0
+              ? [{ label: t('campaigns.detail.skipped'), value: c.skippedCount, color: 'text-gray-500' }]
+              : []),
+            ...(c.optedOutCount > 0
+              ? [{ label: t('campaigns.detail.optedOut'), value: c.optedOutCount, color: 'text-purple-600' }]
+              : []),
           ].map((s) => (
             <Card key={s.label} className="text-center">
               <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -152,6 +177,9 @@ export function CampaignDetailPage() {
             )}
           </Card>
         </div>
+
+        {/* Participantes — quem atendeu, quem falhou e porquê */}
+        <CampaignContactsTable campaignId={c.id} campaignName={c.name} />
 
         {/* AI Summary */}
         {c.summary && (

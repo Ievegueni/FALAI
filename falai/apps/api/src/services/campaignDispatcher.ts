@@ -4,6 +4,7 @@ import type { TelephonyProvider } from "@falai/providers";
 import type { CallEngineService } from "./CallEngineService.js";
 import { reserveBalance, computeReservation, effectiveBillingMode, settleCall, type PriceConfig } from "./billing.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "./outboundExtension.service.js";
+import { emitWebhookAsync } from "./webhookEmitter.service.js";
 
 const DISPATCH_INTERVAL_MS = 30_000; // every 30 seconds
 
@@ -171,6 +172,11 @@ export class CampaignDispatcher {
             payload: { campaignId: campaign.id, tenantId: campaign.tenantId },
           },
         });
+        emitWebhookAsync({
+          tenantId: campaign.tenantId,
+          event: "campaign.paused",
+          payload: { campaignId: campaign.id, reason: "no_outbound_line", auto: true },
+        });
         this.log.warn({ campaignId: campaign.id }, "dispatcher.campaign_paused_no_line");
         return;
       }
@@ -197,6 +203,16 @@ export class CampaignDispatcher {
           source: "dispatcher",
           message: `Campaign ${campaign.id} paused — insufficient balance (tenant ${campaign.tenantId})`,
           payload: { campaignId: campaign.id, tenantId: campaign.tenantId, balanceCents: tenant.balanceCents },
+        },
+      });
+      emitWebhookAsync({
+        tenantId: campaign.tenantId,
+        event: "campaign.paused",
+        payload: {
+          campaignId: campaign.id,
+          reason: "insufficient_balance",
+          auto: true,
+          balanceCents: tenant.balanceCents,
         },
       });
       this.log.warn({ campaignId: campaign.id }, "dispatcher.campaign_paused_low_balance");
@@ -260,6 +276,11 @@ export class CampaignDispatcher {
             payload: { campaignId: campaign.id, tenantId: campaign.tenantId, failReason },
           },
         });
+        emitWebhookAsync({
+          tenantId: campaign.tenantId,
+          event: "campaign.paused",
+          payload: { campaignId: campaign.id, reason: "tts_failed", auto: true, failReason },
+        });
         return;
       }
       for (const cc of pendingContacts) {
@@ -280,13 +301,27 @@ export class CampaignDispatcher {
     });
 
     if (remaining === 0) {
-      const [completed, failed] = await Promise.all([
+      const [completed, failed, skipped, optedOut] = await Promise.all([
         prisma.campaignContact.count({ where: { campaignId: campaign.id, status: "COMPLETED" } }),
         prisma.campaignContact.count({ where: { campaignId: campaign.id, status: "FAILED" } }),
+        prisma.campaignContact.count({ where: { campaignId: campaign.id, status: "SKIPPED" } }),
+        prisma.campaignContact.count({ where: { campaignId: campaign.id, status: "OPTED_OUT" } }),
       ]);
       await prisma.campaign.update({
         where: { id: campaign.id },
         data: { status: "DONE", completed, failedCount: failed },
+      });
+      emitWebhookAsync({
+        tenantId: campaign.tenantId,
+        event: "campaign.completed",
+        payload: {
+          campaignId: campaign.id,
+          completed,
+          failed,
+          skipped,
+          optedOut,
+          total: completed + failed + skipped + optedOut,
+        },
       });
       this.log.info({ campaignId: campaign.id, completed, failed }, "dispatcher.campaign_done");
     }
@@ -357,6 +392,19 @@ export class CampaignDispatcher {
         data: { status: "IN_PROGRESS", callId: call.id, attempts: { increment: 1 } },
       });
 
+      emitWebhookAsync({
+        tenantId: campaign.tenantId,
+        callId: call.id,
+        event: "call.started",
+        payload: {
+          callId: call.id,
+          campaignId: campaign.id,
+          contactId: contact.id,
+          toNumber: contact.phone,
+          attempt: (cc.attempts ?? 0) + 1,
+        },
+      });
+
       this.log.info({ campaignId: campaign.id, callId: call.id, phone: contact.phone }, "dispatcher.dispatched");
     } catch (err) {
       const failReason = err instanceof Error ? err.message : String(err);
@@ -407,6 +455,21 @@ export class CampaignDispatcher {
           data: { failedCount: { increment: 1 } },
         });
       }
+
+      // O cliente precisa de saber que este contacto falhou mesmo sem haver
+      // chamada atendida — não existe `call.ended` neste caminho.
+      emitWebhookAsync({
+        tenantId: campaign.tenantId,
+        event: "call.failed",
+        payload: {
+          campaignId: campaign.id,
+          contactId: contact.id,
+          toNumber: contact.phone,
+          failReason,
+          attempt: newAttempts,
+          willRetry: maxAttempts > 0 && newAttempts < maxAttempts,
+        },
+      });
     }
   }
 
@@ -476,6 +539,39 @@ export class CampaignDispatcher {
         data: { completed: { increment: 1 } },
       });
 
+      emitWebhookAsync({
+        tenantId: campaign.tenantId,
+        callId: call.id,
+        event: "call.started",
+        payload: {
+          callId: call.id,
+          campaignId: campaign.id,
+          contactId: contact.id,
+          toNumber: contact.phone,
+          attempt: (cc.attempts ?? 0) + 1,
+          mode: "FIXED_SCRIPT",
+        },
+      });
+      // Chamada de script é fire-and-forget: não passa pelo motor, logo não há
+      // `onCallEnded` a emitir o fecho. Emitimos aqui para o cliente receber o
+      // par started/ended também neste modo.
+      emitWebhookAsync({
+        tenantId: campaign.tenantId,
+        callId: call.id,
+        event: "call.ended",
+        payload: {
+          callId: call.id,
+          campaignId: campaign.id,
+          contactId: contact.id,
+          toNumber: contact.phone,
+          status: "COMPLETED",
+          durationSecs: 0,
+          outcome: null,
+          failReason: null,
+          mode: "FIXED_SCRIPT",
+        },
+      });
+
       this.log.info({ campaignId: campaign.id, callId: call.id, phone: contact.phone }, "dispatcher.fixed_script_dispatched");
     } catch (err) {
       const failReason = err instanceof Error ? err.message : String(err);
@@ -524,6 +620,20 @@ export class CampaignDispatcher {
           data: { failedCount: { increment: 1 } },
         });
       }
+
+      emitWebhookAsync({
+        tenantId: campaign.tenantId,
+        event: "call.failed",
+        payload: {
+          campaignId: campaign.id,
+          contactId: contact.id,
+          toNumber: contact.phone,
+          failReason,
+          attempt: newAttempts,
+          willRetry: maxAttempts > 0 && newAttempts < maxAttempts,
+          mode: "FIXED_SCRIPT",
+        },
+      });
     }
   }
 }

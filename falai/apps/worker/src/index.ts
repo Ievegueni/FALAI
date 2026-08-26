@@ -42,7 +42,8 @@ const billingWorker = new Worker(
 
 // ── Outbound Webhooks Worker ──────────────────────────────────────────────
 interface WebhookJobData {
-  callId: string;
+  /** Ausente em eventos que não são de chamada (ex.: campaign.completed). */
+  callId: string | null;
   tenantId: string;
   event: string;
   payload: Record<string, unknown>;

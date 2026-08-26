@@ -40,6 +40,7 @@ type CallRow = {
   fromNumber?: string | null;
   status: string;
   outcome: string | null;
+  failReason?: string | null;
   durationSecs: number;
   costCents: number;
   startedAt: Date | null;
@@ -75,6 +76,7 @@ function mapCall(c: CallRow) {
     party: direction === "inbound" ? c.fromNumber ?? c.toNumber : c.toNumber,
     status: c.status,
     outcome: c.outcome,
+    failReason: c.failReason ?? null,
     durationSecs: c.durationSecs,
     costCents: c.costCents,
     startedAt: c.startedAt,
@@ -144,7 +146,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
           skip: parseInt(offset, 10),
           select: {
             id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-            outcome: true, durationSecs: true, costCents: true,
+            outcome: true, failReason: true, durationSecs: true, costCents: true,
             startedAt: true, endedAt: true, createdAt: true,
             agent: { select: { name: true } },
             contact: { select: { name: true } },
@@ -164,7 +166,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       where: { id: request.params.id, tenantId },
       select: {
         id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, variables: true, recordingUrl: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, variables: true, recordingUrl: true,
         startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
@@ -245,7 +247,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       },
       select: {
         id: true, agentId: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
       },
@@ -318,7 +320,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       data: { status: "CANCELLED", endedAt: new Date() },
       select: {
         id: true, agentId: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
       },

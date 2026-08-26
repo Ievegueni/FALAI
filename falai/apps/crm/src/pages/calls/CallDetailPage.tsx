@@ -117,6 +117,15 @@ export function CallDetailPage() {
             </div>
           )}
 
+          {/* Sem isto o utilizador via "Falhou" sem saber porquê — número
+              inválido, sem linha, sem saldo — e não tinha como agir. */}
+          {call.failReason && (
+            <div className="mt-4 rounded-lg bg-red-50 border border-red-200 p-3">
+              <p className="text-xs font-medium text-red-700 mb-1">{t('calls.detail.failReason')}</p>
+              <p className="text-sm text-red-900">{call.failReason}</p>
+            </div>
+          )}
+
           {canCancel && (
             <div className="mt-4 flex gap-2">
               <Button

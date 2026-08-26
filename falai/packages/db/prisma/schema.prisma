@@ -139,6 +139,10 @@ enum CampaignContactStatus {
   COMPLETED
   FAILED
   OPTED_OUT
+  // Nunca chegou a ser marcado: a campanha foi cancelada ou o contacto foi
+  // retirado. Distinto de FAILED, que é uma tentativa real que correu mal —
+  // sem esta distinção o cancelamento inflacionava a taxa de insucesso.
+  SKIPPED
 }
 
 // ============ TENANTS & ACESSO ============

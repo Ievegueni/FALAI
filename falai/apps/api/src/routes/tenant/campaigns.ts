@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import { z } from "zod";
+import { emitWebhookAsync } from "../../services/webhookEmitter.service.js";
 
 const scheduleSchema = z.object({
   // "NOW" ignora a janela: a campanha liga assim que for lançada. Sem isto, uma
@@ -44,6 +45,30 @@ const updateSchema = z.object({
 const addContactsSchema = z.object({
   contactIds: z.array(z.string().cuid()).min(1).max(5000),
 });
+
+const removeContactsSchema = z.object({
+  contactIds: z.array(z.string().cuid()).min(1).max(5000),
+});
+
+const retrySchema = z.object({
+  /** ALL repete toda a campanha; FAILED só volta a tentar quem falhou ou ficou por tentar. */
+  scope: z.enum(["ALL", "FAILED"]).default("ALL"),
+});
+
+/** Estados a partir dos quais ainda faz sentido mexer na lista de contactos. */
+const CONTACT_EDITABLE_STATUSES = ["DRAFT", "SCHEDULED", "PAUSED", "RUNNING"];
+
+/** Mantém `totalContacts` alinhado com o que está realmente na campanha. */
+async function syncTotalContacts(campaignId: string): Promise<number> {
+  const total = await prisma.campaignContact.count({ where: { campaignId } });
+  await prisma.campaign.update({ where: { id: campaignId }, data: { totalContacts: total } });
+  return total;
+}
+
+function csvCell(value: unknown): string {
+  const s = value === null || value === undefined ? "" : String(value);
+  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
 
 export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
@@ -254,6 +279,12 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
 
     await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
 
+    emitWebhookAsync({
+      tenantId,
+      event: "campaign.paused",
+      payload: { campaignId: campaign.id, reason: "manual", auto: false },
+    });
+
     await fastify.audit({
       actorType: "TENANT_USER",
       actorId: userId,
@@ -300,12 +331,14 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(400).send({ error: "Campanha já terminada" });
     }
 
+    // Quem ficou por tentar fica SKIPPED, não FAILED: cancelar uma campanha não
+    // é a mesma coisa que ter falhado a ligar, e antes isto inflacionava a taxa
+    // de insucesso no relatório.
     await prisma.$transaction([
       prisma.campaign.update({ where: { id: campaign.id }, data: { status: "CANCELLED" } }),
-      // Mark all PENDING contacts as SKIPPED
       prisma.campaignContact.updateMany({
-        where: { campaignId: campaign.id, status: "PENDING" },
-        data: { status: "FAILED" },
+        where: { campaignId: campaign.id, status: { in: ["PENDING", "QUEUED"] } },
+        data: { status: "SKIPPED" },
       }),
     ]);
 
@@ -321,9 +354,10 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
     return { ok: true, status: "CANCELLED" };
   });
 
-  // POST /tenant/campaigns/:id/retry — reset contacts e relança campanha
+  // POST /tenant/campaigns/:id/retry — repete a campanha (tudo ou só quem falhou)
   fastify.post<{ Params: { id: string } }>("/:id/retry", { preHandler }, async (request, reply) => {
     const { tenantId, sub: userId } = request.tenantUser!;
+    const { scope } = retrySchema.parse(request.body ?? {});
 
     const campaign = await prisma.campaign.findFirst({ where: { id: request.params.id, tenantId } });
     if (!campaign) return reply.status(404).send({ error: "Campanha não encontrada" });
@@ -331,19 +365,32 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(400).send({ error: "Só é possível repetir campanhas CANCELLED ou DONE" });
     }
 
-    // Reset all contacts back to PENDING (including FAILED ones from cancel)
-    await prisma.campaignContact.updateMany({
-      where: { campaignId: campaign.id },
-      data: { status: "PENDING" },
+    // scope=FAILED só volta a tentar quem falhou ou nunca foi tentado — evita
+    // ligar outra vez a quem já atendeu. Contactos em opt-out ficam sempre fora.
+    const resetWhere: import("@falai/db").Prisma.CampaignContactWhereInput =
+      scope === "FAILED"
+        ? { campaignId: campaign.id, status: { in: ["FAILED", "SKIPPED"] } }
+        : { campaignId: campaign.id, status: { not: "OPTED_OUT" } };
+
+    const reset = await prisma.campaignContact.updateMany({
+      where: resetWhere,
+      data: { status: "PENDING", callId: null, attempts: 0, nextRetryAt: null },
     });
 
+    if (reset.count === 0) {
+      return reply.status(400).send({ error: "Não há contactos para repetir nesta campanha" });
+    }
+
     const totalContacts = await prisma.campaignContact.count({ where: { campaignId: campaign.id } });
+    const completed = await prisma.campaignContact.count({
+      where: { campaignId: campaign.id, status: "COMPLETED" },
+    });
 
     await prisma.campaign.update({
       where: { id: campaign.id },
       data: {
         status: "RUNNING",
-        completed: 0,
+        completed,
         failedCount: 0,
         totalContacts,
         summary: null,
@@ -364,7 +411,7 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       fastify.log.error({ err, campaignId: campaign.id }, "campaign.retry.dispatch_error")
     );
 
-    return { ok: true, status: "RUNNING", totalContacts };
+    return { ok: true, status: "RUNNING", totalContacts, scope, resetCount: reset.count };
   });
 
   // POST /tenant/campaigns/:id/contacts — add existing contacts to campaign
@@ -374,8 +421,12 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const campaign = await prisma.campaign.findFirst({ where: { id: request.params.id, tenantId } });
     if (!campaign) return reply.status(404).send({ error: "Campanha não encontrada" });
-    if (!["DRAFT", "SCHEDULED"].includes(campaign.status)) {
-      return reply.status(400).send({ error: "Só é possível adicionar contactos a campanhas DRAFT ou SCHEDULED" });
+    // Também em PAUSED/RUNNING: acrescentar contactos a uma campanha a decorrer
+    // é um pedido corrente e os novos entram simplesmente como PENDING.
+    if (!CONTACT_EDITABLE_STATUSES.includes(campaign.status)) {
+      return reply
+        .status(400)
+        .send({ error: "Campanha terminada ou cancelada — não é possível adicionar contactos" });
     }
 
     // Verify all contacts belong to this tenant
@@ -393,11 +444,258 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       skipDuplicates: true,
     });
 
+    const totalContacts = await syncTotalContacts(campaign.id);
+
     return {
       added: created.count,
       skipped: skipped.length,
       skippedIds: skipped,
+      totalContacts,
     };
+  });
+
+  // GET /tenant/campaigns/:id/contacts — participantes um a um, com o desfecho
+  // de cada um. Sem isto, saber "este cliente atendeu ou falhou?" obrigava a
+  // cruzar manualmente a lista de chamadas com a lista de contactos.
+  fastify.get<{
+    Params: { id: string };
+    Querystring: { status?: string; search?: string; format?: string; limit?: string; offset?: string };
+  }>("/:id/contacts", { preHandler }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    const { status, search, format, limit = "50", offset = "0" } = request.query;
+
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: request.params.id, tenantId },
+      select: { id: true, name: true },
+    });
+    if (!campaign) return reply.status(404).send({ error: "Campanha não encontrada" });
+
+    const where = {
+      campaignId: campaign.id,
+      ...(status && { status: status as import("@falai/db").CampaignContactStatus }),
+      ...(search && {
+        contact: {
+          OR: [
+            { phone: { contains: search } },
+            { name: { contains: search, mode: "insensitive" as const } },
+          ],
+        },
+      }),
+    };
+
+    // No CSV exportamos tudo, não só a página visível.
+    const isCsv = format === "csv";
+    const take = isCsv ? 10_000 : Math.min(parseInt(limit, 10) || 50, 200);
+
+    const [rows, total] = await Promise.all([
+      prisma.campaignContact.findMany({
+        where,
+        orderBy: { updatedAt: "desc" },
+        take,
+        skip: isCsv ? 0 : parseInt(offset, 10) || 0,
+        select: {
+          id: true,
+          status: true,
+          attempts: true,
+          nextRetryAt: true,
+          callId: true,
+          updatedAt: true,
+          contact: { select: { id: true, name: true, phone: true, optedOutAt: true, optOutReason: true } },
+        },
+      }),
+      prisma.campaignContact.count({ where }),
+    ]);
+
+    // O desfecho vive no Call, não no CampaignContact — vamos buscá-lo em lote.
+    const callIds = rows.map((r) => r.callId).filter((v): v is string => !!v);
+    const calls = callIds.length
+      ? await prisma.call.findMany({
+          where: { id: { in: callIds } },
+          select: {
+            id: true, status: true, outcome: true, failReason: true,
+            durationSecs: true, costCents: true, recordingUrl: true, startedAt: true, endedAt: true,
+          },
+        })
+      : [];
+    const callById = new Map(calls.map((c) => [c.id, c]));
+
+    const contacts = rows.map((r) => {
+      const call = r.callId ? callById.get(r.callId) ?? null : null;
+      return {
+        id: r.id,
+        contactId: r.contact.id,
+        name: r.contact.name,
+        phone: r.contact.phone,
+        status: r.status,
+        attempts: r.attempts,
+        nextRetryAt: r.nextRetryAt,
+        optedOutAt: r.contact.optedOutAt,
+        optOutReason: r.contact.optOutReason,
+        updatedAt: r.updatedAt,
+        callId: r.callId,
+        callStatus: call?.status ?? null,
+        outcome: call?.outcome ?? null,
+        failReason: call?.failReason ?? null,
+        durationSecs: call?.durationSecs ?? null,
+        costCents: call?.costCents ?? null,
+        recordingUrl: call?.recordingUrl ?? null,
+        answeredAt: call?.startedAt ?? null,
+        endedAt: call?.endedAt ?? null,
+      };
+    });
+
+    if (isCsv) {
+      const header = [
+        "nome", "telefone", "estado", "tentativas", "estado_chamada",
+        "desfecho", "motivo_falha", "duracao_segundos", "custo_kz", "data",
+      ];
+      const lines = [
+        header.join(","),
+        ...contacts.map((c) =>
+          [
+            c.name ?? "",
+            c.phone,
+            c.status,
+            c.attempts,
+            c.callStatus ?? "",
+            c.outcome ?? "",
+            c.failReason ?? "",
+            c.durationSecs ?? "",
+            c.costCents === null ? "" : (c.costCents / 100).toFixed(2),
+            c.endedAt ? new Date(c.endedAt).toISOString() : "",
+          ].map(csvCell).join(",")
+        ),
+      ];
+      const filename = `campanha-${campaign.name.replace(/[^\w-]+/g, "_")}-contactos.csv`;
+      return reply
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header("Content-Disposition", `attachment; filename="${filename}"`)
+        // BOM para o Excel abrir os acentos correctamente
+        .send("﻿" + lines.join("\n"));
+    }
+
+    return { contacts, total, limit: take, offset: parseInt(offset, 10) || 0 };
+  });
+
+  // DELETE /tenant/campaigns/:id/contacts/:contactId — retirar um contacto
+  fastify.delete<{ Params: { id: string; contactId: string } }>(
+    "/:id/contacts/:contactId",
+    { preHandler },
+    async (request, reply) => {
+      const { tenantId, sub: userId } = request.tenantUser!;
+
+      const campaign = await prisma.campaign.findFirst({
+        where: { id: request.params.id, tenantId },
+        select: { id: true, status: true },
+      });
+      if (!campaign) return reply.status(404).send({ error: "Campanha não encontrada" });
+
+      const cc = await prisma.campaignContact.findFirst({
+        where: { campaignId: campaign.id, contactId: request.params.contactId },
+        select: { id: true, status: true },
+      });
+      if (!cc) return reply.status(404).send({ error: "Contacto não está nesta campanha" });
+
+      // Um contacto já marcado (ou a marcar) não se apaga: apagá-lo perderia o
+      // histórico da chamada. Só sai quem ainda não foi tentado.
+      if (cc.status !== "PENDING") {
+        return reply.status(400).send({
+          error: "Só é possível remover contactos que ainda não foram contactados",
+        });
+      }
+      if (!CONTACT_EDITABLE_STATUSES.includes(campaign.status)) {
+        return reply.status(400).send({ error: "Campanha terminada ou cancelada" });
+      }
+
+      await prisma.campaignContact.delete({ where: { id: cc.id } });
+      const totalContacts = await syncTotalContacts(campaign.id);
+
+      await fastify.audit({
+        actorType: "TENANT_USER",
+        actorId: userId,
+        action: "campaign.contact_removed",
+        targetType: "Campaign",
+        targetId: campaign.id,
+        after: { contactId: request.params.contactId } as object,
+        ip: request.ip,
+      });
+
+      return { ok: true, removed: 1, totalContacts };
+    }
+  );
+
+  // POST /tenant/campaigns/:id/contacts/remove — remoção em lote
+  fastify.post<{ Params: { id: string } }>("/:id/contacts/remove", { preHandler }, async (request, reply) => {
+    const body = removeContactsSchema.parse(request.body);
+    const { tenantId, sub: userId } = request.tenantUser!;
+
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: request.params.id, tenantId },
+      select: { id: true, status: true },
+    });
+    if (!campaign) return reply.status(404).send({ error: "Campanha não encontrada" });
+    if (!CONTACT_EDITABLE_STATUSES.includes(campaign.status)) {
+      return reply.status(400).send({ error: "Campanha terminada ou cancelada" });
+    }
+
+    const removable = await prisma.campaignContact.findMany({
+      where: { campaignId: campaign.id, contactId: { in: body.contactIds }, status: "PENDING" },
+      select: { id: true, contactId: true },
+    });
+
+    const removed = await prisma.campaignContact.deleteMany({
+      where: { id: { in: removable.map((r) => r.id) } },
+    });
+    const totalContacts = await syncTotalContacts(campaign.id);
+
+    const removedIds = new Set(removable.map((r) => r.contactId));
+    const skippedIds = body.contactIds.filter((id) => !removedIds.has(id));
+
+    await fastify.audit({
+      actorType: "TENANT_USER",
+      actorId: userId,
+      action: "campaign.contacts_removed",
+      targetType: "Campaign",
+      targetId: campaign.id,
+      after: { count: removed.count } as object,
+      ip: request.ip,
+    });
+
+    return { removed: removed.count, skipped: skippedIds.length, skippedIds, totalContacts };
+  });
+
+  // DELETE /tenant/campaigns/:id — apagar a campanha
+  fastify.delete<{ Params: { id: string } }>("/:id", { preHandler }, async (request, reply) => {
+    const { tenantId, sub: userId } = request.tenantUser!;
+
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: request.params.id, tenantId },
+      select: { id: true, name: true, status: true },
+    });
+    if (!campaign) return reply.status(404).send({ error: "Campanha não encontrada" });
+    if (campaign.status === "RUNNING") {
+      return reply.status(400).send({ error: "Pausa ou cancela a campanha antes de a apagar" });
+    }
+
+    // As chamadas ficam — são histórico facturado. Só se corta a ligação à
+    // campanha (campaignId fica null) e se apagam os participantes.
+    await prisma.$transaction([
+      prisma.call.updateMany({ where: { campaignId: campaign.id }, data: { campaignId: null } }),
+      prisma.campaignContact.deleteMany({ where: { campaignId: campaign.id } }),
+      prisma.campaign.delete({ where: { id: campaign.id } }),
+    ]);
+
+    await fastify.audit({
+      actorType: "TENANT_USER",
+      actorId: userId,
+      action: "campaign.deleted",
+      targetType: "Campaign",
+      targetId: campaign.id,
+      before: { name: campaign.name, status: campaign.status } as object,
+      ip: request.ip,
+    });
+
+    return { ok: true };
   });
 
   // GET /tenant/campaigns/:id/report
@@ -456,6 +754,18 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
+    // Contagens vindas do que está realmente na tabela — os contadores
+    // desnormalizados na Campaign podem ficar atrás em campanhas a decorrer.
+    const byStatus = Object.fromEntries(contactStats.map((s) => [s.status, s._count.status])) as
+      Record<string, number | undefined>;
+    const n = (k: string): number => byStatus[k] ?? 0;
+    const pendingCount = n("PENDING") + n("QUEUED") + n("IN_PROGRESS");
+    const totalContacts = contactStats.reduce((sum, s) => sum + s._count.status, 0) || campaign.totalContacts;
+
+    // Taxa de atendimento medida só sobre quem foi realmente contactado —
+    // cancelados e opt-outs não entram na base de cálculo.
+    const attempted = n("COMPLETED") + n("FAILED");
+
     // Flat Campaign-shaped payload the CRM detail page consumes, plus report extras.
     return {
       id: campaign.id,
@@ -463,11 +773,14 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       status: campaign.status,
       agentId: campaign.agentId,
       agent: campaign.agent,
-      totalContacts: campaign.totalContacts,
-      completedCount: campaign.completed,
-      failedCount: campaign.failedCount,
+      totalContacts,
+      completedCount: n("COMPLETED") || campaign.completed,
+      failedCount: n("FAILED"),
       answeredCount,
-      pendingCount: Math.max(0, campaign.totalContacts - campaign.completed - campaign.failedCount),
+      pendingCount,
+      skippedCount: n("SKIPPED"),
+      optedOutCount: n("OPTED_OUT"),
+      attemptedCount: attempted,
       estimatedCostCents: null,
       actualCostCents: callStats._sum.costCents ?? 0,
       scheduleJson: campaign.scheduleJson,
