@@ -58,7 +58,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
 
-  if (res.status === 401) {
+  // Um 401 só significa sessão expirada quando a chamada ia autenticada com
+  // token. Sem token (ex.: /tenant/auth/login com password errada) é só uma
+  // credencial inválida — mostrar a mensagem do backend em vez de mascará-la.
+  if (res.status === 401 && token) {
     localStorage.removeItem('falai_token');
     window.dispatchEvent(new CustomEvent('falai:unauthorized'));
     throw new ApiError(401, 'Sessão expirada. Por favor inicie sessão novamente.');

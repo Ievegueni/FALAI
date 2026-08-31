@@ -51,15 +51,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
 
-  if (res.status === 401) {
+  // Um 401 só significa sessão expirada quando a chamada ia autenticada com
+  // token. Sem token (ex.: /admin/auth/login com password errada) é só uma
+  // credencial inválida — mostrar a mensagem do backend em vez de mascará-la.
+  if (res.status === 401 && token) {
     localStorage.removeItem('falai_admin_token');
     window.dispatchEvent(new CustomEvent('falai:admin:unauthorized'));
     throw new ApiError(401, 'Sessão expirada');
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { message?: string };
-    throw new ApiError(res.status, body.message ?? 'Erro desconhecido');
+    // A API devolve `{ error }` na generalidade das rotas e `{ message }` nos
+    // erros de validação do Fastify — aceitar ambos.
+    const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
+    throw new ApiError(res.status, body.error ?? body.message ?? 'Erro desconhecido');
   }
 
   if (res.status === 204) return undefined as T;
