@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma, type Prisma } from "@falai/db";
 import { reserveBalance, computeReservation, effectiveBillingMode } from "../../services/billing.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
+import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
 
 export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
   // POST /v1/calls — dial a number
@@ -89,9 +90,22 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
         prisma.$executeRaw`UPDATE "Tenant" SET "balanceCents" = "balanceCents" + ${estimatedCents} WHERE id = ${tenantId}`,
         prisma.call.update({ where: { id: call.id }, data: { status: "FAILED", failReason: "Dial error" } }),
       ]);
+      await enqueueWebhook({
+        tenantId,
+        event: "call.failed",
+        callId: call.id,
+        payload: { callId: call.id, toNumber: body.toNumber, contactId: body.contactId ?? null, failReason: "Dial error" },
+      });
       fastify.log.error({ err }, "v1.calls.dial_failed");
       return reply.status(502).send({ error: "Failed to place call" });
     }
+
+    await enqueueWebhook({
+      tenantId,
+      event: "call.started",
+      callId: call.id,
+      payload: { callId: call.id, toNumber: body.toNumber, contactId: body.contactId ?? null },
+    });
 
     await fastify.callEngine.registerCall({
       callId: call.id,
@@ -139,22 +153,27 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /v1/calls
   fastify.get("/v1/calls", { preHandler: [fastify.verifyScope("calls:read")] }, async (request, reply) => {
     const tenantId = request.apiKey!.tenantId;
-    const query = request.query as { limit?: string; offset?: string; status?: string };
+    const query = request.query as { limit?: string; offset?: string; status?: string; campaignId?: string };
     const limit = Math.min(parseInt(query.limit ?? "20", 10), 100);
     const offset = parseInt(query.offset ?? "0", 10);
+    const where = {
+      tenantId,
+      ...(query.status && { status: query.status as never }),
+      ...(query.campaignId && { campaignId: query.campaignId }),
+    };
 
     const [calls, total] = await Promise.all([
       prisma.call.findMany({
-        where: { tenantId, ...(query.status && { status: query.status as never }) },
+        where,
         select: {
-          id: true, agentId: true, toNumber: true, status: true,
+          id: true, agentId: true, campaignId: true, contactId: true, toNumber: true, status: true,
           durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
         },
         orderBy: { createdAt: "desc" },
         take: limit,
         skip: offset,
       }),
-      prisma.call.count({ where: { tenantId, ...(query.status && { status: query.status as never }) } }),
+      prisma.call.count({ where }),
     ]);
 
     return reply.send({ data: calls, total, limit, offset });

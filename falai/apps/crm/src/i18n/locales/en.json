@@ -691,11 +691,20 @@
       "contactsGet": "Detail of a contact",
       "contactsUpdate": "Update fields of a contact",
       "contactsDelete": "Delete a contact permanently",
+      "contactsOptOut": "Permanently prevent this contact from being called",
       "campaignsCreate": "Create a new campaign (AI agent or fixed TTS script)",
       "campaignsAddContacts": "Bulk-add contacts to a campaign (up to 5000 per request)",
       "campaignsLaunch": "Start the campaign and dispatch calls immediately",
       "campaignsList": "List the tenant's campaigns",
       "campaignsGet": "Detail and metrics of a campaign",
+      "campaignsPause": "Pause the campaign — in-progress calls finish normally",
+      "campaignsResume": "Resume the campaign exactly where it left off",
+      "campaignsCancel": "Cancel the campaign for good",
+      "campaignsRetry": "Retry a CANCELLED or DONE campaign",
+      "campaignsReport": "Full effectiveness report for the campaign",
+      "campaignsContactsList": "Named list of participants, with status and outcome",
+      "campaignsContactsRemoveOne": "Remove 1 not-yet-contacted contact from the campaign",
+      "campaignsContactsRemove": "Remove several not-yet-contacted contacts at once",
       "walletGet": "Current balance and latest transactions",
       "smsSend": "Send an SMS"
     },
@@ -708,15 +717,15 @@
       "contactSearch": "Search by name or phone",
       "contactId": "Contact ID",
       "campaignStatus": "Filter by status (DRAFT, RUNNING, FINISHED, …)",
-      "campaignId": "Campaign ID"
+      "campaignId": "Campaign ID",
+      "contactStatus": "Filter by status (PENDING, IN_PROGRESS, COMPLETED, FAILED, OPTED_OUT)"
     },
     "wh": {
-      "callCompleted": "Call ended successfully",
-      "callFailed": "Technical failure establishing or keeping the call",
-      "callNoAnswer": "Destination did not answer within the time limit",
-      "callEscalated": "Call transferred to a human agent",
-      "campaignFinished": "Campaign completed all calls",
-      "walletLowBalance": "Balance below the configured threshold"
+      "callStarted": "The call was placed",
+      "callEnded": "The call finished — with outcome, duration, cost and recording",
+      "callFailed": "The call could not be placed",
+      "campaignPaused": "Campaign paused, manually or automatically",
+      "campaignCompleted": "Campaign finished — with final totals"
     },
     "err": {
       "e400": "Invalid payload or missing parameter. See the `error` field in the response.",

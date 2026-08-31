@@ -691,11 +691,20 @@
       "contactsGet": "联系人详情",
       "contactsUpdate": "更新联系人字段",
       "contactsDelete": "永久删除联系人",
+      "contactsOptOut": "永久阻止再次联系此联系人",
       "campaignsCreate": "创建新活动（AI 坐席或固定 TTS 话术）",
       "campaignsAddContacts": "批量添加联系人到活动（每次最多 5000 个）",
       "campaignsLaunch": "启动活动并立即开始拨打电话",
       "campaignsList": "列出租户的活动",
       "campaignsGet": "活动的详情和指标",
+      "campaignsPause": "暂停活动——进行中的通话会正常结束",
+      "campaignsResume": "从中断处恢复活动",
+      "campaignsCancel": "永久取消活动",
+      "campaignsRetry": "重试已取消或已完成的活动",
+      "campaignsReport": "活动的完整效果报告",
+      "campaignsContactsList": "参与者名单，含状态与结果",
+      "campaignsContactsRemoveOne": "从活动中移除一个尚未联系的联系人",
+      "campaignsContactsRemove": "一次移除多个尚未联系的联系人",
       "walletGet": "当前余额和最近交易",
       "smsSend": "发送一条短信"
     },
@@ -708,15 +717,15 @@
       "contactSearch": "按姓名或电话搜索",
       "contactId": "联系人 ID",
       "campaignStatus": "按状态筛选（DRAFT、RUNNING、FINISHED…）",
-      "campaignId": "活动 ID"
+      "campaignId": "活动 ID",
+      "contactStatus": "按状态筛选（PENDING、IN_PROGRESS、COMPLETED、FAILED、OPTED_OUT）"
     },
     "wh": {
-      "callCompleted": "通话成功结束",
-      "callFailed": "建立或维持通话时发生技术故障",
-      "callNoAnswer": "目标在时限内未接听",
-      "callEscalated": "通话已转接给人工坐席",
-      "campaignFinished": "活动已完成所有通话",
-      "walletLowBalance": "余额低于所配置的阈值"
+      "callStarted": "通话已发起",
+      "callEnded": "通话已结束——含结果、时长、费用与录音",
+      "callFailed": "无法发起通话",
+      "campaignPaused": "活动已暂停（手动或自动）",
+      "campaignCompleted": "活动已结束——含最终统计"
     },
     "err": {
       "e400": "载荷无效或缺少参数。请查看响应中的 `error` 字段。",

@@ -66,7 +66,10 @@ export default fp(async (fastify) => {
       // Enqueue webhook delivery if tenant has a URL configured
       Promise.all([
         prisma.tenant.findUnique({ where: { id: tenantId }, select: { webhookUrl: true } }),
-        prisma.call.findUnique({ where: { id: callId }, select: { campaignId: true, contactId: true } }),
+        prisma.call.findUnique({
+          where: { id: callId },
+          select: { campaignId: true, contactId: true, toNumber: true, outcome: true, failReason: true, costCents: true, recordingUrl: true },
+        }),
       ])
         .then(([tenant, call]) => {
           if (!tenant?.webhookUrl) return;
@@ -83,6 +86,11 @@ export default fp(async (fastify) => {
                 durationSecs,
                 campaignId: call?.campaignId ?? null,
                 contactId: call?.contactId ?? null,
+                toNumber: call?.toNumber ?? null,
+                outcome: call?.outcome ?? null,
+                failReason: call?.failReason ?? null,
+                costCents: call?.costCents ?? 0,
+                recordingUrl: call?.recordingUrl ?? null,
               },
             },
             { attempts: 3, backoff: { type: "exponential", delay: 5000 } }

@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import { z } from "zod";
+import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
 
 const scheduleSchema = z.object({
   // "NOW" ignora a janela: a campanha liga assim que for lançada. Sem isto, uma
@@ -261,6 +262,11 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       targetType: "Campaign",
       targetId: campaign.id,
       ip: request.ip,
+    });
+    await enqueueWebhook({
+      tenantId,
+      event: "campaign.paused",
+      payload: { campaignId: campaign.id, reason: "manual" },
     });
 
     return { ok: true, status: "PAUSED" };

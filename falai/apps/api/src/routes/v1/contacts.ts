@@ -106,4 +106,24 @@ export async function v1ContactsRoutes(fastify: FastifyInstance): Promise<void> 
     await prisma.contact.delete({ where: { id } });
     return reply.status(204).send();
   });
+
+  // POST /v1/contacts/:id/opt-out — impede permanentemente que o contacto seja contactado,
+  // em qualquer campanha presente ou futura. Não apaga histórico de chamadas já feitas.
+  fastify.post("/v1/contacts/:id/opt-out", { preHandler: [fastify.verifyScope("contacts:write")] }, async (request, reply) => {
+    const tenantId = request.apiKey!.tenantId;
+    const { id } = request.params as { id: string };
+    const body = request.body as { reason?: string } | undefined;
+
+    const existing = await prisma.contact.findUnique({ where: { id }, select: { tenantId: true, optedOutAt: true } });
+    if (!existing || existing.tenantId !== tenantId) return reply.status(404).send({ error: "Contact not found" });
+    if (existing.optedOutAt) return reply.status(400).send({ error: "Contact already opted out" });
+
+    const contact = await prisma.contact.update({
+      where: { id },
+      data: { optedOutAt: new Date(), optOutReason: body?.reason ?? "Solicitado via API" },
+      select: { id: true, phone: true, name: true, optedOutAt: true, optOutReason: true },
+    });
+
+    return reply.send(contact);
+  });
 }

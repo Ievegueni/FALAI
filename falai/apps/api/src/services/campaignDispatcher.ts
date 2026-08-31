@@ -4,6 +4,7 @@ import type { TelephonyProvider } from "@falai/providers";
 import type { CallEngineService } from "./CallEngineService.js";
 import { reserveBalance, computeReservation, effectiveBillingMode, settleCall, type PriceConfig } from "./billing.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "./outboundExtension.service.js";
+import { enqueueWebhook } from "./webhookDispatch.service.js";
 
 const DISPATCH_INTERVAL_MS = 30_000; // every 30 seconds
 
@@ -171,6 +172,11 @@ export class CampaignDispatcher {
             payload: { campaignId: campaign.id, tenantId: campaign.tenantId },
           },
         });
+        await enqueueWebhook({
+          tenantId: campaign.tenantId,
+          event: "campaign.paused",
+          payload: { campaignId: campaign.id, reason: "no_outbound_line" },
+        });
         this.log.warn({ campaignId: campaign.id }, "dispatcher.campaign_paused_no_line");
         return;
       }
@@ -198,6 +204,11 @@ export class CampaignDispatcher {
           message: `Campaign ${campaign.id} paused — insufficient balance (tenant ${campaign.tenantId})`,
           payload: { campaignId: campaign.id, tenantId: campaign.tenantId, balanceCents: tenant.balanceCents },
         },
+      });
+      await enqueueWebhook({
+        tenantId: campaign.tenantId,
+        event: "campaign.paused",
+        payload: { campaignId: campaign.id, reason: "insufficient_balance" },
       });
       this.log.warn({ campaignId: campaign.id }, "dispatcher.campaign_paused_low_balance");
       return;
@@ -260,6 +271,11 @@ export class CampaignDispatcher {
             payload: { campaignId: campaign.id, tenantId: campaign.tenantId, failReason },
           },
         });
+        await enqueueWebhook({
+          tenantId: campaign.tenantId,
+          event: "campaign.paused",
+          payload: { campaignId: campaign.id, reason: "tts_generation_failed" },
+        });
         return;
       }
       for (const cc of pendingContacts) {
@@ -287,6 +303,11 @@ export class CampaignDispatcher {
       await prisma.campaign.update({
         where: { id: campaign.id },
         data: { status: "DONE", completed, failedCount: failed },
+      });
+      await enqueueWebhook({
+        tenantId: campaign.tenantId,
+        event: "campaign.completed",
+        payload: { campaignId: campaign.id, completed, failed },
       });
       this.log.info({ campaignId: campaign.id, completed, failed }, "dispatcher.campaign_done");
     }
@@ -334,6 +355,13 @@ export class CampaignDispatcher {
         },
       });
 
+      await enqueueWebhook({
+        tenantId: campaign.tenantId,
+        event: "call.started",
+        callId: call.id,
+        payload: { callId: call.id, campaignId: campaign.id, contactId: contact.id, toNumber: contact.phone },
+      });
+
       await this.callEngine.registerCall({
         callId: call.id,
         agentId: campaign.agentId ?? "",
@@ -364,7 +392,7 @@ export class CampaignDispatcher {
 
       // Cria registo FAILED para rastreabilidade do erro
       const now = new Date();
-      await prisma.call.create({
+      const failedCall = await prisma.call.create({
         data: {
           tenantId: campaign.tenantId,
           ...(campaign.agentId && { agentId: campaign.agentId }),
@@ -377,7 +405,16 @@ export class CampaignDispatcher {
           startedAt: now,
           endedAt: now,
         },
-      }).catch(() => {}); // não bloqueia o fluxo de retry
+      }).catch(() => null); // não bloqueia o fluxo de retry
+
+      if (failedCall) {
+        await enqueueWebhook({
+          tenantId: campaign.tenantId,
+          event: "call.failed",
+          callId: failedCall.id,
+          payload: { callId: failedCall.id, campaignId: campaign.id, contactId: contact.id, toNumber: contact.phone, failReason },
+        });
+      }
 
       // Refund reserved balance
       await prisma.tenant.update({
@@ -467,6 +504,15 @@ export class CampaignDispatcher {
         price,
       });
 
+      // Fluxo fire-and-forget: não passa pelo CallEngineService, por isso o
+      // call.ended tem de ser emitido aqui em vez de no onCallEnded partilhado.
+      await enqueueWebhook({
+        tenantId: campaign.tenantId,
+        event: "call.ended",
+        callId: call.id,
+        payload: { callId: call.id, tenantId: campaign.tenantId, campaignId: campaign.id, contactId: contact.id, toNumber: contact.phone, status: "COMPLETED", durationSecs: 0 },
+      });
+
       await prisma.campaignContact.update({
         where: { id: cc.id },
         data: { status: "COMPLETED", callId: call.id, attempts: { increment: 1 } },
@@ -483,7 +529,7 @@ export class CampaignDispatcher {
 
       // Cria registo FAILED para rastreabilidade do erro
       const failedNow = new Date();
-      await prisma.call.create({
+      const failedCall = await prisma.call.create({
         data: {
           tenantId: campaign.tenantId,
           campaignId: campaign.id,
@@ -496,7 +542,16 @@ export class CampaignDispatcher {
           startedAt: failedNow,
           endedAt: failedNow,
         },
-      }).catch(() => {});
+      }).catch(() => null);
+
+      if (failedCall) {
+        await enqueueWebhook({
+          tenantId: campaign.tenantId,
+          event: "call.failed",
+          callId: failedCall.id,
+          payload: { callId: failedCall.id, campaignId: campaign.id, contactId: contact.id, toNumber: contact.phone, failReason },
+        });
+      }
 
       await prisma.tenant.update({
         where: { id: campaign.tenantId },

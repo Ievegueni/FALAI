@@ -358,6 +358,7 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
         method: 'GET', path: '/v1/calls', descKey: 'developers.ep.callsList', scope: 'calls:read',
         params: [
           { name: 'status', type: 'string', descKey: 'developers.param.callStatus' },
+          { name: 'campaignId', type: 'string', descKey: 'developers.param.campaignId' },
           { name: 'limit', type: 'number', descKey: 'developers.param.limit' },
           { name: 'offset', type: 'number', descKey: 'developers.param.offset' },
         ],
@@ -504,6 +505,20 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
         params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.contactId' }],
         response: `204 No Content — sem corpo`,
       },
+      {
+        method: 'POST', path: '/v1/contacts/:id/opt-out', descKey: 'developers.ep.contactsOptOut', scope: 'contacts:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.contactId' }],
+        body: `{
+  "reason": "Pedido do cliente"  // opcional
+}`,
+        response: `{
+  "id": "cnt_001",
+  "phone": "+244912000001",
+  "name": "Maria Santos",
+  "optedOutAt": "2026-07-20T12:00:00.000Z",
+  "optOutReason": "Pedido do cliente"
+}`,
+      },
     ],
   },
   {
@@ -580,6 +595,91 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
   "createdAt": "2026-07-20T10:00:00.000Z"
 }`,
       },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/pause', descKey: 'developers.ep.campaignsPause', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        response: `{ "ok": true, "status": "PAUSED" }`,
+      },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/resume', descKey: 'developers.ep.campaignsResume', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        response: `{ "ok": true, "status": "RUNNING" }`,
+      },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/cancel', descKey: 'developers.ep.campaignsCancel', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        response: `{ "ok": true, "status": "CANCELLED" }`,
+      },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/retry', descKey: 'developers.ep.campaignsRetry', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        body: `{
+  "scope": "FAILED"  // opcional: "FAILED" (só quem falhou/ficou por contactar) ou "ALL" (default)
+}`,
+        response: `{ "ok": true, "status": "RUNNING", "totalContacts": 150 }`,
+      },
+      {
+        method: 'GET', path: '/v1/campaigns/:id/report', descKey: 'developers.ep.campaignsReport', scope: 'campaigns:read',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        response: `{
+  "campaignId": "cmp_001",
+  "name": "Recuperação Julho",
+  "status": "RUNNING",
+  "totalContacts": 150,
+  "contacted": 132,
+  "answered": 98,
+  "failed": 18,
+  "notContacted": 18,
+  "optedOut": 0,
+  "answerRate": 0.7424,
+  "totalDurationSecs": 5480,
+  "avgDurationSecs": 42,
+  "totalCostCents": 198000,
+  "contactStatuses": { "PENDING": 18, "COMPLETED": 114, "FAILED": 18 },
+  "outcomes": { "SALE": 40, "NO_INTEREST": 58, "unknown": 34 }
+}`,
+      },
+      {
+        method: 'GET', path: '/v1/campaigns/:id/contacts', descKey: 'developers.ep.campaignsContactsList', scope: 'campaigns:read',
+        params: [
+          { name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' },
+          { name: 'status', type: 'string', descKey: 'developers.param.contactStatus' },
+          { name: 'limit', type: 'number', descKey: 'developers.param.limit' },
+          { name: 'offset', type: 'number', descKey: 'developers.param.offset' },
+        ],
+        response: `{
+  "data": [
+    {
+      "status": "FAILED", "attempts": 3, "nextRetryAt": null,
+      "contact": { "id": "cnt_001", "phone": "+244912000001", "name": "Maria Santos" },
+      "call": { "id": "call_xyz789", "outcome": null, "failReason": "Não atendeu", "durationSecs": 0, "costCents": 0, "recordingUrl": null, "endedAt": "..." }
+    }
+  ],
+  "total": 150,
+  "limit": 20,
+  "offset": 0
+}`,
+      },
+      {
+        method: 'DELETE', path: '/v1/campaigns/:id/contacts/:contactId', descKey: 'developers.ep.campaignsContactsRemoveOne', scope: 'campaigns:write',
+        params: [
+          { name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' },
+          { name: 'contactId', type: 'string', required: true, descKey: 'developers.param.contactId' },
+        ],
+        response: `204 No Content — sem corpo. 400 se o contacto já foi contactado (usa opt-out).`,
+      },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/contacts/remove', descKey: 'developers.ep.campaignsContactsRemove', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        body: `{
+  "contactIds": ["cnt_001", "cnt_002"]  // obrigatório — até 5000 por pedido
+}`,
+        response: `{
+  "removed": 1,
+  "skipped": 1,
+  "skippedIds": ["cnt_002"]
+}`,
+      },
     ],
   },
   {
@@ -601,18 +701,37 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
 
 const WEBHOOK_EVENTS = [
   {
-    event: 'call.completed',
-    descKey: 'developers.wh.callCompleted',
+    event: 'call.started',
+    descKey: 'developers.wh.callStarted',
     payload: `{
-  "event": "call.completed",
-  "callId": "call_xyz789",
-  "to": "+244923000000",
-  "agentId": "agt_abc123",
-  "durationSeconds": 42,
-  "result": "SALE",
-  "sentiment": "POSITIVE",
-  "transcript": "Olá, ligo da Falaí...",
-  "timestamp": "2026-07-20T15:01:00.000Z"
+  "event": "call.started",
+  "timestamp": "2026-07-20T15:00:00.000Z",
+  "data": {
+    "callId": "call_xyz789",
+    "campaignId": "cmp_001",
+    "contactId": "cnt_001",
+    "toNumber": "+244923000000"
+  }
+}`,
+  },
+  {
+    event: 'call.ended',
+    descKey: 'developers.wh.callEnded',
+    payload: `{
+  "event": "call.ended",
+  "timestamp": "2026-07-20T15:02:11.000Z",
+  "data": {
+    "callId": "call_xyz789",
+    "campaignId": "cmp_001",
+    "contactId": "cnt_001",
+    "toNumber": "+244923000000",
+    "status": "COMPLETED",
+    "durationSecs": 74,
+    "outcome": "cliente confirmou pagamento",
+    "failReason": null,
+    "costCents": 320,
+    "recordingUrl": "https://..."
+  }
 }`,
   },
   {
@@ -620,55 +739,39 @@ const WEBHOOK_EVENTS = [
     descKey: 'developers.wh.callFailed',
     payload: `{
   "event": "call.failed",
-  "callId": "call_xyz790",
-  "to": "+244923000001",
-  "reason": "provider_error",
-  "timestamp": "2026-07-20T15:02:00.000Z"
+  "timestamp": "2026-07-20T15:02:00.000Z",
+  "data": {
+    "callId": "call_xyz790",
+    "campaignId": "cmp_001",
+    "contactId": "cnt_002",
+    "toNumber": "+244923000001",
+    "failReason": "Não atendeu"
+  }
 }`,
   },
   {
-    event: 'call.no_answer',
-    descKey: 'developers.wh.callNoAnswer',
+    event: 'campaign.paused',
+    descKey: 'developers.wh.campaignPaused',
     payload: `{
-  "event": "call.no_answer",
-  "callId": "call_xyz791",
-  "to": "+244923000002",
-  "timestamp": "2026-07-20T15:03:00.000Z"
+  "event": "campaign.paused",
+  "timestamp": "2026-07-20T17:00:00.000Z",
+  "data": {
+    "campaignId": "cmp_001",
+    "reason": "manual"
+  }
 }`,
   },
   {
-    event: 'call.escalated',
-    descKey: 'developers.wh.callEscalated',
+    event: 'campaign.completed',
+    descKey: 'developers.wh.campaignCompleted',
     payload: `{
-  "event": "call.escalated",
-  "callId": "call_xyz792",
-  "to": "+244923000003",
-  "reason": "customer_request",
-  "timestamp": "2026-07-20T15:04:00.000Z"
-}`,
-  },
-  {
-    event: 'campaign.finished',
-    descKey: 'developers.wh.campaignFinished',
-    payload: `{
-  "event": "campaign.finished",
-  "campaignId": "cmp_001",
-  "name": "Recuperação Julho",
-  "totalContacts": 150,
-  "completed": 132,
-  "failed": 18,
-  "timestamp": "2026-07-20T18:00:00.000Z"
-}`,
-  },
-  {
-    event: 'wallet.low_balance',
-    descKey: 'developers.wh.walletLowBalance',
-    payload: `{
-  "event": "wallet.low_balance",
-  "balance": 500.00,
-  "currency": "AOA",
-  "threshold": 1000.00,
-  "timestamp": "2026-07-20T20:00:00.000Z"
+  "event": "campaign.completed",
+  "timestamp": "2026-07-20T18:00:00.000Z",
+  "data": {
+    "campaignId": "cmp_001",
+    "completed": 132,
+    "failed": 18
+  }
 }`,
   },
 ];

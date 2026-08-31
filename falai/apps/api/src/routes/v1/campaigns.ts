@@ -1,5 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, type Prisma } from "@falai/db";
+import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
+
+const REMOVABLE_STATUSES = ["PENDING", "QUEUED", "OPTED_OUT"] as const;
 
 export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get("/v1/campaigns", { preHandler: [fastify.verifyScope("campaigns:read")] }, async (request, reply) => {
@@ -156,5 +159,255 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
     );
 
     return reply.send({ ok: true, status: "RUNNING", pendingContacts: pendingCount });
+  });
+
+  // POST /v1/campaigns/:id/pause
+  fastify.post("/v1/campaigns/:id/pause", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
+    const tenantId = request.apiKey!.tenantId;
+    const { id } = request.params as { id: string };
+
+    const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+    if (campaign.status !== "RUNNING") {
+      return reply.status(400).send({ error: "Only RUNNING campaigns can be paused" });
+    }
+
+    await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
+    await enqueueWebhook({
+      tenantId,
+      event: "campaign.paused",
+      payload: { campaignId: campaign.id, reason: "manual" },
+    });
+
+    return reply.send({ ok: true, status: "PAUSED" });
+  });
+
+  // POST /v1/campaigns/:id/resume — retoma exactamente de onde ficou
+  fastify.post("/v1/campaigns/:id/resume", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
+    const tenantId = request.apiKey!.tenantId;
+    const { id } = request.params as { id: string };
+
+    const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+    if (campaign.status !== "PAUSED") {
+      return reply.status(400).send({ error: "Only PAUSED campaigns can be resumed" });
+    }
+
+    await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "RUNNING" } });
+
+    fastify.campaignDispatcher.processNow(campaign.id).catch((err) =>
+      fastify.log.error({ err, campaignId: campaign.id }, "v1.campaigns.resume.dispatch_error")
+    );
+
+    return reply.send({ ok: true, status: "RUNNING" });
+  });
+
+  // POST /v1/campaigns/:id/cancel — contactos ainda por tentar ficam "não contactados", não "falhados"
+  fastify.post("/v1/campaigns/:id/cancel", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
+    const tenantId = request.apiKey!.tenantId;
+    const { id } = request.params as { id: string };
+
+    const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+    if (campaign.status === "DONE" || campaign.status === "CANCELLED") {
+      return reply.status(400).send({ error: "Campaign already finished" });
+    }
+
+    await prisma.$transaction([
+      prisma.campaign.update({ where: { id: campaign.id }, data: { status: "CANCELLED" } }),
+      prisma.campaignContact.updateMany({
+        where: { campaignId: campaign.id, status: { in: ["PENDING", "QUEUED"] } },
+        data: { status: "FAILED" },
+      }),
+    ]);
+
+    return reply.send({ ok: true, status: "CANCELLED" });
+  });
+
+  // POST /v1/campaigns/:id/retry — body opcional { scope: "FAILED" | "ALL" } (default "ALL")
+  fastify.post("/v1/campaigns/:id/retry", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
+    const tenantId = request.apiKey!.tenantId;
+    const { id } = request.params as { id: string };
+    const body = request.body as { scope?: "FAILED" | "ALL" } | undefined;
+    const scope = body?.scope ?? "ALL";
+
+    const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+    if (!["CANCELLED", "DONE"].includes(campaign.status)) {
+      return reply.status(400).send({ error: "Only CANCELLED or DONE campaigns can be retried" });
+    }
+
+    // OPTED_OUT nunca volta a PENDING: quem pediu para não ser contactado fica
+    // de fora de qualquer repetição, seja qual for o scope.
+    await prisma.campaignContact.updateMany({
+      where: {
+        campaignId: campaign.id,
+        ...(scope === "FAILED" ? { status: "FAILED" } : { status: { not: "OPTED_OUT" } }),
+      },
+      data: { status: "PENDING" },
+    });
+
+    const totalContacts = await prisma.campaignContact.count({
+      where: { campaignId: campaign.id, status: { not: "OPTED_OUT" } },
+    });
+
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: { status: "RUNNING", completed: 0, failedCount: 0, totalContacts, summary: null },
+    });
+
+    fastify.campaignDispatcher.processNow(campaign.id).catch((err) =>
+      fastify.log.error({ err, campaignId: campaign.id }, "v1.campaigns.retry.dispatch_error")
+    );
+
+    return reply.send({ ok: true, status: "RUNNING", totalContacts });
+  });
+
+  // GET /v1/campaigns/:id/report — quadro completo de eficácia da campanha
+  fastify.get("/v1/campaigns/:id/report", { preHandler: [fastify.verifyScope("campaigns:read")] }, async (request, reply) => {
+    const tenantId = request.apiKey!.tenantId;
+    const { id } = request.params as { id: string };
+
+    const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+
+    const [callStats, contactStats, outcomeBreakdown, answeredCount] = await Promise.all([
+      prisma.call.aggregate({
+        where: { campaignId: campaign.id },
+        _count: { id: true },
+        _sum: { durationSecs: true, costCents: true },
+        _avg: { durationSecs: true },
+      }),
+      prisma.campaignContact.groupBy({ by: ["status"], where: { campaignId: campaign.id }, _count: { status: true } }),
+      prisma.call.groupBy({ by: ["outcome"], where: { campaignId: campaign.id }, _count: { id: true } }),
+      prisma.call.count({ where: { campaignId: campaign.id, status: { in: ["COMPLETED", "ESCALATED"] } } }),
+    ]);
+
+    const contacted = contactStats
+      .filter((s) => !["PENDING", "QUEUED", "OPTED_OUT"].includes(s.status))
+      .reduce((sum, s) => sum + s._count.status, 0);
+
+    return reply.send({
+      campaignId: campaign.id,
+      name: campaign.name,
+      status: campaign.status,
+      totalContacts: campaign.totalContacts,
+      contacted,
+      answered: answeredCount,
+      failed: campaign.failedCount,
+      notContacted: contactStats.find((s) => s.status === "PENDING")?._count.status ?? 0,
+      optedOut: contactStats.find((s) => s.status === "OPTED_OUT")?._count.status ?? 0,
+      answerRate: contacted > 0 ? Number((answeredCount / contacted).toFixed(4)) : 0,
+      totalDurationSecs: callStats._sum.durationSecs ?? 0,
+      avgDurationSecs: Math.round(callStats._avg.durationSecs ?? 0),
+      totalCostCents: callStats._sum.costCents ?? 0,
+      contactStatuses: Object.fromEntries(contactStats.map((s) => [s.status, s._count.status])),
+      outcomes: Object.fromEntries(outcomeBreakdown.map((o) => [o.outcome ?? "unknown", o._count.id])),
+    });
+  });
+
+  // GET /v1/campaigns/:id/contacts — lista nominal dos participantes, com estado e resultado
+  fastify.get("/v1/campaigns/:id/contacts", { preHandler: [fastify.verifyScope("campaigns:read")] }, async (request, reply) => {
+    const tenantId = request.apiKey!.tenantId;
+    const { id } = request.params as { id: string };
+    const query = request.query as { status?: string; limit?: string; offset?: string };
+    const limit = Math.min(parseInt(query.limit ?? "20", 10), 100);
+    const offset = parseInt(query.offset ?? "0", 10);
+
+    const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+
+    const where = {
+      campaignId: campaign.id,
+      ...(query.status && { status: query.status as never }),
+    };
+
+    const [participants, total] = await Promise.all([
+      prisma.campaignContact.findMany({
+        where,
+        select: {
+          callId: true, status: true, attempts: true, nextRetryAt: true, createdAt: true, updatedAt: true,
+          contact: { select: { id: true, phone: true, name: true } },
+        },
+        orderBy: { createdAt: "asc" },
+        take: limit,
+        skip: offset,
+      }),
+      prisma.campaignContact.count({ where }),
+    ]);
+
+    // CampaignContact.callId não tem relação navegável no schema — junta-se manualmente.
+    const callIds = participants.map((p) => p.callId).filter((cid): cid is string => cid !== null);
+    const calls = callIds.length > 0
+      ? await prisma.call.findMany({
+          where: { id: { in: callIds } },
+          select: { id: true, outcome: true, failReason: true, durationSecs: true, costCents: true, recordingUrl: true, endedAt: true },
+        })
+      : [];
+    const callById = new Map(calls.map((c) => [c.id, c]));
+
+    const data = participants.map(({ callId, ...p }) => ({
+      ...p,
+      call: callId ? (callById.get(callId) ?? null) : null,
+    }));
+
+    return reply.send({ data, total, limit, offset });
+  });
+
+  // DELETE /v1/campaigns/:id/contacts/:contactId — remove 1 contacto ainda não contactado
+  fastify.delete("/v1/campaigns/:id/contacts/:contactId", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
+    const tenantId = request.apiKey!.tenantId;
+    const { id, contactId } = request.params as { id: string; contactId: string };
+
+    const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+
+    const cc = await prisma.campaignContact.findUnique({
+      where: { campaignId_contactId: { campaignId: campaign.id, contactId } },
+    });
+    if (!cc) return reply.status(404).send({ error: "Contact not found in this campaign" });
+    if (!REMOVABLE_STATUSES.includes(cc.status as (typeof REMOVABLE_STATUSES)[number])) {
+      return reply.status(400).send({
+        error: "Contact was already contacted and cannot be removed. Use contact opt-out to prevent future attempts.",
+      });
+    }
+
+    await prisma.campaignContact.delete({ where: { id: cc.id } });
+    return reply.status(204).send();
+  });
+
+  // POST /v1/campaigns/:id/contacts/remove — remoção em lote, body { contactIds: [...] }
+  fastify.post("/v1/campaigns/:id/contacts/remove", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
+    const tenantId = request.apiKey!.tenantId;
+    const { id } = request.params as { id: string };
+    const body = request.body as { contactIds?: string[] };
+
+    if (!Array.isArray(body.contactIds) || body.contactIds.length === 0 || body.contactIds.length > 5000) {
+      return reply.status(400).send({ error: "contactIds must be a non-empty array of up to 5000 ids" });
+    }
+
+    const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
+    if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
+
+    const candidates = await prisma.campaignContact.findMany({
+      where: { campaignId: campaign.id, contactId: { in: body.contactIds } },
+      select: { id: true, contactId: true, status: true },
+    });
+
+    const removable = candidates.filter((c) => REMOVABLE_STATUSES.includes(c.status as (typeof REMOVABLE_STATUSES)[number]));
+    const skippedIds = candidates
+      .filter((c) => !REMOVABLE_STATUSES.includes(c.status as (typeof REMOVABLE_STATUSES)[number]))
+      .map((c) => c.contactId);
+    const notFoundIds = body.contactIds.filter((cid) => !candidates.some((c) => c.contactId === cid));
+
+    if (removable.length > 0) {
+      await prisma.campaignContact.deleteMany({ where: { id: { in: removable.map((c) => c.id) } } });
+    }
+
+    return reply.send({
+      removed: removable.length,
+      skipped: skippedIds.length + notFoundIds.length,
+      skippedIds: [...skippedIds, ...notFoundIds],
+    });
   });
 }

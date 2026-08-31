@@ -188,9 +188,23 @@ Os planos definem o que um tenant pode fazer e quanto paga:
 
 ## Webhooks
 
-Quando uma chamada termina, a plataforma tenta entregar um evento `call.ended` POST ao `webhookUrl` configurado pelo tenant. O payload inclui `callId`, `tenantId`, `status`, `durationSecs` e, quando a chamada pertence a uma campanha, `campaignId`/`contactId` (caso contrário vêm a `null`). Em caso de falha, há retry com backoff exponencial (gerido por BullMQ).
+A plataforma entrega por POST ao `webhookUrl` configurado pelo tenant os seguintes eventos:
 
-O tenant configura também um `webhookSecret` para validar a assinatura HMAC dos eventos recebidos.
+| Evento | Quando |
+|---|---|
+| `call.started` | a chamada foi marcada |
+| `call.ended` | a chamada terminou — com desfecho, duração, custo e gravação |
+| `call.failed` | não foi possível marcar a chamada, com o motivo |
+| `campaign.paused` | campanha pausada, manual ou automaticamente, com o `reason` |
+| `campaign.completed` | campanha terminada, com os totais finais |
+
+O corpo entregue tem sempre a forma `{ event, timestamp, data }`. Todos os eventos de chamada trazem `callId` e, quando a chamada pertence a uma campanha, `campaignId`/`contactId` (caso contrário vêm a `null`), o que torna directa a correlação do lado do sistema do cliente. O `call.ended` traz ainda `status`, `durationSecs`, `outcome`, `failReason`, `costCents` e `recordingUrl`.
+
+As pausas automáticas (`campaign.paused`) acontecem quando o dispatcher detecta saldo insuficiente (`reason: "insufficient_balance"`), linha de saída indisponível (`"no_outbound_line"`) ou falha na geração de voz (`"tts_generation_failed"`); a pausa manual traz `reason: "manual"`.
+
+Em caso de falha de entrega, há 3 tentativas com backoff exponencial (gerido por BullMQ); esgotadas, o erro fica registado em `SystemEvent` e é consultável na aba de programadores.
+
+O tenant configura também um `webhookSecret` para validar a assinatura HMAC (`X-Falai-Signature: sha256=<hmac>`) dos eventos recebidos.
 
 ---
 

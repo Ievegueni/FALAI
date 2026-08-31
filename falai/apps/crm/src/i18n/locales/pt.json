@@ -691,11 +691,20 @@
       "contactsGet": "Detalhe de um contacto",
       "contactsUpdate": "Actualizar campos de um contacto",
       "contactsDelete": "Eliminar um contacto permanentemente",
+      "contactsOptOut": "Impedir permanentemente que o contacto seja contactado",
       "campaignsCreate": "Criar uma nova campanha (IA por agente ou script fixo por TTS)",
       "campaignsAddContacts": "Adicionar contactos em massa a uma campanha (até 5000 por pedido)",
       "campaignsLaunch": "Iniciar a campanha e disparar as chamadas imediatamente",
       "campaignsList": "Listar campanhas do tenant",
       "campaignsGet": "Detalhe e métricas de uma campanha",
+      "campaignsPause": "Pausar a campanha — as chamadas em curso terminam normalmente",
+      "campaignsResume": "Retomar a campanha exactamente de onde ficou",
+      "campaignsCancel": "Cancelar a campanha definitivamente",
+      "campaignsRetry": "Repetir uma campanha CANCELLED ou DONE",
+      "campaignsReport": "Quadro completo de eficácia da campanha",
+      "campaignsContactsList": "Lista nominal dos participantes, com estado e resultado",
+      "campaignsContactsRemoveOne": "Remover 1 contacto ainda não contactado da campanha",
+      "campaignsContactsRemove": "Remover vários contactos ainda não contactados, de uma vez",
       "walletGet": "Saldo actual e últimos movimentos",
       "smsSend": "Enviar um SMS"
     },
@@ -708,15 +717,15 @@
       "contactSearch": "Pesquisa por nome ou telefone",
       "contactId": "ID do contacto",
       "campaignStatus": "Filtrar por status (DRAFT, RUNNING, FINISHED, …)",
-      "campaignId": "ID da campanha"
+      "campaignId": "ID da campanha",
+      "contactStatus": "Filtrar por estado (PENDING, IN_PROGRESS, COMPLETED, FAILED, OPTED_OUT)"
     },
     "wh": {
-      "callCompleted": "Chamada terminada com sucesso",
-      "callFailed": "Falha técnica ao estabelecer ou manter a chamada",
-      "callNoAnswer": "Destino não atendeu dentro do tempo limite",
-      "callEscalated": "Chamada transferida para agente humano",
-      "campaignFinished": "Campanha concluiu todas as chamadas",
-      "walletLowBalance": "Saldo abaixo do limiar configurado"
+      "callStarted": "A chamada foi marcada",
+      "callEnded": "A chamada terminou — com desfecho, duração, custo e gravação",
+      "callFailed": "Não foi possível marcar a chamada",
+      "campaignPaused": "Campanha pausada, manual ou automaticamente",
+      "campaignCompleted": "Campanha terminou — com os totais finais"
     },
     "err": {
       "e400": "Payload inválido ou parâmetro em falta. Ver campo `error` na resposta.",
