@@ -2,7 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { prisma, type BillingMode } from "@falai/db";
 import type { TelephonyProvider } from "@falai/providers";
 import type { CallEngineService } from "./CallEngineService.js";
-import { reserveBalance, computeReservation, effectiveBillingMode, settleCall, type PriceConfig } from "./billing.service.js";
+import { reserveBalance, computeReservation, effectiveBillingMode, type PriceConfig } from "./billing.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "./outboundExtension.service.js";
 import { enqueueWebhook } from "./webhookDispatch.service.js";
 
@@ -468,7 +468,7 @@ export class CampaignDispatcher {
     const now = new Date();
 
     try {
-      await this.telephony.playPrompt({
+      const { providerCallId } = await this.telephony.playPrompt({
         number: contact.phone,
         prompts: [scriptPromptName],
         dialPermission: fromExtension,
@@ -477,7 +477,6 @@ export class CampaignDispatcher {
         tenantId: campaign.tenantId,
       });
 
-      // Create a settled call record immediately (fire-and-forget call, no live engine)
       const call = await prisma.call.create({
         data: {
           tenantId: campaign.tenantId,
@@ -485,44 +484,35 @@ export class CampaignDispatcher {
           contactId: contact.id,
           toNumber: contact.phone,
           kind: "FIXED_SCRIPT",
-          status: "COMPLETED",
-          yeastarCallId: `script_${campaign.id}_${contact.id}`,
+          status: "DIALING",
+          yeastarCallId: providerCallId,
           variables: (contact.attributes as object) ?? {},
           startedAt: now,
-          answeredAt: now,
-          endedAt: now,
-          durationSecs: 0,
         },
       });
 
-      // Settle billing (PER_CALL = flat debit from reserved balance)
-      await settleCall({
+      // A duração real, a faturação, o estado do contacto e o webhook call.ended
+      // chegam todos pelo CALL_ENDED do Asterisk, tratados no cleanupSession
+      // partilhado. Sem esta sessão o evento não encontrava a chamada — era por
+      // isso que ficava tudo a zero e por faturar.
+      this.callEngine.registerFixedScriptCall({
         callId: call.id,
         tenantId: campaign.tenantId,
-        billedSecs: 0,
+        toNumber: contact.phone,
+        providerCallId,
+        variables: (contact.attributes as Record<string, unknown>) ?? {},
         reservedCents: estimatedCost,
-        price,
-      });
-
-      // Fluxo fire-and-forget: não passa pelo CallEngineService, por isso o
-      // call.ended tem de ser emitido aqui em vez de no onCallEnded partilhado.
-      await enqueueWebhook({
-        tenantId: campaign.tenantId,
-        event: "call.ended",
-        callId: call.id,
-        payload: { callId: call.id, tenantId: campaign.tenantId, campaignId: campaign.id, contactId: contact.id, toNumber: contact.phone, status: "COMPLETED", durationSecs: 0 },
+        billingMode: price.billingMode,
+        pricePerMinuteCents: price.pricePerMinuteCents,
+        pricePerCallCents: price.pricePerCallCents,
       });
 
       await prisma.campaignContact.update({
         where: { id: cc.id },
-        data: { status: "COMPLETED", callId: call.id, attempts: { increment: 1 } },
-      });
-      await prisma.campaign.update({
-        where: { id: campaign.id },
-        data: { completed: { increment: 1 } },
+        data: { status: "IN_PROGRESS", callId: call.id, attempts: { increment: 1 } },
       });
 
-      this.log.info({ campaignId: campaign.id, callId: call.id, phone: contact.phone }, "dispatcher.fixed_script_dispatched");
+      this.log.info({ campaignId: campaign.id, callId: call.id, providerCallId, phone: contact.phone }, "dispatcher.fixed_script_dispatched");
     } catch (err) {
       const failReason = err instanceof Error ? err.message : String(err);
       this.log.error({ err, contactId: contact.id, failReason }, "dispatcher.fixed_script_failed");

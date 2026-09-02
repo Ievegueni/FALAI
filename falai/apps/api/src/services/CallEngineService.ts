@@ -14,6 +14,8 @@ type AudioCacheKey = Parameters<AudioCache["getPromptName"]>[0];
 // State per active call
 interface CallSession {
   callId: string;
+  /** FIXED_SCRIPT só toca um áudio e desliga: não tem turnos, IA nem saudação. */
+  kind: "VOICE_AI" | "FIXED_SCRIPT";
   agentId: string;
   tenantId: string;
   toNumber: string;
@@ -118,6 +120,7 @@ export class CallEngineService {
 
     const session: CallSession = {
       callId: params.callId,
+      kind: "VOICE_AI",
       agentId: params.agentId,
       tenantId: params.tenantId,
       toNumber: params.toNumber,
@@ -155,6 +158,61 @@ export class CallEngineService {
         modelId: model.modelId ?? "platform",
       },
       "call_engine.registered"
+    );
+  }
+
+  /**
+   * Regista uma chamada de campanha de script fixo. Não passa pelo
+   * `registerCall` porque este exige agente, prompt e motor de IA, que aqui não
+   * existem — mas partilha o mesmo `Map` de sessões, e é isso que importa: sem
+   * sessão, os eventos do Asterisk não encontram a chamada e o registo ficava
+   * com duração zero e por faturar.
+   */
+  registerFixedScriptCall(params: {
+    callId: string;
+    tenantId: string;
+    toNumber: string;
+    providerCallId: string;
+    variables?: Record<string, unknown>;
+    reservedCents: number;
+    billingMode: BillingMode;
+    pricePerMinuteCents: number;
+    pricePerCallCents: number;
+  }): void {
+    this.sessions.set(params.providerCallId, {
+      callId: params.callId,
+      kind: "FIXED_SCRIPT",
+      agentId: "",
+      tenantId: params.tenantId,
+      toNumber: params.toNumber,
+      providerCallId: params.providerCallId,
+      systemPrompt: "",
+      ttsVoiceId: "",
+      variables: params.variables ?? {},
+      maxCallSeconds: 0,
+      maxTurnSeconds: 0,
+      escalationNumber: null,
+      llm: null,
+      modelId: null,
+      maxReplyChars: null,
+      allowedEscalationNumbers: [],
+      reservedCents: params.reservedCents,
+      billingMode: params.billingMode,
+      pricePerMinuteCents: params.pricePerMinuteCents,
+      pricePerCallCents: params.pricePerCallCents,
+      state: "DIALING",
+      history: [],
+      turnSeq: 0,
+      startedAt: new Date(),
+      answeredAt: null,
+      vad: null,
+      maxCallTimer: null,
+      silenceTimer: null,
+    });
+    this.callIndex.set(params.callId, params.providerCallId);
+    this.cfg.log.info(
+      { callId: params.callId, providerCallId: params.providerCallId },
+      "call_engine.registered_fixed_script"
     );
   }
 
@@ -200,6 +258,10 @@ export class CallEngineService {
       where: { id: session.callId },
       data: { status: "IN_PROGRESS", answeredAt },
     });
+
+    // O script fixo já está a tocar, tocado pelo próprio adaptador. Sobrepor-lhe
+    // a saudação do agente daria duas vozes em simultâneo.
+    if (session.kind === "FIXED_SCRIPT") return;
 
     session.maxCallTimer = setTimeout(() => { void this.handleMaxDuration(session); }, session.maxCallSeconds * 1000);
     await this.playSystemPrompt(session, "greeting");
@@ -350,6 +412,9 @@ export class CallEngineService {
   }
 
   private async onCallFailed(session: CallSession, reason: string): Promise<void> {
+    // Mesma guarda do onCallEnded: uma chamada já fechada não pode ser
+    // reaberta como falhada por um evento tardio ou duplicado.
+    if (session.state === "TERMINATED") return;
     await this.cleanupSession(session, "FAILED", 0, reason);
   }
 

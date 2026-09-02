@@ -82,6 +82,9 @@ export class AsteriskAdapter implements TelephonyProvider {
    */
   private promptSessions = new Map<string, { prompts: string[]; index: number; remainingLoops: number }>();
 
+  /** Canais para os quais já emitimos evento terminal. Ver StasisEnd/ChannelDestroyed. */
+  private settledChannels = new Set<string>();
+
   private readonly app: string;
   private readonly context: string;
   /** Trunk em cache, com o instante em que foi lido (ver TRUNK_TTL_MS). */
@@ -258,12 +261,15 @@ export class AsteriskAdapter implements TelephonyProvider {
       throw new AsteriskError("soundsDir não configurado — não há onde guardar os prompts");
     }
     await mkdir(this.cfg.soundsDir, { recursive: true });
-    await writeFile(join(this.cfg.soundsDir, `${name}.wav`), wavBuffer);
+    // .wav16 e não .wav: o Asterisk lê a extensão ".wav" como slin 8 kHz e
+    // recusa o ficheiro com "frequency mismatch", porque o TTS devolve 16 kHz.
+    await writeFile(join(this.cfg.soundsDir, `${name}.wav16`), wavBuffer);
   }
 
   /**
-   * Nome com que o Asterisk conhece um prompt nosso. A pasta partilhada está
-   * montada em /var/lib/asterisk/sounds/custom, e é assim que o ARI a resolve.
+   * Nome com que o Asterisk conhece um prompt nosso. `soundsDir` tem de ser a
+   * pasta para onde "custom/" resolve no motor (ver o symlink em
+   * <astdatadir>/sounds/custom), senão o playback falha por ficheiro inexistente.
    */
   private mediaFor(prompt: string): string {
     return `sound:custom/${prompt}`;
@@ -279,7 +285,7 @@ export class AsteriskAdapter implements TelephonyProvider {
    * "playPrompt no Asterisk exige providerCallId" — ou seja, nenhuma campanha
    * de script fixo chegava a ligar seja a quem for.
    */
-  async playPrompt(params: PlayPromptParams): Promise<void> {
+  async playPrompt(params: PlayPromptParams): Promise<{ providerCallId: string }> {
     const id = params.providerCallId;
     if (!id) {
       if (!params.number) {
@@ -298,7 +304,7 @@ export class AsteriskAdapter implements TelephonyProvider {
         index: 0,
         remainingLoops: params.count ?? 1,
       });
-      return;
+      return { providerCallId };
     }
 
     for (let i = 0; i < (params.count ?? 1); i++) {
@@ -308,6 +314,7 @@ export class AsteriskAdapter implements TelephonyProvider {
       }
     }
     // O fim real chega pelo evento PlaybackFinished do ARI.
+    return { providerCallId: id };
   }
 
   /** Toca o próximo prompt de uma chamada de script fixo; desliga no fim. */
@@ -388,9 +395,13 @@ export class AsteriskAdapter implements TelephonyProvider {
             ring.onAnswer(id);
             break;
           }
-          // Campanha de script fixo: atenderam, começa o áudio.
+          // Campanha de script fixo: atenderam, começa o áudio. O CALL_ANSWERED
+          // é emitido à mesma — quem regista a chamada precisa do instante do
+          // atendimento; o motor sabe não lhe sobrepor a saudação do agente.
           if (this.promptSessions.has(id)) {
-            this.answeredAt.set(id, Date.now());
+            const at = new Date();
+            this.answeredAt.set(id, at.getTime());
+            this.handler({ type: "CALL_ANSWERED", providerCallId: id, answeredAt: at });
             this.advancePromptSession(id);
             break;
           }
@@ -440,6 +451,22 @@ export class AsteriskAdapter implements TelephonyProvider {
             ring.onAllFailed();
           }
           break;
+        }
+
+        // O Asterisk manda StasisEnd E ChannelDestroyed para o mesmo canal. Sem
+        // isto, o segundo já não encontrava o answeredAt (apagado pelo
+        // primeiro), concluía que ninguém tinha atendido e emitia um
+        // CALL_FAILED que sobrepunha o CALL_ENDED correcto — a chamada acabava
+        // registada como falhada, com duração zero e por faturar.
+        if (this.settledChannels.has(id)) break;
+        this.settledChannels.add(id);
+        if (this.settledChannels.size > 500) {
+          // Limpeza preguiçosa: o Set não pode crescer sem fim num processo
+          // que corre semanas.
+          for (const old of this.settledChannels) {
+            this.settledChannels.delete(old);
+            if (this.settledChannels.size <= 250) break;
+          }
         }
 
         this.promptSessions.delete(id);
