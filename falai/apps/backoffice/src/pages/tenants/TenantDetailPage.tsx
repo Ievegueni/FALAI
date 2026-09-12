@@ -211,6 +211,22 @@ export function TenantDetailPage() {
     onError: (e: Error) => toast.error(e.message || 'Erro ao criar utilizador.'),
   });
 
+  const [smsTextDraft, setSmsTextDraft] = useState<string | null>(null);
+
+  const missedSmsMut = useMutation({
+    mutationFn: (data: { missedCallSms?: boolean; missedCallSmsText?: string | null }) =>
+      tenantsApi.update(id!, data as never),
+    onSuccess: () => { invalidateTenant(); setSmsTextDraft(null); toast.success('SMS de chamada não atendida actualizado.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar o SMS automático.'),
+  });
+
+  const recordingMut = useMutation({
+    mutationFn: (data: { recordCalls?: boolean; recordingAnnounce?: boolean }) =>
+      tenantsApi.update(id!, data as never),
+    onSuccess: () => { invalidateTenant(); toast.success('Gravação de chamadas actualizada.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar a gravação.'),
+  });
+
   const billingOverrideMut = useMutation({
     mutationFn: (mode: BillingMode | null) => tenantsApi.update(id!, { billingModeOverride: mode } as never),
     onSuccess: () => { invalidateTenant(); toast.success('Modo de cobrança do cliente actualizado.'); },
@@ -323,6 +339,87 @@ export function TenantDetailPage() {
               <div className="flex justify-between"><dt className="text-gray-500">Webhook URL</dt><dd className="font-medium text-right max-w-[200px] truncate">{tenant.webhookUrl ?? '–'}</dd></div>
               <div className="flex justify-between"><dt className="text-gray-500">Onboarding</dt><dd className="font-medium">{tenant.onboardingCompletedAt ? formatDate(tenant.onboardingCompletedAt) : 'Pendente'}</dd></div>
             </dl>
+          </Card>
+          <Card>
+            <h2 className="text-sm font-semibold text-gray-700 mb-1">Gravação de chamadas</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Grava as chamadas de entrada deste cliente. A pasta e o formato definem-se em Configurações do Sistema.
+            </p>
+            <div className="space-y-3">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={tenant.recordCalls ?? false}
+                  disabled={recordingMut.isPending}
+                  onChange={(e) => recordingMut.mutate({ recordCalls: e.target.checked })}
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-gray-800">Gravar as chamadas</span>
+                  <span className="block text-xs text-gray-400">Desligado = não se grava nada deste cliente.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={tenant.recordingAnnounce ?? false}
+                  disabled={recordingMut.isPending || !tenant.recordCalls}
+                  onChange={(e) => recordingMut.mutate({ recordingAnnounce: e.target.checked })}
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-gray-800">Avisar que a chamada será gravada</span>
+                  <span className="block text-xs text-gray-400">
+                    Toca o aviso aos dois lados assim que alguém atende, e o aviso fica dentro da própria gravação.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </Card>
+          <Card>
+            <h2 className="text-sm font-semibold text-gray-700 mb-1">SMS de chamada não atendida</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Envia uma mensagem a quem ficou sem resposta — quem ligou e não foi atendido, ou quem este
+              cliente tentou contactar em vão. No máximo um SMS por número por dia. Cada SMS é cobrado ao cliente.
+            </p>
+            <div className="space-y-3">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={tenant.missedCallSms ?? false}
+                  disabled={missedSmsMut.isPending}
+                  onChange={(e) => missedSmsMut.mutate({ missedCallSms: e.target.checked })}
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-gray-800">Enviar SMS automático</span>
+                  <span className="block text-xs text-gray-400">Precisa da mensagem escrita em baixo.</span>
+                </span>
+              </label>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Mensagem</label>
+                <textarea
+                  rows={3}
+                  maxLength={480}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  placeholder="Ligou para a {empresa} e não conseguimos atender. Entraremos em contacto."
+                  value={smsTextDraft ?? tenant.missedCallSmsText ?? ''}
+                  onChange={(e) => setSmsTextDraft(e.target.value)}
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Variáveis: <code>{'{empresa}'}</code> (nome do cliente) e <code>{'{numero}'}</code> (número de destino).
+                </p>
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    size="sm"
+                    disabled={smsTextDraft === null || missedSmsMut.isPending}
+                    onClick={() => missedSmsMut.mutate({ missedCallSmsText: smsTextDraft })}
+                  >
+                    Guardar mensagem
+                  </Button>
+                </div>
+              </div>
+            </div>
           </Card>
         </div>
       )}

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +26,10 @@ export function CallDetailPage() {
   const qc = useQueryClient();
   const { success, error } = useToast();
 
+  // A gravação vem por uma rota autenticada, por isso chega como blob e
+  // transforma-se num object URL — que tem de ser libertado ao sair.
+  const [recordingSrc, setRecordingSrc] = useState<string | null>(null);
+
   const { data: call, isLoading } = useQuery({
     queryKey: ['calls', id],
     queryFn: () => callsApi.get(id!),
@@ -33,6 +38,27 @@ export function CallDetailPage() {
       return status && ['IN_PROGRESS', 'DIALING', 'RINGING', 'QUEUED'].includes(status) ? 3000 : false;
     },
   });
+
+  const hasRecording = !!call?.recordingUrl;
+  useEffect(() => {
+    if (!hasRecording || !id) return;
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    void callsApi
+      .recording(id)
+      .then((url) => {
+        // Se o ecrã já mudou entretanto, o URL criado aqui não chega a ser
+        // usado — libertá-lo evita segurar o ficheiro em memória.
+        if (cancelled) { URL.revokeObjectURL(url); return; }
+        objectUrl = url;
+        setRecordingSrc(url);
+      })
+      .catch(() => setRecordingSrc(null));
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [hasRecording, id]);
 
   const cancel = useMutation({
     mutationFn: () => callsApi.cancel(id!),
@@ -133,12 +159,12 @@ export function CallDetailPage() {
         </Card>
 
         {/* Recording */}
-        {call.recordingUrl && (
+        {call.recordingUrl && recordingSrc && (
           <Card>
             <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
               <Play className="h-4 w-4" /> {t('calls.detail.recording')}
             </h2>
-            <audio controls className="w-full" src={call.recordingUrl}>
+            <audio controls className="w-full" src={recordingSrc}>
               {t('calls.detail.audioUnsupported')}
             </audio>
           </Card>

@@ -2,9 +2,9 @@
  * Encaminhamento de chamadas de entrada do motor Asterisk nativo (secção 6 do
  * plano do webphone). Antes disto, nada tratava o evento que o dialplan
  * entrega a Stasis(falai,inbound,${EXTEN}) — a chamada nunca tocava em lado
- * nenhum. Só suporta InboundRoute.destType === "EXTENSION" para já; GROUP/IVR/
- * AI_AGENT ficam no fallback de "sem rota" (fica registado, não é regressão:
- * nada disto tocava antes).
+ * nenhum. Suporta InboundRoute.destType "EXTENSION" e "IVR" (atendimento
+ * automático — ver ivr.service.ts); GROUP/AI_AGENT ficam no fallback de "sem
+ * rota" (fica registado, não é regressão: nada disto tocava antes).
  *
  * "Ring group": toca em simultâneo no endpoint de hardphone e no de webphone
  * da mesma extensão (ver asteriskNaming.ts); quem atender primeiro entra na
@@ -21,9 +21,16 @@
 import type { AsteriskAdapter } from "@falai/providers";
 import { extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
 import type { CallEvent } from "@falai/shared";
-import type { FastifyBaseLogger } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { prisma } from "@falai/db";
 import { resolveInboundGlobal, resolveInboundForTenant } from "./callRouting.service.js";
+import { IvrEngine, type InboundEvent, type IvrDestination } from "./ivr.service.js";
+import {
+  startCallRecording,
+  stopCallRecording,
+  saveFinishedRecording,
+} from "./callRecording.service.js";
+import { notifyMissedCall } from "./missedCallSms.service.js";
 import {
   computeCallCost,
   effectiveBillingMode,
@@ -33,36 +40,79 @@ import {
 
 const RING_TIMEOUT_SECS = 25;
 
+/**
+ * Chamadas de entrada que chegaram mesmo a tocar numa extensão.
+ *
+ * Serve o SMS de chamada não atendida: quem desliga ainda dentro do menu do IVR
+ * não "ficou sem resposta" — ninguém era suposto atendê-lo ainda —, e mandar-lhe
+ * uma mensagem a pedir desculpa seria errado (e pago).
+ */
+const rangExtension = new Set<string>();
+
 export function registerInboundCallRouter(
   onCallEvent: (handler: (event: CallEvent) => Promise<void>) => void,
   asterisk: AsteriskAdapter,
+  fastify: FastifyInstance,
   log: FastifyBaseLogger
 ): void {
+  const ivr = new IvrEngine(asterisk, log, (event, tenantId, dest) =>
+    deliverToDestination(event, tenantId, dest, asterisk, log)
+  );
+
   onCallEvent(async (event) => {
     // O canal do trunk morreu: é aqui — e só aqui — que a chamada de entrada se
     // fecha e se cobra. CALL_FAILED chega quando o canal nunca chegou a estar
     // "Up"; para uma chamada de entrada isso não acontece (atendemo-la nós à
     // entrada), mas trata-se na mesma para o registo não ficar pendurado.
     if (event.type === "CALL_ENDED" || event.type === "CALL_FAILED") {
+      ivr.cancel(event.providerCallId);
       await closeInboundCall(
         event.providerCallId,
         event.type === "CALL_ENDED" ? event.endedAt : new Date(),
+        asterisk,
+        fastify,
         log
       );
       return;
     }
+    // A gravação fecha depois da chamada e sem canal associado — liga-se à
+    // linha da tabela Call pelo nome do ficheiro.
+    if (event.type === "RECORDING_FINISHED") {
+      await saveFinishedRecording(event.recordingName, event.format, log);
+      return;
+    }
+    if (event.type === "RECORDING_FAILED") {
+      log.error(
+        { recordingName: event.recordingName, reason: event.reason },
+        "inbound_call_router.recording_failed"
+      );
+      return;
+    }
+    // Teclas e fins de áudio só interessam a uma chamada que esteja num menu —
+    // as do motor de conversa passam ao lado (o IvrEngine ignora canais que não
+    // conhece).
+    if (event.type === "DTMF") {
+      ivr.handleDtmf(event.providerCallId, event.digit);
+      return;
+    }
+    if (event.type === "PROMPT_FINISHED") {
+      ivr.handlePromptFinished(event.providerCallId, event.playbackId);
+      return;
+    }
     if (event.type !== "INBOUND_CALL_STARTED") return;
     try {
-      await handleInboundCall(event, asterisk, log);
+      await handleInboundCall(event, ivr, asterisk, log);
     } catch (err) {
       log.error({ err, providerCallId: event.providerCallId }, "inbound_call_router.failed");
+      ivr.cancel(event.providerCallId);
       await asterisk.noRouteFallback(event.providerCallId).catch(() => {});
     }
   });
 }
 
 async function handleInboundCall(
-  event: Extract<CallEvent, { type: "INBOUND_CALL_STARTED" }>,
+  event: InboundEvent,
+  ivr: IvrEngine,
   asterisk: AsteriskAdapter,
   log: FastifyBaseLogger
 ): Promise<void> {
@@ -75,28 +125,61 @@ async function handleInboundCall(
     ? await resolveInboundForTenant(event.tenantId, event.did)
     : await resolveInboundGlobal(event.did);
 
-  if (!route || route.destType !== "EXTENSION") {
-    log.info({ did: event.did, tenantId: event.tenantId ?? null, route }, "inbound_call_router.no_route");
+  if (!route) {
+    log.info({ did: event.did, tenantId: event.tenantId ?? null }, "inbound_call_router.no_route");
     await asterisk.noRouteFallback(event.providerCallId);
     return;
   }
 
+  // Atendimento automático: quem encaminha passa a ser a tecla que o chamador
+  // premir. O registo abre-se já — a chamada está a ser servida —, mas só se
+  // cobra se alguém a atender do outro lado (ver closeInboundCall).
+  if (route.destType === "IVR") {
+    await openInboundCall(event, route.tenantId, log);
+    await ivr.start(event, route.tenantId, route.destValue);
+    return;
+  }
+
+  if (!(await deliverToDestination(event, route.tenantId, route, asterisk, log))) {
+    await asterisk.noRouteFallback(event.providerCallId);
+  }
+}
+
+/**
+ * Faz a chamada tocar no destino indicado. Devolve false quando não é possível
+ * (destino desconhecido, extensão inexistente, ninguém alcançável) — quem chama
+ * decide o que dizer ao chamador.
+ *
+ * É partilhada pelas rotas de entrada directas e pelo IVR: a tecla premida
+ * acaba aqui exactamente como acabaria uma rota DID → extensão.
+ */
+async function deliverToDestination(
+  event: InboundEvent,
+  tenantId: string,
+  dest: IvrDestination,
+  asterisk: AsteriskAdapter,
+  log: FastifyBaseLogger
+): Promise<boolean> {
+  if (dest.destType !== "EXTENSION") {
+    log.info({ did: event.did, dest }, "inbound_call_router.unsupported_dest");
+    return false;
+  }
+
   const ext = await prisma.extension.findFirst({
-    where: { tenantId: route.tenantId, number: route.destValue, isActive: true },
+    where: { tenantId, number: dest.destValue, isActive: true },
     select: { sipAuthUser: true },
   });
   if (!ext) {
-    log.warn({ did: event.did, route }, "inbound_call_router.extension_not_found");
-    await asterisk.noRouteFallback(event.providerCallId);
-    return;
+    log.warn({ did: event.did, dest }, "inbound_call_router.extension_not_found");
+    return false;
   }
 
   // O registo nasce aqui, assim que se sabe de quem é a chamada: a tabela Call é
   // a fonte de verdade da facturação (ver routes/v1/usage.ts) e sem linha a
   // chamada é invisível — não aparece na lista nem conta para o consumo. Fica de
-  // fora, de propósito, tudo o que caiu no noRouteFallback acima: uma chamada
-  // que não tocou em ninguém não se regista nem se cobra.
-  await openInboundCall(event, route.tenantId, log);
+  // fora, de propósito, tudo o que devolve false acima: uma chamada que não
+  // tocou em ninguém não se regista nem se cobra.
+  const callId = await openInboundCall(event, tenantId, log);
 
   const targets = [extensionEndpointId(ext.sipAuthUser), extensionWebEndpointId(ext.sipAuthUser)];
   const bridge = await asterisk.createBridge();
@@ -116,13 +199,16 @@ async function handleInboundCall(
   );
   const channelIds = originated.filter((id): id is string => id !== null);
 
+  // A partir daqui a chamada tocou mesmo em alguém — é o que distingue "não
+  // atenderam" de "desligou no menu".
+  if (channelIds.length > 0) rangExtension.add(event.providerCallId);
+
   if (channelIds.length === 0) {
     log.warn({ did: event.did, targets }, "inbound_call_router.no_target_reachable");
-    await asterisk.noRouteFallback(event.providerCallId);
     // A bridge já existe: sem isto ficava órfã no Asterisk a cada chamada de
     // entrada que não encontra ninguém.
     await asterisk.destroyBridge(bridge.id).catch(() => {});
-    return;
+    return false;
   }
 
   asterisk.registerRingGroup(
@@ -131,7 +217,16 @@ async function handleInboundCall(
       // Instante em que ALGUÉM atendeu — é a partir daqui que há conversa e,
       // portanto, tempo a cobrar.
       void markInboundAnswered(event.providerCallId, log);
-      asterisk.addChannelToBridge(bridge.id, answeredId).catch((err) => log.error({ err }, "inbound_call_router.bridge_join_failed"));
+      asterisk
+        .addChannelToBridge(bridge.id, answeredId)
+        .then(() => {
+          // Só depois de os dois lados estarem na bridge é que há conversa para
+          // gravar — gravar antes disso dava um ficheiro com o sinal de chamada.
+          if (callId) {
+            void startCallRecording({ callId, tenantId, bridgeId: bridge.id, asterisk, log });
+          }
+        })
+        .catch((err) => log.error({ err }, "inbound_call_router.bridge_join_failed"));
       for (const id of channelIds) {
         if (id !== answeredId) asterisk.hangup(id).catch(() => {});
       }
@@ -142,6 +237,7 @@ async function handleInboundCall(
       asterisk.destroyBridge(bridge.id).catch(() => {});
     }
   );
+  return true;
 }
 
 /**
@@ -154,9 +250,9 @@ async function openInboundCall(
   event: Extract<CallEvent, { type: "INBOUND_CALL_STARTED" }>,
   tenantId: string,
   log: FastifyBaseLogger
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await prisma.call.upsert({
+    const call = await prisma.call.upsert({
       where: { yeastarCallId: event.providerCallId },
       create: {
         tenantId,
@@ -169,11 +265,14 @@ async function openInboundCall(
         startedAt: new Date(),
       },
       update: {},
+      select: { id: true },
     });
+    return call.id;
   } catch (err) {
     // Contabilidade nunca derruba a chamada: sem registo o cliente perde a
     // linha na lista, mas continua a falar.
     log.error({ err, providerCallId: event.providerCallId }, "inbound_call_router.call_row_failed");
+    return null;
   }
 }
 
@@ -201,16 +300,25 @@ async function markInboundAnswered(providerCallId: string, log: FastifyBaseLogge
 async function closeInboundCall(
   providerCallId: string,
   endedAt: Date,
+  asterisk: AsteriskAdapter,
+  fastify: FastifyInstance,
   log: FastifyBaseLogger
 ): Promise<void> {
+  // Lê-se e larga-se sempre, mesmo quando não há nada a fazer com isto: deixar
+  // a entrada para trás era ir enchendo o Set a cada chamada.
+  const rang = rangExtension.delete(providerCallId);
   try {
     const call = await prisma.call.findUnique({
       where: { yeastarCallId: providerCallId },
-      select: { id: true, tenantId: true, kind: true, answeredAt: true },
+      select: { id: true, tenantId: true, kind: true, answeredAt: true, fromNumber: true },
     });
     // Os eventos terminais chegam para TODAS as chamadas do motor (directas,
     // agente de IA, ...) — aqui só nos interessam as de entrada.
     if (!call || call.kind !== "INBOUND") return;
+
+    // Acabou a conversa, acabou a gravação. É este fecho que dispara o
+    // RecordingFinished, e portanto o registo do ficheiro na chamada.
+    await stopCallRecording(call.id, asterisk, log);
 
     // Não se usa o `durationSecs` do evento: o canal do trunk é atendido por nós
     // no início do encaminhamento, por isso a duração dele inclui o tempo de
@@ -231,7 +339,20 @@ async function closeInboundCall(
     });
     if (claimed.count === 0) return; // já fechada (e já cobrada) por outro evento
 
-    if (billedSecs <= 0) return; // ninguém atendeu: não há nada a cobrar
+    if (billedSecs <= 0) {
+      // Ninguém atendeu: não há nada a cobrar, mas há a quem responder. Só se
+      // avisa quem chegou a fazer tocar uma extensão — ver rangExtension.
+      if (status === "NO_ANSWER" && rang) {
+        await notifyMissedCall({
+          fastify,
+          tenantId: call.tenantId,
+          toNumber: call.fromNumber,
+          callId: call.id,
+          log,
+        });
+      }
+      return;
+    }
     await chargeInboundCall(call.id, call.tenantId, billedSecs, log);
   } catch (err) {
     log.error({ err, providerCallId }, "inbound_call_router.close_failed");

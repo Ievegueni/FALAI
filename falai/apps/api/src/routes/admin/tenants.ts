@@ -51,6 +51,10 @@ const updateSchema = z.object({
   webhookUrl: z.string().url().optional(),
   webhookSecret: z.string().min(16).optional(),
   billingModeOverride: z.enum(["PER_MINUTE", "PER_SECOND", "PER_CALL"]).nullable().optional(),
+  recordCalls: z.boolean().optional(),
+  recordingAnnounce: z.boolean().optional(),
+  missedCallSms: z.boolean().optional(),
+  missedCallSmsText: z.string().max(480).nullable().optional(),
 });
 
 const smsConfigSchema = z.object({
@@ -105,6 +109,10 @@ function mapTenant(t: any) {
       : null,
     maxConcurrentCalls: t.maxConcurrent,
     billingModeOverride: t.billingModeOverride ?? null,
+    recordCalls: t.recordCalls ?? false,
+    recordingAnnounce: t.recordingAnnounce ?? false,
+    missedCallSms: t.missedCallSms ?? false,
+    missedCallSmsText: t.missedCallSmsText ?? null,
     // features efectivas (o que o cliente vê) + overrides crus (o que o operador definiu)
     features: computeFeatures({
       overrides: t.features,
@@ -213,6 +221,15 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null } });
     if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
 
+    // Ligar o SMS automático sem mensagem escrita deixava o aviso ligado a não
+    // fazer nada — falha silenciosa que só se nota quando um cliente se queixa
+    // de não receber nada.
+    const smsText = body.missedCallSmsText !== undefined ? body.missedCallSmsText : existing.missedCallSmsText;
+    const smsOn = body.missedCallSms !== undefined ? body.missedCallSms : existing.missedCallSms;
+    if (smsOn && !(smsText ?? "").trim()) {
+      return reply.status(400).send({ error: "Define o texto da mensagem antes de ligar o SMS automático" });
+    }
+
     const tenant = await prisma.tenant.update({
       where: { id: request.params.id },
       data: {
@@ -226,6 +243,10 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.webhookUrl !== undefined && { webhookUrl: body.webhookUrl }),
         ...(body.webhookSecret !== undefined && { webhookSecret: body.webhookSecret }),
         ...(body.billingModeOverride !== undefined && { billingModeOverride: body.billingModeOverride }),
+        ...(body.recordCalls !== undefined && { recordCalls: body.recordCalls }),
+        ...(body.recordingAnnounce !== undefined && { recordingAnnounce: body.recordingAnnounce }),
+        ...(body.missedCallSms !== undefined && { missedCallSms: body.missedCallSms }),
+        ...(body.missedCallSmsText !== undefined && { missedCallSmsText: body.missedCallSmsText }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },
     });

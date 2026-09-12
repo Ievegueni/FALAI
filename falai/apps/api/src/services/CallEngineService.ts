@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "@falai/db";
 import type { CallStatus, BillingMode } from "@falai/db";
-import type { CallEvent } from "@falai/shared";
+import { isChannelCallEvent, type CallEvent } from "@falai/shared";
 import type { TelephonyProvider, TurnMessage, LlmProvider } from "@falai/providers";
 import { VadDetector } from "./VadDetector.js";
 import type { TurnProcessor } from "./TurnProcessor.js";
@@ -217,6 +217,8 @@ export class CallEngineService {
   }
 
   async handleEvent(event: CallEvent): Promise<void> {
+    // Gravação de chamada não tem canal e não diz respeito ao motor de conversa.
+    if (!isChannelCallEvent(event)) return;
     const session = this.sessions.get(event.providerCallId);
     if (!session) return;
 

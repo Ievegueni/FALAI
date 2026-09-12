@@ -39,6 +39,17 @@ export const tenantRoutingRoutes: FastifyPluginAsync = async (fastify) => {
     return !!trunk;
   }
 
+  /**
+   * Um DID encaminhado para "IVR" tem no destValue o id de um menu. Sem esta
+   * verificação era possível apontar um número para um menu inexistente (ou de
+   * outro cliente) e só dar por isso com um chamador a ouvir "sem serviço".
+   */
+  async function assertDestination(tenantId: string, destType: string, destValue: string): Promise<boolean> {
+    if (destType !== "IVR") return true;
+    const menu = await prisma.ivrMenu.findFirst({ where: { id: destValue, tenantId }, select: { id: true } });
+    return !!menu;
+  }
+
   const outboundInclude = { trunk: { select: { id: true, name: true } }, permissions: { select: { extensionId: true } } } as const;
 
   // ── Rotas de saída ───────────────────────────────────────────────────────
@@ -128,6 +139,9 @@ export const tenantRoutingRoutes: FastifyPluginAsync = async (fastify) => {
     if (!requireManager(role, reply)) return;
     const body = inboundCreate.parse(request.body);
     if (!(await assertTrunk(tenantId, body.trunkId))) return reply.status(400).send({ error: "Trunk inválido" });
+    if (!(await assertDestination(tenantId, body.destType, body.destValue))) {
+      return reply.status(400).send({ error: "Menu de IVR inexistente" });
+    }
 
     const route = await prisma.inboundRoute.create({
       data: { tenantId, name: body.name, trunkId: body.trunkId, didPattern: body.didPattern, destType: body.destType, destValue: body.destValue },
@@ -145,6 +159,14 @@ export const tenantRoutingRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await prisma.inboundRoute.findFirst({ where: { id: request.params.id, tenantId } });
     if (!existing) return reply.status(404).send({ error: "Rota não encontrada" });
     if (body.trunkId && !(await assertTrunk(tenantId, body.trunkId))) return reply.status(400).send({ error: "Trunk inválido" });
+
+    // Qualquer um dos dois campos pode vir sozinho: valida-se o par que a rota
+    // vai ficar a ter, não só o que mudou.
+    const destType = body.destType ?? existing.destType;
+    const destValue = body.destValue ?? existing.destValue;
+    if (!(await assertDestination(tenantId, destType, destValue))) {
+      return reply.status(400).send({ error: "Menu de IVR inexistente" });
+    }
 
     await prisma.inboundRoute.update({
       where: { id: existing.id },

@@ -1,6 +1,10 @@
 import type { FastifyPluginAsync } from "fastify";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { resolve, sep, extname } from "node:path";
 import { prisma, type Prisma } from "@falai/db";
 import { z } from "zod";
+import { recordingSettings } from "../../services/callRecording.service.js";
 import { YeastarAdapter } from "@falai/providers";
 import { reserveBalance, computeReservation, effectiveBillingMode } from "../../services/billing.service.js";
 import { getTenantTelephony, getTenantAsterisk } from "../../services/tenantTelephony.service.js";
@@ -61,6 +65,18 @@ type CallRow = {
   }[];
 };
 
+/** Tipo de conteúdo da gravação, pela extensão com que foi gravada. */
+function recordingContentType(file: string): string {
+  switch (extname(file).toLowerCase()) {
+    case ".ogg": return "audio/ogg";
+    case ".wav": case ".wav49": return "audio/wav";
+    case ".gsm": return "audio/x-gsm";
+    case ".g722": return "audio/G722";
+    case ".alaw": case ".ulaw": return "audio/basic";
+    default: return "application/octet-stream";
+  }
+}
+
 function mapCall(c: CallRow) {
   const direction = c.kind === "INBOUND" ? "inbound" : "outbound";
   return {
@@ -80,7 +96,9 @@ function mapCall(c: CallRow) {
     startedAt: c.startedAt,
     endedAt: c.endedAt,
     createdAt: c.createdAt,
-    recordingUrl: c.recordingUrl ?? null,
+    // Nunca se devolve o caminho do ficheiro: o que o cliente recebe é a rota
+    // que o serve, já autenticada e com o dono da chamada validado.
+    recordingUrl: c.recordingUrl ? `/tenant/calls/${c.id}/recording` : null,
     agent: c.agent ?? { name: "" },
     contact: c.contact ? { name: c.contact.name ?? "" } : null,
     ...(c.variables !== undefined && { variables: c.variables }),
@@ -184,6 +202,52 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     if (pbxCall) return { call: mapPbxCall(pbxCall) };
 
     return reply.status(404).send({ error: "Chamada não encontrada" });
+  });
+
+  /**
+   * GET /tenant/calls/:id/recording — devolve o áudio da gravação.
+   *
+   * O ficheiro vive fora da árvore pública de propósito: uma gravação é das
+   * coisas mais sensíveis que a plataforma guarda, por isso passa por aqui,
+   * onde se confirma que a chamada é mesmo deste cliente.
+   */
+  fastify.get<{ Params: { id: string } }>("/:id/recording", { preHandler }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    const call = await prisma.call.findFirst({
+      where: { id: request.params.id, tenantId },
+      select: { recordingUrl: true },
+    });
+    if (!call?.recordingUrl) return reply.status(404).send({ error: "Gravação não encontrada" });
+
+    const { dir } = await recordingSettings();
+    if (!dir) return reply.status(503).send({ error: "Pasta de gravações não configurada" });
+
+    // O caminho vem da nossa base de dados, mas confirma-se na mesma que cai
+    // dentro da pasta de gravações: um valor estragado não pode virar uma forma
+    // de ler ficheiros do servidor.
+    const base = resolve(dir);
+    const file = resolve(base, call.recordingUrl);
+    if (file !== base && !file.startsWith(base + sep)) {
+      request.log.error({ callId: request.params.id }, "call_recording.path_outside_dir");
+      return reply.status(404).send({ error: "Gravação não encontrada" });
+    }
+
+    let size: number;
+    try {
+      size = (await stat(file)).size;
+    } catch {
+      // A linha diz que há gravação mas o ficheiro não está lá (apagado à mão,
+      // pasta trocada, purga). Não é erro do servidor — é uma gravação que
+      // deixou de existir.
+      request.log.warn({ callId: request.params.id, file }, "call_recording.file_missing");
+      return reply.status(404).send({ error: "Gravação não encontrada" });
+    }
+
+    return reply
+      .type(recordingContentType(call.recordingUrl))
+      .header("Content-Length", size)
+      .header("Cache-Control", "private, no-store")
+      .send(createReadStream(file));
   });
 
   // POST /tenant/calls — place an outbound call now
@@ -391,6 +455,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
             fromExtension: body.fromExtension,
             to: body.to,
             ref,
+            fastify,
             log: fastify.log,
           })
         : await (await getTenantTelephony(fastify, tenantId)).dial({

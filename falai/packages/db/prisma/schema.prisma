@@ -162,6 +162,13 @@ model Tenant {
   features             Json?
   // Override do modo de cobrança do plano (null = usa o do plano)
   billingModeOverride  BillingMode?
+  // Gravação das chamadas deste cliente. Desligado por defeito de propósito:
+  // gravar sem o cliente ter pedido é uma decisão que não nos compete tomar.
+  recordCalls          Boolean             @default(false)
+  // Toca o aviso de que a chamada vai ser gravada, assim que alguém atende.
+  // Separado de recordCalls porque nem todos os clientes precisam do aviso —
+  // e quem precisa não pode depender de se lembrar de o ligar à parte.
+  recordingAnnounce    Boolean             @default(false)
   lines                TenantLine[]
   // Motor de telefonia deste cliente. Permite migrar tenant a tenant para o
   // motor próprio (Asterisk) e reverter mudando só este campo, sem redeploy.
@@ -180,6 +187,11 @@ model Tenant {
   smsApiKey            String? // encriptado (AES-256-GCM) via crypto.service
   smsSenderId          String? // remetente (alfanumérico) atribuído ao cliente
   smsPriceSegmentCents Int? // preço por segmento (definido no backoffice; null = usa o do plano)
+  // SMS automático a quem ficou sem resposta. Desligado por defeito: cada SMS
+  // destes é cobrado ao cliente, por isso ligar-se sozinho seria cobrar-lhe algo
+  // que ele não pediu.
+  missedCallSms        Boolean             @default(false)
+  missedCallSmsText    String? // template da mensagem; aceita {numero} e {empresa}
   smsMessages          SmsMessage[]
   smsCampaigns         SmsCampaign[]
   nextBillingAt        DateTime? // data do próximo débito da subscrição mensal
@@ -202,6 +214,7 @@ model Tenant {
   roles                Role[]
   outboundRoutes       OutboundRoute[]
   inboundRoutes        InboundRoute[]
+  ivrMenus             IvrMenu[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -384,6 +397,45 @@ model InboundRoute {
   createdAt  DateTime @default(now())
 
   @@index([tenantId])
+}
+
+// Atendimento automático: toca um anúncio ("para vendas prima 1...") e encaminha
+// a chamada conforme a tecla premida. Chega-se aqui por uma InboundRoute com
+// destType "IVR", em que destValue é o id deste menu.
+model IvrMenu {
+  id             String  @id @default(cuid())
+  tenantId       String
+  tenant         Tenant  @relation(fields: [tenantId], references: [id])
+  name           String
+  greetingPrompt String // ficheiro de som carregado no Asterisk (sem extensão)
+  invalidPrompt  String? // tocado quando a tecla premida não está no menu
+  // Quanto tempo esperar por uma tecla depois de o anúncio acabar, e quantas
+  // vezes repetir o anúncio antes de desistir.
+  timeoutSecs    Int     @default(5)
+  maxRetries     Int     @default(3)
+  // Destino de quem não escolhe nada (ou erra vezes de mais). Vazio = aviso de
+  // "sem serviço" e desliga.
+  timeoutDestType  String?
+  timeoutDestValue String?
+
+  options   IvrOption[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model IvrOption {
+  id        String  @id @default(cuid())
+  menuId    String
+  menu      IvrMenu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  digit     String // "0"-"9", "*" ou "#"
+  destType  String  @default("EXTENSION")
+  destValue String // número da extensão
+  label     String? // rótulo legível, ex: "Vendas"
+
+  @@unique([menuId, digit])
 }
 
 // Fatura da subscrição mensal do CRM (produto CRM_BYO_PBX; também qualquer plano com mensalidade)
@@ -614,6 +666,9 @@ model Call {
   providerCostCents Int        @default(0)
   transcript        Json?
   summary           String?    @db.Text
+  // Caminho do ficheiro de gravação RELATIVO à pasta de gravações (ver
+  // RECORDING_DIR). Nunca é servido directamente ao browser: a rota
+  // /tenant/calls/:id/recording é que lê o ficheiro, já com o tenant validado.
   recordingUrl      String?
   failReason        String?
   webhookDelivered  Boolean    @default(false)
@@ -707,12 +762,18 @@ model SmsMessage {
   costCents     Int          @default(0)
   senderId      String? // remetente usado (snapshot do Tenant.smsSenderId)
   providerMsgId String? // id da mensagem no gateway (para delivery report)
+  // O que originou a mensagem. Null = envio manual ou campanha. "MISSED_CALL" =
+  // automático por chamada não atendida — é por aqui que o travão de um SMS por
+  // número por dia conta só os automáticos, sem ser enganado por um envio manual.
+  trigger       String?
   failReason    String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
   @@index([tenantId, createdAt])
   @@index([providerMsgId])
+  // Serve o travão de um SMS automático por número por dia.
+  @@index([tenantId, toNumber, trigger, createdAt])
 }
 
 // Campanha de SMS em massa (espelha as campanhas de voz, mas para SMS).

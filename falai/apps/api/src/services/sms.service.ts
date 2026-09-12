@@ -95,6 +95,8 @@ export interface SendSmsInput {
   body: string;
   contactId?: string | null;
   campaignId?: string | null;
+  /** O que originou a mensagem; ausente = envio manual. Ver SmsMessage.trigger. */
+  trigger?: string;
 }
 
 export interface SentSms {
@@ -131,6 +133,7 @@ export async function sendSms(fastify: FastifyInstance, tenantId: string, input:
       senderId: cfg.senderId,
       ...(input.contactId ? { contactId: input.contactId } : {}),
       ...(input.campaignId ? { campaignId: input.campaignId } : {}),
+      ...(input.trigger ? { trigger: input.trigger } : {}),
     },
     select: { id: true },
   });

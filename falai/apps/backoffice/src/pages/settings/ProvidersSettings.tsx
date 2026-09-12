@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Phone, Mic, Bot, Volume2, CreditCard, MessageSquare, Save } from 'lucide-react';
+import { Phone, Mic, Bot, Volume2, CreditCard, MessageSquare, Disc, Save } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { settingsApi } from '@/lib/api';
 import { Card, Button, Input } from '@/components/ui';
@@ -67,6 +67,34 @@ const SECTIONS: Section[] = [
     subtitle: 'Envio de SMS',
     icon: <MessageSquare className="h-5 w-5" />,
     fields: [{ key: 'FUTURIX_SMS_API_KEY', label: 'API Key', type: 'secret' }],
+  },
+  {
+    title: 'Gravação de chamadas',
+    subtitle: 'Onde ficam os ficheiros e em que formato. Ligar/desligar é por cliente, na ficha dele.',
+    icon: <Disc className="h-5 w-5" />,
+    fields: [
+      {
+        key: 'RECORDING_DIR',
+        label: 'Pasta das gravações',
+        type: 'text',
+        placeholder: '/opt/falai/asterisk/recordings',
+        hint: 'Caminho no servidor da API, apontado à pasta montada em /var/spool/asterisk/recording no contentor do Asterisk. Vazio = não se grava nada.',
+      },
+      {
+        key: 'RECORDING_FORMAT',
+        label: 'Formato',
+        type: 'text',
+        placeholder: 'ogg',
+        hint: 'ogg (recomendado: ~6x menor que wav, sem perda audível). Usa wav se precisares de tocar as gravações no Safari.',
+      },
+      {
+        key: 'RECORDING_ANNOUNCE_PROMPT',
+        label: 'Áudio do aviso de gravação',
+        type: 'text',
+        placeholder: 'aviso-gravacao',
+        hint: 'Nome do ficheiro de som (sem extensão) tocado quando o cliente tem o aviso ligado.',
+      },
+    ],
   },
 ];
 

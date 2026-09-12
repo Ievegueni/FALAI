@@ -9,6 +9,7 @@ import { AudioCache } from "../services/AudioCache.js";
 import { TurnProcessor } from "../services/TurnProcessor.js";
 import { CallEngineService } from "../services/CallEngineService.js";
 import { settleCampaignContact } from "../services/callSettlement.service.js";
+import { notifyMissedCall } from "../services/missedCallSms.service.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -62,6 +63,18 @@ export default fp(async (fastify) => {
       // Settle campaign contact (retry or mark done)
       settleCampaignContact({ callId, tenantId, status, log: fastify.log })
         .catch((err) => fastify.log.error({ err, callId }, "settlement.failed"));
+
+      // Não atenderam o agente: responde-se por SMS, se o cliente o tiver
+      // pedido. Vai daqui e não do CallEngineService para o motor de conversa
+      // não passar a saber de SMS nem de tarifários.
+      if (status === "NO_ANSWER") {
+        prisma.call
+          .findUnique({ where: { id: callId }, select: { toNumber: true } })
+          .then((call) =>
+            notifyMissedCall({ fastify, tenantId, toNumber: call?.toNumber, callId, log: fastify.log })
+          )
+          .catch((err) => fastify.log.error({ err, callId }, "missed_call_sms.dispatch_failed"));
+      }
 
       // Enqueue webhook delivery if tenant has a URL configured
       Promise.all([

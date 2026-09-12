@@ -289,6 +289,20 @@ export const callsApi = {
 
   cancel: async (id: string) => (await post<{ call: Call }>(`/tenant/calls/${id}/cancel`)).call,
 
+  /**
+   * Descarrega a gravação. Não se pode pôr o URL directamente num <audio>: a
+   * rota é autenticada por header e o elemento não o envia — daí trazer o
+   * ficheiro e devolver um object URL para lhe dar como src.
+   */
+  recording: async (id: string) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/calls/${id}/recording`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao obter a gravação');
+    return URL.createObjectURL(await res.blob());
+  },
+
   // Chamadas directas (click-to-call, sem agente)
   extensions: async () =>
     (await get<{ extensions: { number: string; name: string }[] }>('/tenant/calls/extensions')).extensions,
