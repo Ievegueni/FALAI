@@ -44,6 +44,7 @@ import { tenantExtensionGroupsRoutes } from "./routes/tenant/extension-groups.js
 import { tenantRolesRoutes } from "./routes/tenant/roles.js";
 import { tenantTrunksRoutes } from "./routes/tenant/trunks.js";
 import { tenantRoutingRoutes } from "./routes/tenant/routing.js";
+import { tenantIvrRoutes } from "./routes/tenant/ivr.js";
 import { adminTrunksRoutes } from "./routes/admin/trunks.js";
 import { tenantBillingRoutes } from "./routes/tenant/billing.js";
 import { tenantApiKeysRoutes } from "./routes/tenant/api-keys.js";
@@ -277,6 +278,7 @@ async function buildApp() {
   await fastify.register(tenantRolesRoutes, { prefix: "/tenant/roles" });
   await fastify.register(tenantTrunksRoutes, { prefix: "/tenant/trunks" });
   await fastify.register(tenantRoutingRoutes, { prefix: "/tenant/routing" });
+  await fastify.register(tenantIvrRoutes, { prefix: "/tenant/ivr" });
   await fastify.register(tenantBillingRoutes, { prefix: "/tenant/billing" });
   await fastify.register(tenantTeamRoutes, { prefix: "/tenant/team" });
   await fastify.register(tenantApiKeysRoutes);

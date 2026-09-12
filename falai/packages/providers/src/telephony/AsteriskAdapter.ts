@@ -310,6 +310,28 @@ export class AsteriskAdapter implements TelephonyProvider {
     // O fim real chega pelo evento PlaybackFinished do ARI.
   }
 
+  /**
+   * Toca um prompt num canal já existente e devolve o id do playback. Ao
+   * contrário de `playPrompt`, que dispara e esquece, aqui o id é preciso para
+   * poder CORTAR o áudio a meio — é o que o IVR faz quando o chamador prime a
+   * tecla sem esperar pelo fim do anúncio.
+   */
+  async playMediaOnChannel(channelId: string, prompt: string): Promise<{ id: string }> {
+    const q = new URLSearchParams({ media: this.mediaFor(prompt) });
+    return this.api<{ id: string }>(`/channels/${encodeURIComponent(channelId)}/play?${q}`, {
+      method: "POST",
+    });
+  }
+
+  /** Corta um playback a meio. 404 = já acabou sozinho, não é erro. */
+  async stopPlayback(playbackId: string): Promise<void> {
+    try {
+      await this.api(`/playbacks/${encodeURIComponent(playbackId)}`, { method: "DELETE" });
+    } catch (err) {
+      if (!(err instanceof AsteriskError && err.status === 404)) throw err;
+    }
+  }
+
   /** Toca o próximo prompt de uma chamada de script fixo; desliga no fim. */
   private advancePromptSession(channelId: string): void {
     const s = this.promptSessions.get(channelId);
@@ -468,7 +490,14 @@ export class AsteriskAdapter implements TelephonyProvider {
           this.advancePromptSession(id);
           break;
         }
-        this.handler({ type: "PROMPT_FINISHED", providerCallId: id });
+        {
+          const playbackId = (e["playback"] as { id?: string } | undefined)?.id;
+          this.handler({
+            type: "PROMPT_FINISHED",
+            providerCallId: id,
+            ...(playbackId ? { playbackId } : {}),
+          });
+        }
         break;
 
       case "ChannelDtmfReceived":

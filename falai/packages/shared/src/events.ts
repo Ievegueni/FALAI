@@ -25,7 +25,10 @@ export type CallEvent =
   | { type: "CALL_ANSWERED"; providerCallId: string; answeredAt: Date }
   | { type: "CALL_ENDED"; providerCallId: string; endedAt: Date; durationSecs: number; hangupCause: string }
   | { type: "CALL_FAILED"; providerCallId: string; reason: string }
-  | { type: "PROMPT_FINISHED"; providerCallId: string }
+  // playbackId identifica o áudio concreto que acabou. O IVR precisa dele para
+  // ignorar o fim de um anúncio que ele próprio já cortou (tecla premida a
+  // meio) e não confundi-lo com o fim do anúncio que está a tocar agora.
+  | { type: "PROMPT_FINISHED"; providerCallId: string; playbackId?: string }
   | { type: "DTMF"; providerCallId: string; digit: string }
   | { type: "AUDIO_FRAME"; providerCallId: string; data: Buffer; sampleRate: number };
 
