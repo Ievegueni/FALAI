@@ -158,6 +158,8 @@ export interface Tenant {
   features?: TenantFeatures;
   featureOverrides?: Partial<TenantFeatures>;
   billingModeOverride?: BillingMode | null;
+  recordCalls?: boolean;
+  recordingAnnounce?: boolean;
   lines?: TenantLine[];
   users?: TenantUser[];
   createdAt: string;

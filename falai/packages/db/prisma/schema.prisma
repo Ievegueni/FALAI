@@ -162,6 +162,13 @@ model Tenant {
   features             Json?
   // Override do modo de cobrança do plano (null = usa o do plano)
   billingModeOverride  BillingMode?
+  // Gravação das chamadas deste cliente. Desligado por defeito de propósito:
+  // gravar sem o cliente ter pedido é uma decisão que não nos compete tomar.
+  recordCalls          Boolean             @default(false)
+  // Toca o aviso de que a chamada vai ser gravada, assim que alguém atende.
+  // Separado de recordCalls porque nem todos os clientes precisam do aviso —
+  // e quem precisa não pode depender de se lembrar de o ligar à parte.
+  recordingAnnounce    Boolean             @default(false)
   lines                TenantLine[]
   // Motor de telefonia deste cliente. Permite migrar tenant a tenant para o
   // motor próprio (Asterisk) e reverter mudando só este campo, sem redeploy.
@@ -654,6 +661,9 @@ model Call {
   providerCostCents Int        @default(0)
   transcript        Json?
   summary           String?    @db.Text
+  // Caminho do ficheiro de gravação RELATIVO à pasta de gravações (ver
+  // RECORDING_DIR). Nunca é servido directamente ao browser: a rota
+  // /tenant/calls/:id/recording é que lê o ficheiro, já com o tenant validado.
   recordingUrl      String?
   failReason        String?
   webhookDelivered  Boolean    @default(false)

@@ -26,6 +26,11 @@ import { prisma } from "@falai/db";
 import { resolveInboundGlobal, resolveInboundForTenant } from "./callRouting.service.js";
 import { IvrEngine, type InboundEvent, type IvrDestination } from "./ivr.service.js";
 import {
+  startCallRecording,
+  stopCallRecording,
+  saveFinishedRecording,
+} from "./callRecording.service.js";
+import {
   computeCallCost,
   effectiveBillingMode,
   reserveBalance,
@@ -53,7 +58,21 @@ export function registerInboundCallRouter(
       await closeInboundCall(
         event.providerCallId,
         event.type === "CALL_ENDED" ? event.endedAt : new Date(),
+        asterisk,
         log
+      );
+      return;
+    }
+    // A gravação fecha depois da chamada e sem canal associado — liga-se à
+    // linha da tabela Call pelo nome do ficheiro.
+    if (event.type === "RECORDING_FINISHED") {
+      await saveFinishedRecording(event.recordingName, event.format, log);
+      return;
+    }
+    if (event.type === "RECORDING_FAILED") {
+      log.error(
+        { recordingName: event.recordingName, reason: event.reason },
+        "inbound_call_router.recording_failed"
       );
       return;
     }
@@ -148,7 +167,7 @@ async function deliverToDestination(
   // chamada é invisível — não aparece na lista nem conta para o consumo. Fica de
   // fora, de propósito, tudo o que devolve false acima: uma chamada que não
   // tocou em ninguém não se regista nem se cobra.
-  await openInboundCall(event, tenantId, log);
+  const callId = await openInboundCall(event, tenantId, log);
 
   const targets = [extensionEndpointId(ext.sipAuthUser), extensionWebEndpointId(ext.sipAuthUser)];
   const bridge = await asterisk.createBridge();
@@ -182,7 +201,16 @@ async function deliverToDestination(
       // Instante em que ALGUÉM atendeu — é a partir daqui que há conversa e,
       // portanto, tempo a cobrar.
       void markInboundAnswered(event.providerCallId, log);
-      asterisk.addChannelToBridge(bridge.id, answeredId).catch((err) => log.error({ err }, "inbound_call_router.bridge_join_failed"));
+      asterisk
+        .addChannelToBridge(bridge.id, answeredId)
+        .then(() => {
+          // Só depois de os dois lados estarem na bridge é que há conversa para
+          // gravar — gravar antes disso dava um ficheiro com o sinal de chamada.
+          if (callId) {
+            void startCallRecording({ callId, tenantId, bridgeId: bridge.id, asterisk, log });
+          }
+        })
+        .catch((err) => log.error({ err }, "inbound_call_router.bridge_join_failed"));
       for (const id of channelIds) {
         if (id !== answeredId) asterisk.hangup(id).catch(() => {});
       }
@@ -206,9 +234,9 @@ async function openInboundCall(
   event: Extract<CallEvent, { type: "INBOUND_CALL_STARTED" }>,
   tenantId: string,
   log: FastifyBaseLogger
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await prisma.call.upsert({
+    const call = await prisma.call.upsert({
       where: { yeastarCallId: event.providerCallId },
       create: {
         tenantId,
@@ -221,11 +249,14 @@ async function openInboundCall(
         startedAt: new Date(),
       },
       update: {},
+      select: { id: true },
     });
+    return call.id;
   } catch (err) {
     // Contabilidade nunca derruba a chamada: sem registo o cliente perde a
     // linha na lista, mas continua a falar.
     log.error({ err, providerCallId: event.providerCallId }, "inbound_call_router.call_row_failed");
+    return null;
   }
 }
 
@@ -253,6 +284,7 @@ async function markInboundAnswered(providerCallId: string, log: FastifyBaseLogge
 async function closeInboundCall(
   providerCallId: string,
   endedAt: Date,
+  asterisk: AsteriskAdapter,
   log: FastifyBaseLogger
 ): Promise<void> {
   try {
@@ -263,6 +295,10 @@ async function closeInboundCall(
     // Os eventos terminais chegam para TODAS as chamadas do motor (directas,
     // agente de IA, ...) — aqui só nos interessam as de entrada.
     if (!call || call.kind !== "INBOUND") return;
+
+    // Acabou a conversa, acabou a gravação. É este fecho que dispara o
+    // RecordingFinished, e portanto o registo do ficheiro na chamada.
+    await stopCallRecording(call.id, asterisk, log);
 
     // Não se usa o `durationSecs` do evento: o canal do trunk é atendido por nós
     // no início do encaminhamento, por isso a duração dele inclui o tempo de

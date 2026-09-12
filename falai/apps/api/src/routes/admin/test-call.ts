@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
-import { testCallSchema } from "@falai/shared";
+import { testCallSchema, isChannelCallEvent } from "@falai/shared";
 
 const DEFAULT_TEST_MESSAGE = "Isto é um teste da plataforma Falaí. A ligação foi estabelecida com sucesso.";
 
@@ -30,6 +30,8 @@ export const adminTestCallRoutes: FastifyPluginAsync = async (fastify) => {
   // da rota deixaria um closure por cada chamada feita, todos invocados em
   // todos os eventos do sistema até ao reinício da API.
   fastify.onCallEvent(async (event) => {
+    // Gravação de chamada não tem canal — não diz respeito às chamadas de teste.
+    if (!isChannelCallEvent(event)) return;
     const callId = pendingTestCalls.get(event.providerCallId)?.callId;
     if (!callId) return;
     switch (event.type) {

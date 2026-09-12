@@ -211,6 +211,13 @@ export function TenantDetailPage() {
     onError: (e: Error) => toast.error(e.message || 'Erro ao criar utilizador.'),
   });
 
+  const recordingMut = useMutation({
+    mutationFn: (data: { recordCalls?: boolean; recordingAnnounce?: boolean }) =>
+      tenantsApi.update(id!, data as never),
+    onSuccess: () => { invalidateTenant(); toast.success('Gravação de chamadas actualizada.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar a gravação.'),
+  });
+
   const billingOverrideMut = useMutation({
     mutationFn: (mode: BillingMode | null) => tenantsApi.update(id!, { billingModeOverride: mode } as never),
     onSuccess: () => { invalidateTenant(); toast.success('Modo de cobrança do cliente actualizado.'); },
@@ -323,6 +330,42 @@ export function TenantDetailPage() {
               <div className="flex justify-between"><dt className="text-gray-500">Webhook URL</dt><dd className="font-medium text-right max-w-[200px] truncate">{tenant.webhookUrl ?? '–'}</dd></div>
               <div className="flex justify-between"><dt className="text-gray-500">Onboarding</dt><dd className="font-medium">{tenant.onboardingCompletedAt ? formatDate(tenant.onboardingCompletedAt) : 'Pendente'}</dd></div>
             </dl>
+          </Card>
+          <Card>
+            <h2 className="text-sm font-semibold text-gray-700 mb-1">Gravação de chamadas</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Grava as chamadas de entrada deste cliente. A pasta e o formato definem-se em Configurações do Sistema.
+            </p>
+            <div className="space-y-3">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={tenant.recordCalls ?? false}
+                  disabled={recordingMut.isPending}
+                  onChange={(e) => recordingMut.mutate({ recordCalls: e.target.checked })}
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-gray-800">Gravar as chamadas</span>
+                  <span className="block text-xs text-gray-400">Desligado = não se grava nada deste cliente.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={tenant.recordingAnnounce ?? false}
+                  disabled={recordingMut.isPending || !tenant.recordCalls}
+                  onChange={(e) => recordingMut.mutate({ recordingAnnounce: e.target.checked })}
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-gray-800">Avisar que a chamada será gravada</span>
+                  <span className="block text-xs text-gray-400">
+                    Toca o aviso aos dois lados assim que alguém atende, e o aviso fica dentro da própria gravação.
+                  </span>
+                </span>
+              </label>
+            </div>
           </Card>
         </div>
       )}

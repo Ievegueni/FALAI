@@ -100,6 +100,14 @@ const resolveInboundForTenant = vi.fn();
 const resolveInboundGlobal = vi.fn();
 vi.mock("./callRouting.service.js", () => ({ resolveInboundForTenant, resolveInboundGlobal }));
 
+// A gravação tem os seus próprios testes; aqui só interessa que não arraste as
+// definições do sistema (e, com elas, a configuração real) para dentro destes.
+vi.mock("./callRecording.service.js", () => ({
+  startCallRecording: vi.fn(async () => {}),
+  stopCallRecording: vi.fn(async () => {}),
+  saveFinishedRecording: vi.fn(async () => {}),
+}));
+
 const { registerInboundCallRouter } = await import("./inboundCallRouter.service.js");
 
 const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never;

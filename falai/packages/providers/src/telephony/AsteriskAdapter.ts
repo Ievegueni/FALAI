@@ -323,6 +323,49 @@ export class AsteriskAdapter implements TelephonyProvider {
     });
   }
 
+  /**
+   * Começa a gravar uma bridge — os dois lados já misturados, que é o que se
+   * quer numa chamada. Grava-se a bridge e não o canal porque cada canal só
+   * traz a sua própria voz.
+   *
+   * `name` é o nome do ficheiro (sem extensão) e é também por ele que a
+   * gravação é identificada quando termina: o ARI não devolve o canal nessa
+   * altura. `ifExists=overwrite` para uma reentrega não rebentar com "já
+   * existe" e deixar a chamada por gravar.
+   */
+  async recordBridge(bridgeId: string, name: string, format: string): Promise<void> {
+    const q = new URLSearchParams({
+      name,
+      format,
+      ifExists: "overwrite",
+      // 0 = sem limite: quem manda parar é o fim da chamada.
+      maxDurationSeconds: "0",
+      maxSilenceSeconds: "0",
+    });
+    await this.api(`/bridges/${encodeURIComponent(bridgeId)}/record?${q}`, { method: "POST" });
+  }
+
+  /**
+   * Fecha a gravação. Sem isto a gravação só terminava quando a bridge morresse
+   * — e a bridge fica viva até alguém a destruir, pelo que o ficheiro podia
+   * ficar aberto muito depois de a chamada acabar. 404 = já parou.
+   */
+  async stopRecording(name: string): Promise<void> {
+    try {
+      await this.api(`/recordings/live/${encodeURIComponent(name)}/stop`, { method: "POST" });
+    } catch (err) {
+      if (!(err instanceof AsteriskError && err.status === 404)) throw err;
+    }
+  }
+
+  /** Toca um áudio na bridge — ouvem-no os dois lados (ex.: aviso de gravação). */
+  async playMediaOnBridge(bridgeId: string, prompt: string): Promise<{ id: string }> {
+    const q = new URLSearchParams({ media: this.mediaFor(prompt) });
+    return this.api<{ id: string }>(`/bridges/${encodeURIComponent(bridgeId)}/play?${q}`, {
+      method: "POST",
+    });
+  }
+
   /** Corta um playback a meio. 404 = já acabou sozinho, não é erro. */
   async stopPlayback(playbackId: string): Promise<void> {
     try {
@@ -392,8 +435,35 @@ export class AsteriskAdapter implements TelephonyProvider {
     const channel = e["channel"] as
       | { id?: string; state?: string; caller?: { number?: string } }
       | undefined;
+    if (!this.handler) return;
+
+    // Uma gravação que termina não traz canal nenhum (a esta altura já morreu),
+    // por isso tem de sair daqui ANTES da guarda do `id` abaixo — senão estes
+    // eventos eram silenciosamente deitados fora e nenhuma gravação chegava a
+    // ser registada.
+    const recording = e["recording"] as
+      | { name?: string; format?: string; duration?: number; cause?: string }
+      | undefined;
+    if (type === "RecordingFinished" && recording?.name) {
+      this.handler({
+        type: "RECORDING_FINISHED",
+        recordingName: recording.name,
+        format: recording.format ?? "",
+        ...(typeof recording.duration === "number" ? { durationSecs: recording.duration } : {}),
+      });
+      return;
+    }
+    if (type === "RecordingFailed" && recording?.name) {
+      this.handler({
+        type: "RECORDING_FAILED",
+        recordingName: recording.name,
+        reason: recording.cause ?? "unknown",
+      });
+      return;
+    }
+
     const id = channel?.id ?? (e["playback"] as { target_uri?: string } | undefined)?.target_uri?.split(":")[1];
-    if (!id || !this.handler) return;
+    if (!id) return;
 
     switch (type) {
       case "ChannelStateChange":

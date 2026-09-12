@@ -51,6 +51,8 @@ const updateSchema = z.object({
   webhookUrl: z.string().url().optional(),
   webhookSecret: z.string().min(16).optional(),
   billingModeOverride: z.enum(["PER_MINUTE", "PER_SECOND", "PER_CALL"]).nullable().optional(),
+  recordCalls: z.boolean().optional(),
+  recordingAnnounce: z.boolean().optional(),
 });
 
 const smsConfigSchema = z.object({
@@ -105,6 +107,8 @@ function mapTenant(t: any) {
       : null,
     maxConcurrentCalls: t.maxConcurrent,
     billingModeOverride: t.billingModeOverride ?? null,
+    recordCalls: t.recordCalls ?? false,
+    recordingAnnounce: t.recordingAnnounce ?? false,
     // features efectivas (o que o cliente vê) + overrides crus (o que o operador definiu)
     features: computeFeatures({
       overrides: t.features,
@@ -226,6 +230,8 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.webhookUrl !== undefined && { webhookUrl: body.webhookUrl }),
         ...(body.webhookSecret !== undefined && { webhookSecret: body.webhookSecret }),
         ...(body.billingModeOverride !== undefined && { billingModeOverride: body.billingModeOverride }),
+        ...(body.recordCalls !== undefined && { recordCalls: body.recordCalls }),
+        ...(body.recordingAnnounce !== undefined && { recordingAnnounce: body.recordingAnnounce }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },
     });
