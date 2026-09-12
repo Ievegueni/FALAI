@@ -455,6 +455,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
             fromExtension: body.fromExtension,
             to: body.to,
             ref,
+            fastify,
             log: fastify.log,
           })
         : await (await getTenantTelephony(fastify, tenantId)).dial({

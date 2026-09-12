@@ -70,6 +70,9 @@ const prisma = {
   extension: {
     findFirst: vi.fn(async () => ({ sipAuthUser: "Ab12" })),
   },
+  // Um menu que não existe: serve para a chamada chegar ao IVR e morrer lá sem
+  // nunca fazer tocar uma extensão.
+  ivrMenu: { findFirst: vi.fn(async () => null) },
   tenant: {
     findUnique: vi.fn(async () => ({
       billingModeOverride: null,
@@ -99,6 +102,11 @@ vi.mock("@falai/providers", () => ({
 const resolveInboundForTenant = vi.fn();
 const resolveInboundGlobal = vi.fn();
 vi.mock("./callRouting.service.js", () => ({ resolveInboundForTenant, resolveInboundGlobal }));
+// Quem decide o texto e o travão de custos é o missedCallSms.service, que tem
+// os seus próprios testes. O que se prende aqui é só QUANDO o router o chama.
+const notifyMissedCall = vi.fn(async () => {});
+vi.mock("./missedCallSms.service.js", () => ({ notifyMissedCall }));
+
 
 // A gravação tem os seus próprios testes; aqui só interessa que não arraste as
 // definições do sistema (e, com elas, a configuração real) para dentro destes.
@@ -130,7 +138,7 @@ function setup() {
     destroyBridge: vi.fn(async () => {}),
     hangup: vi.fn(async () => {}),
   };
-  registerInboundCallRouter((h) => { handler = h; }, asterisk as never, log);
+  registerInboundCallRouter((h) => { handler = h; }, asterisk as never, {} as never, log);
   return {
     asterisk,
     emit: (e: CallEvent) => handler(e),
@@ -232,5 +240,44 @@ describe("chamada de entrada — cobrança", () => {
 
     expect(wallet).toHaveLength(1);
     expect(rows[0]!.costCents).toBe(30);
+  });
+});
+
+describe("chamada de entrada — SMS de não atendida", () => {
+  const ended: CallEvent = {
+    type: "CALL_ENDED", providerCallId: "chan-trunk-1", endedAt: new Date(), durationSecs: 25, hangupCause: "NORMAL",
+  };
+
+  it("tocou numa extensão e ninguém atendeu: responde-se ao chamador", async () => {
+    const s = setup();
+    await s.emit(START);
+    s.nobodyAnswers();
+    await s.emit(ended);
+
+    expect(notifyMissedCall).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: "tnt_1", toNumber: "+244923111222" })
+    );
+  });
+
+  it("desligou dentro do IVR sem nunca fazer tocar ninguém: não se responde", async () => {
+    // Ninguém era suposto atendê-lo ainda — pedir desculpa por SMS (e cobrá-lo
+    // ao cliente) seria errado.
+    resolveInboundForTenant.mockResolvedValue({ tenantId: "tnt_1", destType: "IVR", destValue: "menu_1" });
+    const s = setup();
+    await s.emit(START);
+    await s.emit(ended);
+
+    expect(notifyMissedCall).not.toHaveBeenCalled();
+  });
+
+  it("chamada atendida não gera SMS nenhum", async () => {
+    const s = setup();
+    await s.emit(START);
+    s.answer();
+    await Promise.resolve();
+    rows[0]!.answeredAt = new Date(Date.now() - 30_000);
+    await s.emit(ended);
+
+    expect(notifyMissedCall).not.toHaveBeenCalled();
   });
 });

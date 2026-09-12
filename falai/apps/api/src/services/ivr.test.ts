@@ -57,6 +57,10 @@ vi.mock("@falai/providers", () => ({
 const resolveInboundForTenant = vi.fn();
 const resolveInboundGlobal = vi.fn();
 vi.mock("./callRouting.service.js", () => ({ resolveInboundForTenant, resolveInboundGlobal }));
+// O SMS de chamada não atendida tem os seus próprios testes; aqui só interessa
+// que não arraste o gateway nem a configuração real para dentro destes.
+vi.mock("./missedCallSms.service.js", () => ({ notifyMissedCall: vi.fn(async () => {}) }));
+
 
 // A gravação tem os seus próprios testes; aqui só interessa que não arraste as
 // definições do sistema (e, com elas, a configuração real) para dentro destes.
@@ -94,7 +98,7 @@ function setup() {
     destroyBridge: vi.fn(async () => {}),
     hangup: vi.fn(async () => {}),
   };
-  registerInboundCallRouter((h) => { handler = h; }, asterisk as never, log);
+  registerInboundCallRouter((h) => { handler = h; }, asterisk as never, {} as never, log);
   return { asterisk, emit: (e: CallEvent) => handler(e) };
 }
 

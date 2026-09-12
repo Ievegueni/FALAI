@@ -231,7 +231,7 @@ async function buildApp() {
   // Asterisk nativo; o Yeastar tem o seu próprio fluxo de entrada. Ver
   // services/inboundCallRouter.service.ts.
   if (asteriskAdapter) {
-    registerInboundCallRouter(fastify.onCallEvent, asteriskAdapter, fastify.log);
+    registerInboundCallRouter(fastify.onCallEvent, asteriskAdapter, fastify, fastify.log);
     // Fecha a chamada directa quando quem desliga é o outro lado — sem isto só
     // o botão do CRM a fechava e o registo ficava "Em curso" para sempre.
     registerDirectCallEvents(fastify.onCallEvent, asteriskAdapter, fastify.log);

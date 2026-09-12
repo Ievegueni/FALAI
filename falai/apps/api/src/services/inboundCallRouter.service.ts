@@ -21,7 +21,7 @@
 import type { AsteriskAdapter } from "@falai/providers";
 import { extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
 import type { CallEvent } from "@falai/shared";
-import type { FastifyBaseLogger } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { prisma } from "@falai/db";
 import { resolveInboundGlobal, resolveInboundForTenant } from "./callRouting.service.js";
 import { IvrEngine, type InboundEvent, type IvrDestination } from "./ivr.service.js";
@@ -30,6 +30,7 @@ import {
   stopCallRecording,
   saveFinishedRecording,
 } from "./callRecording.service.js";
+import { notifyMissedCall } from "./missedCallSms.service.js";
 import {
   computeCallCost,
   effectiveBillingMode,
@@ -39,9 +40,19 @@ import {
 
 const RING_TIMEOUT_SECS = 25;
 
+/**
+ * Chamadas de entrada que chegaram mesmo a tocar numa extensão.
+ *
+ * Serve o SMS de chamada não atendida: quem desliga ainda dentro do menu do IVR
+ * não "ficou sem resposta" — ninguém era suposto atendê-lo ainda —, e mandar-lhe
+ * uma mensagem a pedir desculpa seria errado (e pago).
+ */
+const rangExtension = new Set<string>();
+
 export function registerInboundCallRouter(
   onCallEvent: (handler: (event: CallEvent) => Promise<void>) => void,
   asterisk: AsteriskAdapter,
+  fastify: FastifyInstance,
   log: FastifyBaseLogger
 ): void {
   const ivr = new IvrEngine(asterisk, log, (event, tenantId, dest) =>
@@ -59,6 +70,7 @@ export function registerInboundCallRouter(
         event.providerCallId,
         event.type === "CALL_ENDED" ? event.endedAt : new Date(),
         asterisk,
+        fastify,
         log
       );
       return;
@@ -187,6 +199,10 @@ async function deliverToDestination(
   );
   const channelIds = originated.filter((id): id is string => id !== null);
 
+  // A partir daqui a chamada tocou mesmo em alguém — é o que distingue "não
+  // atenderam" de "desligou no menu".
+  if (channelIds.length > 0) rangExtension.add(event.providerCallId);
+
   if (channelIds.length === 0) {
     log.warn({ did: event.did, targets }, "inbound_call_router.no_target_reachable");
     // A bridge já existe: sem isto ficava órfã no Asterisk a cada chamada de
@@ -285,12 +301,16 @@ async function closeInboundCall(
   providerCallId: string,
   endedAt: Date,
   asterisk: AsteriskAdapter,
+  fastify: FastifyInstance,
   log: FastifyBaseLogger
 ): Promise<void> {
+  // Lê-se e larga-se sempre, mesmo quando não há nada a fazer com isto: deixar
+  // a entrada para trás era ir enchendo o Set a cada chamada.
+  const rang = rangExtension.delete(providerCallId);
   try {
     const call = await prisma.call.findUnique({
       where: { yeastarCallId: providerCallId },
-      select: { id: true, tenantId: true, kind: true, answeredAt: true },
+      select: { id: true, tenantId: true, kind: true, answeredAt: true, fromNumber: true },
     });
     // Os eventos terminais chegam para TODAS as chamadas do motor (directas,
     // agente de IA, ...) — aqui só nos interessam as de entrada.
@@ -319,7 +339,20 @@ async function closeInboundCall(
     });
     if (claimed.count === 0) return; // já fechada (e já cobrada) por outro evento
 
-    if (billedSecs <= 0) return; // ninguém atendeu: não há nada a cobrar
+    if (billedSecs <= 0) {
+      // Ninguém atendeu: não há nada a cobrar, mas há a quem responder. Só se
+      // avisa quem chegou a fazer tocar uma extensão — ver rangExtension.
+      if (status === "NO_ANSWER" && rang) {
+        await notifyMissedCall({
+          fastify,
+          tenantId: call.tenantId,
+          toNumber: call.fromNumber,
+          callId: call.id,
+          log,
+        });
+      }
+      return;
+    }
     await chargeInboundCall(call.id, call.tenantId, billedSecs, log);
   } catch (err) {
     log.error({ err, providerCallId }, "inbound_call_router.close_failed");

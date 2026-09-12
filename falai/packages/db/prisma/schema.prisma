@@ -187,6 +187,11 @@ model Tenant {
   smsApiKey            String? // encriptado (AES-256-GCM) via crypto.service
   smsSenderId          String? // remetente (alfanumérico) atribuído ao cliente
   smsPriceSegmentCents Int? // preço por segmento (definido no backoffice; null = usa o do plano)
+  // SMS automático a quem ficou sem resposta. Desligado por defeito: cada SMS
+  // destes é cobrado ao cliente, por isso ligar-se sozinho seria cobrar-lhe algo
+  // que ele não pediu.
+  missedCallSms        Boolean             @default(false)
+  missedCallSmsText    String? // template da mensagem; aceita {numero} e {empresa}
   smsMessages          SmsMessage[]
   smsCampaigns         SmsCampaign[]
   nextBillingAt        DateTime? // data do próximo débito da subscrição mensal
@@ -757,12 +762,18 @@ model SmsMessage {
   costCents     Int          @default(0)
   senderId      String? // remetente usado (snapshot do Tenant.smsSenderId)
   providerMsgId String? // id da mensagem no gateway (para delivery report)
+  // O que originou a mensagem. Null = envio manual ou campanha. "MISSED_CALL" =
+  // automático por chamada não atendida — é por aqui que o travão de um SMS por
+  // número por dia conta só os automáticos, sem ser enganado por um envio manual.
+  trigger       String?
   failReason    String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
   @@index([tenantId, createdAt])
   @@index([providerMsgId])
+  // Serve o travão de um SMS automático por número por dia.
+  @@index([tenantId, toNumber, trigger, createdAt])
 }
 
 // Campanha de SMS em massa (espelha as campanhas de voz, mas para SMS).

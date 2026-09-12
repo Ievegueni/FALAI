@@ -20,8 +20,9 @@
  * A ordem importa: marcar primeiro o destino faria o cliente ouvir silêncio
  * enquanto o operador ainda não tinha atendido.
  */
-import type { FastifyBaseLogger } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { prisma } from "@falai/db";
+import { notifyMissedCall } from "./missedCallSms.service.js";
 import type { AsteriskAdapter } from "@falai/providers";
 import type { CallEvent } from "@falai/shared";
 import { extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
@@ -53,6 +54,9 @@ interface Session {
   allChannels: Set<string>;
   /** Segundos de conversa, quando o Asterisk os reporta no fim da chamada. */
   durationSecs?: number;
+  /** Guardados para o SMS de chamada não atendida, que fecha longe daqui. */
+  fastify: FastifyInstance;
+  log: FastifyBaseLogger;
 }
 
 /** Sessões vivas, indexadas pelo id devolvido ao CRM (o canal da extensão). */
@@ -70,9 +74,10 @@ export async function startAsteriskDirectCall(params: {
   fromExtension: string;
   to: string;
   ref: string;
+  fastify: FastifyInstance;
   log: FastifyBaseLogger;
 }): Promise<{ providerCallId: string }> {
-  const { asterisk, tenantId, fromExtension, to, ref, log } = params;
+  const { asterisk, tenantId, fromExtension, to, ref, fastify, log } = params;
 
   const ext = await prisma.extension.findFirst({
     where: { tenantId, number: fromExtension, isActive: true },
@@ -116,6 +121,8 @@ export async function startAsteriskDirectCall(params: {
     allChannels: new Set(legIds),
     tenantId,
     startedAt: Date.now(),
+    fastify,
+    log,
   };
   // Indexado por todas as pernas: o CRM recebe a primeira, mas o hangup pode
   // chegar com qualquer uma delas.
@@ -212,6 +219,21 @@ async function closeCallRows(session: Session, outcome: "COMPLETED" | "NO_ANSWER
   const channelIds = [...session.allChannels];
   if (channelIds.length === 0) return;
   try {
+    // Só se vai buscar o destino quando é preciso responder-lhe: numa chamada
+    // atendida esta consulta não serve para nada.
+    const missed =
+      outcome === "NO_ANSWER"
+        ? await prisma.call.findMany({
+            where: {
+              tenantId: session.tenantId,
+              kind: "DIRECT",
+              status: "IN_PROGRESS",
+              yeastarCallId: { in: channelIds },
+            },
+            select: { id: true, toNumber: true },
+          })
+        : [];
+
     await prisma.call.updateMany({
       where: {
         tenantId: session.tenantId,
@@ -227,6 +249,16 @@ async function closeCallRows(session: Session, outcome: "COMPLETED" | "NO_ANSWER
         durationSecs: session.durationSecs ?? 0,
       },
     });
+
+    for (const call of missed) {
+      await notifyMissedCall({
+        fastify: session.fastify,
+        tenantId: session.tenantId,
+        toNumber: call.toNumber,
+        callId: call.id,
+        log: session.log,
+      });
+    }
   } catch {
     // Fechar o registo é contabilidade, não pode derrubar a limpeza da chamada.
   }
