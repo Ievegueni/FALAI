@@ -410,6 +410,12 @@
       "pausedShort": "Pausada",
       "resumedShort": "Retomada",
       "cancelledShort": "Cancelada"
+    },
+    "quickView": {
+      "numbers": "Números",
+      "script": "Script",
+      "scriptAiDriven": "Sem script fixo — conduzido pelo agente IA ({{agent}})",
+      "fullReport": "Relatório completo"
     }
   },
   "calls": {
@@ -580,7 +586,9 @@
     "alertPhone": "Telemóvel de alerta",
     "save": "Guardar definições",
     "saved": "Definições guardadas",
-    "secretRotated": "Secret do webhook regenerado"
+    "secretRotated": "Secret do webhook regenerado",
+    "copySecretWarn": "Copie este secret agora. Não será mostrado novamente.",
+    "copySecret": "Copiar secret"
   },
   "pbx": {
     "title": "Integração PBX",
@@ -687,13 +695,14 @@
       "agentsList": "Listar todos os agentes IA do tenant",
       "agentsGet": "Detalhe completo de um agente IA",
       "contactsCreate": "Criar um novo contacto",
+      "contactsBulk": "Criar até 1000 contactos num único pedido (evita o 429 ao importar listas). Com results=true devolve o id de cada linha, incluindo os que já existiam",
       "contactsList": "Listar contactos com filtros",
       "contactsGet": "Detalhe de um contacto",
       "contactsUpdate": "Actualizar campos de um contacto",
       "contactsDelete": "Eliminar um contacto permanentemente",
       "contactsOptOut": "Impedir permanentemente que o contacto seja contactado",
       "campaignsCreate": "Criar uma nova campanha (IA por agente ou script fixo por TTS)",
-      "campaignsAddContacts": "Adicionar contactos em massa a uma campanha (até 5000 por pedido)",
+      "campaignsAddContacts": "Adicionar contactos em massa a uma campanha (até 5000 por pedido). Aceita phones ou contacts com os números directamente: quem não existir é criado, quem já existir é reaproveitado sem duplicar",
       "campaignsLaunch": "Iniciar a campanha e disparar as chamadas imediatamente",
       "campaignsList": "Listar campanhas do tenant",
       "campaignsGet": "Detalhe e métricas de uma campanha",

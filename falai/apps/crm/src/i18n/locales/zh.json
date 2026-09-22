@@ -410,6 +410,12 @@
       "pausedShort": "已暂停",
       "resumedShort": "已恢复",
       "cancelledShort": "已取消"
+    },
+    "quickView": {
+      "numbers": "号码数",
+      "script": "话术",
+      "scriptAiDriven": "没有固定话术 — 由 AI 客服主导（{{agent}}）",
+      "fullReport": "完整报告"
     }
   },
   "calls": {
@@ -580,7 +586,9 @@
     "alertPhone": "提醒手机号",
     "save": "保存设置",
     "saved": "设置已保存",
-    "secretRotated": "Webhook 密钥已重新生成"
+    "secretRotated": "Webhook 密钥已重新生成",
+    "copySecretWarn": "请立即复制此密钥。它将不会再次显示。",
+    "copySecret": "复制密钥"
   },
   "pbx": {
     "title": "PBX 集成",
@@ -687,13 +695,14 @@
       "agentsList": "列出租户的所有 AI 坐席",
       "agentsGet": "AI 坐席的完整详情",
       "contactsCreate": "创建新联系人",
+      "contactsBulk": "单次请求创建最多 1000 个联系人（导入名单时避免 429）。使用 results=true 可返回每一行的联系人 id，包括已存在的记录",
       "contactsList": "带筛选列出联系人",
       "contactsGet": "联系人详情",
       "contactsUpdate": "更新联系人字段",
       "contactsDelete": "永久删除联系人",
       "contactsOptOut": "永久阻止再次联系此联系人",
       "campaignsCreate": "创建新活动（AI 坐席或固定 TTS 话术）",
-      "campaignsAddContacts": "批量添加联系人到活动（每次最多 5000 个）",
+      "campaignsAddContacts": "批量添加联系人到活动（每次最多 5000 个）。可直接传入 phones 或 contacts 号码：不存在的自动创建，已存在的直接复用，不会重复创建",
       "campaignsLaunch": "启动活动并立即开始拨打电话",
       "campaignsList": "列出租户的活动",
       "campaignsGet": "活动的详情和指标",

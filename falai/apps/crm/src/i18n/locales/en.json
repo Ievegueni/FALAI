@@ -410,6 +410,12 @@
       "pausedShort": "Paused",
       "resumedShort": "Resumed",
       "cancelledShort": "Cancelled"
+    },
+    "quickView": {
+      "numbers": "Numbers",
+      "script": "Script",
+      "scriptAiDriven": "No fixed script — driven by AI agent ({{agent}})",
+      "fullReport": "Full report"
     }
   },
   "calls": {
@@ -580,7 +586,9 @@
     "alertPhone": "Alert phone",
     "save": "Save settings",
     "saved": "Settings saved",
-    "secretRotated": "Webhook secret regenerated"
+    "secretRotated": "Webhook secret regenerated",
+    "copySecretWarn": "Copy this secret now. It won't be shown again.",
+    "copySecret": "Copy secret"
   },
   "pbx": {
     "title": "PBX integration",
@@ -687,13 +695,14 @@
       "agentsList": "List all the tenant's AI agents",
       "agentsGet": "Full detail of an AI agent",
       "contactsCreate": "Create a new contact",
+      "contactsBulk": "Create up to 1000 contacts in a single request (avoids 429s when importing lists). With results=true it returns the id of every row, including the ones that already existed",
       "contactsList": "List contacts with filters",
       "contactsGet": "Detail of a contact",
       "contactsUpdate": "Update fields of a contact",
       "contactsDelete": "Delete a contact permanently",
       "contactsOptOut": "Permanently prevent this contact from being called",
       "campaignsCreate": "Create a new campaign (AI agent or fixed TTS script)",
-      "campaignsAddContacts": "Bulk-add contacts to a campaign (up to 5000 per request)",
+      "campaignsAddContacts": "Bulk-add contacts to a campaign (up to 5000 per request). Accepts phones or contacts with the numbers directly: missing ones are created, existing ones are reused without duplicating",
       "campaignsLaunch": "Start the campaign and dispatch calls immediately",
       "campaignsList": "List the tenant's campaigns",
       "campaignsGet": "Detail and metrics of a campaign",
