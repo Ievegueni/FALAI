@@ -70,6 +70,12 @@ import { yeastarWebhookRoutes } from "./routes/webhooks/yeastar.js";
 import { pbxWebhookRoutes } from "./routes/webhooks/pbx.js";
 import { asteriskWebhookRoutes } from "./routes/webhooks/asterisk.js";
 import { smsWebhookRoutes } from "./routes/webhooks/sms.js";
+import { telegramWebhookRoutes } from "./routes/webhooks/telegram.js";
+import { tenantInboxesRoutes } from "./routes/tenant/inboxes.js";
+import { tenantConversationsRoutes } from "./routes/tenant/conversations.js";
+import { v1ConversationsRoutes } from "./routes/v1/conversations.js";
+import { publicChatRoutes } from "./routes/public/chat.js";
+import { startEmailPolling } from "./services/email.service.js";
 import { registerYeastarWebSocket } from "./websocket/yeastar.js";
 import { syncAllPbx } from "./services/pbxSync.service.js";
 
@@ -285,6 +291,10 @@ async function buildApp() {
   await fastify.register(tenantEventsRoutes);
   await fastify.register(tenantReportsRoutes);
   await fastify.register(tenantSmsRoutes);
+  // Canais de texto — ver docs/PLANO-CANAIS-TEXTO.md
+  await fastify.register(tenantInboxesRoutes, { prefix: "/tenant/inboxes" });
+  await fastify.register(tenantConversationsRoutes);
+  await fastify.register(publicChatRoutes, { prefix: "/public/chat" });
 
   // ── Public API v1 (API key authenticated, per-key rate limiting) ─────────
   await fastify.register(async (v1) => {
@@ -307,6 +317,7 @@ async function buildApp() {
     await v1.register(v1SmsRoutes);
     await v1.register(v1ModelsRoutes);
     await v1.register(v1UsageRoutes);
+    await v1.register(v1ConversationsRoutes);
   });
 
   // ── Webhooks ────────────────────────────────────────────────────────────
@@ -316,6 +327,11 @@ async function buildApp() {
   await fastify.register(asteriskWebhookRoutes, { prefix: "/webhooks/asterisk" });
   await fastify.register(smsWebhookRoutes, { prefix: "/webhooks/sms" });
   await fastify.register(proxypayWebhookRoutes, { prefix: "/webhooks/proxypay" });
+  await fastify.register(telegramWebhookRoutes, { prefix: "/webhooks/telegram" });
+
+  // Canal de email: lê as caixas IMAP dos inboxes a cada minuto.
+  const stopEmailPolling = startEmailPolling(fastify);
+  fastify.addHook("onClose", async () => stopEmailPolling());
 
   // ── WebSocket ──────────────────────────────────────────────────────────
   registerYeastarWebSocket(fastify);

@@ -1,6 +1,6 @@
 import fp from "fastify-plugin";
 import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter } from "@falai/providers";
-import type { TtsProvider } from "@falai/providers";
+import type { TtsProvider, LlmProvider } from "@falai/providers";
 import { prisma } from "@falai/db";
 import { AudioCache } from "../services/AudioCache.js";
 import { TurnProcessor } from "../services/TurnProcessor.js";
@@ -11,6 +11,8 @@ import { emitWebhook } from "../services/webhookEmitter.service.js";
 declare module "fastify" {
   interface FastifyInstance {
     callEngine: CallEngineService;
+    /** Motor LLM da plataforma — partilhado com os canais de texto. */
+    llm: LlmProvider;
     /** True quando o LLM corre em modo stub (sem chave real) — respostas não são IA real. */
     llmStub: boolean;
   }
@@ -101,6 +103,7 @@ export default fp(async (fastify) => {
 
   fastify.decorate("callEngine", callEngine);
   fastify.decorate("llmStub", llmStub);
+  fastify.decorate("llm", llm);
 
   fastify.log.info({
     sttStub: stubMode || !providers.deepgram.apiKey,

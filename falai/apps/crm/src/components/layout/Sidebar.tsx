@@ -16,6 +16,7 @@ import {
   Network,
   LogOut,
   PhoneCall,
+  Inbox,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { clsx } from '@/lib/utils';
@@ -23,6 +24,7 @@ import { clsx } from '@/lib/utils';
 import type { FeatureKey } from '@/types';
 
 const dashboardItem = { to: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard' };
+const inboxItem = { to: '/inbox', icon: Inbox, labelKey: 'nav.inbox' };
 // Cada item pode declarar a feature que o activa; sem feature = sempre visível
 const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: FeatureKey }[] = [
   { to: '/agents', icon: Bot, labelKey: 'nav.agents', feature: 'agents' },
@@ -55,6 +57,7 @@ export function Sidebar() {
 
   const nav = [
     dashboardItem,
+    inboxItem,
     ...featureItems.filter((i) => isOn(i.feature)),
     ...(smsOn ? [smsItem] : []),
     telephonyItem,

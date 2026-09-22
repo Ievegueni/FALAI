@@ -7,7 +7,7 @@ export type AgentReviewStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'BL
 export type CallStatus =
   | 'QUEUED' | 'DIALING' | 'RINGING' | 'IN_PROGRESS'
   | 'COMPLETED' | 'NO_ANSWER' | 'FAILED' | 'CANCELLED' | 'ESCALATED';
-export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
+export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'TEXT_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
 
 export interface AdminUser {
   id: string;
@@ -40,6 +40,7 @@ export interface Plan {
   pricePerMinCents: number;
   pricePerCallCents: number;
   pricePerSmsCents: number;
+  pricePerTextMessageCents: number;
   monthlyFeeCents: number;
   maxAgents: number;
   maxConcurrentCalls: number;

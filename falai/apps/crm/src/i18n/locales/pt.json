@@ -41,7 +41,8 @@
     "reports": "Relatórios",
     "sms": "SMS",
     "telephony": "Telefonia",
-    "webphone": "Webphone"
+    "webphone": "Webphone",
+    "inbox": "Caixa de entrada"
   },
   "login": {
     "subtitle": "Inicie sessão na sua conta",
@@ -121,7 +122,8 @@
     "REFUND": "Reembolso",
     "ADJUSTMENT": "Ajuste",
     "MONTHLY_FEE": "Fee mensal",
-    "SMS_CHARGE": "SMS"
+    "SMS_CHARGE": "SMS",
+    "TEXT_CHARGE": "Chat / email"
   },
   "days": [
     "Dom",
@@ -701,7 +703,9 @@
       "campaignsRead": "Ler campanhas",
       "walletRead": "Ler saldo",
       "agentsRead": "Ler agentes",
-      "smsSend": "Enviar SMS"
+      "smsSend": "Enviar SMS",
+      "conversationsRead": "Ler conversas (chat/email/Telegram)",
+      "conversationsWrite": "Responder a conversas"
     },
     "groups": {
       "calls": "Chamadas",
@@ -906,5 +910,63 @@
     "trunkSecretHint": "deixar vazio para manter",
     "trunkType": "Tipo",
     "trunkRegister": "Registo"
+  },
+  "inbox": {
+    "channels": "Canais",
+    "addChannel": "Adicionar canal",
+    "noInboxes": "Ainda não há canais de texto",
+    "noInboxesHint": "Ligue um bot de Telegram, o chat do site ou uma caixa de email para começar a receber conversas.",
+    "status": {
+      "OPEN": "Abertas",
+      "PENDING": "Pendentes",
+      "RESOLVED": "Resolvidas"
+    },
+    "allInboxes": "Todos os canais",
+    "everyone": "Todos",
+    "mine": "Minhas",
+    "unassigned": "Sem atribuição",
+    "empty": "Sem conversas",
+    "pick": "Escolha uma conversa",
+    "modeAi": "IA",
+    "modeHuman": "Humano",
+    "takeOver": "Assumir",
+    "giveBack": "Devolver à IA",
+    "assignee": "Atribuída a",
+    "markPending": "Pendente",
+    "resolve": "Resolver",
+    "reopen": "Reabrir",
+    "conflict": "Outra pessoa alterou esta conversa — actualizámos o ecrã.",
+    "updateError": "Não foi possível actualizar",
+    "note": "Nota interna",
+    "attachmentError": "Anexo indisponível",
+    "reply": "Responder",
+    "privateNote": "Nota interna",
+    "notePlaceholder": "Só a equipa vê esta nota…",
+    "replyPlaceholder": "Escreva a resposta… (/ para respostas rápidas)",
+    "send": "Enviar",
+    "sendError": "Não foi possível enviar",
+    "contactEmail": "Email",
+    "contactPhone": "Telefone",
+    "channel": "Canal",
+    "openContact": "Abrir contacto",
+    "disabled": "Desactivado",
+    "edit": "Editar",
+    "delete": "Apagar",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "saved": "Guardado",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "webchat": "Chat no site",
+    "name": "Nome",
+    "agent": "Agente de IA",
+    "noAgent": "Nenhum (só humanos)",
+    "autoReply": "A IA responde automaticamente",
+    "enabled": "Activo",
+    "canned": "Respostas rápidas",
+    "cannedHint": "Na caixa de entrada, escreva / seguido do atalho para inserir o texto.",
+    "shortcut": "Atalho",
+    "cannedText": "Texto",
+    "add": "Adicionar"
   }
 }

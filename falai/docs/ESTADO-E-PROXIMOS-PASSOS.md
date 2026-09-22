@@ -3,8 +3,8 @@
 > **Este é o ficheiro para ler no início de cada sessão.** Diz o que está feito,
 > o que falta e por onde continuar. Actualizar no fim de cada sessão.
 >
-> Última actualização: **21/08/2026**
-> Branch actual: `docs/deploy-guide` · Último commit: `9876bf1`
+> Última actualização: **22/09/2026**
+> Branch actual: `docs/deploy-guide` · Último commit: `077daf0`
 > **Atenção: há trabalho não commitado** (ver secção 6).
 
 ---
@@ -69,6 +69,30 @@ Documento de referência completo: `docs/AVALIACAO-MODELO-SIP-ANGOVOIP.txt`
 | Backoffice: planos, tenants, utilizadores do tenant, moderação, settings, API keys dos provedores (encriptadas em `SystemSetting`) | ✅ |
 | Módulo Clínica (flag `clinicEnabled`, ficha em `Contact.attributes`) | ✅ |
 | Guia de deploy em VPS | ✅ `DEPLOY.md` |
+
+### 3.1c Canais de texto (Telegram, widget web, email) — construído em 22/09
+
+Plano em `docs/PLANO-CANAIS-TEXTO.md`. Fases 1–5 feitas + billing da fase 6.
+Testado localmente: widget num site de terceiros, webhook Telegram (bot falso),
+threading de email com mensagens cruas, caixa de entrada no CRM em tempo real.
+
+- Schema: `Inbox`, `Conversation`, `Message`, `CannedResponse`;
+  `Contact.phone` opcional + `email`/`telegramId`; `Agent.ttsVoiceId` opcional
+  (chamadas de voz recusam agente sem voz); `Plan.pricePerTextMessageCents`;
+  `TxType.TEXT_CHARGE`. Três migrações `20260922*`.
+- Motor: `processTextTurn()` extraído do `TurnProcessor` (voz usa-o).
+  Núcleo em `services/textChannels.service.ts`; email em `email.service.ts`.
+- Rotas: `/tenant/inboxes`, `/tenant/conversations`, `/tenant/canned-responses`,
+  `/webhooks/telegram/:inboxId`, `/public/chat/*` (widget em `apps/api/public/widget.js`),
+  `/v1/conversations` (scopes `conversations:read|write`).
+- CRM: `/inbox` (3 colunas) e `/inbox/settings` (canais + respostas rápidas).
+  Backoffice: preço por resposta da IA no plano.
+
+**Falta:** testar com bot de Telegram real (precisa `PUBLIC_API_URL` em HTTPS) e
+caixa IMAP/SMTP real; SPF/DKIM do domínio de envio; script de importação do
+Hoory (precisa de um export real para mapear); métricas de texto nos relatórios;
+`PER_CONVERSATION` (só há preço por resposta). Deploy: `PUBLIC_API_URL`,
+`UPLOADS_DIR` (anexos, por omissão `apps/api/uploads`).
 
 ### 3.1b Terceiro produto: `API_BYOM` — construído em 21/08, por correr
 
@@ -239,22 +263,17 @@ Não existe nada disto ainda (`grep externalMedia` não devolve nada no código)
 
 ---
 
-## 6. Trabalho não commitado (arrumar no início da próxima sessão)
+## 6. Branch `feat/canais-texto` (por fazer merge)
 
-Está tudo na árvore de trabalho, typecheck limpo, mas **sem commit**:
+Dois commits: (a) `refactor: preparar o núcleo…` — mexe em código que já
+corre (Contact.phone, ttsVoiceId, TurnProcessor, dispatcher, guardrail);
+(b) `feat: canais de texto…` — só código novo. Se (b) der problemas, reverte-se
+sozinho (as tabelas novas ficam vazias e inofensivas); (a) só se reverte com (b).
 
-```
-Novos:     apps/api/src/services/asteriskRuntime.service.ts
-           apps/api/src/services/asteriskStatus.service.ts
-           packages/providers/src/telephony/AsteriskAdapter.ts
-           packages/providers/src/telephony/asteriskNaming.ts
-           infra/                (Asterisk em Docker, templates, scripts)
-           packages/db/prisma/migrations/20260727224114_add_telephony_engine/
-Alterados: 19 ficheiros (api, backoffice, schema.prisma, providers, .env.example)
-```
-
-Sugestão: `feat(telephony): motor Asterisk como cliente SIP da ANGOVOIP`.
-Estamos em `docs/deploy-guide` — criar branch própria antes de commitar.
+Antes do deploy: correr as 3 migrações `20260922*` numa cópia da base de
+produção (Postgres ≥ 12 por causa do `ALTER TYPE … ADD VALUE`), `pnpm install`
+(imapflow, mailparser, nodemailer), definir `PUBLIC_API_URL`; opcionais
+`UPLOADS_DIR` e `WIDGET_JS_PATH`.
 
 ---
 

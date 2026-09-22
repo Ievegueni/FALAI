@@ -31,6 +31,8 @@ const DirectCallPage = lazy(() => import('@/pages/calls/DirectCallPage').then((m
 const CallDetailPage = lazy(() => import('@/pages/calls/CallDetailPage').then((m) => ({ default: m.CallDetailPage })));
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const SmsPage = lazy(() => import('@/pages/sms/SmsPage').then((m) => ({ default: m.SmsPage })));
+const InboxPage = lazy(() => import('@/pages/inbox/InboxPage').then((m) => ({ default: m.InboxPage })));
+const InboxSettingsPage = lazy(() => import('@/pages/inbox/InboxSettingsPage').then((m) => ({ default: m.InboxSettingsPage })));
 const CampaignsPage = lazy(() => import('@/pages/campaigns/CampaignsPage').then((m) => ({ default: m.CampaignsPage })));
 const CampaignFormPage = lazy(() => import('@/pages/campaigns/CampaignFormPage').then((m) => ({ default: m.CampaignFormPage })));
 const CampaignDetailPage = lazy(() => import('@/pages/campaigns/CampaignDetailPage').then((m) => ({ default: m.CampaignDetailPage })));
@@ -82,6 +84,8 @@ export default function App() {
                 <Route path="/reports" element={<RequireFeature feature="calls"><ReportsPage /></RequireFeature>} />
 
                 <Route path="/sms" element={<SmsPage />} />
+                <Route path="/inbox" element={<InboxPage />} />
+                <Route path="/inbox/settings" element={<InboxSettingsPage />} />
 
                 <Route path="/campaigns" element={<RequireFeature feature="campaigns"><CampaignsPage /></RequireFeature>} />
                 <Route path="/campaigns/new" element={<RequireFeature feature="campaigns"><CampaignFormPage /></RequireFeature>} />

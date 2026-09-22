@@ -726,3 +726,39 @@ export const settingsApi = {
     return toPaginated(events, raw.total, page);
   },
 };
+
+// ─── Canais de texto ─────────────────────────────────────────────────────────
+
+type InboxInput = { channel?: import('@/types').Channel; name?: string; agentId?: string | null; autoReply?: boolean; enabled?: boolean; config?: Record<string, unknown> };
+
+export const inboxesApi = {
+  list: () => get<{ data: import('@/types').Inbox[] }>('/tenant/inboxes').then((r) => r.data),
+  create: (data: InboxInput) => post<import('@/types').Inbox>('/tenant/inboxes', data),
+  update: (id: string, data: InboxInput) => patch<import('@/types').Inbox>(`/tenant/inboxes/${id}`, data),
+  remove: (id: string) => del<void>(`/tenant/inboxes/${id}`),
+};
+
+export const conversationsApi = {
+  list: (params: { status?: string; inboxId?: string; assignee?: string }) =>
+    get<{ data: import('@/types').Conversation[] }>(`/tenant/conversations${qs(params)}`).then((r) => r.data),
+  get: (id: string) => get<import('@/types').ConversationDetail>(`/tenant/conversations/${id}`),
+  send: (id: string, text: string, isPrivate = false) =>
+    post<import('@/types').ConversationMessage>(`/tenant/conversations/${id}/messages`, { text, private: isPrivate }),
+  update: (id: string, data: { status?: string; mode?: string; assigneeId?: string | null; updatedAt: string }) =>
+    patch<import('@/types').Conversation>(`/tenant/conversations/${id}`, data),
+  /** Anexo protegido por auth — descarrega via fetch e abre como blob. */
+  openAttachment: async (file: string) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/conversations/attachments/${encodeURIComponent(file)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Anexo indisponível');
+    window.open(URL.createObjectURL(await res.blob()), '_blank');
+  },
+};
+
+export const cannedApi = {
+  list: () => get<{ data: import('@/types').CannedResponse[] }>('/tenant/canned-responses').then((r) => r.data),
+  create: (data: { shortcut: string; text: string }) => post<import('@/types').CannedResponse>('/tenant/canned-responses', data),
+  remove: (id: string) => del<void>(`/tenant/canned-responses/${id}`),
+};

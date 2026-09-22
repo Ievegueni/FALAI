@@ -41,7 +41,8 @@
     "reports": "报告",
     "sms": "短信",
     "telephony": "电话",
-    "webphone": "网络电话"
+    "webphone": "网络电话",
+    "inbox": "收件箱"
   },
   "login": {
     "subtitle": "登录您的账户",
@@ -121,7 +122,8 @@
     "REFUND": "退款",
     "ADJUSTMENT": "调整",
     "MONTHLY_FEE": "月费",
-    "SMS_CHARGE": "短信"
+    "SMS_CHARGE": "短信",
+    "TEXT_CHARGE": "文字消息"
   },
   "days": [
     "日",
@@ -701,7 +703,9 @@
       "campaignsRead": "读取活动",
       "walletRead": "读取余额",
       "agentsRead": "读取坐席",
-      "smsSend": "发送短信"
+      "smsSend": "发送短信",
+      "conversationsRead": "读取会话",
+      "conversationsWrite": "回复会话"
     },
     "groups": {
       "calls": "通话",
