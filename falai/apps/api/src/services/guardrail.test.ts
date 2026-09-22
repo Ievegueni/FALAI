@@ -173,3 +173,14 @@ describe("cache das frases proibidas", () => {
     expect(getSetting).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("escalate em canais de texto", () => {
+  it("é passagem a humano: descarta o destino sem sinalizar", async () => {
+    const r = await applyGuardrails(
+      { reply: "Vou passar a um colega.", action: { type: "escalate", to: "+244999999999" } },
+      { tenantId: "t", callId: "c", allowedEscalationNumbers: [], escalateIsHandoff: true }
+    );
+    expect(r.action).toEqual({ type: "escalate" });
+    expect(r.flags).not.toContain("escalation_not_allowed");
+  });
+});

@@ -2,7 +2,102 @@ import { prisma } from "@falai/db";
 import type { SttProvider, LlmProvider, TtsProvider, TelephonyProvider, TurnMessage } from "@falai/providers";
 import type { LlmTurnResponse } from "@falai/shared";
 import type { AudioCache } from "./AudioCache.js";
-import { applyGuardrails, recordViolation, FALLBACK_REPLY } from "./guardrail.service.js";
+import { applyGuardrails, recordViolation, FALLBACK_REPLY, type GuardrailFlag } from "./guardrail.service.js";
+
+export interface TextTurnParams {
+  llm: LlmProvider;
+  systemPrompt: string;
+  history: TurnMessage[];
+  userText: string;
+  variables: Record<string, unknown>;
+  tenantId: string;
+  /** callId (voz) ou conversationId (texto) — só para rastreio em eventos. */
+  refId: string;
+  agentId: string;
+  modelId?: string | null;
+  allowedEscalationNumbers?: string[];
+  maxReplyChars?: number;
+  /** Canal de texto: escalate = passar a humano (ver guardrail.service.ts). */
+  escalateIsHandoff?: boolean;
+}
+
+/**
+ * A parte de um turno que não é áudio: LLM + guardrails. Partilhada pela voz
+ * (processTurn) e pelos canais de texto (services/textChannels.service.ts).
+ * Nunca lança: se o modelo falhar devolve a frase de recurso.
+ */
+export async function processTextTurn(params: TextTurnParams): Promise<{
+  response: LlmTurnResponse;
+  llmMs: number;
+  guard: { violated: boolean; flags: GuardrailFlag[] };
+}> {
+  // O motor pode ser o nosso ou o do cliente (API_BYOM). Se for o dele e
+  // falhar — timeout, HTTP, contrato — a conversa NÃO pode ficar em silêncio:
+  // responde-se com a frase de recurso e segue-se.
+  const llmStart = Date.now();
+  let response: LlmTurnResponse;
+  let llmMs = 0;
+  let modelFailed = false;
+
+  try {
+    const result = await params.llm.generateTurnResponse({
+      systemPrompt: params.systemPrompt,
+      history: params.history,
+      userText: params.userText,
+      variables: params.variables,
+    });
+    response = result.response;
+    llmMs = result.durationMs;
+  } catch (err) {
+    modelFailed = true;
+    // Um timeout também custa tempo — registá-lo como zero esconderia
+    // exactamente o problema que queremos ver nos relatórios.
+    llmMs = Date.now() - llmStart;
+    response = { reply: FALLBACK_REPLY, action: { type: "continue" } };
+    await prisma.systemEvent
+      .create({
+        data: {
+          severity: "ERROR",
+          source: "turn-processor",
+          tenantId: params.tenantId,
+          message: `O modelo falhou a responder: ${err instanceof Error ? err.message : String(err)}`,
+          payload: { callId: params.refId, agentId: params.agentId, modelId: params.modelId ?? null },
+        },
+      })
+      .catch(() => {});
+  }
+
+  // Guardrails: última barreira antes de a resposta sair. Corre para os dois
+  // motores — o prompt do cliente não a contorna porque não passa por lá.
+  const guard = await applyGuardrails(
+    { reply: response.reply, action: response.action },
+    {
+      tenantId: params.tenantId,
+      callId: params.refId,
+      allowedEscalationNumbers: params.allowedEscalationNumbers ?? [],
+      ...(params.escalateIsHandoff && { escalateIsHandoff: true }),
+      ...(params.modelId !== undefined && { modelId: params.modelId }),
+      ...(params.maxReplyChars !== undefined && { maxReplyChars: params.maxReplyChars }),
+    }
+  );
+
+  if (guard.violated && !modelFailed) {
+    // Fire-and-forget: contar violações não pode atrasar a resposta.
+    void recordViolation({
+      tenantId: params.tenantId,
+      modelId: params.modelId ?? null,
+      callId: params.refId,
+      flags: guard.flags,
+      originalReply: response.reply,
+    }).catch(() => {});
+  }
+
+  return {
+    response: { ...response, reply: guard.reply, action: guard.action as LlmTurnResponse["action"] },
+    llmMs,
+    guard: { violated: guard.violated, flags: guard.flags },
+  };
+}
 
 export interface TurnContext {
   callId: string;
@@ -75,71 +170,21 @@ export class TurnProcessor {
       });
     }
 
-    // ── 2. LLM ──────────────────────────────────────────────────────────────
-    // O motor pode ser o nosso ou o do cliente (API_BYOM). Se for o dele e
-    // falhar — timeout, HTTP, contrato — a chamada NÃO pode cair em silêncio:
-    // fala-se a frase de recurso e segue-se.
-    const llm = context.llm ?? this.llm;
-    const llmStart = Date.now();
-    let response: LlmTurnResponse;
-    let llmMs = 0;
-    let modelFailed = false;
-
-    try {
-      const result = await llm.generateTurnResponse({
-        systemPrompt: context.systemPrompt,
-        history: context.history,
-        userText: transcript || "(início da chamada — cumprimentar o utilizador)",
-        variables: context.variables,
-      });
-      response = result.response;
-      llmMs = result.durationMs;
-    } catch (err) {
-      modelFailed = true;
-      // Um timeout também custa tempo à chamada — registá-lo como zero
-      // esconderia exactamente o problema que queremos ver nos relatórios.
-      llmMs = Date.now() - llmStart;
-      response = { reply: FALLBACK_REPLY, action: { type: "continue" } };
-      await prisma.systemEvent
-        .create({
-          data: {
-            severity: "ERROR",
-            source: "turn-processor",
-            tenantId: context.tenantId,
-            message: `O modelo falhou a responder: ${err instanceof Error ? err.message : String(err)}`,
-            payload: { callId: context.callId, agentId: context.agentId, modelId: context.modelId ?? null },
-          },
-        })
-        .catch(() => {});
-    }
-
-    // ── 2b. Guardrails ───────────────────────────────────────────────────────
-    // Última barreira antes de a resposta virar voz. Corre para os dois motores
-    // — o prompt do cliente não a contorna porque não passa por lá.
-    const guard = await applyGuardrails(
-      { reply: response.reply, action: response.action },
-      {
-        tenantId: context.tenantId,
-        callId: context.callId,
-        allowedEscalationNumbers: context.allowedEscalationNumbers ?? [],
-        ...(context.modelId !== undefined && { modelId: context.modelId }),
-        ...(context.maxReplyChars !== undefined && { maxReplyChars: context.maxReplyChars }),
-      }
-    );
-
-    if (guard.violated && !modelFailed) {
-      // Fire-and-forget: contar violações não pode atrasar a chamada.
-      void recordViolation({
-        tenantId: context.tenantId,
-        modelId: context.modelId ?? null,
-        callId: context.callId,
-        flags: guard.flags,
-        originalReply: response.reply,
-      }).catch(() => {});
-    }
-
-    response = { ...response, reply: guard.reply, action: guard.action as LlmTurnResponse["action"] };
-    const agentText = guard.reply;
+    // ── 2. LLM + guardrails ──────────────────────────────────────────────────
+    const { response, llmMs, guard } = await processTextTurn({
+      llm: context.llm ?? this.llm,
+      systemPrompt: context.systemPrompt,
+      history: context.history,
+      userText: transcript || "(início da chamada — cumprimentar o utilizador)",
+      variables: context.variables,
+      tenantId: context.tenantId,
+      refId: context.callId,
+      agentId: context.agentId,
+      ...(context.modelId !== undefined && { modelId: context.modelId }),
+      ...(context.allowedEscalationNumbers !== undefined && { allowedEscalationNumbers: context.allowedEscalationNumbers }),
+      ...(context.maxReplyChars !== undefined && { maxReplyChars: context.maxReplyChars }),
+    });
+    const agentText = response.reply;
 
     // ── 3. TTS + upload ──────────────────────────────────────────────────────
     const ttsStart = Date.now();

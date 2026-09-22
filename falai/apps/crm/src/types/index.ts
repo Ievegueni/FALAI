@@ -132,7 +132,8 @@ export interface SimulateResponse {
 export interface Contact {
   id: string;
   name: string;
-  phone: string;
+  phone: string | null;
+  telegramId?: string | null;
   email: string | null;
   attributes: Record<string, string>;
   optedOutAt: string | null;
@@ -335,7 +336,7 @@ export interface RetryPolicy {
 
 // ─── Wallet ──────────────────────────────────────────────────────────────────
 
-export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
+export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'TEXT_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
 
 export interface WalletTransaction {
   id: string;
@@ -495,4 +496,60 @@ export interface Paginated<T> {
   total: number;
   page: number;
   perPage: number;
+}
+
+// ─── Canais de texto (caixa de entrada) ──────────────────────────────────────
+
+export type Channel = 'WEBCHAT' | 'EMAIL' | 'TELEGRAM';
+export type ConversationStatus = 'OPEN' | 'PENDING' | 'RESOLVED';
+export type ConversationMode = 'AI' | 'HUMAN';
+
+export interface Inbox {
+  id: string;
+  channel: Channel;
+  name: string;
+  agentId: string | null;
+  autoReply: boolean;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  secretsSet: Record<string, boolean>;
+  snippet?: string;
+  createdAt: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  seq: number;
+  /** HUMAN = cliente; AGENT = IA (authorId nulo) ou operador; SYSTEM = nota interna */
+  role: 'HUMAN' | 'AGENT' | 'SYSTEM';
+  text: string;
+  authorId: string | null;
+  attachments: { file: string; name: string; size: number }[] | null;
+  guardrailFlags: string[] | null;
+  createdAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  status: ConversationStatus;
+  mode: ConversationMode;
+  subject: string | null;
+  assigneeId: string | null;
+  lastMessageAt: string;
+  updatedAt: string;
+  inbox: { id: string; name: string; channel: Channel };
+  contact: { id: string; name: string | null; phone: string | null; email: string | null; telegramId: string | null } | null;
+  assignee: { id: string; name: string } | null;
+  lastMessage?: { role: ConversationMessage['role']; text: string; createdAt: string } | null;
+}
+
+export interface ConversationDetail extends Conversation {
+  messages: ConversationMessage[];
+  authors: { id: string; name: string }[];
+}
+
+export interface CannedResponse {
+  id: string;
+  shortcut: string;
+  text: string;
 }

@@ -431,7 +431,7 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Verify all contacts belong to this tenant
     const validContacts = await prisma.contact.findMany({
-      where: { id: { in: body.contactIds }, tenantId, optedOutAt: null },
+      where: { id: { in: body.contactIds }, tenantId, optedOutAt: null, phone: { not: null } },
       select: { id: true },
     });
 

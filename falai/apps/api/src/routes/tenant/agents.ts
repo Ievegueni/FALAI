@@ -24,7 +24,7 @@ const createSchema = z.discriminatedUnion("mode", [
     name: z.string().min(2).max(100),
     description: z.string().max(500).optional(),
     editorFields: editorFieldsSchema,
-    ttsVoiceId: z.string().min(1),
+    ttsVoiceId: z.string().min(1).nullable(), // null explícito = agente só de texto
     language: z.string().default("pt-PT"),
     maxTurnSeconds: z.number().int().min(10).max(300).default(30),
     maxCallSeconds: z.number().int().min(30).max(3600).default(300),
@@ -36,7 +36,7 @@ const createSchema = z.discriminatedUnion("mode", [
     name: z.string().min(2).max(100),
     description: z.string().max(500).optional(),
     systemPrompt: z.string().min(20),
-    ttsVoiceId: z.string().min(1),
+    ttsVoiceId: z.string().min(1).nullable(), // null explícito = agente só de texto
     language: z.string().default("pt-PT"),
     maxTurnSeconds: z.number().int().min(10).max(300).default(30),
     maxCallSeconds: z.number().int().min(30).max(3600).default(300),

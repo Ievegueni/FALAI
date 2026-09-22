@@ -127,7 +127,7 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
     }
 
     const validContacts = await prisma.contact.findMany({
-      where: { id: { in: body.contactIds }, tenantId, optedOutAt: null },
+      where: { id: { in: body.contactIds }, tenantId, optedOutAt: null, phone: { not: null } },
       select: { id: true },
     });
     const validIds = new Set(validContacts.map((c) => c.id));

@@ -24,6 +24,7 @@ export const adminSimulateRoutes: FastifyPluginAsync = async (fastify) => {
 
     const agent = await prisma.agent.findUnique({ where: { id: body.agentId } });
     if (!agent) return reply.status(404).send({ error: "Agente não encontrado" });
+    if (!agent.ttsVoiceId) return reply.status(422).send({ error: "Agente sem voz — só serve canais de texto" });
     if (agent.status !== "ACTIVE" || !agent.isApproved) {
       return reply.status(400).send({ error: "Agente não está activo ou aprovado" });
     }

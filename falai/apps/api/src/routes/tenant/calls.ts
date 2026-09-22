@@ -212,6 +212,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     if (!agent) return reply.status(404).send({ error: "Agente não encontrado" });
+    if (!agent.ttsVoiceId) return reply.status(422).send({ error: "Agente sem voz — só serve canais de texto" });
     if (agent.status !== "ACTIVE") return reply.status(422).send({ error: "O agente tem de estar ACTIVO para fazer chamadas" });
     if (!tenant) return reply.status(404).send({ error: "Tenant não encontrado" });
 

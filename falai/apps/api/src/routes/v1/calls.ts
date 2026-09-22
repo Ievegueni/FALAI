@@ -33,6 +33,7 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
     ]);
 
     if (!agent) return reply.status(404).send({ error: "Agent not found" });
+    if (!agent.ttsVoiceId) return reply.status(422).send({ error: "Agent has no voice — text channels only" });
     if (agent.status !== "ACTIVE") return reply.status(422).send({ error: "Agent must be ACTIVE to place calls" });
     if (!tenant) return reply.status(404).send({ error: "Tenant not found" });
 

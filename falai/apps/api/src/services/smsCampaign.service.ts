@@ -11,11 +11,11 @@ import { dispatchQueuedMessage } from "./sms.service.js";
  */
 
 /** Substitui {name}, {phone} e {atributos} no template pelo valor do contacto. */
-export function interpolate(template: string, contact: { name: string | null; phone: string; attributes: unknown }): string {
+export function interpolate(template: string, contact: { name: string | null; phone: string | null; attributes: unknown }): string {
   const attrs = (contact.attributes ?? {}) as Record<string, unknown>;
   return template.replace(/\{(\w+)\}/g, (_m, key: string) => {
     if (key === "name") return contact.name ?? "";
-    if (key === "phone") return contact.phone;
+    if (key === "phone") return contact.phone ?? "";
     const v = attrs[key];
     return v === undefined || v === null ? "" : String(v);
   });
@@ -35,7 +35,7 @@ export async function prepareRecipients(
 
   const cfg = await getTenantSmsConfig(tenantId);
   const contacts = await prisma.contact.findMany({
-    where: { tenantId, id: { in: contactIds }, optedOutAt: null },
+    where: { tenantId, id: { in: contactIds }, optedOutAt: null, phone: { not: null } },
     select: { id: true, name: true, phone: true, attributes: true },
   });
 
@@ -47,7 +47,7 @@ export async function prepareRecipients(
         tenantId,
         campaignId,
         contactId: c.id,
-        toNumber: c.phone,
+        toNumber: c.phone!, // filtrado na query
         body: text,
         segments,
         costCents: segments * cfg.pricePerSegmentCents,
