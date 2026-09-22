@@ -158,6 +158,9 @@ export const tenantsApi = {
     del<{ ok: boolean }>(`/admin/tenants/${id}/lines/${lineId}`),
 
   // Funcionalidades
+  updateLogo: (id: string, logoDataUrl: string | null) =>
+    put<{ logoDataUrl: string | null }>(`/admin/tenants/${id}/logo`, { logoDataUrl }),
+
   updateFeatures: (id: string, features: Partial<TenantFeatures>) =>
     put<{ featureOverrides: Partial<TenantFeatures>; features: TenantFeatures }>(
       `/admin/tenants/${id}/features`,

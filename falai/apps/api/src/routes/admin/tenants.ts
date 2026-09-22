@@ -26,6 +26,15 @@ const lineUpdateSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+// Só imagens rasterizadas ou SVG em base64; 256 KB de imagem ≈ 350 KB em base64.
+const logoSchema = z.object({
+  logoDataUrl: z
+    .string()
+    .regex(/^data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/, "Formato inválido (PNG, JPG, WEBP ou SVG)")
+    .max(350_000, "Logo demasiado grande (máx. 256 KB)")
+    .nullable(),
+});
+
 const featuresSchema = z.object(
   Object.fromEntries(FEATURE_KEYS.map((k) => [k, z.boolean().optional()])) as Record<string, z.ZodOptional<z.ZodBoolean>>,
 );
@@ -116,6 +125,7 @@ function mapTenant(t: any) {
       productType: t.plan?.productType,
     }),
     featureOverrides: (t.features ?? {}) as Record<string, boolean>,
+    logoDataUrl: (t as { logoDataUrl?: string | null }).logoDataUrl ?? null,
     ...(t.lines !== undefined && { lines: t.lines }),
     createdAt: t.createdAt,
     _count: t._count,
@@ -557,6 +567,24 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return { ok: true };
+  });
+
+  // ============ LOGO ============
+
+  // PUT /admin/tenants/:id/logo — logo do cliente no CRM (null = volta ao da Comunica)
+  fastify.put<{ Params: { id: string } }>("/:id/logo", { preHandler }, async (request, reply) => {
+    const parsed = logoSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? "Logo inválido" });
+    const { logoDataUrl } = parsed.data;
+    const admin = request.adminUser!;
+    const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null }, select: { id: true } });
+    if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
+    await prisma.tenant.update({ where: { id: request.params.id }, data: { logoDataUrl } });
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: logoDataUrl ? "tenant.logo_updated" : "tenant.logo_removed",
+      targetType: "Tenant", targetId: request.params.id, ip: request.ip,
+    });
+    return { logoDataUrl };
   });
 
   // ============ FUNCIONALIDADES ============

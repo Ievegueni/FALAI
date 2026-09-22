@@ -40,6 +40,8 @@ export interface Tenant {
   planId: string;
   plan: Plan;
   features?: TenantFeatures;
+  /** Logo definido pela Comunica no backoffice (data URL). Null = logo da Comunica. */
+  logoDataUrl?: string | null;
   onboardingCompletedAt: string | null;
 }
 

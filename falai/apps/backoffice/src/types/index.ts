@@ -149,6 +149,8 @@ export interface TenantUserInput {
 export interface Tenant {
   id: string;
   name: string;
+  /** Logo mostrado no CRM do cliente (data URL). Null = logo da Comunica. */
+  logoDataUrl?: string | null;
   email: string;
   phone: string;
   nif: string | null;

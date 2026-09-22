@@ -294,6 +294,7 @@ export function TenantDetailPage() {
 
       {tab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <LogoCard tenantId={tenant.id} logo={tenant.logoDataUrl ?? null} />
           <Card>
             <h2 className="text-sm font-semibold text-gray-700 mb-4">Organização</h2>
             <dl className="space-y-3 text-sm">
@@ -1054,6 +1055,72 @@ function SmsConfigTab({ tenantId }: { tenantId: string }) {
         </p>
       </div>
       <Button onClick={() => save.mutate()} disabled={save.isPending}>Guardar</Button>
+    </Card>
+  );
+}
+
+const MAX_LOGO_BYTES = 256 * 1024;
+
+/** Logo do cliente no CRM. Guardado como data URL; sem logo usa-se o da Comunica. */
+function LogoCard({ tenantId, logo }: { tenantId: string; logo: string | null }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const save = useMutation({
+    mutationFn: (dataUrl: string | null) => tenantsApi.updateLogo(tenantId, dataUrl),
+    onSuccess: (_r, dataUrl) => {
+      toast.success(dataUrl ? 'Logo actualizado' : 'Logo removido');
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', tenantId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Não foi possível guardar o logo'),
+  });
+
+  const onFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type)) {
+      toast.error('Formato inválido — use PNG, JPG, WEBP ou SVG');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      toast.error('Logo demasiado grande (máx. 256 KB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => save.mutate(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-gray-700 mb-1">Logo no CRM</h2>
+      <p className="text-xs text-gray-500 mb-4">Aparece no topo do menu do cliente. PNG, JPG, WEBP ou SVG até 256 KB, fundo transparente de preferência.</p>
+      <div className="flex items-center gap-4">
+        {/* Pré-visualização sobre o mesmo fundo escuro do menu do CRM */}
+        <div className="flex h-16 w-40 items-center justify-center rounded-lg bg-slate-900 p-2">
+          <div className="flex items-center justify-center rounded-lg bg-white px-2 py-1.5">
+            <img src={logo ?? '/logo.png'} alt="Logo do cliente" className="h-8 max-w-[120px] object-contain" />
+          </div>
+        </div>
+        <div className="flex flex-col gap-2">
+          <label className="inline-flex cursor-pointer items-center justify-center rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
+            {save.isPending ? 'A guardar…' : logo ? 'Trocar logo' : 'Carregar logo'}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              className="sr-only"
+              disabled={save.isPending}
+              onChange={(e) => {
+                onFile(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {logo && (
+            <Button size="sm" variant="ghost" onClick={() => save.mutate(null)} disabled={save.isPending}>
+              Repor logo da Comunica
+            </Button>
+          )}
+        </div>
+      </div>
     </Card>
   );
 }

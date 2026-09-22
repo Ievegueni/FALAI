@@ -151,6 +151,8 @@ enum CampaignContactStatus {
 model Tenant {
   id                   String              @id @default(cuid())
   name                 String
+  // Logo do cliente mostrado no CRM (data URL, ≤ 256 KB). Null = logo da Comunica.
+  logoDataUrl          String?             @db.Text
   nif                  String?             @unique
   email                String
   phone                String
