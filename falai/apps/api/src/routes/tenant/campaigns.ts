@@ -185,6 +185,16 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(400).send({ error: "Campanha em curso não pode ser editada. Pausa primeiro." });
     }
 
+    // O agente tem de ser deste cliente: sem isto, uma campanha podia passar a
+    // ligar com o agente (prompt e voz) de outro cliente.
+    if (body.agentId !== undefined) {
+      const agent = await prisma.agent.findFirst({
+        where: { id: body.agentId, tenantId, status: "ACTIVE", deletedAt: null },
+        select: { id: true },
+      });
+      if (!agent) return reply.status(400).send({ error: "Agente não encontrado ou não está activo" });
+    }
+
     if (body.ttsVoiceId !== undefined) {
       const voiceCheck = await fastify.ttsVoices.assertKnownVoice(body.ttsVoiceId);
       if (!voiceCheck.ok) return reply.status(400).send({ error: voiceCheck.error });

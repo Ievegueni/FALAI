@@ -80,6 +80,9 @@ export const tenantSmsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/tenant/sms", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = sendSchema.parse(request.body);
+    if (body.contactId && !(await prisma.contact.findFirst({ where: { id: body.contactId, tenantId }, select: { id: true } }))) {
+      return reply.status(400).send({ error: "Contacto não encontrado" });
+    }
     try {
       const sent = await sendSms(fastify, tenantId, {
         to: body.to,

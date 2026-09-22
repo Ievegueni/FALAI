@@ -19,6 +19,13 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: "agentId and toNumber are required" });
     }
 
+    // O contacto tem de ser deste cliente: a chamada fica ligada a ele e o nome
+    // aparece no histórico. Um id de outro cliente expunha esse nome.
+    if (body.contactId !== undefined) {
+      const contact = await prisma.contact.findFirst({ where: { id: body.contactId, tenantId }, select: { id: true } });
+      if (!contact) return reply.status(404).send({ error: "Contact not found" });
+    }
+
     const [agent, tenant] = await Promise.all([
       prisma.agent.findUnique({
         where: { id: body.agentId, tenantId, deletedAt: null },

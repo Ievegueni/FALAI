@@ -121,6 +121,12 @@ export async function sendSms(fastify: FastifyInstance, tenantId: string, input:
   const reserved = await reserveBalance(tenantId, costCents);
   if (!reserved) throw new InsufficientBalanceError();
 
+  // Só se liga a mensagem a um contacto deste cliente. As rotas já validam; isto
+  // protege quem chame o serviço directamente com um id vindo de fora.
+  const contactId = input.contactId
+    ? (await prisma.contact.findFirst({ where: { id: input.contactId, tenantId }, select: { id: true } }))?.id
+    : undefined;
+
   // Regista a mensagem (QUEUED) antes de despachar
   const msg = await prisma.smsMessage.create({
     data: {
@@ -131,7 +137,7 @@ export async function sendSms(fastify: FastifyInstance, tenantId: string, input:
       costCents,
       status: "QUEUED",
       senderId: cfg.senderId,
-      ...(input.contactId ? { contactId: input.contactId } : {}),
+      ...(contactId ? { contactId } : {}),
       ...(input.campaignId ? { campaignId: input.campaignId } : {}),
       ...(input.trigger ? { trigger: input.trigger } : {}),
     },

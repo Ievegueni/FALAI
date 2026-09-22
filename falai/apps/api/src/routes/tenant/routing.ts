@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import { z } from "zod";
 import { scheduleTenantPbxSync } from "../../services/pbxSync.service.js";
+import { sharedTrunkDidProblem } from "../../services/callRouting.service.js";
 
 const outboundCreate = z.object({
   name: z.string().min(2).max(64),
@@ -142,6 +143,8 @@ export const tenantRoutingRoutes: FastifyPluginAsync = async (fastify) => {
     if (!(await assertDestination(tenantId, body.destType, body.destValue))) {
       return reply.status(400).send({ error: "Menu de IVR inexistente" });
     }
+    const didProblem = await sharedTrunkDidProblem(tenantId, body.trunkId, body.didPattern);
+    if (didProblem) return reply.status(400).send({ error: didProblem });
 
     const route = await prisma.inboundRoute.create({
       data: { tenantId, name: body.name, trunkId: body.trunkId, didPattern: body.didPattern, destType: body.destType, destValue: body.destValue },
@@ -167,6 +170,11 @@ export const tenantRoutingRoutes: FastifyPluginAsync = async (fastify) => {
     if (!(await assertDestination(tenantId, destType, destValue))) {
       return reply.status(400).send({ error: "Menu de IVR inexistente" });
     }
+    // Mesmo raciocínio: valida-se o par trunk/número com que a rota fica.
+    const didProblem = await sharedTrunkDidProblem(
+      tenantId, body.trunkId ?? existing.trunkId, body.didPattern ?? existing.didPattern, existing.id,
+    );
+    if (didProblem) return reply.status(400).send({ error: didProblem });
 
     await prisma.inboundRoute.update({
       where: { id: existing.id },
