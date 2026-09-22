@@ -127,6 +127,25 @@ export function computeFeatures(input: {
 }
 
 /**
+ * Funcionalidades que o plano desliga e que nenhum override consegue ligar
+ * (sem IA, sem SMS, produto API_BYOM). O backoffice mostra-as bloqueadas em vez
+ * de deixar ligar um interruptor que o plano anula logo a seguir.
+ */
+export function lockedByPlan(plan: {
+  aiAgentsEnabled?: boolean;
+  smsEnabled?: boolean;
+  productType?: string;
+} | null | undefined): FeatureKey[] {
+  const allOn = computeFeatures({
+    overrides: Object.fromEntries(FEATURE_KEYS.map((k) => [k, true])),
+    ...(plan?.aiAgentsEnabled !== undefined && { aiAgentsEnabled: plan.aiAgentsEnabled }),
+    ...(plan?.smsEnabled !== undefined && { smsEnabled: plan.smsEnabled }),
+    ...(plan?.productType !== undefined && { productType: plan.productType }),
+  });
+  return FEATURE_KEYS.filter((k) => !allOn[k]);
+}
+
+/**
  * Valida e normaliza um objecto de overrides recebido do backoffice,
  * mantendo apenas chaves conhecidas com valores booleanos.
  */

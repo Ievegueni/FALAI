@@ -196,8 +196,31 @@ export function TenantDetailPage() {
     onError: () => toast.error('Erro ao remover linha.'),
   });
 
+  // O que o plano desliga não se liga com um override. Se deixássemos o
+  // interruptor activo, o operador ligava, gravava, e a página voltava a
+  // mostrar desligado.
+  const isLocked = (key: FeatureKey) =>
+    tenant?.lockedByPlan
+      ? tenant.lockedByPlan.includes(key)
+      : (key === 'agents' || key === 'campaigns') && tenant?.plan?.aiAgentsEnabled === false;
+  const lockedReason = (f: (typeof FEATURE_LABELS)[number]) => {
+    if (tenant?.plan?.productType === 'API_BYOM') return 'Indisponível: o plano API BYOM só usa a API.';
+    if (f.needsAi && tenant?.plan?.aiAgentsEnabled === false) return 'Indisponível: o plano deste cliente não inclui IA.';
+    if (f.key === 'sms') return 'Indisponível: o plano deste cliente não inclui SMS.';
+    return 'Indisponível no plano deste cliente.';
+  };
+
   const saveFeaturesMut = useMutation({
-    mutationFn: () => tenantsApi.updateFeatures(id!, featuresDraft ?? {}),
+    // Só se gravam as escolhas que o plano deixa fazer. Os valores forçados pelo
+    // plano não são escolha do operador: gravá-los como override fazia-os
+    // aparecer desligados mais tarde, quando o cliente mudasse de plano.
+    mutationFn: () =>
+      tenantsApi.updateFeatures(id!, {
+        ...(tenant?.featureOverrides ?? {}),
+        ...Object.fromEntries(
+          Object.entries(featuresDraft ?? {}).filter(([k]) => !isLocked(k as FeatureKey)),
+        ),
+      }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] }); toast.success('Funcionalidades actualizadas.'); },
     onError: () => toast.error('Erro ao gravar funcionalidades.'),
   });
@@ -609,15 +632,21 @@ export function TenantDetailPage() {
               Guardar
             </Button>
           </div>
+          {tenant.plan?.productType === 'API_BYOM' && (
+            <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              O plano deste cliente é API BYOM: usa só a API, por isso o painel fica limitado a Developers.
+              Para ligar outras funcionalidades, muda-o para um plano com CRM.
+            </p>
+          )}
           <div className="divide-y divide-gray-100">
             {FEATURE_LABELS.map((f) => {
-              const blockedByPlan = f.needsAi && tenant.plan?.aiAgentsEnabled === false;
+              const blockedByPlan = isLocked(f.key);
               return (
                 <div key={f.key} className="flex items-center justify-between py-3">
                   <div>
                     <p className="text-sm font-medium text-gray-900">{f.label}</p>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      {blockedByPlan ? 'Indisponível — o plano deste cliente não inclui IA.' : f.hint}
+                      {blockedByPlan ? lockedReason(f) : f.hint}
                     </p>
                   </div>
                   <Toggle

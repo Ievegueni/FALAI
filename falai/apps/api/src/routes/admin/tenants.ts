@@ -4,7 +4,7 @@ import { z } from "zod";
 import { hashPassword } from "../../services/auth.service.js";
 import { pbxCallStatus } from "../../services/pbxCdr.service.js";
 import {
-  computeFeatures, sanitizeFeatureOverrides, invalidateTenantFeatures,
+  computeFeatures, sanitizeFeatureOverrides, invalidateTenantFeatures, lockedByPlan,
   FEATURE_KEYS, FEATURE_LABELS, FEATURE_HINTS, DEFAULT_FEATURES,
 } from "../../services/features.js";
 import { encryptSecret } from "../../services/crypto.service.js";
@@ -111,6 +111,7 @@ function mapTenant(t: any) {
           // com o dispatcher a obedecer ao segundo. Ver `campaignDispatcher`.
           maxConcurrentCalls: t.plan.maxConcurrent ?? 1,
           aiAgentsEnabled: t.plan.aiAgentsEnabled ?? true,
+          productType: t.plan.productType ?? "VOICE_AI",
           isActive: t.plan.isActive ?? true,
         }
       : null,
@@ -129,6 +130,7 @@ function mapTenant(t: any) {
       productType: t.plan?.productType,
     }),
     featureOverrides: (t.features ?? {}) as Record<string, boolean>,
+    lockedByPlan: lockedByPlan(t.plan),
     ...(t.lines !== undefined && { lines: t.lines }),
     createdAt: t.createdAt,
     _count: t._count,
@@ -636,13 +638,6 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
           smsEnabled: t.plan?.smsEnabled,
           productType: t.plan?.productType,
         });
-        // O que está desligado pelo plano e nenhum override liga.
-        const locked = computeFeatures({
-          overrides: Object.fromEntries(FEATURE_KEYS.map((k) => [k, true])),
-          aiAgentsEnabled: t.plan?.aiAgentsEnabled,
-          smsEnabled: t.plan?.smsEnabled,
-          productType: t.plan?.productType,
-        });
         return {
           id: t.id,
           name: t.name,
@@ -650,7 +645,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
           plan: t.plan ? { name: t.plan.name, productType: t.plan.productType } : null,
           features: effective,
           overrides: (t.features ?? {}) as Record<string, boolean>,
-          lockedByPlan: FEATURE_KEYS.filter((k) => !locked[k]),
+          lockedByPlan: lockedByPlan(t.plan),
         };
       }),
     };

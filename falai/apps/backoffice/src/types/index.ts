@@ -182,6 +182,8 @@ export interface Tenant {
   maxConcurrentCalls: number;
   features?: TenantFeatures;
   featureOverrides?: Partial<TenantFeatures>;
+  /** Funcionalidades que o plano desliga e nenhum override liga. */
+  lockedByPlan?: FeatureKey[];
   billingModeOverride?: BillingMode | null;
   recordCalls?: boolean;
   recordingAnnounce?: boolean;

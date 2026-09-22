@@ -1,5 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@falai/db";
+import { resolveProviderConfig } from "../../services/providerConfig.service.js";
 
 interface ProxyPayPayment {
   id: string;
@@ -14,22 +16,50 @@ interface ProxyPayPayment {
   custom_data?: { tenantId?: string; amountCents?: number; userId?: string };
 }
 
+function safeEqual(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/**
+ * Este endpoint credita saldo, por isso só aceita pedidos que provem vir da
+ * ProxyPay. Antes, sem chave configurada (ou sem header de autenticação) não
+ * se verificava nada: um POST de qualquer origem creditava o valor que
+ * quisesse ao tenant que indicasse.
+ *
+ * Aceita a assinatura X-Signature (HMAC-SHA256 do corpo com a chave de API) ou
+ * Basic auth com a chave. Sem chave configurada recusa sempre.
+ */
+export function isAuthenticProxyPayRequest(
+  apiKey: string,
+  rawBody: string | Buffer | undefined,
+  headers: Record<string, string | string[] | undefined>,
+): boolean {
+  if (!apiKey) return false;
+
+  const signature = headers["x-signature"];
+  if (typeof signature === "string" && rawBody !== undefined) {
+    const expected = createHmac("sha256", apiKey).update(rawBody).digest("hex");
+    if (safeEqual(signature.toLowerCase(), expected)) return true;
+  }
+
+  const auth = headers["authorization"];
+  if (typeof auth === "string" && auth.startsWith("Basic ")) {
+    const [key] = Buffer.from(auth.slice(6), "base64").toString("utf8").split(":");
+    if (key && safeEqual(key, apiKey)) return true;
+  }
+
+  return false;
+}
+
 export const proxypayWebhookRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /webhooks/proxypay — called by ProxyPay when a payment is confirmed
-  fastify.post<{ Body: ProxyPayPayment }>("/", async (request, reply) => {
-    const proxypayApiKey = process.env["PROXYPAY_API_KEY"] ?? "";
-
-    // Verify Basic auth from ProxyPay (header: Authorization: Basic <base64(api_key:)>)
-    const authHeader = request.headers["authorization"];
-    const stubMode = !proxypayApiKey || process.env["PROXYPAY_STUB_MODE"] === "true";
-
-    if (!stubMode && authHeader) {
-      const [, encoded] = authHeader.split(" ");
-      const decoded = encoded ? Buffer.from(encoded, "base64").toString("utf8") : "";
-      const [key] = decoded.split(":");
-      if (key !== proxypayApiKey) {
-        return reply.status(401).send({ error: "Unauthorized" });
-      }
+  fastify.post<{ Body: ProxyPayPayment }>("/", { config: { rawBody: true } }, async (request, reply) => {
+    const { proxypay } = await resolveProviderConfig();
+    if (!isAuthenticProxyPayRequest(proxypay.apiKey, request.rawBody, request.headers)) {
+      fastify.log.warn({ ip: request.ip, configured: !!proxypay.apiKey }, "proxypay.unauthorized");
+      return reply.status(401).send({ error: "Unauthorized" });
     }
 
     const payment = request.body;
