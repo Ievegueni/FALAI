@@ -11,7 +11,7 @@ export type CallStatus =
 export type CallStats = Record<'total' | CallStatus, number>;
 export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'RUNNING' | 'PAUSED' | 'DONE' | 'CANCELLED';
 export type CampaignMode = 'VOICE_AI' | 'FIXED_SCRIPT';
-export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
+export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'TEXT_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
 
 export interface AdminUser {
   id: string;
@@ -60,6 +60,7 @@ export interface Plan {
   pricePerMinCents: number;
   pricePerCallCents: number;
   pricePerSmsCents: number;
+  pricePerTextMessageCents: number;
   monthlyFeeCents: number;
   maxAgents: number;
   maxConcurrentCalls: number;
@@ -76,7 +77,11 @@ export type FeatureKey =
   | 'webphone'
   | 'wallet'
   | 'team'
-  | 'developers';
+  | 'developers'
+  | 'reports'
+  | 'sms'
+  | 'telephony'
+  | 'inbox';
 
 export type TenantFeatures = Record<FeatureKey, boolean>;
 

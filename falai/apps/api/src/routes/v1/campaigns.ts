@@ -5,6 +5,9 @@ import { normalizeAoPhone, INVALID_PHONE_MESSAGE as INVALID_PHONE } from "@falai
 
 const REMOVABLE_STATUSES = ["PENDING", "QUEUED", "OPTED_OUT"] as const;
 
+/** Estados em que ainda faz sentido mexer na lista de contactos da campanha. */
+const CONTACT_EDITABLE_STATUSES = ["DRAFT", "SCHEDULED", "PAUSED", "RUNNING"];
+
 export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get("/v1/campaigns", { preHandler: [fastify.verifyScope("campaigns:read")] }, async (request, reply) => {
     const tenantId = request.apiKey!.tenantId;
@@ -155,8 +158,9 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
 
     const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
     if (!campaign) return reply.status(404).send({ error: "Campaign not found" });
-    if (!["DRAFT", "SCHEDULED"].includes(campaign.status)) {
-      return reply.status(400).send({ error: "Contacts can only be added to DRAFT or SCHEDULED campaigns" });
+    // Também com a campanha a decorrer: os novos contactos entram como PENDING.
+    if (!CONTACT_EDITABLE_STATUSES.includes(campaign.status)) {
+      return reply.status(400).send({ error: "Campaign is finished or cancelled — contacts cannot be added" });
     }
 
     type RowOutcome = "added" | "already_in_campaign" | "opted_out" | "duplicate_in_payload" | "invalid" | "not_found";
@@ -194,7 +198,7 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       if (phones.length) {
         const existing = new Set(
           (await prisma.contact.findMany({ where: { tenantId, phone: { in: phones } }, select: { phone: true } }))
-            .map((c) => c.phone)
+            .map((c) => c.phone!) // filtrado por phone: { in }, nunca null
         );
         const toCreate = phones.filter((p) => !existing.has(p)).map((p) => {
           const e = seen.get(p)!;

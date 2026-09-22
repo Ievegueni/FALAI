@@ -77,6 +77,6 @@ async function resolveContact(phone: string): Promise<Contact | null> {
   }
 }
 
-function onlyDigits(v: string): string {
-  return v.replace(/\D/g, '');
+function onlyDigits(v: string | null): string {
+  return (v ?? "").replace(/\D/g, "");
 }

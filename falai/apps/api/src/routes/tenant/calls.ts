@@ -44,6 +44,7 @@ type CallRow = {
   fromNumber?: string | null;
   status: string;
   outcome: string | null;
+  failReason?: string | null;
   durationSecs: number;
   costCents: number;
   startedAt: Date | null;
@@ -91,6 +92,7 @@ function mapCall(c: CallRow) {
     party: direction === "inbound" ? c.fromNumber ?? c.toNumber : c.toNumber,
     status: c.status,
     outcome: c.outcome,
+    failReason: c.failReason ?? null,
     durationSecs: c.durationSecs,
     costCents: c.costCents,
     startedAt: c.startedAt,
@@ -162,7 +164,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
           skip: parseInt(offset, 10),
           select: {
             id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-            outcome: true, durationSecs: true, costCents: true,
+            outcome: true, failReason: true, durationSecs: true, costCents: true,
             startedAt: true, endedAt: true, createdAt: true,
             agent: { select: { name: true } },
             contact: { select: { name: true } },
@@ -182,7 +184,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       where: { id: request.params.id, tenantId },
       select: {
         id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, variables: true, recordingUrl: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, variables: true, recordingUrl: true,
         startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
@@ -251,7 +253,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls — place an outbound call now
-  fastify.post("/", { preHandler }, async (request, reply) => {
+  fastify.post("/", { preHandler, config: { feature: "agents" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = createSchema.parse(request.body);
 
@@ -274,6 +276,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     if (!agent) return reply.status(404).send({ error: "Agente não encontrado" });
+    if (!agent.ttsVoiceId) return reply.status(422).send({ error: "Agente sem voz — só serve canais de texto" });
     if (agent.status !== "ACTIVE") return reply.status(422).send({ error: "O agente tem de estar ACTIVO para fazer chamadas" });
     if (!tenant) return reply.status(404).send({ error: "Tenant não encontrado" });
 
@@ -309,7 +312,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       },
       select: {
         id: true, agentId: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
       },
@@ -356,7 +359,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls/:id/cancel — hang up a call still in progress
-  fastify.post<{ Params: { id: string } }>("/:id/cancel", { preHandler }, async (request, reply) => {
+  fastify.post<{ Params: { id: string } }>("/:id/cancel", { preHandler, config: { feature: "agents" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const existing = await prisma.call.findFirst({
       where: { id: request.params.id, tenantId },
@@ -382,7 +385,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       data: { status: "CANCELLED", endedAt: new Date() },
       select: {
         id: true, agentId: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
       },
@@ -395,7 +398,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /tenant/calls/extensions — lista as linhas do próprio cliente para o dropdown
   // (não expõe extensões de outros clientes no PBX partilhado)
-  fastify.get("/extensions", { preHandler }, async (request) => {
+  fastify.get("/extensions", { preHandler, config: { feature: "directCall" } }, async (request) => {
     const { tenantId } = request.tenantUser!;
     const lines = await prisma.tenantLine.findMany({
       where: { tenantId, isActive: true },
@@ -406,7 +409,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /tenant/calls/direct/status/:callId — verifica se uma chamada directa ainda está activa no PBX
-  fastify.get<{ Params: { callId: string } }>("/direct/status/:callId", { preHandler }, async (request, reply) => {
+  fastify.get<{ Params: { callId: string } }>("/direct/status/:callId", { preHandler, config: { feature: "directCall" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     try {
       if (await getTenantAsterisk(fastify, tenantId)) {
@@ -422,7 +425,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls/direct — origina uma chamada normal (extensão → número), sem agente
-  fastify.post("/direct", { preHandler }, async (request, reply) => {
+  fastify.post("/direct", { preHandler, config: { feature: "directCall" } }, async (request, reply) => {
     const body = directCallSchema.parse(request.body);
     const admin = request.tenantUser!;
     const { tenantId } = admin;
@@ -491,7 +494,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls/direct/hangup — desliga uma chamada directa pelo providerCallId
-  fastify.post("/direct/hangup", { preHandler }, async (request, reply) => {
+  fastify.post("/direct/hangup", { preHandler, config: { feature: "directCall" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = hangupSchema.parse(request.body);
     try {

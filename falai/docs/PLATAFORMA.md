@@ -213,10 +213,23 @@ O tenant configura também um `webhookSecret` para validar a assinatura HMAC (`X
 Acessível com API Key (prefixo `fal_`). Permite integração com sistemas externos:
 
 - `GET/POST /v1/agents` — listar e criar agentes
-- `GET/POST /v1/calls` — histórico e iniciar chamadas
+- `GET/POST /v1/calls` — histórico e iniciar chamadas (filtrável por `campaignId` e `contactId`; devolve `outcome` e `failReason`)
 - `GET/POST /v1/campaigns` — gestão de campanhas
 - `GET/POST /v1/contacts` — gestão de contactos e opt-out
 - `GET /v1/wallet` — consultar saldo e transacções
+
+Controlo e acompanhamento de campanhas:
+
+| Rota | Efeito |
+|---|---|
+| `POST /v1/campaigns/:id/launch` | inicia e dispara já |
+| `POST /v1/campaigns/:id/pause` \| `/resume` \| `/cancel` | controla a campanha a meio; ao cancelar, quem ficou por tentar fica `SKIPPED` (não conta como falha) |
+| `GET /v1/campaigns/:id/contacts` | participante a participante: estado, tentativas, `outcome`, `failReason`, duração, custo e gravação |
+| `GET /v1/campaigns/:id/report` | agregados: pendentes, concluídos, falhados, não contactados, opt-outs, custo e duração |
+| `POST /v1/campaigns/:id/contacts` | acrescenta contactos (também com a campanha a decorrer) |
+| `DELETE /v1/campaigns/:id/contacts/:contactId` | retira um contacto ainda não contactado |
+| `POST /v1/campaigns/:id/contacts/remove` | remoção em lote |
+| `DELETE /v1/campaigns/:id` | apaga a campanha (as chamadas ficam no histórico) |
 
 ---
 

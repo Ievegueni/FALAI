@@ -1,7 +1,7 @@
 import fp from "fastify-plugin";
 import { Queue } from "bullmq";
 import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter } from "@falai/providers";
-import type { TtsProvider } from "@falai/providers";
+import type { TtsProvider, LlmProvider } from "@falai/providers";
 import { TtsVoiceValidator } from "../services/ttsVoices.service.js";
 import { prisma } from "@falai/db";
 import { config } from "../config.js";
@@ -17,6 +17,8 @@ declare module "fastify" {
     callEngine: CallEngineService;
     /** Valida ttsVoiceId contra a lista real do provedor, antes de gravar. */
     ttsVoices: TtsVoiceValidator;
+    /** Motor LLM da plataforma — partilhado com os canais de texto. */
+    llm: LlmProvider;
     /** True quando o LLM corre em modo stub (sem chave real) — respostas não são IA real. */
     llmStub: boolean;
   }
@@ -133,6 +135,7 @@ export default fp(async (fastify) => {
 
   fastify.decorate("callEngine", callEngine);
   fastify.decorate("llmStub", llmStub);
+  fastify.decorate("llm", llm);
 
   fastify.log.info({
     sttStub: stubMode || !providers.deepgram.apiKey,

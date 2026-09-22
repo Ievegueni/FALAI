@@ -120,6 +120,7 @@ enum TxType {
   TOPUP
   CALL_CHARGE
   SMS_CHARGE
+  TEXT_CHARGE // respostas da IA nos canais de texto
   REFUND
   ADJUSTMENT
   MONTHLY_FEE
@@ -139,6 +140,10 @@ enum CampaignContactStatus {
   COMPLETED
   FAILED
   OPTED_OUT
+  // Nunca chegou a ser marcado: a campanha foi cancelada ou o contacto foi
+  // retirado. Distinto de FAILED, que é uma tentativa real que correu mal —
+  // sem esta distinção o cancelamento inflacionava a taxa de insucesso.
+  SKIPPED
 }
 
 // ============ TENANTS & ACESSO ============
@@ -215,6 +220,10 @@ model Tenant {
   outboundRoutes       OutboundRoute[]
   inboundRoutes        InboundRoute[]
   ivrMenus             IvrMenu[]
+  // Canais de texto — ver docs/PLANO-CANAIS-TEXTO.md
+  inboxes              Inbox[]
+  conversations        Conversation[]
+  cannedResponses      CannedResponse[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -495,17 +504,18 @@ model ApiKey {
 }
 
 model TenantUser {
-  id           String     @id @default(cuid())
-  tenantId     String
-  tenant       Tenant     @relation(fields: [tenantId], references: [id])
-  name         String
-  email        String     @unique
-  passwordHash String
-  role         TenantRole @default(MEMBER)
-  twoFaSecret  String?
-  lastLoginAt  DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id            String         @id @default(cuid())
+  tenantId      String
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  name          String
+  email         String         @unique
+  passwordHash  String
+  role          TenantRole     @default(MEMBER)
+  twoFaSecret   String?
+  lastLoginAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[]
 }
 
 // ============ OPERADOR (COMUNICA) ============
@@ -542,27 +552,30 @@ model Product {
 }
 
 model Plan {
-  id                  String      @id @default(cuid())
-  name                String
-  product             Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
-  productId           String?
-  productType         ProductType @default(VOICE_AI) // espelho de product.baseType
-  aiAgentsEnabled     Boolean     @default(true) // se o cliente tem agentes de IA
-  clinicEnabled       Boolean     @default(false) // acesso ao módulo Clínica
-  smsEnabled          Boolean     @default(false) // acesso ao envio de SMS
-  pricePerSmsCents    Int         @default(0) // preço por segmento de SMS (default do plano)
-  billingMode         BillingMode @default(PER_MINUTE)
-  pricePerMinuteCents Int
-  pricePerCallCents   Int         @default(0)
-  includedMinutes     Int         @default(0)
-  monthlyFeeCents     Int         @default(0)
-  maxAgents           Int         @default(1)
-  maxConcurrent       Int         @default(1)
-  sttMarginPct        Int         @default(30)
-  isActive            Boolean     @default(true)
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-  tenants             Tenant[]
+  id                       String      @id @default(cuid())
+  name                     String
+  product                  Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productId                String?
+  productType              ProductType @default(VOICE_AI) // espelho de product.baseType
+  aiAgentsEnabled          Boolean     @default(true) // se o cliente tem agentes de IA
+  clinicEnabled            Boolean     @default(false) // acesso ao módulo Clínica
+  smsEnabled               Boolean     @default(false) // acesso ao envio de SMS
+  pricePerSmsCents         Int         @default(0) // preço por segmento de SMS (default do plano)
+  billingMode              BillingMode @default(PER_MINUTE)
+  pricePerMinuteCents      Int
+  pricePerCallCents        Int         @default(0)
+  // Canais de texto: preço por resposta da IA (as do operador não custam).
+  // Tabela própria — texto é muito mais barato que voz.
+  pricePerTextMessageCents Int         @default(0)
+  includedMinutes          Int         @default(0)
+  monthlyFeeCents          Int         @default(0)
+  maxAgents                Int         @default(1)
+  maxConcurrent            Int         @default(1)
+  sttMarginPct             Int         @default(30)
+  isActive                 Boolean     @default(true)
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+  tenants                  Tenant[]
 }
 
 model SystemSetting {
@@ -628,7 +641,7 @@ model Agent {
   description      String?
   systemPrompt     String         @db.Text
   language         String         @default("pt-PT")
-  ttsVoiceId       String
+  ttsVoiceId       String? // null = agente só de texto (canais de texto); chamadas de voz exigem-no
   sttModel         String         @default("default")
   maxTurnSeconds   Int            @default(30)
   maxCallSeconds   Int            @default(300)
@@ -648,6 +661,7 @@ model Agent {
   calls            Call[]
   versions         AgentVersion[]
   campaigns        Campaign[]
+  inboxes          Inbox[]
 }
 
 model AgentVersion {
@@ -751,7 +765,13 @@ model Contact {
   id               String            @id @default(cuid())
   tenantId         String
   tenant           Tenant            @relation(fields: [tenantId], references: [id])
-  phone            String
+  // Opcional desde os canais de texto: um visitante do widget ou um contacto
+  // de Telegram não tem telefone. Postgres aceita vários NULL no @@unique.
+  phone            String?
+  // ponytail: uma coluna por identidade em vez de tabela ContactIdentity.
+  // Migrar para tabela quando entrar o 4º canal.
+  email            String?
+  telegramId       String?
   name             String?
   attributes       Json?
   optedOutAt       DateTime?
@@ -761,8 +781,11 @@ model Contact {
   calls            Call[]
   campaignContacts CampaignContact[]
   smsMessages      SmsMessage[]
+  conversations    Conversation[]
 
   @@unique([tenantId, phone])
+  @@unique([tenantId, email])
+  @@unique([tenantId, telegramId])
 }
 
 // ============ SMS ============
@@ -889,4 +912,109 @@ model SystemEvent {
   createdAt DateTime @default(now())
 
   @@index([tenantId])
+}
+
+// ── Canais de texto (chat, email, Telegram) ─────────────────────────────────
+// Ver docs/PLANO-CANAIS-TEXTO.md. O motor de IA é o mesmo da voz
+// (processTextTurn em services/TurnProcessor.ts); o que muda é o transporte.
+
+enum Channel {
+  WEBCHAT
+  EMAIL
+  TELEGRAM
+  WHATSAPP // WhatsApp Business Cloud API (Meta)
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+}
+
+enum ConversationMode {
+  AI
+  HUMAN
+}
+
+model Inbox {
+  id            String         @id @default(cuid())
+  tenantId      String
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  channel       Channel
+  name          String
+  // Agente que responde. Null = só humanos.
+  agentId       String?
+  agent         Agent?         @relation(fields: [agentId], references: [id])
+  // Configuração do canal. Segredos (ex.: botToken) cifrados via crypto.service.
+  config        Json
+  // Segredo que o canal apresenta ao chamar o nosso webhook.
+  webhookSecret String
+  autoReply     Boolean        @default(true)
+  enabled       Boolean        @default(true)
+  deletedAt     DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  conversations Conversation[]
+
+  @@index([tenantId])
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  tenantId      String
+  tenant        Tenant             @relation(fields: [tenantId], references: [id])
+  inboxId       String
+  inbox         Inbox              @relation(fields: [inboxId], references: [id])
+  contactId     String?
+  contact       Contact?           @relation(fields: [contactId], references: [id])
+  assigneeId    String?
+  assignee      TenantUser?        @relation(fields: [assigneeId], references: [id])
+  status        ConversationStatus @default(OPEN)
+  mode          ConversationMode   @default(AI)
+  subject       String?
+  // Identificador do outro lado no canal (chat.id do Telegram, token do
+  // widget, Message-ID raiz do email).
+  externalRef   String
+  // Contador atómico que dá o seq das mensagens sem corrida.
+  messageCount  Int                @default(0)
+  lastMessageAt DateTime           @default(now())
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  messages      Message[]
+
+  @@index([tenantId, status, lastMessageAt])
+  @@index([inboxId, externalRef])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  seq            Int
+  // HUMAN = cliente final; AGENT = IA ou operador (authorId preenchido).
+  role           TurnRole
+  text           String       @db.Text
+  attachments    Json?
+  // Operador do CRM que escreveu. Null = cliente final ou IA.
+  authorId       String?
+  externalId     String?
+  llmMs          Int?
+  modelId        String?
+  guardrailFlags Json?
+  costCents      Int          @default(0)
+  createdAt      DateTime     @default(now())
+
+  @@unique([conversationId, seq])
+}
+
+// Resposta rápida do operador no CRM: escreve "/atalho" e o texto é inserido.
+model CannedResponse {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  shortcut  String
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, shortcut])
 }

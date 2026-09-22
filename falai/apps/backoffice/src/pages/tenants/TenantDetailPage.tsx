@@ -40,6 +40,10 @@ const FEATURE_LABELS: { key: FeatureKey; label: string; hint?: string; needsAi?:
   { key: 'wallet', label: 'Carteira', hint: 'Saldo e movimentos' },
   { key: 'team', label: 'Equipa', hint: 'Gestão de utilizadores do cliente' },
   { key: 'developers', label: 'Developers / API', hint: 'API keys, webhooks e documentação' },
+  { key: 'reports', label: 'Relatórios', hint: 'Relatórios de chamadas (CSV/PDF)' },
+  { key: 'sms', label: 'SMS', hint: 'Envio de SMS avulso e campanhas (o plano tem de incluir SMS)' },
+  { key: 'telephony', label: 'Telefonia', hint: 'Extensões, grupos, trunks e rotas' },
+  { key: 'inbox', label: 'Caixa de entrada', hint: 'WhatsApp Business, chat no site, email e Telegram com IA e operadores' },
 ];
 
 function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {

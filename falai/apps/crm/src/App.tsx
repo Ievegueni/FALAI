@@ -31,6 +31,8 @@ const DirectCallPage = lazy(() => import('@/pages/calls/DirectCallPage').then((m
 const CallDetailPage = lazy(() => import('@/pages/calls/CallDetailPage').then((m) => ({ default: m.CallDetailPage })));
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const SmsPage = lazy(() => import('@/pages/sms/SmsPage').then((m) => ({ default: m.SmsPage })));
+const InboxPage = lazy(() => import('@/pages/inbox/InboxPage').then((m) => ({ default: m.InboxPage })));
+const InboxSettingsPage = lazy(() => import('@/pages/inbox/InboxSettingsPage').then((m) => ({ default: m.InboxSettingsPage })));
 const CampaignsPage = lazy(() => import('@/pages/campaigns/CampaignsPage').then((m) => ({ default: m.CampaignsPage })));
 const CampaignFormPage = lazy(() => import('@/pages/campaigns/CampaignFormPage').then((m) => ({ default: m.CampaignFormPage })));
 const CampaignDetailPage = lazy(() => import('@/pages/campaigns/CampaignDetailPage').then((m) => ({ default: m.CampaignDetailPage })));
@@ -79,9 +81,11 @@ export default function App() {
                 <Route path="/calls/direct" element={<RequireFeature feature="directCall"><DirectCallPage /></RequireFeature>} />
                 <Route path="/calls/:id" element={<RequireFeature feature="calls"><CallDetailPage /></RequireFeature>} />
 
-                <Route path="/reports" element={<RequireFeature feature="calls"><ReportsPage /></RequireFeature>} />
+                <Route path="/reports" element={<RequireFeature feature="reports"><ReportsPage /></RequireFeature>} />
 
-                <Route path="/sms" element={<SmsPage />} />
+                <Route path="/sms" element={<RequireFeature feature="sms"><SmsPage /></RequireFeature>} />
+                <Route path="/inbox" element={<RequireFeature feature="inbox"><InboxPage /></RequireFeature>} />
+                <Route path="/inbox/settings" element={<RequireFeature feature="inbox"><InboxSettingsPage /></RequireFeature>} />
 
                 <Route path="/campaigns" element={<RequireFeature feature="campaigns"><CampaignsPage /></RequireFeature>} />
                 <Route path="/campaigns/new" element={<RequireFeature feature="campaigns"><CampaignFormPage /></RequireFeature>} />
@@ -93,7 +97,7 @@ export default function App() {
                 <Route path="/webphone" element={<RequireFeature feature="webphone"><WebphonePage /></RequireFeature>} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/pbx" element={<PbxIntegrationPage />} />
-                <Route path="/telephony" element={<TelephonyPage />} />
+                <Route path="/telephony" element={<RequireFeature feature="telephony"><TelephonyPage /></RequireFeature>} />
               </Route>
 
               {/* Fallback */}

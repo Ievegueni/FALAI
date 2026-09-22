@@ -29,6 +29,7 @@ function PlanModal({ plan, products, onClose }: { plan?: Plan; products: Product
   const [billingMode, setBillingMode] = useState<BillingMode>(plan?.billingMode ?? 'PER_MINUTE');
   const [pricePerMin, setPricePerMin] = useState(plan ? String(plan.pricePerMinCents / 100) : '');
   const [pricePerCall, setPricePerCall] = useState(plan ? String((plan.pricePerCallCents ?? 0) / 100) : '');
+  const [pricePerText, setPricePerText] = useState(plan ? String((plan.pricePerTextMessageCents ?? 0) / 100) : '');
   const [monthlyFee, setMonthlyFee] = useState(plan ? String((plan.monthlyFeeCents ?? 0) / 100) : '');
   const [maxConcurrent, setMaxConcurrent] = useState(plan ? String(plan.maxConcurrentCalls) : '1');
   const [maxAgents, setMaxAgents] = useState(plan ? String(plan.maxAgents) : '5');
@@ -56,6 +57,7 @@ function PlanModal({ plan, products, onClose }: { plan?: Plan; products: Product
         billingMode,
         pricePerMinCents: Math.round(parseFloat(pricePerMin || '0') * 100),
         pricePerCallCents: Math.round(parseFloat(pricePerCall || '0') * 100),
+        pricePerTextMessageCents: Math.round(parseFloat(pricePerText || '0') * 100),
         pricePerSmsCents: Math.round(parseFloat(pricePerSms || '0') * 100),
         monthlyFeeCents: Math.round(parseFloat(monthlyFee) * 100),
         maxConcurrentCalls: parseInt(maxConcurrent),
@@ -138,6 +140,13 @@ function PlanModal({ plan, products, onClose }: { plan?: Plan; products: Product
           <option value="PER_SECOND">Por segundo (tarifa/min ÷ 60)</option>
           <option value="PER_CALL">Por chamada (valor fixo, ex.: OTP)</option>
         </Select>
+        <Input
+          label="Preço por resposta da IA em chat/email (Kz)"
+          type="number"
+          value={pricePerText}
+          onChange={(e) => setPricePerText(e.target.value)}
+          hint="Canais de texto: cobrado por cada resposta da IA. As dos operadores não custam."
+        />
         {billingMode === 'PER_CALL' ? (
           <Input
             label="Preço por chamada (Kz)"

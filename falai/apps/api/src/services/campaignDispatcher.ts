@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import { prisma, type BillingMode } from "@falai/db";
+import { prisma, type BillingMode, type CampaignContact, type Contact } from "@falai/db";
 import type { TelephonyProvider } from "@falai/providers";
 import type { CallEngineService } from "./CallEngineService.js";
 import { reserveBalance, computeReservation, effectiveBillingMode, type PriceConfig } from "./billing.service.js";
@@ -147,7 +147,7 @@ export class CampaignDispatcher {
       scheduleJson: unknown;
       retryPolicy: unknown;
       tenant: { balanceCents: number; creditLimitCents: number; maxConcurrent: number; billingModeOverride: BillingMode | null; plan: { billingMode: BillingMode; pricePerMinuteCents: number; pricePerCallCents: number } };
-      agent: { systemPrompt: string; ttsVoiceId: string; maxCallSeconds: number; maxTurnSeconds: number; escalationNumber: string | null } | null;
+      agent: { systemPrompt: string; ttsVoiceId: string | null; maxCallSeconds: number; maxTurnSeconds: number; escalationNumber: string | null } | null;
     },
     now: Date
   ): Promise<void> {
@@ -243,11 +243,11 @@ export class CampaignDispatcher {
         campaignId: campaign.id,
         status: "PENDING",
         OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
-        contact: { optedOutAt: null },
+        contact: { optedOutAt: null, phone: { not: null } },
       },
       include: { contact: true },
       take: slotsAvailable,
-    });
+    }) as Array<CampaignContact & { contact: Contact & { phone: string } }>; // phone: not null filtrado acima
 
     if (campaign.mode === "FIXED_SCRIPT") {
       let scriptPromptName: string;
@@ -282,8 +282,20 @@ export class CampaignDispatcher {
         await this.dispatchFixedScript(campaign, cc, price, estimatedCost, fromExtension, scriptPromptName);
       }
     } else {
+      const ttsVoiceId = agent?.ttsVoiceId;
+      if (!agent || !ttsVoiceId) {
+        // Agente só de texto (sem voz) não pode fazer chamadas.
+        await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
+        await enqueueWebhook({
+          tenantId: campaign.tenantId,
+          event: "campaign.paused",
+          payload: { campaignId: campaign.id, reason: "agent_without_voice" },
+        });
+        this.log.warn({ campaignId: campaign.id }, "dispatcher.campaign_paused_agent_without_voice");
+        return;
+      }
       for (const cc of pendingContacts) {
-        await this.dispatchContact(campaign, cc, agent!, price, estimatedCost, fromExtension);
+        await this.dispatchContact(campaign, cc, { ...agent, ttsVoiceId }, price, estimatedCost, fromExtension);
       }
     }
 
@@ -296,9 +308,11 @@ export class CampaignDispatcher {
     });
 
     if (remaining === 0) {
-      const [completed, failed] = await Promise.all([
+      const [completed, failed, skipped, optedOut] = await Promise.all([
         prisma.campaignContact.count({ where: { campaignId: campaign.id, status: "COMPLETED" } }),
         prisma.campaignContact.count({ where: { campaignId: campaign.id, status: "FAILED" } }),
+        prisma.campaignContact.count({ where: { campaignId: campaign.id, status: "SKIPPED" } }),
+        prisma.campaignContact.count({ where: { campaignId: campaign.id, status: "OPTED_OUT" } }),
       ]);
       await prisma.campaign.update({
         where: { id: campaign.id },
@@ -307,7 +321,7 @@ export class CampaignDispatcher {
       await enqueueWebhook({
         tenantId: campaign.tenantId,
         event: "campaign.completed",
-        payload: { campaignId: campaign.id, completed, failed },
+        payload: { campaignId: campaign.id, completed, failed, skipped, optedOut },
       });
       this.log.info({ campaignId: campaign.id, completed, failed }, "dispatcher.campaign_done");
     }

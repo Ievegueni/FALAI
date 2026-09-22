@@ -4,6 +4,8 @@ import { IncomingCallHub } from "../services/incomingCalls.service.js";
 declare module "fastify" {
   interface FastifyInstance {
     incomingCalls: IncomingCallHub;
+    /** Mesmo hub, indexado por inboxId:token: stream SSE do visitante do widget. */
+    widgetHub: IncomingCallHub;
   }
 }
 
@@ -14,4 +16,5 @@ declare module "fastify" {
  */
 export default fp(async (fastify) => {
   fastify.decorate("incomingCalls", new IncomingCallHub());
+  fastify.decorate("widgetHub", new IncomingCallHub());
 });

@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { invalidateTenantFeatures } from "../../services/features.js";
 import { prisma } from "@falai/db";
 import { z } from "zod";
 
@@ -13,6 +14,7 @@ const createSchema = z.object({
   pricePerMinuteCents: z.number().int().min(0),
   pricePerCallCents: z.number().int().min(0).default(0),
   pricePerSmsCents: z.number().int().min(0).default(0),
+  pricePerTextMessageCents: z.number().int().min(0).default(0),
   includedMinutes: z.number().int().min(0).default(0),
   monthlyFeeCents: z.number().int().min(0).default(0),
   maxAgents: z.number().int().min(1).default(1),
@@ -81,6 +83,7 @@ export const adminPlansRoutes: FastifyPluginAsync = async (fastify) => {
     const baseType = await resolveProductType(body.productId);
     if (baseType === null) return reply.status(400).send({ error: "Produto não encontrado" });
 
+    invalidateTenantFeatures(); // limites do plano (IA, SMS) mudam as features efectivas
     const plan = await prisma.plan.update({
       where: { id: request.params.id },
       data: {
@@ -95,6 +98,7 @@ export const adminPlansRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.pricePerMinuteCents !== undefined && { pricePerMinuteCents: body.pricePerMinuteCents }),
         ...(body.pricePerCallCents !== undefined && { pricePerCallCents: body.pricePerCallCents }),
         ...(body.pricePerSmsCents !== undefined && { pricePerSmsCents: body.pricePerSmsCents }),
+        ...(body.pricePerTextMessageCents !== undefined && { pricePerTextMessageCents: body.pricePerTextMessageCents }),
         ...(body.includedMinutes !== undefined && { includedMinutes: body.includedMinutes }),
         ...(body.monthlyFeeCents !== undefined && { monthlyFeeCents: body.monthlyFeeCents }),
         ...(body.maxAgents !== undefined && { maxAgents: body.maxAgents }),

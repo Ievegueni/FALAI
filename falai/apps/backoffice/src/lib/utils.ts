@@ -117,6 +117,7 @@ export const txTypeLabel: Record<TransactionType, string> = {
   TOPUP: 'Carregamento',
   CALL_CHARGE: 'Chamada',
   SMS_CHARGE: 'SMS',
+  TEXT_CHARGE: 'Chat / email',
   REFUND: 'Reembolso',
   ADJUSTMENT: 'Ajuste',
   MONTHLY_FEE: 'Fee mensal',

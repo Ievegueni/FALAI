@@ -41,7 +41,8 @@
     "reports": "Reports",
     "sms": "SMS",
     "telephony": "Telephony",
-    "webphone": "Webphone"
+    "webphone": "Webphone",
+    "inbox": "Inbox"
   },
   "login": {
     "subtitle": "Sign in to your account",
@@ -121,7 +122,8 @@
     "REFUND": "Refund",
     "ADJUSTMENT": "Adjustment",
     "MONTHLY_FEE": "Monthly fee",
-    "SMS_CHARGE": "SMS"
+    "SMS_CHARGE": "SMS",
+    "TEXT_CHARGE": "Chat / email"
   },
   "days": [
     "Sun",
@@ -409,7 +411,39 @@
       "cancelConfirm": "Cancel campaign?",
       "pausedShort": "Paused",
       "resumedShort": "Resumed",
-      "cancelledShort": "Cancelled"
+      "cancelledShort": "Cancelled",
+      "skipped": "Not called",
+      "optedOut": "Opted out"
+    },
+    "retryFailed": "Retry failed only",
+    "retryAllConfirm": "Retrying the whole campaign calls everyone again, including those who already answered. Continue?",
+    "contacts": {
+      "title": "Participants",
+      "searchPlaceholder": "Name or phone",
+      "allStatuses": "All statuses",
+      "exportCsv": "Export CSV",
+      "empty": "No participants match these filters.",
+      "colContact": "Contact",
+      "colStatus": "Status",
+      "colAttempts": "Attempts",
+      "colResult": "Result",
+      "colDuration": "Duration",
+      "colCost": "Cost",
+      "remove": "Remove from campaign",
+      "removeConfirm": "Remove this contact from the campaign?",
+      "removed": "Contact removed from campaign",
+      "viewCall": "View call",
+      "answered": "Answered",
+      "retryScheduled": "Retry scheduled",
+      "status": {
+        "PENDING": "Not called yet",
+        "QUEUED": "Queued",
+        "IN_PROGRESS": "In progress",
+        "COMPLETED": "Completed",
+        "FAILED": "Failed",
+        "OPTED_OUT": "Opted out",
+        "SKIPPED": "Not called"
+      }
     },
     "quickView": {
       "numbers": "Numbers",
@@ -494,7 +528,8 @@
       "customer": "Customer",
       "variablesUsed": "Variables used",
       "otpVerification": "OTP verification",
-      "directCall": "Direct call"
+      "directCall": "Direct call",
+      "failReason": "Failure reason"
     },
     "inbound": "Inbound"
   },
@@ -676,7 +711,9 @@
       "campaignsRead": "Read campaigns",
       "walletRead": "Read balance",
       "agentsRead": "Read agents",
-      "smsSend": "Send SMS"
+      "smsSend": "Send SMS",
+      "conversationsRead": "Read conversations (chat/email/Telegram)",
+      "conversationsWrite": "Reply to conversations"
     },
     "groups": {
       "calls": "Calls",
@@ -891,5 +928,63 @@
     "trunkSecretHint": "leave empty to keep",
     "trunkType": "Type",
     "trunkRegister": "Register"
+  },
+  "inbox": {
+    "channels": "Channels",
+    "addChannel": "Add channel",
+    "noInboxes": "No text channels yet",
+    "noInboxesHint": "Connect WhatsApp Business, a Telegram bot, the website chat or an email mailbox to start receiving conversations.",
+    "status": {
+      "OPEN": "Open",
+      "PENDING": "Pending",
+      "RESOLVED": "Resolved"
+    },
+    "allInboxes": "All channels",
+    "everyone": "Everyone",
+    "mine": "Mine",
+    "unassigned": "Unassigned",
+    "empty": "No conversations",
+    "pick": "Pick a conversation",
+    "modeAi": "AI",
+    "modeHuman": "Human",
+    "takeOver": "Take over",
+    "giveBack": "Hand back to AI",
+    "assignee": "Assigned to",
+    "markPending": "Pending",
+    "resolve": "Resolve",
+    "reopen": "Reopen",
+    "conflict": "Someone else changed this conversation — the screen was refreshed.",
+    "updateError": "Could not update",
+    "note": "Internal note",
+    "attachmentError": "Attachment unavailable",
+    "reply": "Reply",
+    "privateNote": "Internal note",
+    "notePlaceholder": "Only your team sees this note…",
+    "replyPlaceholder": "Type your reply… (/ for canned responses)",
+    "send": "Send",
+    "sendError": "Could not send",
+    "contactEmail": "Email",
+    "contactPhone": "Phone",
+    "channel": "Channel",
+    "openContact": "Open contact",
+    "disabled": "Disabled",
+    "edit": "Edit",
+    "delete": "Delete",
+    "copy": "Copy",
+    "copied": "Copied",
+    "saved": "Saved",
+    "cancel": "Cancel",
+    "save": "Save",
+    "webchat": "Website chat",
+    "name": "Name",
+    "agent": "AI agent",
+    "noAgent": "None (humans only)",
+    "autoReply": "AI replies automatically",
+    "enabled": "Enabled",
+    "canned": "Canned responses",
+    "cannedHint": "In the inbox, type / followed by the shortcut to insert the text.",
+    "shortcut": "Shortcut",
+    "cannedText": "Text",
+    "add": "Add"
   }
 }

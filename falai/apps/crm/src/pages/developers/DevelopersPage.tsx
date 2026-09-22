@@ -20,6 +20,8 @@ const ALL_SCOPES = [
   { key: 'calls:read', labelKey: 'developers.scopes.callsRead' },
   { key: 'otp:call', labelKey: 'developers.scopes.otpCall' },
   { key: 'sms:send', labelKey: 'developers.scopes.smsSend' },
+  { key: 'conversations:read', labelKey: 'developers.scopes.conversationsRead' },
+  { key: 'conversations:write', labelKey: 'developers.scopes.conversationsWrite' },
   { key: 'contacts:write', labelKey: 'developers.scopes.contactsWrite' },
   { key: 'contacts:read', labelKey: 'developers.scopes.contactsRead' },
   { key: 'campaigns:write', labelKey: 'developers.scopes.campaignsWrite' },

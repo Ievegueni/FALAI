@@ -72,7 +72,7 @@ export function ContactDetailPage() {
   const openEdit = () => {
     if (!contact) return;
     // Mostra o número em formato nacional (sem +244), incluindo dados legados
-    const digits = contact.phone.replace(/\D/g, '');
+    const digits = (contact.phone ?? '').replace(/\D/g, '');
     const local = digits.startsWith('244') && digits.length === 12 ? digits.slice(3) : digits;
     setEditForm({ name: contact.name, phone: local });
     setEditErrors({ name: '', phone: '' });
@@ -108,7 +108,7 @@ export function ContactDetailPage() {
         title={t('contacts.sheetTitle')}
         actions={
           <div className="flex items-center gap-2">
-            {!contact.optedOutAt && (
+            {!contact.optedOutAt && contact.phone && (
               <Button
                 size="sm"
                 icon={<PhoneCall className="h-3.5 w-3.5" />}

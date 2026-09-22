@@ -22,7 +22,11 @@ export type FeatureKey =
   | 'webphone'
   | 'wallet'
   | 'team'
-  | 'developers';
+  | 'developers'
+  | 'reports'
+  | 'sms'
+  | 'telephony'
+  | 'inbox';
 
 export type TenantFeatures = Record<FeatureKey, boolean>;
 
@@ -132,7 +136,8 @@ export interface SimulateResponse {
 export interface Contact {
   id: string;
   name: string;
-  phone: string;
+  phone: string | null;
+  telegramId?: string | null;
   email: string | null;
   attributes: Record<string, string>;
   optedOutAt: string | null;
@@ -226,6 +231,8 @@ export interface Call {
   party?: string;
   status: CallStatus;
   outcome: string | null;
+  /** Motivo técnico da falha (ex.: número inválido, sem saldo). Só em chamadas FAILED. */
+  failReason?: string | null;
   durationSecs: number | null;
   costCents: number | null;
   startedAt: string | null;
@@ -268,6 +275,11 @@ export interface Campaign {
   completedCount: number;
   failedCount: number;
   answeredCount: number;
+  /** Nunca tentados: campanha cancelada ou contacto removido. */
+  skippedCount: number;
+  optedOutCount: number;
+  /** Base de cálculo da taxa de atendimento: só quem foi realmente contactado. */
+  attemptedCount: number;
   estimatedCostCents: number | null;
   actualCostCents: number;
   scheduleJson: CampaignSchedule;
@@ -277,6 +289,38 @@ export interface Campaign {
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
+}
+
+export type CampaignContactStatus =
+  | 'PENDING'
+  | 'QUEUED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'OPTED_OUT'
+  | 'SKIPPED';
+
+/** Um participante da campanha com o desfecho da respectiva chamada. */
+export interface CampaignContactRow {
+  id: string;
+  contactId: string;
+  name: string | null;
+  phone: string;
+  status: CampaignContactStatus;
+  attempts: number;
+  nextRetryAt: string | null;
+  optedOutAt: string | null;
+  optOutReason: string | null;
+  updatedAt: string;
+  callId: string | null;
+  callStatus: CallStatus | null;
+  outcome: string | null;
+  failReason: string | null;
+  durationSecs: number | null;
+  costCents: number | null;
+  recordingUrl: string | null;
+  answeredAt: string | null;
+  endedAt: string | null;
 }
 
 export interface CampaignSchedule {
@@ -296,7 +340,7 @@ export interface RetryPolicy {
 
 // ─── Wallet ──────────────────────────────────────────────────────────────────
 
-export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
+export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'TEXT_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
 
 export interface WalletTransaction {
   id: string;
@@ -456,4 +500,63 @@ export interface Paginated<T> {
   total: number;
   page: number;
   perPage: number;
+}
+
+// ─── Canais de texto (caixa de entrada) ──────────────────────────────────────
+
+export type Channel = 'WEBCHAT' | 'EMAIL' | 'TELEGRAM' | 'WHATSAPP';
+export type ConversationStatus = 'OPEN' | 'PENDING' | 'RESOLVED';
+export type ConversationMode = 'AI' | 'HUMAN';
+
+export interface Inbox {
+  id: string;
+  channel: Channel;
+  name: string;
+  agentId: string | null;
+  autoReply: boolean;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  secretsSet: Record<string, boolean>;
+  snippet?: string;
+  /** WhatsApp: a colar na app da Meta */
+  webhookUrl?: string;
+  verifyToken?: string;
+  createdAt: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  seq: number;
+  /** HUMAN = cliente; AGENT = IA (authorId nulo) ou operador; SYSTEM = nota interna */
+  role: 'HUMAN' | 'AGENT' | 'SYSTEM';
+  text: string;
+  authorId: string | null;
+  attachments: { file: string; name: string; size: number }[] | null;
+  guardrailFlags: string[] | null;
+  createdAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  status: ConversationStatus;
+  mode: ConversationMode;
+  subject: string | null;
+  assigneeId: string | null;
+  lastMessageAt: string;
+  updatedAt: string;
+  inbox: { id: string; name: string; channel: Channel };
+  contact: { id: string; name: string | null; phone: string | null; email: string | null; telegramId: string | null } | null;
+  assignee: { id: string; name: string } | null;
+  lastMessage?: { role: ConversationMessage['role']; text: string; createdAt: string } | null;
+}
+
+export interface ConversationDetail extends Conversation {
+  messages: ConversationMessage[];
+  authors: { id: string; name: string }[];
+}
+
+export interface CannedResponse {
+  id: string;
+  shortcut: string;
+  text: string;
 }

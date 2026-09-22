@@ -33,7 +33,8 @@ export function formatDuration(secs: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-export function formatPhone(phone: string): string {
+export function formatPhone(phone: string | null): string {
+  if (!phone) return "—";
   // Mostra sempre no formato nacional 9XX XXX XXX (sem +244).
   // Aceita dados legados em +244XXXXXXXXX e o novo formato nacional de 9 dígitos.
   const digits = phone.replace(/\D/g, '');

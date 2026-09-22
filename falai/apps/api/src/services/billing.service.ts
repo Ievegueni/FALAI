@@ -171,3 +171,31 @@ export async function chargeFlatCall(params: {
 
   return true;
 }
+
+/**
+ * Cobrança de uma resposta da IA num canal de texto (Plan.pricePerTextMessageCents).
+ * Devolve o valor cobrado, ou null se o saldo não chega — aí a conversa passa
+ * para humano em vez de a IA responder de graça.
+ */
+export async function chargeTextMessage(tenantId: string, conversationId: string): Promise<number | null> {
+  const tenant = await prisma.tenant.findUniqueOrThrow({
+    where: { id: tenantId },
+    select: { plan: { select: { pricePerTextMessageCents: true } } },
+  });
+  const amountCents = tenant.plan.pricePerTextMessageCents;
+  if (amountCents <= 0) return 0;
+  if (!(await reserveBalance(tenantId, amountCents))) return null;
+
+  const { balanceCents } = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { balanceCents: true } });
+  await prisma.walletTransaction.create({
+    data: {
+      tenantId,
+      type: "TEXT_CHARGE",
+      amountCents: -amountCents,
+      balanceAfterCents: balanceCents,
+      note: `Resposta IA — conversa ${conversationId}`,
+      reference: conversationId,
+    },
+  });
+  return amountCents;
+}

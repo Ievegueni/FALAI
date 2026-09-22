@@ -16,6 +16,7 @@ import {
   Network,
   LogOut,
   PhoneCall,
+  Inbox,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { clsx } from '@/lib/utils';
@@ -23,6 +24,7 @@ import { clsx } from '@/lib/utils';
 import type { FeatureKey } from '@/types';
 
 const dashboardItem = { to: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard' };
+const inboxItem = { to: '/inbox', icon: Inbox, labelKey: 'nav.inbox' };
 // Cada item pode declarar a feature que o activa; sem feature = sempre visível
 const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: FeatureKey }[] = [
   { to: '/agents', icon: Bot, labelKey: 'nav.agents', feature: 'agents' },
@@ -30,7 +32,7 @@ const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: F
   { to: '/contacts', icon: Users, labelKey: 'nav.contacts', feature: 'contacts' },
   { to: '/calls', icon: Phone, labelKey: 'nav.calls', feature: 'calls' },
   { to: '/webphone', icon: PhoneCall, labelKey: 'nav.webphone', feature: 'webphone' },
-  { to: '/reports', icon: BarChart3, labelKey: 'nav.reports', feature: 'calls' },
+  { to: '/reports', icon: BarChart3, labelKey: 'nav.reports', feature: 'reports' },
   { to: '/wallet', icon: Wallet, labelKey: 'nav.wallet', feature: 'wallet' },
   { to: '/team', icon: UserCheck, labelKey: 'nav.team', feature: 'team' },
   { to: '/developers', icon: Code2, labelKey: 'nav.developers', feature: 'developers' },
@@ -50,14 +52,15 @@ export function Sidebar() {
   // Mostra um item se a sua feature estiver activa (default: visível se não houver info de features)
   const isOn = (f: FeatureKey) => features?.[f] !== false;
 
-  // SMS visível quando o plano o inclui (o backend valida à mesma no envio)
-  const smsOn = tenant?.plan?.smsEnabled === true;
+  // SMS: a feature já vem desligada da API quando o plano não inclui SMS
+  const smsOn = tenant?.plan?.smsEnabled === true && isOn('sms');
 
   const nav = [
     dashboardItem,
+    ...(features?.inbox ? [inboxItem] : []),
     ...featureItems.filter((i) => isOn(i.feature)),
     ...(smsOn ? [smsItem] : []),
-    telephonyItem,
+    ...(isOn('telephony') ? [telephonyItem] : []),
     settingsItem,
     ...(ownPbx ? [{ to: '/settings/pbx', icon: Server, labelKey: 'nav.pbx' }] : []),
   ];

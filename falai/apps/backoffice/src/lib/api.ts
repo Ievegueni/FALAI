@@ -276,6 +276,7 @@ interface RawPlan {
   pricePerMinuteCents: number;
   pricePerCallCents: number;
   pricePerSmsCents: number;
+  pricePerTextMessageCents?: number;
   monthlyFeeCents: number;
   maxAgents: number;
   maxConcurrent: number;
@@ -294,6 +295,7 @@ const toPlan = (p: RawPlan): Plan => ({
   pricePerMinCents: p.pricePerMinuteCents,
   pricePerCallCents: p.pricePerCallCents ?? 0,
   pricePerSmsCents: p.pricePerSmsCents ?? 0,
+  pricePerTextMessageCents: p.pricePerTextMessageCents ?? 0,
   monthlyFeeCents: p.monthlyFeeCents,
   maxAgents: p.maxAgents,
   maxConcurrentCalls: p.maxConcurrent,
@@ -311,6 +313,7 @@ const toRawPlanBody = (data: Partial<Omit<Plan, 'id' | 'isActive'>>) => ({
   ...(data.pricePerMinCents !== undefined && { pricePerMinuteCents: data.pricePerMinCents }),
   ...(data.pricePerCallCents !== undefined && { pricePerCallCents: data.pricePerCallCents }),
   ...(data.pricePerSmsCents !== undefined && { pricePerSmsCents: data.pricePerSmsCents }),
+  ...(data.pricePerTextMessageCents !== undefined && { pricePerTextMessageCents: data.pricePerTextMessageCents }),
   ...(data.monthlyFeeCents !== undefined && { monthlyFeeCents: data.monthlyFeeCents }),
   ...(data.maxAgents !== undefined && { maxAgents: data.maxAgents }),
   ...(data.maxConcurrentCalls !== undefined && { maxConcurrent: data.maxConcurrentCalls }),
@@ -487,4 +490,25 @@ export const callsApi = {
         dateTo: params?.dateTo,
       })}`,
     ),
+};
+
+// ─── Funcionalidades (matriz clientes × funcionalidades) ─────────────────────
+
+export interface FeatureMatrix {
+  features: { key: import('@/types').FeatureKey; label: string; hint: string; default: boolean }[];
+  tenants: {
+    id: string;
+    name: string;
+    status: string;
+    plan: { name: string; productType: string } | null;
+    features: import('@/types').TenantFeatures;
+    overrides: Partial<import('@/types').TenantFeatures>;
+    lockedByPlan: import('@/types').FeatureKey[];
+  }[];
+}
+
+export const featuresApi = {
+  matrix: () => get<FeatureMatrix>('/admin/tenants/features'),
+  set: (tenantId: string, changes: Partial<import('@/types').TenantFeatures>) =>
+    patch<{ overrides: Partial<import('@/types').TenantFeatures> }>(`/admin/tenants/${tenantId}/features`, changes),
 };
