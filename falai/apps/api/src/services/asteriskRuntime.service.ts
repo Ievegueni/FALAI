@@ -26,7 +26,7 @@
  * ficheiros (hoje, o mesmo servidor). Se um dia forem para máquinas separadas,
  * isto passa a ter de ir por ARI ou por um volume partilhado.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { chmod, chown, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TrunkRuntimeAdapter, PbxSyncPayload, PbxSyncResult } from "@falai/providers";
 import { trunkEndpointId, extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
@@ -43,6 +43,35 @@ const GENERATED_DIR = process.env["ASTERISK_GENERATED_DIR"] ?? "";
  * ninguém à espera.
  */
 const RELOAD_GAP_MS = 2000;
+
+/**
+ * Dono a dar aos ficheiros gerados. A API corre como root e o `mode` do
+ * writeFile só se aplica quando o ficheiro é criado — um ficheiro novo fica
+ * root:root 0640, que o Asterisk (que corre como `asterisk`) não consegue ler.
+ * O sintoma é mudo: o #include falha e o contexto de entrada do cliente
+ * simplesmente não existe, pelo que a chamada cai em "context not found".
+ *
+ * Resolvido a partir do /etc/passwd em vez de um uid fixo — varia por distro.
+ * Devolve null se não houver utilizador `asterisk` (ambiente de dev, contentor
+ * com outro nome), e aí não se toca no dono.
+ */
+const ASTERISK_USER = process.env["ASTERISK_SYSTEM_USER"] ?? "asterisk";
+let cachedOwner: { uid: number; gid: number } | null | undefined;
+
+async function asteriskOwner(): Promise<{ uid: number; gid: number } | null> {
+  if (cachedOwner !== undefined) return cachedOwner;
+  try {
+    const passwd = await readFile("/etc/passwd", "utf8");
+    const line = passwd.split("\n").find((l) => l.startsWith(`${ASTERISK_USER}:`));
+    const parts = line?.split(":");
+    const uid = Number(parts?.[2]);
+    const gid = Number(parts?.[3]);
+    cachedOwner = Number.isInteger(uid) && Number.isInteger(gid) ? { uid, gid } : null;
+  } catch {
+    cachedOwner = null;
+  }
+  return cachedOwner;
+}
 
 /**
  * Nome do contexto de entrada de um trunk exclusivo de um cliente.
@@ -66,13 +95,28 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
   async sync(payload: PbxSyncPayload): Promise<PbxSyncResult> {
     try {
       await mkdir(GENERATED_DIR, { recursive: true });
-      await writeFile(join(GENERATED_DIR, "pjsip-falai.conf"), this.buildConfig(payload), { mode: 0o640 });
+      const owner = await asteriskOwner();
+      const write = async (name: string, contents: string): Promise<void> => {
+        const path = join(GENERATED_DIR, name);
+        await writeFile(path, contents, { mode: 0o640 });
+        // O `mode` do writeFile SÓ se aplica quando o ficheiro é criado. Num
+        // ficheiro que já exista, o modo antigo mantém-se — e o
+        // globals-falai.conf, criado antes desta regra, estava a 0644. Como
+        // passou a levar lá dentro o segredo do CDR, ficaria legível por
+        // qualquer utilizador da máquina. Daí o chmod explícito.
+        await chmod(path, 0o640).catch(() => {});
+        // Só falha quando não somos root; aí o dono já tem de estar certo de
+        // fora, e rebentar aqui deixaria o motor sem configuração nenhuma.
+        if (owner) await chown(path, owner.uid, owner.gid).catch(() => {});
+      };
+
+      await write("pjsip-falai.conf", this.buildConfig(payload));
       // O dialplan é estático mas precisa de saber por onde sai uma chamada.
       // Em vez de lá escrever o nome do trunk à mão, damos-lhe as variáveis.
-      await writeFile(join(GENERATED_DIR, "globals-falai.conf"), this.buildGlobals(payload), { mode: 0o640 });
+      await write("globals-falai.conf", this.buildGlobals(payload));
       // Um contexto de entrada por cliente com trunk exclusivo. Tem de ser
       // gerado porque os clientes mudam; o resto do dialplan é estático.
-      await writeFile(join(GENERATED_DIR, "extensions-falai.conf"), this.buildDialplan(payload), { mode: 0o640 });
+      await write("extensions-falai.conf", this.buildDialplan(payload));
     } catch (err) {
       this.log?.("pbx.runtime.write_failed", { err: String(err) });
       return { ok: false, engine: "asterisk", details: `não foi possível escrever a configuração: ${String(err)}` };
@@ -99,12 +143,37 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
   /** Variáveis que o dialplan usa para saber por onde sair. */
   private buildGlobals(payload: PbxSyncPayload): string {
     const trunk = payload.trunks.find((t) => t.enabled);
+
+    // CDR do webphone/hardphone: o contexto [falai-cdr] do extensions.conf
+    // entrega a chamada terminada à API por CURL. Precisa de saber o endereço
+    // e o segredo, e nenhum dos dois pode estar no dialplan à mão — o segredo
+    // porque é segredo, o endereço porque muda entre ambientes.
+    //
+    // SEM SEGREDO NÃO SE ENVIA NADA. Emitir o URL com FALAI_CDR_SECRET vazio
+    // faria o dialplan disparar na mesma um POST sem autenticação válida: a
+    // rota responde 401, os CDRs perdiam-se em silêncio e ficávamos com um
+    // fluxo de pedidos não autenticados a bater na API a cada chamada. Assim,
+    // sem segredo deixamos FALAI_CDR_URL vazio e o handler faz logo GotoIf
+    // para o fim — a contabilização fica desligada, que é o estado honesto,
+    // em vez de parecer ligada e falhar sempre.
+    const cdrSecret = process.env["ASTERISK_CDR_SECRET"] ?? "";
+    // `||` e não `??`: o .env.example traz ASTERISK_CDR_URL= vazio, e quem o
+    // copiar (o caminho normal de instalação) fica com string vazia, que o `??`
+    // deixaria passar. O resultado era a contabilização desligada em silêncio,
+    // com o segredo configurado e tudo com ar de estar certo.
+    const cdrUrl = cdrSecret
+      ? process.env["ASTERISK_CDR_URL"] || "http://127.0.0.1:3010/webhooks/asterisk/cdr"
+      : "";
+
     return [
       "; GERADO PELA API DO FALAÍ — NÃO EDITAR À MÃO.",
       "; Incluído por extensions.conf. Sem isto o dialplan não sabe o nome do",
       "; endpoint do trunk e as chamadas de saída falham com 'endpoint not found'.",
       "TRUNK_ENDPOINT=" + (trunk ? trunkEndpointId(trunk.name) : ""),
       "TRUNK_USER=" + (trunk?.authUser ?? ""),
+      "; Vazio = contabilização de chamadas marcadas no telefone desligada.",
+      "FALAI_CDR_URL=" + cdrUrl,
+      "FALAI_CDR_SECRET=" + cdrSecret,
       "",
     ].join("\n");
   }

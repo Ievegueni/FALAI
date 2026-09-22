@@ -4,8 +4,60 @@ import { testCallSchema } from "@falai/shared";
 
 const DEFAULT_TEST_MESSAGE = "Isto é um teste da plataforma Falaí. A ligação foi estabelecida com sucesso.";
 
+/**
+ * Chamadas de teste à espera de eventos do motor: providerCallId → registo Call.
+ * A entrada sai no evento terminal; as que nunca o recebem são purgadas por
+ * idade — o registo em si é fechado pelo job de reconciliação.
+ */
+const pendingTestCalls = new Map<string, { callId: string; at: number }>();
+
+/** Uma chamada de teste nunca demora mais do que isto a chegar ao fim. */
+const TEST_CALL_TRACKING_MS = 60 * 60 * 1000;
+
+function trackTestCall(providerCallId: string, callId: string): void {
+  const now = Date.now();
+  for (const [key, entry] of pendingTestCalls) {
+    if (now - entry.at > TEST_CALL_TRACKING_MS) pendingTestCalls.delete(key);
+  }
+  pendingTestCalls.set(providerCallId, { callId, at: now });
+}
+
 export const adminTestCallRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.authenticate];
+
+  // Um único subscritor para todas as chamadas de teste. O eventBus não tem
+  // forma de cancelar um handler (ver plugins/eventBus.ts): registar dentro
+  // da rota deixaria um closure por cada chamada feita, todos invocados em
+  // todos os eventos do sistema até ao reinício da API.
+  fastify.onCallEvent(async (event) => {
+    const callId = pendingTestCalls.get(event.providerCallId)?.callId;
+    if (!callId) return;
+    switch (event.type) {
+      case "CALL_RINGING":
+        await prisma.call.update({ where: { id: callId }, data: { status: "RINGING" } });
+        break;
+      case "CALL_ANSWERED":
+        await prisma.call.update({
+          where: { id: callId },
+          data: { status: "IN_PROGRESS", answeredAt: event.answeredAt },
+        });
+        break;
+      case "CALL_ENDED":
+        pendingTestCalls.delete(event.providerCallId);
+        await prisma.call.update({
+          where: { id: callId },
+          data: { status: "COMPLETED", endedAt: event.endedAt, durationSecs: event.durationSecs },
+        });
+        break;
+      case "CALL_FAILED":
+        pendingTestCalls.delete(event.providerCallId);
+        await prisma.call.update({
+          where: { id: callId },
+          data: { status: "FAILED", endedAt: new Date(), failReason: event.reason },
+        });
+        break;
+    }
+  });
 
   // POST /admin/test-call
   fastify.post("/", { preHandler }, async (request, reply) => {
@@ -66,6 +118,13 @@ export const adminTestCallRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     fastify.log.info({ action: "test_call.dialed", callId: call.id, providerCallId });
+
+    // Chamada de teste não passa pelo CallEngineService (não há conversa de
+    // IA a correr) — sem isto, os eventos de "a tocar"/"atendida" do motor
+    // não têm ninguém a aplicá-los a este registo e fica preso em DIALING
+    // para sempre. Fecho eventual (sem hangup explícito) fica a cargo do job
+    // de reconciliação — ver packages/db/src/calls.ts.
+    trackTestCall(providerCallId, call.id);
 
     return {
       callId: call.id,

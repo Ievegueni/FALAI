@@ -4,6 +4,7 @@ import { z } from "zod";
 import { encryptSecret } from "../../services/crypto.service.js";
 import { serializeTrunk, trunkCreateSchema, trunkUpdateSchema, trunkDataFromBody, validateTrunkAuth } from "../../services/trunk.service.js";
 import { getAsteriskStatus } from "../../services/asteriskStatus.service.js";
+import { trunkEndpointId } from "@falai/providers";
 import { scheduleAllPbxSync } from "../../services/pbxSync.service.js";
 
 const didSchema = z.object({ did: z.string().min(3).max(32), name: z.string().max(64).optional().nullable() });
@@ -16,7 +17,23 @@ export const adminTrunksRoutes: FastifyPluginAsync = async (fastify) => {
   // Responde ao pedido da ANGOVOIP de ver "registado / não registado".
   // Declarado antes de "/:id" para não ser apanhado por esse padrão.
   fastify.get("/engine-status", { preHandler }, async () => {
-    return getAsteriskStatus();
+    // Os trunks PEER não se registam, portanto não aparecem na lista de
+    // registos de saída. Quem sabe quais existem é a base de dados, não o
+    // motor — daí serem indicados aqui e sondados um a um pelo qualify.
+    const peerTrunks = await prisma.trunk.findMany({
+      where: { type: "PEER", enabled: true },
+      select: { name: true, tenantId: true, host: true },
+      orderBy: { name: "asc" },
+    });
+
+    return getAsteriskStatus(
+      peerTrunks.map((t) => ({
+        endpoint: trunkEndpointId(t.name),
+        trunkName: t.name,
+        tenantId: t.tenantId,
+        host: t.host,
+      }))
+    );
   });
 
   // GET /admin/trunks — lista trunks partilhados (tenantId null) + BYO (para visão global)

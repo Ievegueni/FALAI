@@ -112,10 +112,12 @@ export function Textarea({ label, error, hint, className, id, ...props }: Textar
 interface SelectProps extends InputHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
+  /** Nota por baixo do campo, como no Input e no Textarea. */
+  hint?: string;
   children: ReactNode;
 }
 
-export function Select({ label, error, className, id, children, ...props }: SelectProps) {
+export function Select({ label, error, hint, className, id, children, ...props }: SelectProps) {
   const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
   return (
     <div className="flex flex-col gap-1">
@@ -133,6 +135,7 @@ export function Select({ label, error, className, id, children, ...props }: Sele
         {children}
       </select>
       {error && <p className="text-xs text-red-600">{error}</p>}
+      {hint && !error && <p className="text-xs text-gray-500">{hint}</p>}
     </div>
   );
 }

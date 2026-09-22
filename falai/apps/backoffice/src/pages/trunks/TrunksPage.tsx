@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Pencil, Trash2, Radio, X, Server, ServerOff, RefreshCw, Loader2, PhoneCall } from 'lucide-react';
-import { trunksApi, testCallApi, type TrunkInput, type TestCallResult } from '@/lib/api';
+import { trunksApi, testCallApi, tenantsApi, type TrunkInput, type TestCallResult } from '@/lib/api';
 import { Card, Button, PageSpinner, EmptyState, Modal, Input, Select, Badge } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
 import type { Trunk } from '@/types';
@@ -11,8 +11,20 @@ const DEFAULT_CODECS = ['ulaw', 'alaw', 'g729', 'g726', 'g722', 'gsm'];
 function TrunkModal({ trunk, onClose }: { trunk?: Trunk; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
+  // Lista de clientes: alimenta o selector ao criar e, ao editar, serve para
+  // mostrar o NOME do dono em vez do id — a rota dos trunks só devolve o
+  // tenantId, não o nome.
+  const { data: tenantPage } = useQuery({
+    queryKey: ['admin', 'tenants', 'for-trunk'],
+    queryFn: () => tenantsApi.list({ perPage: 100, status: 'ACTIVE' }),
+  });
+  const ownerName = trunk?.tenantId
+    ? (tenantPage?.data.find((t) => t.id === trunk.tenantId)?.name ?? trunk.tenantId)
+    : 'Partilhado (do operador)';
+
   const [form, setForm] = useState({
     name: trunk?.name ?? '',
+    tenantId: trunk?.tenantId ?? '',
     enabled: trunk?.enabled ?? true,
     type: trunk?.type ?? 'REGISTER',
     transport: trunk?.transport ?? 'UDP',
@@ -42,6 +54,10 @@ function TrunkModal({ trunk, onClose }: { trunk?: Trunk; onClose: () => void }) 
         codecs: form.codecs.split(',').map((c) => c.trim()).filter(Boolean),
         maxConcurrent: form.maxConcurrent ? Number(form.maxConcurrent) : null,
         ...(form.authSecret ? { authSecret: form.authSecret } : {}),
+        // Só na criação, e só se houver dono escolhido: a rota de update não
+        // aceita mudança de dono, e mandar o campo vazio tornaria partilhado
+        // um trunk que é de um cliente.
+        ...(!trunk && form.tenantId ? { tenantId: form.tenantId } : {}),
       };
       return trunk ? trunksApi.update(trunk.id, body) : trunksApi.create(body);
     },
@@ -54,7 +70,7 @@ function TrunkModal({ trunk, onClose }: { trunk?: Trunk; onClose: () => void }) 
   });
 
   return (
-    <Modal open onClose={onClose} title={trunk ? `Editar trunk — ${trunk.name}` : 'Novo trunk partilhado'} size="lg"
+    <Modal open onClose={onClose} title={trunk ? `Editar trunk — ${trunk.name}` : 'Novo trunk'} size="lg"
       footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button loading={mut.isPending} onClick={() => mut.mutate()}>Guardar</Button></>}>
       <div className="grid grid-cols-2 gap-4">
         <Input label="Nome" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="TESTE.ANGOLA.AGV" />
@@ -62,6 +78,30 @@ function TrunkModal({ trunk, onClose }: { trunk?: Trunk; onClose: () => void }) 
           <option value="1">Activado</option>
           <option value="0">Desactivado</option>
         </Select>
+        {trunk ? (
+          <Input
+            label="Cliente dono"
+            value={ownerName}
+            readOnly
+            hint="não se muda depois de criado"
+          />
+        ) : (
+          <Select
+            label="Cliente dono"
+            value={form.tenantId}
+            onChange={(e) => set('tenantId', e.target.value)}
+            hint={
+              form.type === 'PEER' && !form.tenantId
+                ? 'Num peering, sem dono não sabemos de quem é a chamada que entra'
+                : 'vazio = trunk partilhado do operador'
+            }
+          >
+            <option value="">Partilhado (do operador)</option>
+            {tenantPage?.data.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </Select>
+        )}
         <Select label="Tipo" value={form.type} onChange={(e) => set('type', e.target.value)}>
           <option value="REGISTER">Trunk de registo</option>
           <option value="PEER">Peer (IP-to-IP)</option>
@@ -179,7 +219,7 @@ function EngineStatusCard() {
         </div>
       </div>
 
-      {data.trunks.length === 0 ? (
+      {data.trunks.length === 0 && data.peers.length === 0 ? (
         <p className="text-xs text-gray-500">O motor está a correr mas não tem nenhum trunk configurado.</p>
       ) : (
         <div className="space-y-2">
@@ -207,6 +247,43 @@ function EngineStatusCard() {
           })}
         </div>
       )}
+
+      {/* Peering (IP-to-IP). Secção à parte porque o estado NÃO é um registo:
+          estes trunks não se registam. O que se mostra é a resposta ao último
+          OPTIONS, que é o único sinal de vida que existe numa ligação por IP. */}
+      {data.peers.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-medium text-gray-500 mb-2">
+            Peering IP-to-IP <span className="font-normal text-gray-400">— sem registo; estado medido por OPTIONS a cada 60s</span>
+          </p>
+          <div className="space-y-2">
+            {data.peers.map((p) => {
+              const up = p.status === 'REACHABLE';
+              const unknown = p.status === 'UNKNOWN';
+              return (
+                <div key={p.endpoint} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${up ? 'border-emerald-200 bg-emerald-50' : unknown ? 'border-amber-200 bg-amber-50' : 'border-red-200 bg-red-50'}`}>
+                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${up ? 'bg-emerald-500' : unknown ? 'bg-amber-500' : 'bg-red-500'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-900">{p.trunkName}</span>
+                      <span className={`text-xs font-semibold ${up ? 'text-emerald-700' : unknown ? 'text-amber-700' : 'text-red-700'}`}>
+                        {up ? 'UP' : unknown ? 'SEM MEDIÇÃO' : 'EM BAIXO'}
+                      </span>
+                      {p.tenantId && <Badge className="bg-gray-100 text-gray-600 text-xs">exclusivo</Badge>}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">
+                      <code className="bg-white/60 px-1 rounded">{p.host}</code>
+                      {p.latencyMs != null && <> · {p.latencyMs} ms</>}
+                      {!up && !unknown && <> · sem resposta ao OPTIONS — confirmar o 5060/udp do lado do cliente</>}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <p className="text-xs text-gray-400 mt-3">
         Verificado às {new Date(data.checkedAt).toLocaleTimeString('pt-PT')} · actualiza a cada 15s
       </p>
@@ -326,7 +403,7 @@ export function TrunksPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-gray-900">Trunks SIP</h1>
-          <p className="text-sm text-gray-500">Trunks partilhados do operador. Os do cliente (BYO) aparecem aqui como referência.</p>
+          <p className="text-sm text-gray-500">Trunks do operador e os exclusivos de cada cliente (peering IP-to-IP e BYO-PBX).</p>
         </div>
         <Button icon={<Plus className="h-4 w-4" />} onClick={() => setCreating(true)}>Novo trunk</Button>
       </div>
@@ -366,16 +443,22 @@ export function TrunksPage() {
                   <td className="px-5 py-2.5">
                     <Badge className={t.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}>{t.enabled ? 'Activo' : 'Inactivo'}</Badge>
                   </td>
+                  {/* Antes, um trunk com dono mostrava "gerido pelo cliente" e mais
+                      nada. Isso valia quando esses trunks só nasciam no CRM do
+                      próprio cliente (BYO-PBX). Um cliente API_BYOM não tem CRM
+                      nenhum: o trunk de peering dele é provisionado aqui, e sem
+                      estes botões ficava sem ninguém que o pudesse editar. */}
                   <td className="px-5 py-2.5 text-right whitespace-nowrap">
-                    {t.shared ? (
-                      <div className="flex items-center justify-end gap-1">
-                        <Button size="sm" variant="ghost" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing(t)} />
-                        <Button size="sm" variant="ghost" icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
-                          onClick={() => { if (confirm(`Eliminar o trunk ${t.name}?`)) remove.mutate(t.id); }} />
-                      </div>
-                    ) : (
-                      <span className="text-xs text-gray-400">gerido pelo cliente</span>
-                    )}
+                    <div className="flex items-center justify-end gap-1">
+                      <Button size="sm" variant="ghost" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing(t)} />
+                      <Button size="sm" variant="ghost" icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
+                        onClick={() => {
+                          const aviso = t.shared
+                            ? `Eliminar o trunk ${t.name}?`
+                            : `O trunk ${t.name} é de um cliente. Eliminar mesmo assim?`;
+                          if (confirm(aviso)) remove.mutate(t.id);
+                        }} />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -383,7 +466,7 @@ export function TrunksPage() {
           </table>
         </Card>
       ) : (
-        <EmptyState icon={<Radio className="h-6 w-6" />} title="Sem trunks" description="Cria o primeiro trunk partilhado." action={{ label: 'Novo trunk', onClick: () => setCreating(true) }} />
+        <EmptyState icon={<Radio className="h-6 w-6" />} title="Sem trunks" description="Cria o primeiro trunk." action={{ label: 'Novo trunk', onClick: () => setCreating(true) }} />
       )}
 
       {creating && <TrunkModal onClose={() => setCreating(false)} />}
