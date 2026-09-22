@@ -432,3 +432,24 @@ export const callsApi = {
       `/admin/calls${qs({ page: params?.page ?? 1, tenantId: params?.tenantId, status: params?.status })}`,
     ),
 };
+
+// ─── Funcionalidades (matriz clientes × funcionalidades) ─────────────────────
+
+export interface FeatureMatrix {
+  features: { key: import('@/types').FeatureKey; label: string; hint: string; default: boolean }[];
+  tenants: {
+    id: string;
+    name: string;
+    status: string;
+    plan: { name: string; productType: string } | null;
+    features: import('@/types').TenantFeatures;
+    overrides: Partial<import('@/types').TenantFeatures>;
+    lockedByPlan: import('@/types').FeatureKey[];
+  }[];
+}
+
+export const featuresApi = {
+  matrix: () => get<FeatureMatrix>('/admin/tenants/features'),
+  set: (tenantId: string, changes: Partial<import('@/types').TenantFeatures>) =>
+    patch<{ overrides: Partial<import('@/types').TenantFeatures> }>(`/admin/tenants/${tenantId}/features`, changes),
+};

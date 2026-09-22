@@ -70,7 +70,7 @@ Documento de referência completo: `docs/AVALIACAO-MODELO-SIP-ANGOVOIP.txt`
 | Módulo Clínica (flag `clinicEnabled`, ficha em `Contact.attributes`) | ✅ |
 | Guia de deploy em VPS | ✅ `DEPLOY.md` |
 
-### 3.1c Canais de texto (Telegram, widget web, email) — construído em 22/09
+### 3.1c Canais de texto (WhatsApp, Telegram, widget web, email) — construído em 22/09
 
 Plano em `docs/PLANO-CANAIS-TEXTO.md`. Fases 1–5 feitas + billing da fase 6.
 Testado localmente: widget num site de terceiros, webhook Telegram (bot falso),
@@ -88,11 +88,22 @@ threading de email com mensagens cruas, caixa de entrada no CRM em tempo real.
 - CRM: `/inbox` (3 colunas) e `/inbox/settings` (canais + respostas rápidas).
   Backoffice: preço por resposta da IA no plano.
 
+**WhatsApp Business** (Cloud API da Meta) acrescentado — ver plano. Falta: templates
+(mensagens fora das 24 h), descarregar media, testar com número real.
+
 **Falta:** testar com bot de Telegram real (precisa `PUBLIC_API_URL` em HTTPS) e
 caixa IMAP/SMTP real; SPF/DKIM do domínio de envio; script de importação do
 Hoory (precisa de um export real para mapear); métricas de texto nos relatórios;
 `PER_CONVERSATION` (só há preço por resposta). Deploy: `PUBLIC_API_URL`,
 `UPLOADS_DIR` (anexos, por omissão `apps/api/uploads`).
+
+### 3.1d Funcionalidades por cliente — aplicadas na API (22/09)
+
+Backoffice → **Funcionalidades**: matriz clientes × funcionalidades (grava por
+célula). Desligado = some do CRM **e** a API responde 403 (`gateFeature` em
+`index.ts`, `services/features.ts`). Funcionalidades novas nascem desligadas
+(`inbox`); o plano continua a mandar (sem IA → sem agentes/campanhas; sem SMS
+no plano → sem SMS). API_BYOM: UI desligada, API regida pelos scopes.
 
 ### 3.1b Terceiro produto: `API_BYOM` — construído em 21/08, por correr
 

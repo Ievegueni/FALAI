@@ -57,7 +57,11 @@ export type FeatureKey =
   | 'webphone'
   | 'wallet'
   | 'team'
-  | 'developers';
+  | 'developers'
+  | 'reports'
+  | 'sms'
+  | 'telephony'
+  | 'inbox';
 
 export type TenantFeatures = Record<FeatureKey, boolean>;
 

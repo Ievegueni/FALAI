@@ -8,6 +8,7 @@ import nodemailer from "nodemailer";
 import { prisma, type Inbox } from "@falai/db";
 import { ingestInbound, inboxSecret } from "./textChannels.service.js";
 import { stripQuoted } from "./stripQuoted.js";
+import { tenantHasFeature } from "./features.js";
 
 /**
  * Canal de email. Não somos servidor de email: o cliente faz forward de
@@ -131,6 +132,7 @@ export function startEmailPolling(fastify: FastifyInstance): () => void {
     try {
       const inboxes = await prisma.inbox.findMany({ where: { channel: "EMAIL", enabled: true, deletedAt: null } });
       for (const inbox of inboxes) {
+        if (!(await tenantHasFeature(inbox.tenantId, "inbox"))) continue;
         await pollInbox(fastify, inbox).catch((err) =>
           fastify.log.warn({ err: err instanceof Error ? err.message : err, inboxId: inbox.id }, "email.poll_failed")
         );

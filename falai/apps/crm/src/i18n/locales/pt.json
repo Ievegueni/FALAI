@@ -915,7 +915,7 @@
     "channels": "Canais",
     "addChannel": "Adicionar canal",
     "noInboxes": "Ainda não há canais de texto",
-    "noInboxesHint": "Ligue um bot de Telegram, o chat do site ou uma caixa de email para começar a receber conversas.",
+    "noInboxesHint": "Ligue o WhatsApp Business, um bot de Telegram, o chat do site ou uma caixa de email para começar a receber conversas.",
     "status": {
       "OPEN": "Abertas",
       "PENDING": "Pendentes",

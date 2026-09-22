@@ -915,7 +915,7 @@
     "channels": "Channels",
     "addChannel": "Add channel",
     "noInboxes": "No text channels yet",
-    "noInboxesHint": "Connect a Telegram bot, the website chat or an email mailbox to start receiving conversations.",
+    "noInboxesHint": "Connect WhatsApp Business, a Telegram bot, the website chat or an email mailbox to start receiving conversations.",
     "status": {
       "OPEN": "Open",
       "PENDING": "Pending",

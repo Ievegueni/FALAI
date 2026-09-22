@@ -11,12 +11,14 @@ interface Props {
 }
 
 export function Header({ title, actions }: Props) {
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
 
   const { data: wallet } = useQuery({
     queryKey: ['wallet', 'balance'],
     queryFn: walletApi.balance,
     staleTime: 60_000,
+    // Carteira desligada no backoffice: a API responde 403, não vale pedir.
+    enabled: tenant?.features?.wallet !== false,
   });
 
   const balanceLow =

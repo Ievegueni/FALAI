@@ -829,6 +829,7 @@ enum Channel {
   WEBCHAT
   EMAIL
   TELEGRAM
+  WHATSAPP // WhatsApp Business Cloud API (Meta)
 }
 
 enum ConversationStatus {

@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { invalidateTenantFeatures } from "../../services/features.js";
 import { prisma } from "@falai/db";
 import { z } from "zod";
 
@@ -67,6 +68,7 @@ export const adminPlansRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await prisma.plan.findUnique({ where: { id: request.params.id } });
     if (!existing) return reply.status(404).send({ error: "Plano não encontrado" });
 
+    invalidateTenantFeatures(); // limites do plano (IA, SMS) mudam as features efectivas
     const plan = await prisma.plan.update({
       where: { id: request.params.id },
       data: {

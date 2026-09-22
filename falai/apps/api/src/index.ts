@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance, type FastifyPluginAsync } from "fastify";
 import fastifyCors from "@fastify/cors";
 import fastifyWebSocket from "@fastify/websocket";
 import fastifyRateLimit from "@fastify/rate-limit";
@@ -71,11 +71,29 @@ import { pbxWebhookRoutes } from "./routes/webhooks/pbx.js";
 import { asteriskWebhookRoutes } from "./routes/webhooks/asterisk.js";
 import { smsWebhookRoutes } from "./routes/webhooks/sms.js";
 import { telegramWebhookRoutes } from "./routes/webhooks/telegram.js";
+import { whatsappWebhookRoutes } from "./routes/webhooks/whatsapp.js";
 import { tenantInboxesRoutes } from "./routes/tenant/inboxes.js";
 import { tenantConversationsRoutes } from "./routes/tenant/conversations.js";
 import { v1ConversationsRoutes } from "./routes/v1/conversations.js";
 import { publicChatRoutes } from "./routes/public/chat.js";
 import { startEmailPolling } from "./services/email.service.js";
+import { gateFeature, type FeatureKey } from "./services/features.js";
+
+/**
+ * Regista um grupo de rotas atrás de uma funcionalidade do tenant: cada rota
+ * responde 403 se a Comunica não a activou (backoffice → Funcionalidades).
+ */
+async function gated(
+  parent: FastifyInstance,
+  key: FeatureKey,
+  plugin: FastifyPluginAsync<any> | ((f: FastifyInstance) => Promise<void>),
+  opts?: Record<string, unknown>
+): Promise<void> {
+  await parent.register(async (scope) => {
+    scope.addHook("onRoute", gateFeature(key));
+    await scope.register(plugin as FastifyPluginAsync, opts ?? {});
+  });
+}
 import { registerYeastarWebSocket } from "./websocket/yeastar.js";
 import { syncAllPbx } from "./services/pbxSync.service.js";
 
@@ -271,29 +289,29 @@ async function buildApp() {
 
   // ── Tenant (CRM) routes ─────────────────────────────────────────────────
   await fastify.register(tenantAuthRoutes, { prefix: "/tenant/auth" });
-  await fastify.register(tenantAgentsRoutes, { prefix: "/tenant/agents" });
+  await gated(fastify, "agents", tenantAgentsRoutes, { prefix: "/tenant/agents" });
   await fastify.register(tenantDashboardRoutes, { prefix: "/tenant/dashboard" });
-  await fastify.register(tenantContactsRoutes, { prefix: "/tenant/contacts" });
-  await fastify.register(tenantCallsRoutes, { prefix: "/tenant/calls" });
-  await fastify.register(tenantCampaignsRoutes, { prefix: "/tenant/campaigns" });
-  await fastify.register(tenantWalletRoutes, { prefix: "/tenant/wallet" });
+  await gated(fastify, "contacts", tenantContactsRoutes, { prefix: "/tenant/contacts" });
+  await gated(fastify, "calls", tenantCallsRoutes, { prefix: "/tenant/calls" });
+  await gated(fastify, "campaigns", tenantCampaignsRoutes, { prefix: "/tenant/campaigns" });
+  await gated(fastify, "wallet", tenantWalletRoutes, { prefix: "/tenant/wallet" });
   await fastify.register(tenantPbxRoutes, { prefix: "/tenant/pbx" });
-  await fastify.register(tenantExtensionsRoutes, { prefix: "/tenant/extensions" });
-  await fastify.register(tenantExtensionGroupsRoutes, { prefix: "/tenant/extension-groups" });
-  await fastify.register(tenantRolesRoutes, { prefix: "/tenant/roles" });
-  await fastify.register(tenantTrunksRoutes, { prefix: "/tenant/trunks" });
-  await fastify.register(tenantRoutingRoutes, { prefix: "/tenant/routing" });
-  await fastify.register(tenantBillingRoutes, { prefix: "/tenant/billing" });
-  await fastify.register(tenantTeamRoutes, { prefix: "/tenant/team" });
-  await fastify.register(tenantApiKeysRoutes);
-  await fastify.register(tenantWebhookEventsRoutes);
+  await gated(fastify, "telephony", tenantExtensionsRoutes, { prefix: "/tenant/extensions" });
+  await gated(fastify, "telephony", tenantExtensionGroupsRoutes, { prefix: "/tenant/extension-groups" });
+  await gated(fastify, "telephony", tenantRolesRoutes, { prefix: "/tenant/roles" });
+  await gated(fastify, "telephony", tenantTrunksRoutes, { prefix: "/tenant/trunks" });
+  await gated(fastify, "telephony", tenantRoutingRoutes, { prefix: "/tenant/routing" });
+  await gated(fastify, "wallet", tenantBillingRoutes, { prefix: "/tenant/billing" });
+  await gated(fastify, "team", tenantTeamRoutes, { prefix: "/tenant/team" });
+  await gated(fastify, "developers", tenantApiKeysRoutes);
+  await gated(fastify, "developers", tenantWebhookEventsRoutes);
   await fastify.register(tenantSettingsRoutes);
   await fastify.register(tenantEventsRoutes);
-  await fastify.register(tenantReportsRoutes);
-  await fastify.register(tenantSmsRoutes);
+  await gated(fastify, "reports", tenantReportsRoutes);
+  await gated(fastify, "sms", tenantSmsRoutes);
   // Canais de texto — ver docs/PLANO-CANAIS-TEXTO.md
-  await fastify.register(tenantInboxesRoutes, { prefix: "/tenant/inboxes" });
-  await fastify.register(tenantConversationsRoutes);
+  await gated(fastify, "inbox", tenantInboxesRoutes, { prefix: "/tenant/inboxes" });
+  await gated(fastify, "inbox", tenantConversationsRoutes);
   await fastify.register(publicChatRoutes, { prefix: "/public/chat" });
 
   // ── Public API v1 (API key authenticated, per-key rate limiting) ─────────
@@ -308,16 +326,16 @@ async function buildApp() {
       },
       redis: new Redis(config.REDIS_URL),
     });
-    await v1.register(v1CallsRoutes);
-    await v1.register(v1AgentsRoutes);
-    await v1.register(v1ContactsRoutes);
-    await v1.register(v1CampaignsRoutes);
-    await v1.register(v1WalletRoutes);
-    await v1.register(v1OtpRoutes);
-    await v1.register(v1SmsRoutes);
-    await v1.register(v1ModelsRoutes);
+    await gated(v1, "calls", v1CallsRoutes);
+    await gated(v1, "agents", v1AgentsRoutes);
+    await gated(v1, "contacts", v1ContactsRoutes);
+    await gated(v1, "campaigns", v1CampaignsRoutes);
+    await gated(v1, "wallet", v1WalletRoutes);
+    await gated(v1, "otpCall", v1OtpRoutes);
+    await gated(v1, "sms", v1SmsRoutes);
+    await gated(v1, "agents", v1ModelsRoutes);
     await v1.register(v1UsageRoutes);
-    await v1.register(v1ConversationsRoutes);
+    await gated(v1, "inbox", v1ConversationsRoutes);
   });
 
   // ── Webhooks ────────────────────────────────────────────────────────────
@@ -328,6 +346,7 @@ async function buildApp() {
   await fastify.register(smsWebhookRoutes, { prefix: "/webhooks/sms" });
   await fastify.register(proxypayWebhookRoutes, { prefix: "/webhooks/proxypay" });
   await fastify.register(telegramWebhookRoutes, { prefix: "/webhooks/telegram" });
+  await fastify.register(whatsappWebhookRoutes, { prefix: "/webhooks/whatsapp" });
 
   // Canal de email: lê as caixas IMAP dos inboxes a cada minuto.
   const stopEmailPolling = startEmailPolling(fastify);

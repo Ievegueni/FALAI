@@ -20,6 +20,7 @@ import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { CallsPage } from '@/pages/calls/CallsPage';
 import { CallDetailPage } from '@/pages/calls/CallDetailPage';
 import { TrunksPage } from '@/pages/trunks/TrunksPage';
+import { FeaturesPage } from '@/pages/features/FeaturesPage';
 
 export default function App() {
   return (
@@ -40,6 +41,7 @@ export default function App() {
                 <Route path="/tenants" element={<TenantsPage />} />
                 <Route path="/tenants/new" element={<TenantNewPage />} />
                 <Route path="/tenants/:id" element={<TenantDetailPage />} />
+                <Route path="/features" element={<FeaturesPage />} />
                 <Route path="/moderation" element={<ModerationPage />} />
                 <Route path="/models" element={<ModelsPage />} />
                 <Route path="/calls" element={<CallsPage />} />

@@ -35,6 +35,31 @@ export async function telegramApi(botToken: string, method: string, body: unknow
   return json.result;
 }
 
+// ── WhatsApp Business (Cloud API da Meta, sem dependências) ─────────────────
+
+export const GRAPH_API = "https://graph.facebook.com/v21.0";
+
+export async function whatsappApi(accessToken: string, path: string, body?: unknown): Promise<unknown> {
+  const res = await fetch(`${GRAPH_API}/${path}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+  });
+  const json = (await res.json()) as { error?: { message?: string } };
+  if (!res.ok || json.error) throw new Error(`WhatsApp ${path}: ${json.error?.message ?? res.status}`);
+  return json;
+}
+
+/**
+ * O mesmo número aparece como "923000000" (formato nacional, o actual no CRM),
+ * "+244923000000" (legado) ou "244923000000" (wa_id do WhatsApp).
+ */
+export function phoneVariants(raw: string): string[] {
+  const digits = raw.replace(/\D/g, "");
+  const national = digits.startsWith("244") && digits.length === 12 ? digits.slice(3) : null;
+  return [...new Set([raw, digits, `+${digits}`, ...(national ? [national, `+244${national}`, `244${national}`] : [])])];
+}
+
 export function inboxSecret(inbox: Pick<Inbox, "config">, key: string): string | null {
   const v = (inbox.config as Record<string, unknown> | null)?.[key];
   return typeof v === "string" && v ? decryptSecret(v) : null;
@@ -74,9 +99,15 @@ export async function resolveContact(tenantId: string, id: InboundMessage["ident
     return c.id;
   }
   if (id.phone) {
+    // Reaproveita o contacto existente em qualquer formato do número; se não
+    // houver, grava no formato nacional (o que o CRM usa hoje).
+    const variants = phoneVariants(id.phone);
+    const existing = await prisma.contact.findFirst({ where: { tenantId, phone: { in: variants } }, select: { id: true } });
+    if (existing) return existing.id;
+    const phone = variants.find((v) => /^9\d{8}$/.test(v)) ?? id.phone;
     const c = await prisma.contact.upsert({
-      where: { tenantId_phone: { tenantId, phone: id.phone } },
-      create: { ...create, phone: id.phone },
+      where: { tenantId_phone: { tenantId, phone } },
+      create: { ...create, phone },
       update: {},
       select: { id: true },
     });
@@ -181,7 +212,7 @@ export async function ingestInbound(fastify: FastifyInstance, inbox: Inbox, msg:
 }
 
 function channelNote(channel: Channel): string {
-  const name = { WEBCHAT: "chat no site", EMAIL: "email", TELEGRAM: "Telegram" }[channel];
+  const name = { WEBCHAT: "chat no site", EMAIL: "email", TELEGRAM: "Telegram", WHATSAPP: "WhatsApp" }[channel];
   return [
     "",
     "## Canal",
@@ -272,6 +303,20 @@ export async function deliver(
       if (!token) throw new Error("Inbox Telegram sem botToken");
       const sent = (await telegramApi(token, "sendMessage", { chat_id: conv.externalRef, text })) as { message_id: number };
       await prisma.message.update({ where: { id: messageId }, data: { externalId: String(sent.message_id) } });
+    } else if (inbox.channel === "WHATSAPP") {
+      const token = inboxSecret(inbox, "accessToken");
+      const phoneNumberId = (inbox.config as { phoneNumberId?: string }).phoneNumberId;
+      if (!token || !phoneNumberId) throw new Error("Inbox WhatsApp sem accessToken/phoneNumberId");
+      // Fora da janela de 24 h desde a última mensagem do cliente a Meta recusa
+      // texto livre (exige template) — o erro chega aqui e fica visível no CRM.
+      const sent = (await whatsappApi(token, `${phoneNumberId}/messages`, {
+        messaging_product: "whatsapp",
+        to: conv.externalRef,
+        type: "text",
+        text: { body: text },
+      })) as { messages?: { id: string }[] };
+      const externalId = sent.messages?.[0]?.id;
+      if (externalId) await prisma.message.update({ where: { id: messageId }, data: { externalId } });
     } else if (inbox.channel === "EMAIL") {
       const externalId = await sendEmailReply(inbox, conv, text);
       await prisma.message.update({ where: { id: messageId }, data: { externalId } });

@@ -1,3 +1,6 @@
+import type { FastifyReply, FastifyRequest, RouteOptions, preHandlerHookHandler } from "fastify";
+import { prisma } from "@falai/db";
+
 /**
  * Funcionalidades que o operador pode activar/desactivar por cliente no backoffice.
  *
@@ -19,6 +22,10 @@ export const FEATURE_KEYS = [
   "wallet",
   "team",
   "developers",
+  "reports",
+  "sms",
+  "telephony",
+  "inbox",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -36,6 +43,27 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   wallet: "Carteira",
   team: "Equipa",
   developers: "Developers / API",
+  reports: "Relatórios",
+  sms: "SMS",
+  telephony: "Telefonia (extensões, trunks, rotas)",
+  inbox: "Caixa de entrada (WhatsApp, chat, email, Telegram)",
+};
+
+export const FEATURE_HINTS: Record<FeatureKey, string> = {
+  agents: "Criar e gerir agentes de IA e chamadas com IA",
+  campaigns: "Campanhas de chamadas automáticas",
+  contacts: "Base de contactos",
+  calls: "Registo e detalhe de chamadas",
+  directCall: "Click-to-call de uma extensão para um número",
+  otpCall: "Entrega de códigos OTP por chamada (API)",
+  webphone: "Telefone no browser (WebRTC)",
+  wallet: "Saldo e movimentos",
+  team: "Utilizadores do cliente",
+  developers: "API keys, webhooks e documentação",
+  reports: "Relatórios de chamadas (CSV/PDF)",
+  sms: "Envio de SMS avulso e campanhas (o plano tem de incluir SMS)",
+  telephony: "Extensões, grupos, trunks e rotas",
+  inbox: "WhatsApp Business, chat no site, email e Telegram, com IA e operadores",
 };
 
 export const DEFAULT_FEATURES: Features = {
@@ -49,6 +77,12 @@ export const DEFAULT_FEATURES: Features = {
   wallet: true,
   team: true,
   developers: true,
+  reports: true,
+  sms: true,
+  telephony: true,
+  // Funcionalidades novas nascem desligadas: só aparecem a um cliente quando
+  // a Comunica as activa no backoffice.
+  inbox: false,
 };
 
 /**
@@ -57,7 +91,13 @@ export const DEFAULT_FEATURES: Features = {
 export function computeFeatures(input: {
   overrides?: unknown;
   aiAgentsEnabled?: boolean;
+  smsEnabled?: boolean;
   productType?: string;
+  /**
+   * Vista da API pública (/v1). O API_BYOM desliga a nossa UI mas usa a API
+   * — aí manda o scope da chave, não as features.
+   */
+  forApi?: boolean;
 }): Features {
   const result: Features = { ...DEFAULT_FEATURES };
 
@@ -74,10 +114,11 @@ export function computeFeatures(input: {
     result.agents = false;
     result.campaigns = false;
   }
+  if (input.smsEnabled === false) result.sms = false;
 
   // 3b. API_BYOM: o cliente tem o CRM dele e fala connosco só por API. Nenhum
   // override liga a nossa UI — só fica a área de developers (chaves e IPs).
-  if (input.productType === "API_BYOM") {
+  if (input.productType === "API_BYOM" && !input.forApi) {
     for (const key of FEATURE_KEYS) result[key] = false;
     result.developers = true;
   }
@@ -97,4 +138,79 @@ export function sanitizeFeatureOverrides(input: unknown): Partial<Features> {
     if (typeof obj[key] === "boolean") out[key] = obj[key] as boolean;
   }
   return out;
+}
+
+// ── Aplicação na API ─────────────────────────────────────────────────────────
+
+
+const CACHE_TTL_MS = 10_000;
+const cache = new Map<string, { at: number; tenant: { features: unknown; plan: { aiAgentsEnabled: boolean; smsEnabled: boolean; productType: string } } }>();
+
+/** Limpar depois de mudar features ou plano de um tenant no backoffice. */
+export function invalidateTenantFeatures(tenantId?: string): void {
+  if (tenantId) cache.delete(tenantId);
+  else cache.clear();
+}
+
+export async function tenantFeatures(tenantId: string, opts: { forApi?: boolean } = {}): Promise<Features> {
+  let hit = cache.get(tenantId);
+  if (!hit || Date.now() - hit.at > CACHE_TTL_MS) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { features: true, plan: { select: { aiAgentsEnabled: true, smsEnabled: true, productType: true } } },
+    });
+    if (!tenant) return Object.fromEntries(FEATURE_KEYS.map((k) => [k, false])) as Features;
+    hit = { at: Date.now(), tenant };
+    cache.set(tenantId, hit);
+  }
+  const { features, plan } = hit.tenant;
+  return computeFeatures({
+    overrides: features,
+    aiAgentsEnabled: plan.aiAgentsEnabled,
+    smsEnabled: plan.smsEnabled,
+    productType: plan.productType,
+    ...(opts.forApi && { forApi: true }),
+  });
+}
+
+export async function tenantHasFeature(tenantId: string, key: FeatureKey): Promise<boolean> {
+  return (await tenantFeatures(tenantId))[key];
+}
+
+/**
+ * preHandler: 403 se a funcionalidade não estiver activa para o tenant do
+ * pedido (JWT do CRM ou API key). Corre depois da autenticação da rota.
+ */
+export function requireFeature(key: FeatureKey | FeatureKey[]): preHandlerHookHandler {
+  const keys = Array.isArray(key) ? key : [key];
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const viaApi = !!request.apiKey;
+    const tenantId = request.tenantUser?.tenantId ?? request.apiKey?.tenantId;
+    if (!tenantId) return; // rota sem autenticação de tenant: não é daqui
+    const features = await tenantFeatures(tenantId, { forApi: viaApi });
+    // Lista = basta uma estar activa (ex.: extensões servem Telefonia e Webphone).
+    if (!keys.some((k) => features[k])) {
+      return reply.status(403).send({ error: `Funcionalidade não activa: ${keys.map((k) => FEATURE_LABELS[k]).join(" / ")}`, feature: keys[0] });
+    }
+  };
+}
+
+declare module "fastify" {
+  interface FastifyContextConfig {
+    /** Sobrepõe a funcionalidade do grupo de rotas (ver gateFeature). Lista = qualquer uma. */
+    feature?: FeatureKey | FeatureKey[];
+  }
+}
+
+/**
+ * Hook onRoute: acrescenta requireFeature a todas as rotas do plugin onde é
+ * registado, depois dos preHandlers de autenticação. Uma rota pode indicar
+ * outra funcionalidade com `config: { feature }`.
+ */
+export function gateFeature(key: FeatureKey) {
+  return (route: RouteOptions) => {
+    const feature = (route.config as { feature?: FeatureKey | FeatureKey[] } | undefined)?.feature ?? key;
+    const existing = route.preHandler ? (Array.isArray(route.preHandler) ? route.preHandler : [route.preHandler]) : [];
+    route.preHandler = [...existing, requireFeature(feature)];
+  };
 }

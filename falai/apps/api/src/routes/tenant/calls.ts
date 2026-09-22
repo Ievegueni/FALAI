@@ -189,7 +189,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls — place an outbound call now
-  fastify.post("/", { preHandler }, async (request, reply) => {
+  fastify.post("/", { preHandler, config: { feature: "agents" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = createSchema.parse(request.body);
 
@@ -295,7 +295,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls/:id/cancel — hang up a call still in progress
-  fastify.post<{ Params: { id: string } }>("/:id/cancel", { preHandler }, async (request, reply) => {
+  fastify.post<{ Params: { id: string } }>("/:id/cancel", { preHandler, config: { feature: "agents" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const existing = await prisma.call.findFirst({
       where: { id: request.params.id, tenantId },
@@ -334,7 +334,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /tenant/calls/extensions — lista as linhas do próprio cliente para o dropdown
   // (não expõe extensões de outros clientes no PBX partilhado)
-  fastify.get("/extensions", { preHandler }, async (request) => {
+  fastify.get("/extensions", { preHandler, config: { feature: "directCall" } }, async (request) => {
     const { tenantId } = request.tenantUser!;
     const lines = await prisma.tenantLine.findMany({
       where: { tenantId, isActive: true },
@@ -345,7 +345,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /tenant/calls/direct/status/:callId — verifica se uma chamada directa ainda está activa no PBX
-  fastify.get<{ Params: { callId: string } }>("/direct/status/:callId", { preHandler }, async (request, reply) => {
+  fastify.get<{ Params: { callId: string } }>("/direct/status/:callId", { preHandler, config: { feature: "directCall" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     try {
       if (await getTenantAsterisk(fastify, tenantId)) {
@@ -361,7 +361,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls/direct — origina uma chamada normal (extensão → número), sem agente
-  fastify.post("/direct", { preHandler }, async (request, reply) => {
+  fastify.post("/direct", { preHandler, config: { feature: "directCall" } }, async (request, reply) => {
     const body = directCallSchema.parse(request.body);
     const admin = request.tenantUser!;
     const { tenantId } = admin;
@@ -429,7 +429,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls/direct/hangup — desliga uma chamada directa pelo providerCallId
-  fastify.post("/direct/hangup", { preHandler }, async (request, reply) => {
+  fastify.post("/direct/hangup", { preHandler, config: { feature: "directCall" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = hangupSchema.parse(request.body);
     try {

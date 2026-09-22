@@ -5,7 +5,7 @@ import { resolveOutboundExtension, NoOutboundLineError } from "../../services/ou
 
 export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
   // POST /v1/calls — dial a number
-  fastify.post("/v1/calls", { preHandler: [fastify.verifyScope("calls:write")] }, async (request, reply) => {
+  fastify.post("/v1/calls", { preHandler: [fastify.verifyScope("calls:write")], config: { feature: "agents" } }, async (request, reply) => {
     const tenantId = request.apiKey!.tenantId;
     const body = request.body as {
       agentId: string;

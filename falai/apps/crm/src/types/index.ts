@@ -22,7 +22,11 @@ export type FeatureKey =
   | 'webphone'
   | 'wallet'
   | 'team'
-  | 'developers';
+  | 'developers'
+  | 'reports'
+  | 'sms'
+  | 'telephony'
+  | 'inbox';
 
 export type TenantFeatures = Record<FeatureKey, boolean>;
 
@@ -500,7 +504,7 @@ export interface Paginated<T> {
 
 // ─── Canais de texto (caixa de entrada) ──────────────────────────────────────
 
-export type Channel = 'WEBCHAT' | 'EMAIL' | 'TELEGRAM';
+export type Channel = 'WEBCHAT' | 'EMAIL' | 'TELEGRAM' | 'WHATSAPP';
 export type ConversationStatus = 'OPEN' | 'PENDING' | 'RESOLVED';
 export type ConversationMode = 'AI' | 'HUMAN';
 
@@ -514,6 +518,9 @@ export interface Inbox {
   config: Record<string, unknown>;
   secretsSet: Record<string, boolean>;
   snippet?: string;
+  /** WhatsApp: a colar na app da Meta */
+  webhookUrl?: string;
+  verifyToken?: string;
   createdAt: string;
 }
 

@@ -26,7 +26,7 @@ entrada unificada, sem conceito de `Conversation`/`Message` de texto — o
 **Dentro:** widget web, email, Telegram, caixa unificada no CRM, IA a responder,
 passagem para humano, respostas rápidas, histórico.
 
-**Fora, até pedirem:** WhatsApp, Instagram, Facebook, apps móveis, construtor
+**Fora, até pedirem:** Instagram, Facebook, apps móveis, construtor
 visual de bots, motor de automações/SLA, relatórios avançados.
 
 Paridade com o Hoory nesses três canais é atingível. Copiar o produto inteiro é
@@ -156,6 +156,18 @@ estado, inbox e atribuição) | thread | painel do contacto.
 - **Uma semana a correr em paralelo** com o Hoory antes de cancelar.
 
 ---
+
+### WhatsApp Business (acrescentado 22/09)
+
+API oficial (WhatsApp Cloud API da Meta), sem BSP nem dependências. Inbox com
+`phoneNumberId`, `accessToken` (permanente, utilizador de sistema) e `appSecret`
+(cifrados). Webhook `GET/POST /webhooks/whatsapp/:inboxId`: verificação com
+`verify token` = `Inbox.webhookSecret`, assinatura `X-Hub-Signature-256`,
+reenvios da Meta ignorados. O `wa_id` casa com o `Contact.phone` existente
+(9XXXXXXXX / +244… / 244…). **Limite da Meta:** fora de 24 h desde a última
+mensagem do cliente só se pode enviar template aprovado — ainda não suportado
+(o envio falha e fica visível no CRM). Media recebida entra como marcador
+("(imagem)", "(nota de voz)"…), sem descarregar o ficheiro.
 
 ## 5. Prazo
 

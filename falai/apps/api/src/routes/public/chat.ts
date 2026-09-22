@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { prisma, type Inbox } from "@falai/db";
 import { z } from "zod";
+import { tenantHasFeature } from "../../services/features.js";
 import { ingestInbound, publicMessage, resolveContact, widgetKey } from "../../services/textChannels.service.js";
 
 /**
@@ -53,7 +54,7 @@ async function loadInbox(request: FastifyRequest<{ Params: { inboxId: string } }
   const inbox = await prisma.inbox.findFirst({
     where: { id: request.params.inboxId, channel: "WEBCHAT", enabled: true, deletedAt: null },
   });
-  if (!inbox) {
+  if (!inbox || !(await tenantHasFeature(inbox.tenantId, "inbox"))) {
     reply.status(404).send({ error: "Chat indisponível" });
     return null;
   }

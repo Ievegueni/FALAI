@@ -49,7 +49,7 @@ export const tenantExtensionsRoutes: FastifyPluginAsync = async (fastify) => {
   }
 
   // GET /tenant/extensions — lista
-  fastify.get("/", { preHandler }, async (request) => {
+  fastify.get("/", { preHandler, config: { feature: ["telephony", "webphone"] } }, async (request) => {
     const { tenantId } = request.tenantUser!;
     const exts = await prisma.extension.findMany({ where: { tenantId }, orderBy: { number: "asc" } });
     return exts.map(serializeExtension);
@@ -192,7 +192,7 @@ export const tenantExtensionsRoutes: FastifyPluginAsync = async (fastify) => {
   // requireManager: qualquer agente do tenant pode pedir a extensão que
   // escolheu no dropdown do webphone, tal como já podia usá-la no
   // click-to-call (DirectCallPage).
-  fastify.get<{ Params: { id: string } }>("/:id/webphone-credentials", { preHandler }, async (request, reply) => {
+  fastify.get<{ Params: { id: string } }>("/:id/webphone-credentials", { preHandler, config: { feature: "webphone" } }, async (request, reply) => {
     const { tenantId, sub } = request.tenantUser!;
     const ext = await prisma.extension.findFirst({ where: { id: request.params.id, tenantId } });
     if (!ext) return reply.status(404).send({ error: "Extensão não encontrada" });

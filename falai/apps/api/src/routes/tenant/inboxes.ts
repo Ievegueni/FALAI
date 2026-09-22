@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { prisma, type Inbox, type Prisma } from "@falai/db";
 import { z } from "zod";
 import { encryptSecret } from "../../services/crypto.service.js";
-import { telegramApi, inboxSecret } from "../../services/textChannels.service.js";
+import { telegramApi, whatsappApi, inboxSecret } from "../../services/textChannels.service.js";
 
 /**
  * Inboxes dos canais de texto (Telegram, widget web, email).
@@ -11,12 +11,16 @@ import { telegramApi, inboxSecret } from "../../services/textChannels.service.js
  * voltam ao cliente — só um indicador de que estão definidos.
  */
 
-const SECRET_KEYS = ["botToken", "imapPass", "smtpPass"] as const;
+const SECRET_KEYS = ["botToken", "imapPass", "smtpPass", "accessToken", "appSecret"] as const;
 
 const configSchema = z
   .object({
     // TELEGRAM
     botToken: z.string().min(20).optional(),
+    // WHATSAPP (Cloud API da Meta)
+    phoneNumberId: z.string().regex(/^\d+$/, "Phone number ID só tem dígitos").optional(),
+    accessToken: z.string().min(20).optional(),
+    appSecret: z.string().min(16).optional(),
     // WEBCHAT
     allowedOrigins: z.array(z.string().url()).optional(),
     title: z.string().max(60).optional(),
@@ -37,7 +41,7 @@ const configSchema = z
   .strict();
 
 const createSchema = z.object({
-  channel: z.enum(["WEBCHAT", "EMAIL", "TELEGRAM"]),
+  channel: z.enum(["WEBCHAT", "EMAIL", "TELEGRAM", "WHATSAPP"]),
   name: z.string().min(1).max(80),
   agentId: z.string().min(1).nullable().optional(),
   autoReply: z.boolean().optional(),
@@ -88,6 +92,11 @@ function serialize(inbox: Inbox, request: FastifyRequest) {
     config,
     secretsSet,
     createdAt: inbox.createdAt,
+    ...(inbox.channel === "WHATSAPP" && {
+      // Para colar na app da Meta (WhatsApp → Configuração → Webhook, campo "messages").
+      webhookUrl: `${base}/webhooks/whatsapp/${inbox.id}`,
+      verifyToken: inbox.webhookSecret,
+    }),
     ...(inbox.channel === "WEBCHAT" && {
       snippet: `<script src="${base}/public/chat/widget.js" data-inbox="${inbox.id}" async></script>`,
     }),
@@ -103,6 +112,15 @@ async function connectTelegram(inbox: Inbox, botToken: string, request: FastifyR
     allowed_updates: ["message"],
   });
   return me.username;
+}
+
+/** Valida o token e o número na Meta; devolve o número e o nome verificados. */
+async function checkWhatsapp(phoneNumberId: string, accessToken: string) {
+  const info = (await whatsappApi(accessToken, `${phoneNumberId}?fields=display_phone_number,verified_name`)) as {
+    display_phone_number?: string;
+    verified_name?: string;
+  };
+  return { displayPhone: info.display_phone_number ?? null, verifiedName: info.verified_name ?? null };
 }
 
 export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
@@ -125,6 +143,18 @@ export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
     if (body.channel === "TELEGRAM" && !body.config.botToken) {
       return reply.status(400).send({ error: "Token do bot obrigatório" });
     }
+    let waInfo: Awaited<ReturnType<typeof checkWhatsapp>> | null = null;
+    if (body.channel === "WHATSAPP") {
+      const { phoneNumberId, accessToken, appSecret } = body.config;
+      if (!phoneNumberId || !accessToken || !appSecret) {
+        return reply.status(400).send({ error: "Phone number ID, access token e app secret são obrigatórios" });
+      }
+      try {
+        waInfo = await checkWhatsapp(phoneNumberId, accessToken);
+      } catch (err) {
+        return reply.status(400).send({ error: `A Meta recusou os dados: ${err instanceof Error ? err.message : err}` });
+      }
+    }
 
     let inbox = await prisma.inbox.create({
       data: {
@@ -133,7 +163,7 @@ export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
         name: body.name,
         agentId: body.agentId ?? null,
         autoReply: body.autoReply ?? true,
-        config: mergeConfig({}, body.config) as Prisma.InputJsonValue,
+        config: { ...mergeConfig({}, body.config), ...waInfo } as Prisma.InputJsonValue,
         webhookSecret: randomBytes(24).toString("hex"),
       },
     });
@@ -180,6 +210,17 @@ export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
         config = { ...config, botUsername };
       } catch (err) {
         return reply.status(400).send({ error: `Telegram recusou o token: ${err instanceof Error ? err.message : err}` });
+      }
+    }
+
+    if (current.channel === "WHATSAPP" && (body.config?.accessToken || body.config?.phoneNumberId)) {
+      const merged = config ?? (current.config as Record<string, unknown>);
+      const phoneNumberId = String(merged["phoneNumberId"] ?? "");
+      const accessToken = body.config?.accessToken ?? inboxSecret(current, "accessToken") ?? "";
+      try {
+        config = { ...merged, ...(await checkWhatsapp(phoneNumberId, accessToken)) };
+      } catch (err) {
+        return reply.status(400).send({ error: `A Meta recusou os dados: ${err instanceof Error ? err.message : err}` });
       }
     }
 

@@ -3,7 +3,10 @@ import { prisma, chargeMonthlyInvoice } from "@falai/db";
 import { z } from "zod";
 import { hashPassword } from "../../services/auth.service.js";
 import { pbxCallStatus } from "../../services/pbxCdr.service.js";
-import { computeFeatures, sanitizeFeatureOverrides, FEATURE_KEYS } from "../../services/features.js";
+import {
+  computeFeatures, sanitizeFeatureOverrides, invalidateTenantFeatures,
+  FEATURE_KEYS, FEATURE_LABELS, FEATURE_HINTS, DEFAULT_FEATURES,
+} from "../../services/features.js";
 import { encryptSecret } from "../../services/crypto.service.js";
 import { invalidateTenantSms } from "../../services/sms.service.js";
 
@@ -109,6 +112,7 @@ function mapTenant(t: any) {
     features: computeFeatures({
       overrides: t.features,
       aiAgentsEnabled: t.plan?.aiAgentsEnabled,
+      smsEnabled: t.plan?.smsEnabled,
       productType: t.plan?.productType,
     }),
     featureOverrides: (t.features ?? {}) as Record<string, boolean>,
@@ -213,6 +217,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null } });
     if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
 
+    invalidateTenantFeatures(request.params.id); // pode mudar de plano
     const tenant = await prisma.tenant.update({
       where: { id: request.params.id },
       data: {
@@ -556,6 +561,62 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // ============ FUNCIONALIDADES ============
 
+  // GET /admin/tenants/features — matriz clientes × funcionalidades (página global)
+  fastify.get("/features", { preHandler }, async () => {
+    const tenants = await prisma.tenant.findMany({
+      where: { deletedAt: null },
+      orderBy: { name: "asc" },
+      select: {
+        id: true, name: true, status: true, features: true,
+        plan: { select: { name: true, productType: true, aiAgentsEnabled: true, smsEnabled: true } },
+      },
+    });
+    return {
+      features: FEATURE_KEYS.map((key) => ({ key, label: FEATURE_LABELS[key], hint: FEATURE_HINTS[key], default: DEFAULT_FEATURES[key] })),
+      tenants: tenants.map((t) => {
+        const effective = computeFeatures({
+          overrides: t.features,
+          aiAgentsEnabled: t.plan?.aiAgentsEnabled,
+          smsEnabled: t.plan?.smsEnabled,
+          productType: t.plan?.productType,
+        });
+        // O que está desligado pelo plano e nenhum override liga.
+        const locked = computeFeatures({
+          overrides: Object.fromEntries(FEATURE_KEYS.map((k) => [k, true])),
+          aiAgentsEnabled: t.plan?.aiAgentsEnabled,
+          smsEnabled: t.plan?.smsEnabled,
+          productType: t.plan?.productType,
+        });
+        return {
+          id: t.id,
+          name: t.name,
+          status: t.status,
+          plan: t.plan ? { name: t.plan.name, productType: t.plan.productType } : null,
+          features: effective,
+          overrides: (t.features ?? {}) as Record<string, boolean>,
+          lockedByPlan: FEATURE_KEYS.filter((k) => !locked[k]),
+        };
+      }),
+    };
+  });
+
+  // PATCH /admin/tenants/:id/features — muda só as chaves enviadas (célula da matriz)
+  fastify.patch<{ Params: { id: string } }>("/:id/features", { preHandler }, async (request, reply) => {
+    const admin = request.adminUser!;
+    const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null }, select: { features: true } });
+    if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
+    const before = sanitizeFeatureOverrides(existing.features);
+    const overrides = { ...before, ...sanitizeFeatureOverrides(featuresSchema.parse(request.body)) };
+    await prisma.tenant.update({ where: { id: request.params.id }, data: { features: overrides } });
+    invalidateTenantFeatures(request.params.id);
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: "tenant.features_updated",
+      targetType: "Tenant", targetId: request.params.id,
+      before: before as object, after: overrides as object, ip: request.ip,
+    });
+    return { overrides };
+  });
+
   // PUT /admin/tenants/:id/features — grava overrides de funcionalidades
   fastify.put<{ Params: { id: string } }>("/:id/features", { preHandler }, async (request, reply) => {
     const body = featuresSchema.parse(request.body);
@@ -563,12 +624,13 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const existing = await prisma.tenant.findFirst({
       where: { id: request.params.id, deletedAt: null },
-      include: { plan: { select: { aiAgentsEnabled: true, productType: true } } },
+      include: { plan: { select: { aiAgentsEnabled: true, smsEnabled: true, productType: true } } },
     });
     if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
 
     const overrides = sanitizeFeatureOverrides(body);
     await prisma.tenant.update({ where: { id: request.params.id }, data: { features: overrides } });
+    invalidateTenantFeatures(request.params.id);
 
     await fastify.audit({
       actorType: "ADMIN", actorId: admin.sub, action: "tenant.features_updated",
@@ -581,6 +643,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
       features: computeFeatures({
         overrides,
         aiAgentsEnabled: existing.plan?.aiAgentsEnabled,
+        smsEnabled: existing.plan?.smsEnabled,
         productType: existing.plan?.productType,
       }),
     };

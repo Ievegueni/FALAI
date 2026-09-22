@@ -81,11 +81,11 @@ export default function App() {
                 <Route path="/calls/direct" element={<RequireFeature feature="directCall"><DirectCallPage /></RequireFeature>} />
                 <Route path="/calls/:id" element={<RequireFeature feature="calls"><CallDetailPage /></RequireFeature>} />
 
-                <Route path="/reports" element={<RequireFeature feature="calls"><ReportsPage /></RequireFeature>} />
+                <Route path="/reports" element={<RequireFeature feature="reports"><ReportsPage /></RequireFeature>} />
 
-                <Route path="/sms" element={<SmsPage />} />
-                <Route path="/inbox" element={<InboxPage />} />
-                <Route path="/inbox/settings" element={<InboxSettingsPage />} />
+                <Route path="/sms" element={<RequireFeature feature="sms"><SmsPage /></RequireFeature>} />
+                <Route path="/inbox" element={<RequireFeature feature="inbox"><InboxPage /></RequireFeature>} />
+                <Route path="/inbox/settings" element={<RequireFeature feature="inbox"><InboxSettingsPage /></RequireFeature>} />
 
                 <Route path="/campaigns" element={<RequireFeature feature="campaigns"><CampaignsPage /></RequireFeature>} />
                 <Route path="/campaigns/new" element={<RequireFeature feature="campaigns"><CampaignFormPage /></RequireFeature>} />
@@ -97,7 +97,7 @@ export default function App() {
                 <Route path="/webphone" element={<RequireFeature feature="webphone"><WebphonePage /></RequireFeature>} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/pbx" element={<PbxIntegrationPage />} />
-                <Route path="/telephony" element={<TelephonyPage />} />
+                <Route path="/telephony" element={<RequireFeature feature="telephony"><TelephonyPage /></RequireFeature>} />
               </Route>
 
               {/* Fallback */}

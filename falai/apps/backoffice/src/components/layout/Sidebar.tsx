@@ -11,12 +11,14 @@ import {
   Phone,
   Radio,
   Cpu,
+  ToggleRight,
 } from 'lucide-react';
 import { clsx } from '@/lib/utils';
 
 const NAV = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/tenants', icon: Building2, label: 'Tenants' },
+  { to: '/features', icon: ToggleRight, label: 'Funcionalidades' },
   { to: '/moderation', icon: ShieldCheck, label: 'Moderação' },
   { to: '/models', icon: Cpu, label: 'Modelos' },
   { to: '/calls', icon: Phone, label: 'Chamadas' },

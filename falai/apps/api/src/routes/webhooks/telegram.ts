@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { timingSafeEqual } from "node:crypto";
 import { prisma } from "@falai/db";
 import { ingestInbound } from "../../services/textChannels.service.js";
+import { tenantHasFeature } from "../../services/features.js";
 
 interface TelegramUpdate {
   message?: {
@@ -33,6 +34,9 @@ export const telegramWebhookRoutes: FastifyPluginAsync = async (fastify) => {
     if (!inbox || typeof secret !== "string" || !safeEqual(secret, inbox.webhookSecret)) {
       return reply.status(401).send({ ok: false });
     }
+
+    // Funcionalidade desligada: aceita (senão o Telegram reenvia) e ignora.
+    if (!(await tenantHasFeature(inbox.tenantId, "inbox"))) return { ok: true };
 
     const m = request.body?.message;
     // Só conversas privadas; grupos e edições ficam de fora até alguém pedir.

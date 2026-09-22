@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Bot, Globe, Mail, Send, StickyNote, UserRound, Paperclip, AlertTriangle, Inbox as InboxIcon, Settings2 } from 'lucide-react';
+import { Bot, MessageCircle, Globe, Mail, Send, StickyNote, UserRound, Paperclip, AlertTriangle, Inbox as InboxIcon, Settings2 } from 'lucide-react';
 import { conversationsApi, inboxesApi, cannedApi, teamApi, apiBaseUrl, ApiError } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -15,7 +15,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { clsx, formatDate } from '@/lib/utils';
 import type { Channel, Conversation, ConversationDetail, ConversationStatus } from '@/types';
 
-const channelIcon: Record<Channel, typeof Mail> = { WEBCHAT: Globe, EMAIL: Mail, TELEGRAM: Send };
+const channelIcon: Record<Channel, typeof Mail> = { WEBCHAT: Globe, EMAIL: Mail, TELEGRAM: Send, WHATSAPP: MessageCircle };
 
 const statusColor: Record<ConversationStatus, string> = {
   OPEN: 'bg-emerald-100 text-emerald-700',
