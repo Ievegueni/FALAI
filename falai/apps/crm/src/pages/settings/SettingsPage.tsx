@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Save, RotateCcw } from 'lucide-react';
+import { Save, RotateCcw, Copy } from 'lucide-react';
 import { settingsApi } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/layout/Header';
@@ -73,9 +73,15 @@ export function SettingsPage() {
     onError: (e: Error) => error(e.message),
   });
 
+  const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
+
   const rotateSecret = useMutation({
     mutationFn: settingsApi.rotateSecret,
-    onSuccess: () => success(t('settings.secretRotated')),
+    onSuccess: (res) => {
+      setRevealedSecret(res.webhookSecret);
+      success(t('settings.secretRotated'));
+      void qc.invalidateQueries({ queryKey: ['settings'] });
+    },
     onError: (e: Error) => error(e.message),
   });
 
@@ -138,9 +144,19 @@ export function SettingsPage() {
               <div>
                 <p className="text-sm font-medium text-gray-700 mb-1">{t('settings.hmacSecret')}</p>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500 font-mono">
-                    {'•'.repeat(40)}
+                  <code className="flex-1 rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-500 font-mono break-all">
+                    {revealedSecret ?? '•'.repeat(40)}
                   </code>
+                  {revealedSecret && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      icon={<Copy className="h-3.5 w-3.5" />}
+                      onClick={() => { void navigator.clipboard.writeText(revealedSecret); }}
+                    >
+                      {t('settings.copySecret')}
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -155,6 +171,9 @@ export function SettingsPage() {
                     {t('settings.regenerate')}
                   </Button>
                 </div>
+                {revealedSecret && (
+                  <p className="mt-1 text-xs text-red-600 font-medium">{t('settings.copySecretWarn')}</p>
+                )}
               </div>
             )}
           </div>

@@ -64,6 +64,23 @@ export class ElevenLabsAdapter implements TtsProvider {
     };
   }
 
+  async listVoices(): Promise<Array<{ voiceId: string; name: string }> | null> {
+    if (this.config.stubMode) return null;
+    try {
+      const res = await fetch(`${ELEVENLABS_BASE}/voices`, {
+        headers: { "xi-api-key": this.config.apiKey },
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as { voices?: Array<{ voice_id?: string; name?: string }> };
+      if (!Array.isArray(body.voices)) return null;
+      return body.voices
+        .filter((v): v is { voice_id: string; name?: string } => typeof v.voice_id === "string")
+        .map((v) => ({ voiceId: v.voice_id, name: v.name ?? v.voice_id }));
+    } catch {
+      return null;
+    }
+  }
+
   async healthCheck(): Promise<{ ok: boolean; details?: string }> {
     if (this.config.stubMode) return { ok: true, details: "stub mode" };
     try {

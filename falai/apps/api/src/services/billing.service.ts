@@ -1,4 +1,16 @@
 import { prisma, type BillingMode } from "@falai/db";
+import { getSetting } from "./settings.service.js";
+
+/** Chave em SystemSetting com o custo fixo (em cêntimos) que pagamos ao fornecedor por chamada atendida. */
+export const PROVIDER_COST_PER_CALL_SETTING = "PROVIDER_COST_PER_CALL_CENTS";
+const DEFAULT_PROVIDER_COST_PER_CALL_CENTS = 3000; // 30 Kz
+
+/** Custo actual por chamada, editável no backoffice (aba Financeiro). */
+export async function getProviderCostPerCallCents(): Promise<number> {
+  const stored = await getSetting(PROVIDER_COST_PER_CALL_SETTING);
+  const parsed = stored != null ? parseInt(stored, 10) : NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_PROVIDER_COST_PER_CALL_CENTS;
+}
 
 export interface PriceConfig {
   billingMode: BillingMode;
@@ -85,11 +97,13 @@ export async function settleCall(params: {
   const actualCents = computeCallCost(billedSecs, price);
   // Positive = over-reserved (refund to tenant); negative = under-reserved (extra debit)
   const delta = reservedCents - actualCents;
+  // Só houve custo real junto do fornecedor se a chamada chegou a decorrer.
+  const providerCostCents = billedSecs > 0 ? await getProviderCostPerCallCents() : 0;
 
   await prisma.$transaction(async (tx) => {
     await tx.call.update({
       where: { id: callId },
-      data: { costCents: actualCents, billedSecs },
+      data: { costCents: actualCents, billedSecs, providerCostCents },
     });
 
     if (delta !== 0) {

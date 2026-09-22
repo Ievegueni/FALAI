@@ -1,6 +1,6 @@
 import { formatInTimeZone } from 'date-fns-tz';
 import { ptBR } from 'date-fns/locale';
-import type { AgentStatus, CallStatus, TenantStatus, TransactionType } from '@/types';
+import type { AgentStatus, CallStatus, CampaignStatus, TenantStatus, TransactionType } from '@/types';
 
 const TZ = 'Africa/Luanda';
 
@@ -76,6 +76,7 @@ export const callStatusLabel: Record<CallStatus, string> = {
   IN_PROGRESS: 'Em curso',
   COMPLETED: 'Concluída',
   NO_ANSWER: 'Sem resposta',
+  BUSY: 'Ocupado',
   FAILED: 'Falhou',
   CANCELLED: 'Cancelada',
   ESCALATED: 'Escalada',
@@ -88,9 +89,28 @@ export const callStatusColor: Record<CallStatus, string> = {
   IN_PROGRESS: 'bg-indigo-100 text-indigo-700',
   COMPLETED: 'bg-emerald-100 text-emerald-700',
   NO_ANSWER: 'bg-amber-100 text-amber-700',
+  BUSY: 'bg-orange-100 text-orange-700',
   FAILED: 'bg-red-100 text-red-700',
   CANCELLED: 'bg-gray-100 text-gray-500',
   ESCALATED: 'bg-purple-100 text-purple-700',
+};
+
+export const campaignStatusLabel: Record<CampaignStatus, string> = {
+  DRAFT: 'Rascunho',
+  SCHEDULED: 'Agendada',
+  RUNNING: 'A decorrer',
+  PAUSED: 'Pausada',
+  DONE: 'Concluída',
+  CANCELLED: 'Cancelada',
+};
+
+export const campaignStatusColor: Record<CampaignStatus, string> = {
+  DRAFT: 'bg-gray-100 text-gray-700',
+  SCHEDULED: 'bg-blue-100 text-blue-700',
+  RUNNING: 'bg-indigo-100 text-indigo-700',
+  PAUSED: 'bg-amber-100 text-amber-700',
+  DONE: 'bg-emerald-100 text-emerald-700',
+  CANCELLED: 'bg-red-100 text-red-700',
 };
 
 export const txTypeLabel: Record<TransactionType, string> = {

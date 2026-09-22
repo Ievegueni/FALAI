@@ -13,13 +13,29 @@ export interface ResolvedApiKey {
   prefix: string;
 }
 
+/** Registo completo devolvido pelo `resolveApiKey` (ou `null` se não resolver). */
+type ApiKeyRecord = Awaited<ReturnType<typeof resolveApiKey>>;
+
 declare module "fastify" {
   interface FastifyInstance {
     /** Returns a preHandler that verifies an API key and checks a scope. */
     verifyScope: (scope: string) => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    /**
+     * Hook `onRequest` que resolve a chave de API para o pedido. Existe para o
+     * rate-limit poder contar por chave: o `@fastify/rate-limit` corre em
+     * `onRequest` e o `verifyScope` é um `preHandler`, portanto o `keyGenerator`
+     * via sempre `request.apiKey` a `undefined` e caía no IP, metendo todos os
+     * clientes atrás do mesmo NAT no mesmo balde. Só resolve; quem valida IP e
+     * scope (e responde 401/403) continua a ser o `verifyScope`.
+     */
+    resolveApiKeyEarly: (request: FastifyRequest) => Promise<void>;
   }
   interface FastifyRequest {
     apiKey?: ResolvedApiKey;
+    /** Preenchido pelo `resolveApiKeyEarly`, antes de qualquer verificação. */
+    apiKeyRecord?: ApiKeyRecord;
+    /** `true` se o `resolveApiKeyEarly` correu neste pedido. */
+    apiKeyResolved?: boolean;
   }
 }
 
@@ -60,6 +76,15 @@ function extractRawKey(request: FastifyRequest): string | null {
 }
 
 export default fp(async (fastify) => {
+  fastify.decorateRequest("apiKeyRecord", undefined);
+  fastify.decorateRequest("apiKeyResolved", false);
+
+  fastify.decorate("resolveApiKeyEarly", async (request: FastifyRequest): Promise<void> => {
+    request.apiKeyResolved = true;
+    const rawKey = extractRawKey(request);
+    request.apiKeyRecord = rawKey ? await resolveApiKey(rawKey) : null;
+  });
+
   fastify.decorate(
     "verifyScope",
     (scope: string) =>
@@ -72,7 +97,9 @@ export default fp(async (fastify) => {
           });
         }
 
-        const apiKey = await resolveApiKey(rawKey);
+        // Se o `resolveApiKeyEarly` já correu (é o caso das rotas /v1), reaproveita
+        // o resultado em vez de ir outra vez à base de dados pela mesma chave.
+        const apiKey = request.apiKeyResolved ? request.apiKeyRecord : await resolveApiKey(rawKey);
         if (!apiKey) {
           return reply.status(401).send({ error: "Invalid, revoked, or expired API key" });
         }

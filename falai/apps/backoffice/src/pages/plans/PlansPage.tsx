@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Pencil, Trash2, CreditCard } from 'lucide-react';
-import { plansApi } from '@/lib/api';
+import { plansApi, productsApi } from '@/lib/api';
 import { Card, Button, PageSpinner, EmptyState, Modal, Input, Select, Badge } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
 import { formatAOA } from '@/lib/utils';
-import type { Plan, ProductType, BillingMode } from '@/types';
+import { BASE_TYPE_LABELS as PRODUCT_LABELS, BASE_TYPE_BADGE as PRODUCT_BADGE } from '@/pages/products/ProductsPage';
+import type { Plan, Product, BillingMode } from '@/types';
 
 const BILLING_LABELS: Record<BillingMode, string> = {
   PER_MINUTE: 'Por minuto',
@@ -13,24 +14,14 @@ const BILLING_LABELS: Record<BillingMode, string> = {
   PER_CALL: 'Por chamada',
 };
 
-const PRODUCT_LABELS: Record<ProductType, string> = {
-  VOICE_AI: 'Operador (PBX + IA)',
-  CRM_BYO_PBX: 'CRM (PBX do cliente)',
-  API_BYOM: 'API (modelo do cliente)',
-};
-
-const PRODUCT_BADGE: Record<ProductType, string> = {
-  VOICE_AI: 'bg-blue-100 text-blue-700',
-  CRM_BYO_PBX: 'bg-purple-100 text-purple-700',
-  API_BYOM: 'bg-teal-100 text-teal-700',
-};
-
-
-function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
+function PlanModal({ plan, products, onClose }: { plan?: Plan; products: Product[]; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
   const [name, setName] = useState(plan?.name ?? '');
-  const [productType, setProductType] = useState<ProductType>(plan?.productType ?? 'VOICE_AI');
+  const [productId, setProductId] = useState(plan?.productId ?? '');
+  const product = products.find((p) => p.id === productId);
+  // Inactivos só aparecem se já forem o produto deste plano.
+  const productOptions = products.filter((p) => p.isActive || p.id === plan?.productId);
   const [aiAgentsEnabled, setAiAgentsEnabled] = useState(plan?.aiAgentsEnabled ?? true);
   const [clinicEnabled, setClinicEnabled] = useState(plan?.clinicEnabled ?? false);
   const [smsEnabled, setSmsEnabled] = useState(plan?.smsEnabled ?? false);
@@ -42,11 +33,23 @@ function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
   const [maxConcurrent, setMaxConcurrent] = useState(plan ? String(plan.maxConcurrentCalls) : '1');
   const [maxAgents, setMaxAgents] = useState(plan ? String(plan.maxAgents) : '5');
 
+  // Num plano novo, escolher o produto aplica os defaults dele.
+  const selectProduct = (id: string) => {
+    setProductId(id);
+    const p = products.find((x) => x.id === id);
+    if (!p || plan) return;
+    setAiAgentsEnabled(p.aiAgentsEnabled);
+    setClinicEnabled(p.clinicEnabled);
+    setSmsEnabled(p.smsEnabled);
+    setMonthlyFee(String(p.monthlyFeeCents / 100));
+  };
+
   const mut = useMutation({
     mutationFn: () => {
       const body: Omit<Plan, 'id' | 'isActive'> = {
         name,
-        productType,
+        productId: productId || null,
+        productType: product?.baseType ?? plan?.productType ?? 'VOICE_AI',
         aiAgentsEnabled,
         clinicEnabled,
         smsEnabled,
@@ -77,16 +80,22 @@ function PlanModal({ plan, onClose }: { plan?: Plan; onClose: () => void }) {
       footer={
         <>
           <Button variant="outline" onClick={onClose}>Cancelar</Button>
-          <Button loading={mut.isPending} onClick={() => mut.mutate()}>Guardar</Button>
+          <Button loading={mut.isPending} disabled={!productId} onClick={() => mut.mutate()}>Guardar</Button>
         </>
       }
     >
       <div className="space-y-4">
         <Input label="Nome" value={name} onChange={(e) => setName(e.target.value)} required />
-        <Select label="Tipo de produto" value={productType} onChange={(e) => setProductType(e.target.value as ProductType)}>
-          <option value="VOICE_AI">{PRODUCT_LABELS.VOICE_AI}</option>
-          <option value="CRM_BYO_PBX">{PRODUCT_LABELS.CRM_BYO_PBX}</option>
-          <option value="API_BYOM">{PRODUCT_LABELS.API_BYOM}</option>
+        <Select
+          label="Produto"
+          value={productId}
+          onChange={(e) => selectProduct(e.target.value)}
+          hint={product ? `Tipo base: ${PRODUCT_LABELS[product.baseType]}` : 'Crie produtos na aba Produtos.'}
+        >
+          <option value="">Seleccionar produto…</option>
+          {productOptions.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}{p.isActive ? '' : ' (inactivo)'}</option>
+          ))}
         </Select>
         <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
           <input
@@ -168,6 +177,12 @@ export function PlansPage() {
     queryFn: () => plansApi.list(),
   });
 
+  const { data: products } = useQuery({
+    queryKey: ['admin', 'products'],
+    queryFn: () => productsApi.list(),
+  });
+  const productName = (id: string | null) => products?.find((p) => p.id === id)?.name;
+
   const deleteMut = useMutation({
     mutationFn: (id: string) => plansApi.delete(id),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['admin', 'plans'] }); toast.success('Plano removido.'); },
@@ -202,7 +217,7 @@ export function PlansPage() {
                   <h3 className="text-base font-semibold text-gray-900">{plan.name}</h3>
                   <div className="flex flex-wrap gap-1 mt-1">
                     <Badge className={PRODUCT_BADGE[plan.productType] ?? PRODUCT_BADGE.VOICE_AI}>
-                      {PRODUCT_LABELS[plan.productType]}
+                      {productName(plan.productId) ?? PRODUCT_LABELS[plan.productType]}
                     </Badge>
                     <Badge className={plan.aiAgentsEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}>
                       {plan.aiAgentsEnabled ? 'Com IA' : 'Sem IA'}
@@ -234,7 +249,7 @@ export function PlansPage() {
       )}
 
       {modal !== null && (
-        <PlanModal plan={modal === 'new' ? undefined : modal} onClose={() => setModal(null)} />
+        <PlanModal plan={modal === 'new' ? undefined : modal} products={products ?? []} onClose={() => setModal(null)} />
       )}
     </div>
   );

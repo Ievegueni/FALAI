@@ -13,7 +13,12 @@ const DIALING_TIMEOUT_MS = 10 * 60 * 1000;
  */
 const IN_PROGRESS_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
-export type ReconcileStaleCallsResult = { closed: number; ids: string[] };
+export type ReconcileStaleCallsResult = {
+  closed: number;
+  ids: string[];
+  /** Campanhas que fecharam como DONE por causa desta reconciliação — o caller trata de notificar (webhook). */
+  completedCampaigns: Array<{ campaignId: string; tenantId: string; completed: number; failed: number }>;
+};
 
 /**
  * Fecha chamadas presas em estados não-terminais há demasiado tempo sem
@@ -31,10 +36,10 @@ export async function reconcileStaleCalls(now: Date = new Date()): Promise<Recon
         { status: "IN_PROGRESS", updatedAt: { lt: inProgressCutoff } },
       ],
     },
-    select: { id: true },
+    select: { id: true, campaignId: true },
   });
 
-  if (stale.length === 0) return { closed: 0, ids: [] };
+  if (stale.length === 0) return { closed: 0, ids: [], completedCampaigns: [] };
 
   const ids = stale.map((c) => c.id);
   await prisma.call.updateMany({
@@ -46,5 +51,41 @@ export async function reconcileStaleCalls(now: Date = new Date()): Promise<Recon
     },
   });
 
-  return { closed: ids.length, ids };
+  // Sem isto o CampaignContact ficava para sempre em IN_PROGRESS mesmo com a
+  // Call já fechada acima — a campanha nunca via "remaining = 0", ficava presa
+  // em RUNNING para sempre e bloqueava a próxima campanha da fila do cliente.
+  // Relato do cliente FACIL CREDITO, 2026-09-21 (campanhas cmuau5vnn.../cmuau5xat...).
+  const campaignIds = [...new Set(stale.map((c) => c.campaignId).filter((id): id is string => id !== null))];
+  const completedCampaigns: ReconcileStaleCallsResult["completedCampaigns"] = [];
+
+  for (const campaignId of campaignIds) {
+    const callIdsForCampaign = stale.filter((c) => c.campaignId === campaignId).map((c) => c.id);
+
+    const { count: contactsFixed } = await prisma.campaignContact.updateMany({
+      where: { campaignId, callId: { in: callIdsForCampaign }, status: "IN_PROGRESS" },
+      data: { status: "FAILED" },
+    });
+
+    const campaign = await prisma.campaign.findUnique({ where: { id: campaignId }, select: { status: true, tenantId: true } });
+    if (!campaign || campaign.status !== "RUNNING") continue;
+
+    if (contactsFixed > 0) {
+      await prisma.campaign.update({ where: { id: campaignId }, data: { failedCount: { increment: contactsFixed } } });
+    }
+
+    const remaining = await prisma.campaignContact.count({
+      where: { campaignId, status: { in: ["PENDING", "QUEUED", "IN_PROGRESS"] } },
+    });
+
+    if (remaining === 0) {
+      const [completed, failed] = await Promise.all([
+        prisma.campaignContact.count({ where: { campaignId, status: "COMPLETED" } }),
+        prisma.campaignContact.count({ where: { campaignId, status: "FAILED" } }),
+      ]);
+      await prisma.campaign.update({ where: { id: campaignId }, data: { status: "DONE", completed, failedCount: failed } });
+      completedCampaigns.push({ campaignId, tenantId: campaign.tenantId, completed, failed });
+    }
+  }
+
+  return { closed: ids.length, ids, completedCampaigns };
 }

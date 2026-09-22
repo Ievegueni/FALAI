@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import fastifyCors from "@fastify/cors";
 import fastifyWebSocket from "@fastify/websocket";
 import fastifyRateLimit from "@fastify/rate-limit";
@@ -26,6 +26,7 @@ import { adminTestCallRoutes } from "./routes/admin/test-call.js";
 import { adminCallsRoutes } from "./routes/admin/calls.js";
 import { adminSimulateRoutes } from "./routes/admin/simulate-conversation.js";
 import { adminPlansRoutes } from "./routes/admin/plans.js";
+import { adminProductsRoutes } from "./routes/admin/products.js";
 import { adminTenantsRoutes } from "./routes/admin/tenants.js";
 import { adminTenantApiKeysRoutes } from "./routes/admin/tenant-api-keys.js";
 import { adminAgentsModerationRoutes } from "./routes/admin/agents-moderation.js";
@@ -113,6 +114,35 @@ function parseTrustedProxies(raw: string | undefined): string[] | false {
   return list.length > 0 ? list : false;
 }
 
+/**
+ * Chave do rate-limit global: por tenant/admin autenticado, não por IP.
+ * Um escritório inteiro (ou toda a Internet atrás de um NAT/proxy da operadora,
+ * comum em Angola) partilha o mesmo IP público — com a chave por IP, uma
+ * campanha de um cliente com muitos contactos gastava o balde inteiro à custa
+ * de todos os outros pedidos (dashboard, outros tenants) que passassem pelo
+ * mesmo endereço. Descodifica o JWT sem verificar assinatura — é só para
+ * agrupar o balde, a autenticação real continua a cargo dos preHandlers de
+ * cada rota.
+ */
+function rateLimitKey(fastify: { jwt: { decode: (token: string) => unknown } }) {
+  return (req: FastifyRequest): string => {
+    const header = req.headers.authorization;
+    const token = typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : undefined;
+    if (token) {
+      try {
+        const payload = fastify.jwt.decode(token) as
+          | { type?: string; tenantId?: string; sub?: string }
+          | null;
+        if (payload?.type === "tenant" && payload.tenantId) return `tenant:${payload.tenantId}`;
+        if (payload?.type === "admin" && payload.sub) return `admin:${payload.sub}`;
+      } catch {
+        // token ilegível — cai para o IP, tal como antes
+      }
+    }
+    return req.ip;
+  };
+}
+
 async function buildApp() {
   const fastify = Fastify({
     logger:
@@ -144,8 +174,9 @@ async function buildApp() {
   await fastify.register(fastifyWebSocket);
   await fastify.register(fastifyRateLimit, {
     global: true,
-    max: 200,
+    max: 500,
     timeWindow: "1 minute",
+    keyGenerator: rateLimitKey(fastify),
     redis: new Redis(config.REDIS_URL),
   });
 
@@ -254,6 +285,7 @@ async function buildApp() {
   await fastify.register(adminCallsRoutes, { prefix: "/admin/calls" });
   await fastify.register(adminSimulateRoutes, { prefix: "/admin/simulate-conversation" });
   await fastify.register(adminPlansRoutes, { prefix: "/admin/plans" });
+  await fastify.register(adminProductsRoutes, { prefix: "/admin/products" });
   await fastify.register(adminTenantsRoutes, { prefix: "/admin/tenants" });
   await fastify.register(adminTenantApiKeysRoutes, { prefix: "/admin/tenants" });
   await fastify.register(adminTrunksRoutes, { prefix: "/admin/trunks" });
@@ -290,14 +322,18 @@ async function buildApp() {
 
   // ── Public API v1 (API key authenticated, per-key rate limiting) ─────────
   await fastify.register(async (v1) => {
+    // A chave tem de ficar resolvida ANTES do limitador: ele conta em
+    // `onRequest` e o `verifyScope` só corre no `preHandler`. Sem este hook o
+    // `keyGenerator` via sempre `apiKey` a `undefined` e caía no `req.ip`, ou
+    // seja, o limite de 300/min era partilhado por todos os clientes que
+    // saíssem pelo mesmo IP público (NAT da operadora, escritório, gateway).
+    v1.addHook("onRequest", fastify.resolveApiKeyEarly);
+
     // Per-API-key rate limit: 300 req/min (separate from global limit)
     await v1.register(fastifyRateLimit, {
       max: 300,
       timeWindow: "1 minute",
-      keyGenerator: (req) => {
-        const apiKey = (req as typeof req & { apiKey?: { id: string } }).apiKey;
-        return apiKey?.id ?? req.ip;
-      },
+      keyGenerator: (req) => req.apiKeyRecord?.id ?? req.ip,
       redis: new Redis(config.REDIS_URL),
     });
     await v1.register(v1CallsRoutes);

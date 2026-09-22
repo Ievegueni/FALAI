@@ -522,10 +522,31 @@ model AdminUser {
   updatedAt    DateTime  @updatedAt
 }
 
+// Catálogo comercial gerido no backoffice. O comportamento (faturação,
+// telefonia, acesso ao CRM) continua a vir do baseType: um produto novo é um
+// nome e uns defaults por cima de um dos três tipos base. Os planos copiam o
+// baseType para Plan.productType, que é o que o resto do código lê.
+model Product {
+  id              String      @id @default(cuid())
+  name            String
+  description     String?
+  baseType        ProductType @default(VOICE_AI)
+  aiAgentsEnabled Boolean     @default(true) // defaults sugeridos ao criar um plano
+  clinicEnabled   Boolean     @default(false)
+  smsEnabled      Boolean     @default(false)
+  monthlyFeeCents Int         @default(0)
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  plans           Plan[]
+}
+
 model Plan {
   id                  String      @id @default(cuid())
   name                String
-  productType         ProductType @default(VOICE_AI)
+  product             Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productId           String?
+  productType         ProductType @default(VOICE_AI) // espelho de product.baseType
   aiAgentsEnabled     Boolean     @default(true) // se o cliente tem agentes de IA
   clinicEnabled       Boolean     @default(false) // acesso ao módulo Clínica
   smsEnabled          Boolean     @default(false) // acesso ao envio de SMS
@@ -829,6 +850,17 @@ model WalletTransaction {
   note              String?
   createdBy         String?
   createdAt         DateTime @default(now())
+}
+
+// Compras de saldo junto do fornecedor (ex.: crédito de voz/telefonia). Serve
+// para controlar quanto resta do saldo comprado, descontando o custo
+// acumulado em Call.providerCostCents (ver billing.service.ts).
+model ProviderTopUp {
+  id          String   @id @default(cuid())
+  amountCents Int
+  note        String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
 }
 
 // ============ AUDITORIA & SAÚDE ============

@@ -2,6 +2,7 @@ import fp from "fastify-plugin";
 import { Queue } from "bullmq";
 import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter } from "@falai/providers";
 import type { TtsProvider } from "@falai/providers";
+import { TtsVoiceValidator } from "../services/ttsVoices.service.js";
 import { prisma } from "@falai/db";
 import { config } from "../config.js";
 import { QUEUES, JOBS } from "@falai/shared";
@@ -14,6 +15,8 @@ import { notifyMissedCall } from "../services/missedCallSms.service.js";
 declare module "fastify" {
   interface FastifyInstance {
     callEngine: CallEngineService;
+    /** Valida ttsVoiceId contra a lista real do provedor, antes de gravar. */
+    ttsVoices: TtsVoiceValidator;
     /** True quando o LLM corre em modo stub (sem chave real) — respostas não são IA real. */
     llmStub: boolean;
   }
@@ -48,6 +51,8 @@ export default fp(async (fastify) => {
 
   const defaultVoiceId = useMacTts ? "Joana" : providers.elevenlabs.defaultVoiceId;
 
+  fastify.decorate("ttsVoices", new TtsVoiceValidator(fastify.redis, tts));
+
   const audioCache = new AudioCache(fastify.redis, tts, fastify.telephony, defaultVoiceId);
   const turnProcessor = new TurnProcessor(stt, llm, tts, fastify.telephony, audioCache);
   const webhooksQueue = new Queue(QUEUES.WEBHOOKS_OUT, {
@@ -81,7 +86,10 @@ export default fp(async (fastify) => {
         prisma.tenant.findUnique({ where: { id: tenantId }, select: { webhookUrl: true } }),
         prisma.call.findUnique({
           where: { id: callId },
-          select: { campaignId: true, contactId: true, toNumber: true, outcome: true, failReason: true, costCents: true, recordingUrl: true },
+          select: {
+            campaignId: true, contactId: true, toNumber: true, outcome: true, failReason: true,
+            costCents: true, recordingUrl: true, startedAt: true, answeredAt: true,
+          },
         }),
       ])
         .then(([tenant, call]) => {
@@ -104,6 +112,8 @@ export default fp(async (fastify) => {
                 failReason: call?.failReason ?? null,
                 costCents: call?.costCents ?? 0,
                 recordingUrl: call?.recordingUrl ?? null,
+                startedAt: call?.startedAt ?? null,
+                answeredAt: call?.answeredAt ?? null,
               },
             },
             { attempts: 3, backoff: { type: "exponential", delay: 5000 } }

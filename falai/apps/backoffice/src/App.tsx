@@ -13,6 +13,7 @@ import { TenantDetailPage } from '@/pages/tenants/TenantDetailPage';
 import { ModerationPage } from '@/pages/moderation/ModerationPage';
 import { ModelsPage } from '@/pages/models/ModelsPage';
 import { PlansPage } from '@/pages/plans/PlansPage';
+import { ProductsPage } from '@/pages/products/ProductsPage';
 import { FinancePage } from '@/pages/finance/FinancePage';
 import { HealthPage } from '@/pages/health/HealthPage';
 import { AuditPage } from '@/pages/audit/AuditPage';
@@ -46,6 +47,7 @@ export default function App() {
                 <Route path="/calls/:id" element={<CallDetailPage />} />
                 <Route path="/trunks" element={<TrunksPage />} />
                 <Route path="/finance" element={<FinancePage />} />
+                <Route path="/products" element={<ProductsPage />} />
                 <Route path="/plans" element={<PlansPage />} />
                 <Route path="/health" element={<HealthPage />} />
                 <Route path="/audit" element={<AuditPage />} />

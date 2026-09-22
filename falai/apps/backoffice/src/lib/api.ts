@@ -7,12 +7,17 @@ import type {
   AuditLog,
   BillingMode,
   Call,
+  Campaign,
   FinanceSummary,
   HealthStatus,
   MarginRow,
   Paginated,
   Plan,
+  ProviderBalance,
+  ProviderTopUp,
   ProductType,
+  Product,
+  ProductInput,
   SystemEvent,
   SystemSetting,
   Tenant,
@@ -145,6 +150,9 @@ export const tenantsApi = {
   calls: (id: string, params?: { page?: number; perPage?: number }) =>
     get<Paginated<Call>>(`/admin/tenants/${id}/calls${qs({ page: params?.page ?? 1, perPage: params?.perPage ?? 10 })}`),
 
+  campaigns: (id: string, params?: { page?: number; perPage?: number }) =>
+    get<Paginated<Campaign>>(`/admin/tenants/${id}/campaigns${qs({ page: params?.page ?? 1, perPage: params?.perPage ?? 10 })}`),
+
   transactions: (id: string, params?: { page?: number; perPage?: number }) =>
     get<Paginated<WalletTransaction>>(
       `/admin/tenants/${id}/transactions${qs({ page: params?.page ?? 1, perPage: params?.perPage ?? 10 })}`,
@@ -259,6 +267,7 @@ interface ModerationResult {
 interface RawPlan {
   id: string;
   name: string;
+  productId: string | null;
   productType: ProductType;
   aiAgentsEnabled: boolean;
   clinicEnabled: boolean;
@@ -276,6 +285,7 @@ interface RawPlan {
 const toPlan = (p: RawPlan): Plan => ({
   id: p.id,
   name: p.name,
+  productId: p.productId ?? null,
   productType: p.productType ?? 'VOICE_AI',
   aiAgentsEnabled: p.aiAgentsEnabled ?? true,
   clinicEnabled: p.clinicEnabled ?? false,
@@ -292,6 +302,7 @@ const toPlan = (p: RawPlan): Plan => ({
 
 const toRawPlanBody = (data: Partial<Omit<Plan, 'id' | 'isActive'>>) => ({
   ...(data.name !== undefined && { name: data.name }),
+  ...(data.productId !== undefined && { productId: data.productId }),
   ...(data.productType !== undefined && { productType: data.productType }),
   ...(data.aiAgentsEnabled !== undefined && { aiAgentsEnabled: data.aiAgentsEnabled }),
   ...(data.clinicEnabled !== undefined && { clinicEnabled: data.clinicEnabled }),
@@ -315,6 +326,27 @@ export const plansApi = {
     patch<{ plan: RawPlan }>(`/admin/plans/${id}`, toRawPlanBody(data)).then((r) => toPlan(r.plan)),
 
   delete: (id: string) => del<void>(`/admin/plans/${id}`),
+};
+
+// ─── Products ────────────────────────────────────────────────────────────────
+
+type RawProduct = Omit<Product, 'planCount'> & { _count?: { plans: number } };
+
+const toProduct = (p: RawProduct): Product => {
+  const { _count, ...rest } = p;
+  return { ...rest, planCount: _count?.plans ?? 0 };
+};
+
+export const productsApi = {
+  list: () => get<{ products: RawProduct[] }>('/admin/products').then((r) => r.products.map(toProduct)),
+
+  create: (data: ProductInput) =>
+    post<{ product: RawProduct }>('/admin/products', data).then((r) => toProduct(r.product)),
+
+  update: (id: string, data: Partial<ProductInput>) =>
+    patch<{ product: RawProduct }>(`/admin/products/${id}`, data).then((r) => toProduct(r.product)),
+
+  delete: (id: string) => del<void>(`/admin/products/${id}`),
 };
 
 // ─── Trunks (módulo PBX nativo) ──────────────────────────────────────────────
@@ -383,6 +415,14 @@ export const financeApi = {
 
   marginReport: (params: { from: string; to: string }) =>
     get<MarginRow[]>(`/admin/finance/margin-report${qs({ from: params.from, to: params.to })}`),
+
+  providerBalance: () => get<ProviderBalance>('/admin/finance/provider-balance'),
+
+  updateProviderCost: (costPerCallCents: number) =>
+    put<{ ok: true; costPerCallCents: number }>('/admin/finance/provider-cost', { costPerCallCents }),
+
+  addProviderTopup: (data: { amountCents: number; note?: string }) =>
+    post<ProviderTopUp>('/admin/finance/provider-topup', data),
 };
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -437,8 +477,14 @@ export const auditApi = {
 export const callsApi = {
   get: (id: string) => get<Call>(`/admin/calls/${id}`),
 
-  list: (params?: { page?: number; tenantId?: string; status?: string }) =>
+  list: (params?: { page?: number; tenantId?: string; status?: string; dateFrom?: string; dateTo?: string }) =>
     get<Paginated<Call>>(
-      `/admin/calls${qs({ page: params?.page ?? 1, tenantId: params?.tenantId, status: params?.status })}`,
+      `/admin/calls${qs({
+        page: params?.page ?? 1,
+        tenantId: params?.tenantId,
+        status: params?.status,
+        dateFrom: params?.dateFrom,
+        dateTo: params?.dateTo,
+      })}`,
     ),
 };

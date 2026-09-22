@@ -102,11 +102,16 @@ function mapTenant(t: any) {
           pricePerCallCents: t.plan.pricePerCallCents ?? 0,
           monthlyFeeCents: t.plan.monthlyFeeCents ?? 0,
           maxAgents: t.plan.maxAgents ?? 0,
-          maxConcurrentCalls: t.plan.maxConcurrent ?? t.maxConcurrent ?? 1,
+          // O que o PLANO permite. Antes caía para `t.maxConcurrent`, o que
+          // punha o valor do cliente dentro do objecto do plano: na listagem
+          // via-se o teto do plano (ex.: 10) e no detalhe o do cliente (1),
+          // com o dispatcher a obedecer ao segundo. Ver `campaignDispatcher`.
+          maxConcurrentCalls: t.plan.maxConcurrent ?? 1,
           aiAgentsEnabled: t.plan.aiAgentsEnabled ?? true,
           isActive: t.plan.isActive ?? true,
         }
       : null,
+    // O limite efectivo: é este que o dispatcher de campanhas respeita.
     maxConcurrentCalls: t.maxConcurrent,
     billingModeOverride: t.billingModeOverride ?? null,
     recordCalls: t.recordCalls ?? false,
@@ -440,6 +445,36 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         .slice(skip, skip + perPage);
 
       return { data, total: callTotal + pbxTotal, page, perPage };
+    }
+  );
+
+  // GET /admin/tenants/:id/campaigns — campanhas de chamadas criadas pelo cliente e o respectivo estado
+  fastify.get<{ Params: { id: string }; Querystring: { page?: string; perPage?: string } }>(
+    "/:id/campaigns", { preHandler }, async (request) => {
+      const page = parseInt(request.query.page ?? "1", 10);
+      const perPage = parseInt(request.query.perPage ?? "10", 10);
+      const skip = (page - 1) * perPage;
+
+      const tenantId = request.params.id;
+      const [campaigns, total] = await Promise.all([
+        prisma.campaign.findMany({
+          where: { tenantId },
+          orderBy: { createdAt: "desc" }, take: perPage, skip,
+          include: { agent: { select: { name: true } } },
+        }),
+        prisma.campaign.count({ where: { tenantId } }),
+      ]);
+
+      return {
+        data: campaigns.map((c) => ({
+          id: c.id, name: c.name, mode: c.mode, status: c.status,
+          agentName: c.agent?.name ?? null,
+          totalContacts: c.totalContacts, completed: c.completed, failedCount: c.failedCount,
+          throttlePerMinute: c.throttlePerMinute,
+          createdAt: c.createdAt, updatedAt: c.updatedAt,
+        })),
+        total, page, perPage,
+      };
     }
   );
 

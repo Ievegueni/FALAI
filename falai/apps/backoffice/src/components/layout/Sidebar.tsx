@@ -11,6 +11,7 @@ import {
   Phone,
   Radio,
   Cpu,
+  Package,
 } from 'lucide-react';
 import { clsx } from '@/lib/utils';
 
@@ -22,6 +23,7 @@ const NAV = [
   { to: '/calls', icon: Phone, label: 'Chamadas' },
   { to: '/trunks', icon: Radio, label: 'Trunks' },
   { to: '/finance', icon: BarChart3, label: 'Financeiro' },
+  { to: '/products', icon: Package, label: 'Produtos' },
   { to: '/plans', icon: CreditCard, label: 'Planos' },
   { to: '/health', icon: HeartPulse, label: 'Saúde' },
   { to: '/audit', icon: ScrollText, label: 'Audit' },

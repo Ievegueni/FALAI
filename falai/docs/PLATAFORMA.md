@@ -198,7 +198,7 @@ A plataforma entrega por POST ao `webhookUrl` configurado pelo tenant os seguint
 | `campaign.paused` | campanha pausada, manual ou automaticamente, com o `reason` |
 | `campaign.completed` | campanha terminada, com os totais finais |
 
-O corpo entregue tem sempre a forma `{ event, timestamp, data }`. Todos os eventos de chamada trazem `callId` e, quando a chamada pertence a uma campanha, `campaignId`/`contactId` (caso contrário vêm a `null`), o que torna directa a correlação do lado do sistema do cliente. O `call.ended` traz ainda `status`, `durationSecs`, `outcome`, `failReason`, `costCents` e `recordingUrl`.
+O corpo entregue tem sempre a forma `{ event, timestamp, data }`. Todos os eventos de chamada trazem `callId` e, quando a chamada pertence a uma campanha, `campaignId`/`contactId` (caso contrário vêm a `null`), o que torna directa a correlação do lado do sistema do cliente. O `call.ended` traz ainda `status`, `durationSecs`, `outcome`, `failReason`, `costCents`, `recordingUrl`, `startedAt` e `answeredAt` (`null` se a chamada nunca chegou a ser atendida).
 
 As pausas automáticas (`campaign.paused`) acontecem quando o dispatcher detecta saldo insuficiente (`reason: "insufficient_balance"`), linha de saída indisponível (`"no_outbound_line"`) ou falha na geração de voz (`"tts_generation_failed"`); a pausa manual traz `reason: "manual"`.
 

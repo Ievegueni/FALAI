@@ -126,3 +126,5 @@ exten => _.,1,NoOp(ENTRADA do trunk: de ${CALLERID(num)} para ${EXTEN})
  same => n,Playback(demo-echotest)
  same => n,Echo()
  same => n(fim),Hangup()
+; `_.` também apanha a extensão `h`: sem isto, cada desligar reentrava no Stasis.
+exten => h,1,Hangup()

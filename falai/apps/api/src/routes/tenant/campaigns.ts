@@ -94,6 +94,11 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       if (!agent) return reply.status(400).send({ error: "Agente não encontrado ou não está activo" });
     }
 
+    if (body.ttsVoiceId !== undefined) {
+      const voiceCheck = await fastify.ttsVoices.assertKnownVoice(body.ttsVoiceId);
+      if (!voiceCheck.ok) return reply.status(400).send({ error: voiceCheck.error });
+    }
+
     const campaign = await prisma.campaign.create({
       data: {
         tenantId,
@@ -150,8 +155,15 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const existing = await prisma.campaign.findFirst({ where: { id: request.params.id, tenantId } });
     if (!existing) return reply.status(404).send({ error: "Campanha não encontrada" });
-    if (!["DRAFT", "SCHEDULED"].includes(existing.status)) {
+    // PAUSED entra aqui de propósito: uma campanha auto-pausada (voz TTS
+    // inválida, saldo insuficiente) tem de poder ser corrigida sem ser recriada.
+    if (!["DRAFT", "SCHEDULED", "PAUSED"].includes(existing.status)) {
       return reply.status(400).send({ error: "Campanha em curso não pode ser editada. Pausa primeiro." });
+    }
+
+    if (body.ttsVoiceId !== undefined) {
+      const voiceCheck = await fastify.ttsVoices.assertKnownVoice(body.ttsVoiceId);
+      if (!voiceCheck.ok) return reply.status(400).send({ error: voiceCheck.error });
     }
 
     const campaign = await prisma.campaign.update({

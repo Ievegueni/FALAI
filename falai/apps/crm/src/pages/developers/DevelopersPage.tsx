@@ -363,7 +363,7 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
           { name: 'offset', type: 'number', descKey: 'developers.param.offset' },
         ],
         response: `{
-  "data": [ { "id": "call_xyz789", "agentId": "agt_abc123", "toNumber": "+244923000000", "status": "COMPLETED", "durationSecs": 42, "costCents": 1500, "startedAt": "...", "endedAt": "...", "createdAt": "..." } ],
+  "data": [ { "id": "call_xyz789", "agentId": "agt_abc123", "campaignId": "cmp_001", "contactId": "cnt_001", "toNumber": "+244923000000", "status": "COMPLETED", "durationSecs": 42, "costCents": 1500, "startedAt": "...", "answeredAt": "...", "endedAt": "...", "createdAt": "..." } ],
   "total": 142,
   "limit": 20,
   "offset": 0
@@ -457,6 +457,22 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
 }`,
       },
       {
+        method: 'POST', path: '/v1/contacts/bulk', descKey: 'developers.ep.contactsBulk', scope: 'contacts:write',
+        body: `{
+  "contacts": [                // obrigatório — até 1000 por pedido
+    { "phone": "+244912000001", "name": "Maria Santos", "attributes": { "empresa": "ACME" } },
+    { "phone": "912000002" },
+    { "phone": "00244912000003", "name": "João Dias" }
+  ]
+}`,
+        response: `{
+  "created": 2,               // contactos novos criados
+  "skipped": 1,               // já existiam (ou repetidos no próprio pedido)
+  "invalid": [ { "index": 5, "reason": "Invalid phone number..." } ],
+  "received": 3
+}`,
+      },
+      {
         method: 'GET', path: '/v1/contacts', descKey: 'developers.ep.contactsList', scope: 'contacts:read',
         params: [
           { name: 'search', type: 'string', descKey: 'developers.param.contactSearch' },
@@ -531,7 +547,7 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
   "mode": "FIXED_SCRIPT",         // opcional — "VOICE_AI" (default) ou "FIXED_SCRIPT"
   "scriptText": "Olá, ligamos em nome da Empresa X sobre uma pendência em aberto...", // obrigatório se mode=FIXED_SCRIPT (mín. 10 caracteres)
   "agentId": "agt_abc123",        // obrigatório se mode=VOICE_AI
-  "ttsVoiceId": "pt-AO-female-1", // opcional — só usado em FIXED_SCRIPT
+  "ttsVoiceId": "CwhRBWXzGAHq8TQ4Fs17", // opcional — só usado em FIXED_SCRIPT; ID de voz da ElevenLabs, omitir usa a voz por omissão da conta
   "scheduleJson": { "startHour": 8, "endHour": 20 }, // opcional — janela horária de chamadas
   "retryPolicy": { "maxAttempts": 3, "retryDelayMinutes": 30 }, // opcional
   "throttlePerMinute": 5          // opcional — chamadas simultâneas por minuto (default 2)
@@ -730,7 +746,9 @@ const WEBHOOK_EVENTS = [
     "outcome": "cliente confirmou pagamento",
     "failReason": null,
     "costCents": 320,
-    "recordingUrl": "https://..."
+    "recordingUrl": "https://...",
+    "startedAt": "2026-07-20T15:00:57.000Z",
+    "answeredAt": "2026-07-20T15:01:03.000Z"
   }
 }`,
   },
@@ -879,7 +897,7 @@ function EndpointRow({ ep, baseUrl }: { ep: EndpointDef; baseUrl: string }) {
 
 function DocsPanel() {
   const { t } = useTranslation();
-  const [baseUrl, setBaseUrl] = useState('https://api.falai.ao');
+  const [baseUrl, setBaseUrl] = useState('https://api.falai.comunica.ao');
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ 'developers.groups.calls': true });
   const [openWebhook, setOpenWebhook] = useState<string | null>(null);
 
@@ -895,8 +913,8 @@ function DocsPanel() {
           <h3 className="text-sm font-semibold text-gray-900">{t('developers.baseUrl')}</h3>
           <div className="flex gap-1 rounded-lg border border-gray-200 p-0.5 bg-gray-50">
             <button
-              className={`text-xs px-3 py-1 rounded-md transition-colors ${baseUrl === 'https://api.falai.ao' ? 'bg-white shadow-sm text-gray-900 font-medium' : 'text-gray-500 hover:text-gray-700'}`}
-              onClick={() => setBaseUrl('https://api.falai.ao')}
+              className={`text-xs px-3 py-1 rounded-md transition-colors ${baseUrl === 'https://api.falai.comunica.ao' ? 'bg-white shadow-sm text-gray-900 font-medium' : 'text-gray-500 hover:text-gray-700'}`}
+              onClick={() => setBaseUrl('https://api.falai.comunica.ao')}
             >
               {t('developers.live')}
             </button>

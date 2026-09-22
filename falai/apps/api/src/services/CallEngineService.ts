@@ -458,9 +458,14 @@ export class CallEngineService {
 
     if (session.history.length > 0) void this.generateCallSummary(session);
 
-    // Settle billing for campaign/dispatcher calls
+    // Settle billing for campaign/dispatcher calls.
+    //
+    // Esperado, e não lançado em segundo plano: o `onCallEnded` logo abaixo
+    // emite o webhook lendo o custo da base de dados. Sem este await, a leitura
+    // corria contra esta escrita e ganhava — o cliente recebia `costCents: 0`
+    // numa chamada que afinal foi faturada, e só o GET dizia a verdade.
     if (session.reservedCents > 0) {
-      settleCall({
+      await settleCall({
         callId: session.callId,
         tenantId: session.tenantId,
         billedSecs: duration,

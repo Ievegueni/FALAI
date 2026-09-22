@@ -12,8 +12,9 @@ import {
   formatAOA, formatDate, formatDuration,
   tenantStatusColor, tenantStatusLabel,
   callStatusColor, callStatusLabel, txTypeLabel,
+  campaignStatusColor, campaignStatusLabel,
 } from '@/lib/utils';
-import type { TenantStatus, CallStatus, TransactionType, TenantLine, TenantLineInput, TenantUser, TenantRole, BillingMode, FeatureKey, TenantFeatures } from '@/types';
+import type { TenantStatus, CallStatus, CampaignStatus, TransactionType, TenantLine, TenantLineInput, TenantUser, TenantRole, BillingMode, FeatureKey, TenantFeatures } from '@/types';
 
 const ROLE_LABELS: Record<TenantRole, string> = {
   OWNER: 'Proprietário',
@@ -66,6 +67,7 @@ export function TenantDetailPage() {
   const [tab, setTab] = useState('overview');
   const [callPage, setCallPage] = useState(1);
   const [txPage, setTxPage] = useState(1);
+  const [campaignPage, setCampaignPage] = useState(1);
   const [adjustModal, setAdjustModal] = useState(false);
   const [adjustAmt, setAdjustAmt] = useState('');
   const [adjustNote, setAdjustNote] = useState('');
@@ -108,6 +110,12 @@ export function TenantDetailPage() {
     queryKey: ['admin', 'tenant-txs', id, txPage],
     queryFn: () => tenantsApi.transactions(id!, { page: txPage, perPage: 10 }),
     enabled: tab === 'wallet' && !!id,
+  });
+
+  const { data: campaigns } = useQuery({
+    queryKey: ['admin', 'tenant-campaigns', id, campaignPage],
+    queryFn: () => tenantsApi.campaigns(id!, { page: campaignPage, perPage: 10 }),
+    enabled: tab === 'campaigns' && !!id,
   });
 
   const invalidateTenant = () => {
@@ -233,6 +241,19 @@ export function TenantDetailPage() {
     onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar cobrança.'),
   });
 
+  // Limite de chamadas simultâneas do cliente. É este valor (e não o do plano)
+  // que o dispatcher de campanhas respeita, por isso tem de ser editável aqui:
+  // sem o campo, um cliente com um plano de 10 ficava preso no 1 por omissão e
+  // só se destrancava com um UPDATE à mão na base de dados.
+  const maxConcurrentMut = useMutation({
+    // A API espera `maxConcurrent` (admin/tenants.ts:48). Enviar o nome que o
+    // frontend usa (`maxConcurrentCalls`) fazia o zod descartar a chave em
+    // silêncio: gravava com sucesso aparente e não mudava nada.
+    mutationFn: (value: number) => tenantsApi.update(id!, { maxConcurrent: value } as never),
+    onSuccess: () => { invalidateTenant(); toast.success('Limite de chamadas simultâneas actualizado.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar o limite.'),
+  });
+
   if (isLoading) return <PageSpinner />;
 
   if (isError || !tenant) {
@@ -295,6 +316,7 @@ export function TenantDetailPage() {
           { key: 'sms', label: 'SMS' },
           { key: 'api-keys', label: 'Chaves de API' },
           { key: 'calls', label: 'Chamadas' },
+          { key: 'campaigns', label: 'Campanhas' },
           { key: 'wallet', label: 'Carteira' },
         ]}
         active={tab}
@@ -334,6 +356,28 @@ export function TenantDetailPage() {
                     <option value="PER_SECOND">Por segundo</option>
                     <option value="PER_CALL">Por chamada</option>
                   </Select>
+                </dd>
+              </div>
+              <div className="flex justify-between items-center gap-4">
+                <dt className="text-gray-500">Chamadas simultâneas</dt>
+                <dd className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={50}
+                    className="w-20 text-right"
+                    defaultValue={String(tenant.maxConcurrentCalls ?? 1)}
+                    disabled={maxConcurrentMut.isPending}
+                    onBlur={(e) => {
+                      const value = parseInt(e.target.value, 10);
+                      if (Number.isNaN(value) || value < 1 || value > 50) {
+                        e.target.value = String(tenant.maxConcurrentCalls ?? 1);
+                        return;
+                      }
+                      if (value !== tenant.maxConcurrentCalls) maxConcurrentMut.mutate(value);
+                    }}
+                  />
+                  <span className="text-xs text-gray-400">plano: {tenant.plan?.maxConcurrentCalls ?? '–'}</span>
                 </dd>
               </div>
               <div className="flex justify-between"><dt className="text-gray-500">Webhook URL</dt><dd className="font-medium text-right max-w-[200px] truncate">{tenant.webhookUrl ?? '–'}</dd></div>
@@ -615,6 +659,43 @@ export function TenantDetailPage() {
                 </tbody>
               </table>
               <Pagination page={callPage} total={calls?.total ?? 0} perPage={10} onPage={setCallPage} />
+            </>
+          )}
+        </Card>
+      )}
+
+      {tab === 'campaigns' && (
+        <Card padding={false}>
+          {(campaigns?.data ?? []).length === 0 ? (
+            <EmptyState icon={<PhoneCall className="h-8 w-8" />} title="Sem campanhas" />
+          ) : (
+            <>
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                  <tr>
+                    {['Nome', 'Status', 'Contactos', 'Concluídas', 'Falhadas', 'Criada em'].map((h) => (
+                      <th key={h} className="px-6 py-3 text-left font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(campaigns?.data ?? []).map((c) => (
+                    <tr key={c.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-3 font-medium text-gray-900">{c.name}</td>
+                      <td className="px-6 py-3">
+                        <Badge className={campaignStatusColor[c.status as CampaignStatus]}>
+                          {campaignStatusLabel[c.status as CampaignStatus] ?? c.status}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-3 text-gray-600">{c.totalContacts}</td>
+                      <td className="px-6 py-3 text-gray-600">{c.completed}</td>
+                      <td className="px-6 py-3 text-gray-600">{c.failedCount}</td>
+                      <td className="px-6 py-3 text-gray-500">{formatDate(c.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <Pagination page={campaignPage} total={campaigns?.total ?? 0} perPage={10} onPage={setCampaignPage} />
             </>
           )}
         </Card>

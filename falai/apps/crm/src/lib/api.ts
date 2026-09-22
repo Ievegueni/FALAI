@@ -243,6 +243,14 @@ export const contactsApi = {
   create: async (data: Partial<Contact>) =>
     (await post<{ contact: Contact }>('/tenant/contacts', data)).contact,
 
+  // Um pedido para a lista toda (até 1000). Criar em ciclo estourava o
+  // rate-limit global da API e devolvia 429 a meio da importação.
+  createMany: (contacts: Array<Partial<Contact>>) =>
+    post<{ created: number; skipped: number; received: number; invalid: Array<{ index: number; phone: string; reason: string }> }>(
+      '/tenant/contacts/bulk',
+      { contacts },
+    ),
+
   update: async (id: string, data: Partial<Contact>) =>
     (await patch<{ contact: Contact }>(`/tenant/contacts/${id}`, data)).contact,
 
@@ -682,7 +690,8 @@ export const settingsApi = {
 
   update: (data: Partial<TenantSettings>) => patch<TenantSettings>('/tenant/settings', data),
 
-  rotateSecret: () => post<{ webhookSecret: string }>('/tenant/settings/rotate-secret'),
+  // O backend não tem endpoint dedicado — a rotação é uma flag no PATCH /tenant/settings.
+  rotateSecret: () => patch<{ ok: boolean; webhookSecret: string }>('/tenant/settings', { rotateWebhookSecret: true }),
 
   testWebhook: () => post<{ delivered: boolean; statusCode?: number }>('/tenant/settings/webhook-test'),
 

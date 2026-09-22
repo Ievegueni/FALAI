@@ -219,6 +219,10 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         " same => n,Playback(demo-echotest)",
         " same => n,Echo()",
         " same => n(fim),Hangup()",
+        // O padrão `_.` também apanha a extensão especial `h`: sem esta linha,
+        // cada desligar voltava a entrar no Stasis como uma chamada para o DID
+        // "h", com no_route e um 404 ao atender um canal que já não existe.
+        "exten => h,1,Hangup()",
         "",
       );
     }

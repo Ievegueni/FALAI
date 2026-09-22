@@ -167,7 +167,7 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
         where,
         select: {
           id: true, agentId: true, campaignId: true, contactId: true, toNumber: true, status: true,
-          durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
+          durationSecs: true, costCents: true, startedAt: true, answeredAt: true, endedAt: true, createdAt: true,
         },
         orderBy: { createdAt: "desc" },
         take: limit,

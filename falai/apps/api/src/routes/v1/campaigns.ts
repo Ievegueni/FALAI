@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, type Prisma } from "@falai/db";
 import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
+import { normalizeAoPhone, INVALID_PHONE_MESSAGE as INVALID_PHONE } from "@falai/shared";
 
 const REMOVABLE_STATUSES = ["PENDING", "QUEUED", "OPTED_OUT"] as const;
 
@@ -84,6 +85,11 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       if (agent.status !== "ACTIVE") return reply.status(422).send({ error: "Agent must be ACTIVE" });
     }
 
+    if (body.ttsVoiceId !== undefined) {
+      const voiceCheck = await fastify.ttsVoices.assertKnownVoice(body.ttsVoiceId);
+      if (!voiceCheck.ok) return reply.status(400).send({ error: voiceCheck.error });
+    }
+
     const campaign = await prisma.campaign.create({
       data: {
         tenantId,
@@ -102,14 +108,49 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
     return reply.status(201).send(campaign);
   });
 
-  // POST /v1/campaigns/:id/contacts — bulk-attach existing contacts to a DRAFT/SCHEDULED campaign
+  // POST /v1/campaigns/:id/contacts — põe contactos numa campanha DRAFT/SCHEDULED.
+  //
+  // Aceita duas formas de identificar quem entra:
+  //
+  //   { "contactIds": ["cm...", ...] }           ids já conhecidos
+  //   { "contacts": [{ "phone": "923456789", "name": "...", "attributes": {...} }, ...] }
+  //   { "phones": ["+244923456789", ...] }       atalho para o anterior, só números
+  //
+  // Com `contacts`/`phones` o cliente não precisa de saber ids nenhuns: quem
+  // não existir na agenda é criado, quem já existir é reaproveitado (a chave
+  // única é (tenantId, phone), portanto nunca se duplica ninguém), e em ambos
+  // os casos o contacto entra na campanha. Era este o passo que obrigava a
+  // encadear /v1/contacts/bulk + resolução de ids + este endpoint, e onde as
+  // integrações se perdiam: o bulk devolvia "skipped" e ficavam sem o id.
+  //
+  // `name` e `attributes` são actualizados nos contactos que já existiam,
+  // quando vêm no payload. Sem isto a segmentação (ex.: collectionStage) fica
+  // congelada no primeiro carregamento e deixa de reflectir a realidade.
   fastify.post("/v1/campaigns/:id/contacts", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
     const tenantId = request.apiKey!.tenantId;
     const { id } = request.params as { id: string };
-    const body = request.body as { contactIds?: string[] };
+    const body = request.body as {
+      contactIds?: string[];
+      contacts?: Array<{ phone?: string; name?: string; attributes?: Record<string, unknown> }>;
+      phones?: string[];
+      results?: boolean;
+    };
+    const query = request.query as { results?: string };
+    const wantResults = body.results === true || query.results === "true";
 
-    if (!Array.isArray(body.contactIds) || body.contactIds.length === 0 || body.contactIds.length > 5000) {
-      return reply.status(400).send({ error: "contactIds must be a non-empty array of up to 5000 ids" });
+    // `phones` é só açúcar sintáctico para `contacts`.
+    type IncomingContact = { phone?: string; name?: string; attributes?: Record<string, unknown> };
+    const incoming: IncomingContact[] | undefined =
+      body.contacts ?? body.phones?.map((phone): IncomingContact => ({ phone }));
+    const byPhone = incoming !== undefined;
+
+    if (!byPhone && (!Array.isArray(body.contactIds) || body.contactIds.length === 0 || body.contactIds.length > 5000)) {
+      return reply.status(400).send({
+        error: "Provide contactIds (up to 5000 ids), or contacts/phones (up to 5000 phone numbers)",
+      });
+    }
+    if (byPhone && (!Array.isArray(incoming) || incoming.length === 0 || incoming.length > 5000)) {
+      return reply.status(400).send({ error: "contacts/phones must be a non-empty array of up to 5000 entries" });
     }
 
     const campaign = await prisma.campaign.findFirst({ where: { id, tenantId } });
@@ -118,19 +159,151 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       return reply.status(400).send({ error: "Contacts can only be added to DRAFT or SCHEDULED campaigns" });
     }
 
-    const validContacts = await prisma.contact.findMany({
-      where: { id: { in: body.contactIds }, tenantId, optedOutAt: null },
-      select: { id: true },
-    });
-    const validIds = new Set(validContacts.map((c) => c.id));
-    const skipped = body.contactIds.filter((cid) => !validIds.has(cid));
+    type RowOutcome = "added" | "already_in_campaign" | "opted_out" | "duplicate_in_payload" | "invalid" | "not_found";
+    const rows: Array<{ index: number; phone: string | null; contactId: string | null; outcome: RowOutcome; reason?: string }> = [];
+
+    let eligible: Array<{ id: string }> = [];
+    let createdContacts = 0;
+    let skippedIds: string[] = [];
+
+    if (byPhone) {
+      // 1) Normalizar e desduplicar o payload.
+      const seen = new Map<string, { phone: string; name: string | undefined; attributes: Record<string, unknown> | undefined }>();
+      incoming!.forEach((c, index) => {
+        if (!c || typeof c.phone !== "string" || !c.phone.trim()) {
+          rows.push({ index, phone: null, contactId: null, outcome: "invalid", reason: "phone is required" });
+          return;
+        }
+        const phone = normalizeAoPhone(c.phone);
+        if (!phone) {
+          rows.push({ index, phone: null, contactId: null, outcome: "invalid", reason: INVALID_PHONE });
+          return;
+        }
+        if (seen.has(phone)) {
+          rows.push({ index, phone, contactId: null, outcome: "duplicate_in_payload" });
+          return;
+        }
+        seen.set(phone, { phone, name: c.name, attributes: c.attributes });
+        rows.push({ index, phone, contactId: null, outcome: "added" });
+      });
+
+      const phones = [...seen.keys()];
+
+      // 2) Criar só quem falta. Nunca se duplica: a chave única (tenantId, phone)
+      //    garante-o, e o skipDuplicates absorve corridas com pedidos paralelos.
+      if (phones.length) {
+        const existing = new Set(
+          (await prisma.contact.findMany({ where: { tenantId, phone: { in: phones } }, select: { phone: true } }))
+            .map((c) => c.phone)
+        );
+        const toCreate = phones.filter((p) => !existing.has(p)).map((p) => {
+          const e = seen.get(p)!;
+          return {
+            tenantId, phone: p,
+            ...(e.name !== undefined && { name: e.name }),
+            ...(e.attributes !== undefined && { attributes: e.attributes as Prisma.InputJsonValue }),
+          };
+        });
+        if (toCreate.length) {
+          createdContacts = (await prisma.contact.createMany({ data: toCreate, skipDuplicates: true })).count;
+        }
+
+        // 3) Refrescar nome/atributos de quem já existia e trouxe dados novos.
+        const updates = [...existing]
+          .map((p) => seen.get(p)!)
+          .filter((e) => e.name !== undefined || e.attributes !== undefined);
+        if (updates.length) {
+          await prisma.$transaction(
+            updates.map((e) =>
+              prisma.contact.update({
+                where: { tenantId_phone: { tenantId, phone: e.phone } },
+                data: {
+                  ...(e.name !== undefined && { name: e.name }),
+                  ...(e.attributes !== undefined && { attributes: e.attributes as Prisma.InputJsonValue }),
+                },
+              })
+            )
+          );
+        }
+      }
+
+      // 4) Recarregar todos, já com ids, e marcar os que estão em opt-out.
+      const resolved = phones.length
+        ? await prisma.contact.findMany({
+            where: { tenantId, phone: { in: phones } },
+            select: { id: true, phone: true, optedOutAt: true },
+          })
+        : [];
+      const byPhoneMap = new Map(resolved.map((c) => [c.phone, c]));
+
+      for (const r of rows) {
+        if (r.outcome !== "added" || !r.phone) continue;
+        const c = byPhoneMap.get(r.phone);
+        if (!c) { r.outcome = "not_found"; continue; }
+        r.contactId = c.id;
+        if (c.optedOutAt) r.outcome = "opted_out";
+      }
+      eligible = resolved.filter((c) => !c.optedOutAt).map((c) => ({ id: c.id }));
+    } else {
+      const validContacts = await prisma.contact.findMany({
+        where: { id: { in: body.contactIds! }, tenantId, optedOutAt: null },
+        select: { id: true },
+      });
+      const validIds = new Set(validContacts.map((c) => c.id));
+      skippedIds = body.contactIds!.filter((cid) => !validIds.has(cid));
+      eligible = [...validIds].map((cid) => ({ id: cid }));
+      body.contactIds!.forEach((cid, index) => {
+        rows.push({
+          index, phone: null, contactId: cid,
+          outcome: validIds.has(cid) ? "added" : "not_found",
+        });
+      });
+    }
+
+    // Quem já estava na campanha não conta como novo. O createMany com
+    // skipDuplicates trata do insert, mas precisamos de saber quem era para
+    // o relatório por linha não dizer "added" a quem já lá estava.
+    const alreadyIn = eligible.length
+      ? new Set(
+          (await prisma.campaignContact.findMany({
+            where: { campaignId: campaign.id, contactId: { in: eligible.map((c) => c.id) } },
+            select: { contactId: true },
+          })).map((c) => c.contactId)
+        )
+      : new Set<string>();
 
     const created = await prisma.campaignContact.createMany({
-      data: [...validIds].map((contactId) => ({ campaignId: campaign.id, contactId })),
+      data: eligible.filter((c) => !alreadyIn.has(c.id)).map((c) => ({ campaignId: campaign.id, contactId: c.id })),
       skipDuplicates: true,
     });
 
-    return reply.send({ added: created.count, skipped: skipped.length, skippedIds: skipped });
+    for (const r of rows) {
+      if (r.outcome === "added" && r.contactId && alreadyIn.has(r.contactId)) r.outcome = "already_in_campaign";
+    }
+
+    // `totalContacts` alimenta o relatório e o launch; mantém-se coerente aqui
+    // para não depender de a campanha ser lançada para ficar certo.
+    const pending = await prisma.campaignContact.count({ where: { campaignId: campaign.id, status: "PENDING" } });
+    await prisma.campaign.update({ where: { id: campaign.id }, data: { totalContacts: pending } });
+
+    const payload: Record<string, unknown> = {
+      added: created.count,
+      alreadyInCampaign: alreadyIn.size,
+      contactsCreated: createdContacts,
+      contactsReused: byPhone ? rows.filter((r) => r.contactId !== null).length - createdContacts : 0,
+      optedOut: rows.filter((r) => r.outcome === "opted_out").length,
+      invalid: rows.filter((r) => r.outcome === "invalid").map((r) => ({ index: r.index, reason: r.reason! })),
+      duplicatesInPayload: rows.filter((r) => r.outcome === "duplicate_in_payload").length,
+      received: byPhone ? incoming!.length : body.contactIds!.length,
+      pendingContacts: pending,
+      // Mantido para não quebrar quem já lê este campo na forma por contactIds.
+      skipped: byPhone ? rows.filter((r) => r.outcome !== "added").length : skippedIds.length,
+      ...(byPhone ? {} : { skippedIds }),
+    };
+
+    if (wantResults) payload.results = rows;
+
+    return reply.send(payload);
   });
 
   // POST /v1/campaigns/:id/launch — start the campaign and dispatch calls immediately

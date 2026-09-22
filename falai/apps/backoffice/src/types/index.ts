@@ -6,7 +6,11 @@ export type AgentStatus = 'DRAFT' | 'PENDING_REVIEW' | 'ACTIVE' | 'PAUSED' | 'BL
 export type AgentReviewStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'BLOCKED';
 export type CallStatus =
   | 'QUEUED' | 'DIALING' | 'RINGING' | 'IN_PROGRESS'
-  | 'COMPLETED' | 'NO_ANSWER' | 'FAILED' | 'CANCELLED' | 'ESCALATED';
+  | 'COMPLETED' | 'NO_ANSWER' | 'BUSY' | 'FAILED' | 'CANCELLED' | 'ESCALATED';
+
+export type CallStats = Record<'total' | CallStatus, number>;
+export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'RUNNING' | 'PAUSED' | 'DONE' | 'CANCELLED';
+export type CampaignMode = 'VOICE_AI' | 'FIXED_SCRIPT';
 export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
 
 export interface AdminUser {
@@ -29,9 +33,25 @@ export type ProductType = 'VOICE_AI' | 'CRM_BYO_PBX' | 'API_BYOM';
 
 export type BillingMode = 'PER_MINUTE' | 'PER_SECOND' | 'PER_CALL';
 
+export interface Product {
+  id: string;
+  name: string;
+  description: string | null;
+  baseType: ProductType;
+  aiAgentsEnabled: boolean;
+  clinicEnabled: boolean;
+  smsEnabled: boolean;
+  monthlyFeeCents: number;
+  isActive: boolean;
+  planCount: number;
+}
+
+export type ProductInput = Omit<Product, 'id' | 'planCount'>;
+
 export interface Plan {
   id: string;
   name: string;
+  productId: string | null;
   productType: ProductType;
   aiAgentsEnabled: boolean;
   clinicEnabled: boolean;
@@ -213,6 +233,22 @@ export interface Call {
   turns?: CallTurn[];
 }
 
+// ─── Campaign ────────────────────────────────────────────────────────────────
+
+export interface Campaign {
+  id: string;
+  name: string;
+  mode: CampaignMode;
+  status: CampaignStatus;
+  agentName: string | null;
+  totalContacts: number;
+  completed: number;
+  failedCount: number;
+  throttlePerMinute: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CallTurn {
   id: string;
   seq: number;
@@ -255,6 +291,22 @@ export interface MarginRow {
   marginCents: number;
   marginPct: number;
   calls: number;
+}
+
+export interface ProviderTopUp {
+  id: string;
+  amountCents: number;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+export interface ProviderBalance {
+  costPerCallCents: number;
+  purchasedCents: number;
+  spentCents: number;
+  remainingCents: number;
+  topups: ProviderTopUp[];
 }
 
 export interface WalletTransaction {
@@ -390,6 +442,7 @@ export interface Paginated<T> {
   total: number;
   page: number;
   perPage: number;
+  stats?: CallStats;
 }
 
 // ─── Estado do motor SIP próprio (Asterisk) ──────────────────────────────────
