@@ -256,6 +256,20 @@ export interface Campaign {
   updatedAt: string;
 }
 
+export interface CampaignDetail extends Omit<Campaign, 'totalContacts' | 'completed' | 'failedCount'> {
+  scriptText: string | null;
+  scheduleJson: { mode?: 'NOW' | 'WINDOW'; startHour?: number; endHour?: number; timezone?: string; days?: number[]; daysOfWeek?: number[] } | null;
+  retryPolicy: { maxAttempts?: number; retryDelayMinutes?: number; delayMinutes?: number } | null;
+  summary: string | null;
+  contactStatuses: Partial<Record<'PENDING' | 'QUEUED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'OPTED_OUT' | 'SKIPPED', number>>;
+  calls: { total: number; answered: number; totalDurationSecs: number; avgDurationSecs: number; totalCostCents: number };
+  recentContacts: {
+    id: string; name: string | null; phone: string; status: string; attempts: number; updatedAt: string;
+    callId: string | null; callStatus: CallStatus | null; outcome: string | null;
+    durationSecs: number | null; costCents: number | null;
+  }[];
+}
+
 export interface CallTurn {
   id: string;
   seq: number;

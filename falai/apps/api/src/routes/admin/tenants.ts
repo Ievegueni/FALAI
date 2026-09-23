@@ -485,6 +485,81 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
+  // GET /admin/tenants/:id/campaigns/:campaignId — detalhe de uma campanha: configuração,
+  // contagens por estado (vindas da tabela, não dos contadores desnormalizados) e últimos contactos.
+  fastify.get<{ Params: { id: string; campaignId: string } }>(
+    "/:id/campaigns/:campaignId", { preHandler }, async (request, reply) => {
+      const { id: tenantId, campaignId } = request.params;
+      const campaign = await prisma.campaign.findFirst({
+        where: { id: campaignId, tenantId },
+        include: { agent: { select: { name: true } } },
+      });
+      if (!campaign) return reply.status(404).send({ error: "Campanha não encontrada" });
+
+      const [callStats, contactStats, answeredCount, recent] = await Promise.all([
+        prisma.call.aggregate({
+          where: { campaignId },
+          _count: { id: true },
+          _sum: { durationSecs: true, costCents: true },
+          _avg: { durationSecs: true },
+        }),
+        prisma.campaignContact.groupBy({
+          by: ["status"],
+          where: { campaignId },
+          _count: { status: true },
+        }),
+        prisma.call.count({ where: { campaignId, status: { in: ["COMPLETED", "ESCALATED"] } } }),
+        prisma.campaignContact.findMany({
+          where: { campaignId },
+          orderBy: { updatedAt: "desc" },
+          take: 20,
+          select: {
+            id: true, status: true, attempts: true, callId: true, updatedAt: true,
+            contact: { select: { name: true, phone: true } },
+          },
+        }),
+      ]);
+
+      const callIds = recent.map((r) => r.callId).filter((v): v is string => !!v);
+      const calls = callIds.length
+        ? await prisma.call.findMany({
+            where: { id: { in: callIds } },
+            select: { id: true, status: true, outcome: true, durationSecs: true, costCents: true },
+          })
+        : [];
+      const callById = new Map(calls.map((c) => [c.id, c]));
+
+      return {
+        id: campaign.id, name: campaign.name, mode: campaign.mode, status: campaign.status,
+        agentName: campaign.agent?.name ?? null,
+        scriptText: campaign.scriptText,
+        scheduleJson: campaign.scheduleJson,
+        retryPolicy: campaign.retryPolicy,
+        throttlePerMinute: campaign.throttlePerMinute,
+        summary: campaign.summary,
+        createdAt: campaign.createdAt, updatedAt: campaign.updatedAt,
+        contactStatuses: Object.fromEntries(contactStats.map((s) => [s.status, s._count.status])),
+        calls: {
+          total: callStats._count.id,
+          answered: answeredCount,
+          totalDurationSecs: callStats._sum.durationSecs ?? 0,
+          avgDurationSecs: Math.round(callStats._avg.durationSecs ?? 0),
+          totalCostCents: callStats._sum.costCents ?? 0,
+        },
+        recentContacts: recent.map((r) => {
+          const call = r.callId ? callById.get(r.callId) ?? null : null;
+          return {
+            id: r.id, name: r.contact.name, phone: r.contact.phone,
+            status: r.status, attempts: r.attempts, updatedAt: r.updatedAt,
+            callId: r.callId,
+            callStatus: call?.status ?? null, outcome: call?.outcome ?? null,
+            durationSecs: call?.durationSecs ?? null, costCents: call?.costCents ?? null,
+          };
+        }),
+      };
+    }
+  );
+
   // GET /admin/tenants/:id/transactions
   fastify.get<{ Params: { id: string }; Querystring: { page?: string; perPage?: string } }>(
     "/:id/transactions", { preHandler }, async (request) => {

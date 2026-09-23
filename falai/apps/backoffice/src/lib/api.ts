@@ -8,6 +8,7 @@ import type {
   BillingMode,
   Call,
   Campaign,
+  CampaignDetail,
   FinanceSummary,
   HealthStatus,
   MarginRow,
@@ -152,6 +153,8 @@ export const tenantsApi = {
 
   campaigns: (id: string, params?: { page?: number; perPage?: number }) =>
     get<Paginated<Campaign>>(`/admin/tenants/${id}/campaigns${qs({ page: params?.page ?? 1, perPage: params?.perPage ?? 10 })}`),
+
+  campaign: (id: string, campaignId: string) => get<CampaignDetail>(`/admin/tenants/${id}/campaigns/${campaignId}`),
 
   transactions: (id: string, params?: { page?: number; perPage?: number }) =>
     get<Paginated<WalletTransaction>>(

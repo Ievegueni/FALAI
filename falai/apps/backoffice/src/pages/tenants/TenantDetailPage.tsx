@@ -72,6 +72,7 @@ export function TenantDetailPage() {
   const [callPage, setCallPage] = useState(1);
   const [txPage, setTxPage] = useState(1);
   const [campaignPage, setCampaignPage] = useState(1);
+  const [openCampaignId, setOpenCampaignId] = useState<string | null>(null);
   const [adjustModal, setAdjustModal] = useState(false);
   const [adjustAmt, setAdjustAmt] = useState('');
   const [adjustNote, setAdjustNote] = useState('');
@@ -713,7 +714,7 @@ export function TenantDetailPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {(campaigns?.data ?? []).map((c) => (
-                    <tr key={c.id} className="hover:bg-gray-50">
+                    <tr key={c.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setOpenCampaignId(c.id)}>
                       <td className="px-6 py-3 font-medium text-gray-900">{c.name}</td>
                       <td className="px-6 py-3">
                         <Badge className={campaignStatusColor[c.status as CampaignStatus]}>
@@ -730,6 +731,9 @@ export function TenantDetailPage() {
               </table>
               <Pagination page={campaignPage} total={campaigns?.total ?? 0} perPage={10} onPage={setCampaignPage} />
             </>
+          )}
+          {openCampaignId && (
+            <CampaignDetailModal tenantId={id!} campaignId={openCampaignId} onClose={() => setOpenCampaignId(null)} />
           )}
         </Card>
       )}
@@ -1262,5 +1266,154 @@ function SmsConfigTab({ tenantId }: { tenantId: string }) {
       </div>
       <Button onClick={() => save.mutate()} disabled={save.isPending}>Guardar</Button>
     </Card>
+  );
+}
+
+const CONTACT_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Pendente',
+  QUEUED: 'Na fila',
+  IN_PROGRESS: 'Em curso',
+  COMPLETED: 'Concluído',
+  FAILED: 'Falhou',
+  OPTED_OUT: 'Recusou contacto',
+  SKIPPED: 'Não marcado',
+};
+
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+function CampaignDetailModal({ tenantId, campaignId, onClose }: { tenantId: string; campaignId: string; onClose: () => void }) {
+  const navigate = useNavigate();
+  const { data: c, isLoading, isError } = useQuery({
+    queryKey: ['admin', 'tenant-campaign', tenantId, campaignId],
+    queryFn: () => tenantsApi.campaign(tenantId, campaignId),
+  });
+
+  const cs = c?.contactStatuses ?? {};
+  const n = (k: keyof typeof cs) => cs[k] ?? 0;
+  const totalContacts = Object.values(cs).reduce<number>((sum, v) => sum + (v ?? 0), 0);
+  const attempted = n('COMPLETED') + n('FAILED');
+  const answerRate = attempted > 0 && c ? Math.round((c.calls.answered / attempted) * 100) : 0;
+
+  const s = c?.scheduleJson ?? {};
+  const days = s.daysOfWeek ?? s.days ?? [];
+  const window = s.mode === 'NOW'
+    ? 'Imediato'
+    : `${String(s.startHour ?? 8).padStart(2, '0')}h às ${String(s.endHour ?? 20).padStart(2, '0')}h`;
+  const r = c?.retryPolicy ?? {};
+
+  return (
+    <Modal open onClose={onClose} title={c?.name ?? 'Campanha'} size="xl">
+      {isLoading ? (
+        <PageSpinner />
+      ) : isError || !c ? (
+        <p className="text-sm text-red-600">Não foi possível carregar a campanha.</p>
+      ) : (
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+            <Badge className={campaignStatusColor[c.status]}>{campaignStatusLabel[c.status] ?? c.status}</Badge>
+            <span>{c.mode === 'FIXED_SCRIPT' ? 'Script fixo' : `Agente IA: ${c.agentName ?? '(sem agente)'}`}</span>
+            <span>· Criada em {formatDate(c.createdAt)}</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Contactos', value: totalContacts },
+              { label: 'Chamadas feitas', value: c.calls.total },
+              { label: 'Taxa de atendimento', value: `${answerRate}%` },
+              { label: 'Custo', value: formatAOA(c.calls.totalCostCents) },
+            ].map((k) => (
+              <div key={k.label} className="rounded-lg border border-gray-200 p-3 text-center">
+                <p className="text-lg font-bold text-gray-900">{k.value}</p>
+                <p className="text-xs text-gray-500">{k.label}</p>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Contactos por estado</h3>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(CONTACT_STATUS_LABELS).map(([k, label]) => (
+                <span key={k} className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
+                  {label}: <strong>{cs[k as keyof typeof cs] ?? 0}</strong>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <div><span className="text-gray-500">Janela horária:</span> <span className="text-gray-900">{window}</span></div>
+            {s.mode !== 'NOW' && days.length > 0 && (
+              <div><span className="text-gray-500">Dias:</span> <span className="text-gray-900">{days.map((d) => WEEKDAYS[d]).join(', ')}</span></div>
+            )}
+            <div><span className="text-gray-500">Ritmo:</span> <span className="text-gray-900">{c.throttlePerMinute} chamadas/min</span></div>
+            <div>
+              <span className="text-gray-500">Tentativas:</span>{' '}
+              <span className="text-gray-900">
+                {r.maxAttempts ?? 1}{(r.maxAttempts ?? 1) > 1 && ` (intervalo ${r.retryDelayMinutes ?? r.delayMinutes ?? 60} min)`}
+              </span>
+            </div>
+            <div><span className="text-gray-500">Duração média:</span> <span className="text-gray-900">{formatDuration(c.calls.avgDurationSecs)}</span></div>
+            <div><span className="text-gray-500">Duração total:</span> <span className="text-gray-900">{formatDuration(c.calls.totalDurationSecs)}</span></div>
+          </div>
+
+          {c.mode === 'FIXED_SCRIPT' && c.scriptText && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Script</h3>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{c.scriptText}</p>
+            </div>
+          )}
+
+          {c.summary && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Resumo</h3>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{c.summary}</p>
+            </div>
+          )}
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Últimos contactos</h3>
+            {c.recentContacts.length === 0 ? (
+              <p className="text-sm text-gray-500">Sem contactos nesta campanha.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      {['Contacto', 'Estado', 'Chamada', 'Tent.', 'Duração', 'Custo', 'Actualizado'].map((h) => (
+                        <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {c.recentContacts.map((rc) => (
+                      <tr
+                        key={rc.id}
+                        className={rc.callId ? 'hover:bg-gray-50 cursor-pointer' : undefined}
+                        onClick={rc.callId ? () => navigate(`/calls/${rc.callId}`) : undefined}
+                      >
+                        <td className="px-3 py-2">
+                          <p className="text-gray-900">{rc.name ?? rc.phone}</p>
+                          {rc.name && <p className="text-xs text-gray-500">{rc.phone}</p>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">{CONTACT_STATUS_LABELS[rc.status] ?? rc.status}</td>
+                        <td className="px-3 py-2">
+                          {rc.callStatus ? (
+                            <Badge className={callStatusColor[rc.callStatus]}>{callStatusLabel[rc.callStatus]}</Badge>
+                          ) : <span className="text-gray-400">(sem chamada)</span>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">{rc.attempts}</td>
+                        <td className="px-3 py-2 text-gray-600">{rc.durationSecs != null ? formatDuration(rc.durationSecs) : ''}</td>
+                        <td className="px-3 py-2 text-gray-600">{rc.costCents != null ? formatAOA(rc.costCents) : ''}</td>
+                        <td className="px-3 py-2 text-gray-500">{formatDate(rc.updatedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
