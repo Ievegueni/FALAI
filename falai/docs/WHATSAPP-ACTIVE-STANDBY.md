@@ -286,9 +286,13 @@ conversas do WA2 depois do failover caem no inbox do WA1.
    failover: ver o motivo no WhatsApp Manager, recorrer se for injusto,
    corrigir a causa. O fallback serve para continuidade operacional — que é o
    que o pedido diz.
-3. **Conversas antigas ficam no número antigo.** Clientes que falavam com o
-   WA1 não passam para o WA2. O histórico continua visível no CRM (o
-   `Contact` é o mesmo, pelo telefone), mas o WA2 só pode escrever-lhes se
+3. **Histórico depois de uma troca** (feito 24/09): se o cliente tinha conversa
+   aberta no WA1 e escreve para o WA2, a conversa passa para o WA2 com todo o
+   histórico e uma nota interna (`carryOverWhatsapp` em `textChannels.service.ts`).
+   Conversas já resolvidas aparecem em "Conversas anteriores" no painel do
+   contacto no CRM, e a IA recebe as últimas 20 mensagens das outras conversas
+   do contacto (`previousContext`). No telemóvel do cliente o chat com o WA2 é
+   novo — isso a Meta não permite migrar. O WA2 só pode escrever-lhes se
    eles escreverem primeiro, ou com template aprovado. **Não** disparar
    templates em massa do WA2 para os contactos do WA1 — é o padrão exacto que
    a Meta pune.

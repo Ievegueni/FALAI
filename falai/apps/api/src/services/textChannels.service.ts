@@ -22,6 +22,7 @@ import { classifyError, checkNumber } from "./waPool.service.js";
  */
 
 const HISTORY_LIMIT = 30;
+const PREVIOUS_CONTEXT_LIMIT = 20;
 
 // ── Telegram (Bot API pura, sem dependências) ────────────────────────────────
 
@@ -183,6 +184,7 @@ export async function ingestInbound(fastify: FastifyInstance, inbox: Inbox, msg:
     where: { inboxId: inbox.id, externalRef: msg.externalRef, status: { not: "RESOLVED" } },
     orderBy: { createdAt: "desc" },
   });
+  if (!conv && inbox.channel === "WHATSAPP") conv = await carryOverWhatsapp(fastify, inbox, msg.externalRef);
   if (!conv) {
     const contactId = await resolveContact(inbox.tenantId, msg.identity);
     conv = await prisma.conversation.create({
@@ -220,6 +222,57 @@ export async function ingestInbound(fastify: FastifyInstance, inbox: Inbox, msg:
     void replyWithAi(fastify, inbox, id).catch((err) => fastify.log.error({ err, conversationId: id }, "text.ai_reply_failed"));
   }
   return conv;
+}
+
+/**
+ * Pool Active/Standby: o cliente que tinha conversa aberta noutro número
+ * WhatsApp do tenant (ex.: o que ficou indisponível) continua a mesma conversa
+ * — passa para este número, que é o único que lhe pode responder agora.
+ */
+async function carryOverWhatsapp(fastify: FastifyInstance, inbox: Inbox, waId: string) {
+  const prev = await prisma.conversation.findFirst({
+    where: {
+      tenantId: inbox.tenantId,
+      externalRef: waId,
+      status: { not: "RESOLVED" },
+      inbox: { channel: "WHATSAPP" },
+      inboxId: { not: inbox.id },
+    },
+    orderBy: { lastMessageAt: "desc" },
+    include: { inbox: { select: { name: true, config: true } } },
+  });
+  if (!prev) return null;
+  // Condicional: se outra mensagem já a mudou, não mudar outra vez.
+  const moved = await prisma.conversation.updateMany({ where: { id: prev.id, inboxId: prev.inboxId }, data: { inboxId: inbox.id } });
+  const conv = await prisma.conversation.findUniqueOrThrow({ where: { id: prev.id } });
+  if (moved.count) {
+    const phone = (c: unknown) => (c as { displayPhone?: string }).displayPhone ?? "?";
+    await appendMessage(fastify, conv, {
+      role: "SYSTEM",
+      text: `O cliente passou a escrever pelo número ${inbox.name} (${phone(inbox.config)}). Antes: ${prev.inbox.name} (${phone(prev.inbox.config)}). As respostas saem agora por este número.`,
+    });
+    broadcastConversation(fastify, inbox.tenantId, conv.id, { inboxId: inbox.id });
+  }
+  return conv;
+}
+
+/** Últimas mensagens das outras conversas do mesmo contacto, para a IA não recomeçar do zero. */
+async function previousContext(conversationId: string, contactId: string | null): Promise<string> {
+  if (!contactId) return "";
+  const rows = await prisma.message.findMany({
+    where: { role: { not: "SYSTEM" }, conversation: { contactId, id: { not: conversationId } } },
+    orderBy: { createdAt: "desc" },
+    take: PREVIOUS_CONTEXT_LIMIT,
+    select: { role: true, text: true, createdAt: true },
+  });
+  if (!rows.length) return "";
+  const lines = rows.reverse().map((m) => `[${m.createdAt.toISOString().slice(0, 10)}] ${m.role === "AGENT" ? "Nós" : "Cliente"}: ${m.text.slice(0, 300)}`);
+  return [
+    "",
+    "## Conversas anteriores com este cliente",
+    "Contexto de contactos anteriores (pode ter sido por outro número ou canal). Use-o para não pedir de novo o que o cliente já disse; não o repita ao cliente.",
+    ...lines,
+  ].join("\n");
 }
 
 function channelNote(channel: Channel): string {
@@ -264,10 +317,12 @@ async function replyWithAi(fastify: FastifyInstance, inbox: Inbox, conversationI
   const [last, ...older] = recent;
   if (!last || last.role !== "HUMAN") return;
   const history: TurnMessage[] = older.reverse().map((m) => ({ role: m.role === "AGENT" ? "agent" : "human", text: m.text }));
+  const current = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { contactId: true } });
+  const previous = await previousContext(conversationId, current?.contactId ?? null);
 
   const { response, llmMs, guard } = await processTextTurn({
     llm: model.llm ?? fastify.llm,
-    systemPrompt: agent.systemPrompt + "\n" + channelNote(inbox.channel),
+    systemPrompt: agent.systemPrompt + "\n" + channelNote(inbox.channel) + previous,
     history,
     userText: last.text,
     variables: {},

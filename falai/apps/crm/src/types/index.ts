@@ -567,6 +567,14 @@ export interface Conversation {
 export interface ConversationDetail extends Conversation {
   messages: ConversationMessage[];
   authors: { id: string; name: string }[];
+  /** Outras conversas do mesmo contacto (todos os números e canais) */
+  previous: {
+    id: string;
+    status: ConversationStatus;
+    lastMessageAt: string;
+    messageCount: number;
+    inbox: { name: string; channel: Channel };
+  }[];
 }
 
 export interface CannedResponse {
