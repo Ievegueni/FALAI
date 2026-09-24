@@ -78,7 +78,9 @@ import { tenantInboxesRoutes } from "./routes/tenant/inboxes.js";
 import { tenantConversationsRoutes } from "./routes/tenant/conversations.js";
 import { v1ConversationsRoutes } from "./routes/v1/conversations.js";
 import { publicChatRoutes } from "./routes/public/chat.js";
+import { publicWaRoutes } from "./routes/public/wa.js";
 import { startEmailPolling } from "./services/email.service.js";
+import { startWaHealthCheck } from "./services/waPool.service.js";
 import { gateFeature, type FeatureKey } from "./services/features.js";
 
 /**
@@ -347,6 +349,7 @@ async function buildApp() {
   await gated(fastify, "inbox", tenantInboxesRoutes, { prefix: "/tenant/inboxes" });
   await gated(fastify, "inbox", tenantConversationsRoutes);
   await fastify.register(publicChatRoutes, { prefix: "/public/chat" });
+  await fastify.register(publicWaRoutes, { prefix: "/public/wa" });
 
   // ── Public API v1 (API key authenticated, per-key rate limiting) ─────────
   await fastify.register(async (v1) => {
@@ -389,6 +392,9 @@ async function buildApp() {
   // Canal de email: lê as caixas IMAP dos inboxes a cada minuto.
   const stopEmailPolling = startEmailPolling(fastify);
   fastify.addHook("onClose", async () => stopEmailPolling());
+  // Pool WhatsApp Active/Standby: health check de cada número a cada minuto.
+  const stopWaHealthCheck = startWaHealthCheck(fastify);
+  fastify.addHook("onClose", async () => stopWaHealthCheck());
 
   // ── WebSocket ──────────────────────────────────────────────────────────
   registerYeastarWebSocket(fastify);

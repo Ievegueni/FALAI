@@ -20,6 +20,7 @@ const tenantClientSelect = {
   status: true,
   balanceCents: true,
   features: true,
+  logoDataUrl: true,
   plan: { select: { name: true, productType: true, aiAgentsEnabled: true, clinicEnabled: true, smsEnabled: true, maxAgents: true, maxConcurrent: true } },
 } as const;
 

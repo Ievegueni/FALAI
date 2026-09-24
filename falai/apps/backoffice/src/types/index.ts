@@ -169,6 +169,8 @@ export interface TenantUserInput {
 export interface Tenant {
   id: string;
   name: string;
+  /** Logo mostrado no CRM do cliente (data URL). Null = logo da Comunica. */
+  logoDataUrl?: string | null;
   email: string;
   phone: string;
   nif: string | null;
@@ -502,4 +504,28 @@ export interface EngineStatus {
   activeCalls: number | null;
   error: string | null;
   checkedAt: string;
+}
+
+// ─── Pool WhatsApp Active/Standby ────────────────────────────────────────────
+
+export type WaPoolStatus = 'ACTIVE' | 'DEGRADED' | 'STANDBY' | 'FAILED' | 'DISABLED';
+
+export interface TenantWhatsappPool {
+  poolUrl: string;
+  numbers: {
+    id: string;
+    name: string;
+    displayPhone: string | null;
+    verifiedName: string | null;
+    phoneNumberId: string | null;
+    enabled: boolean;
+    status: WaPoolStatus | null;
+    priority: number | null;
+    failCount: number;
+    lastCheckAt: string | null;
+    lastError: string | null;
+    statusAt: string | null;
+    createdAt: string;
+  }[];
+  events: { id: string; severity: string; message: string; createdAt: string }[];
 }

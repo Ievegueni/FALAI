@@ -9,6 +9,8 @@ import {
 } from "../../services/features.js";
 import { encryptSecret } from "../../services/crypto.service.js";
 import { invalidateTenantSms } from "../../services/sms.service.js";
+import { publicApiUrl } from "../tenant/inboxes.js";
+import { checkNumber } from "../../services/waPool.service.js";
 
 const lineCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -24,6 +26,15 @@ const lineUpdateSchema = z.object({
   phoneNumber: z.string().max(30).nullable().optional(),
   isDefault: z.boolean().optional(),
   isActive: z.boolean().optional(),
+});
+
+// Só imagens rasterizadas ou SVG em base64; 256 KB de imagem ≈ 350 KB em base64.
+const logoSchema = z.object({
+  logoDataUrl: z
+    .string()
+    .regex(/^data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/, "Formato inválido (PNG, JPG, WEBP ou SVG)")
+    .max(350_000, "Logo demasiado grande (máx. 256 KB)")
+    .nullable(),
 });
 
 const featuresSchema = z.object(
@@ -131,6 +142,7 @@ function mapTenant(t: any) {
     }),
     featureOverrides: (t.features ?? {}) as Record<string, boolean>,
     lockedByPlan: lockedByPlan(t.plan),
+    logoDataUrl: (t as { logoDataUrl?: string | null }).logoDataUrl ?? null,
     ...(t.lines !== undefined && { lines: t.lines }),
     createdAt: t.createdAt,
     _count: t._count,
@@ -273,6 +285,74 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /admin/tenants/:id/sms — configuração de SMS do tenant (chave mascarada)
+  // Pool WhatsApp do cliente (só leitura: é o cliente que gere os números no CRM).
+  fastify.get<{ Params: { id: string } }>("/:id/whatsapp", { preHandler }, async (request, reply) => {
+    const tenantId = request.params.id;
+    if (!(await prisma.tenant.findFirst({ where: { id: tenantId, deletedAt: null }, select: { id: true } }))) {
+      return reply.status(404).send({ error: "Tenant não encontrado" });
+    }
+    const [numbers, events] = await Promise.all([
+      prisma.inbox.findMany({
+        where: { tenantId, channel: "WHATSAPP", deletedAt: null },
+        orderBy: [{ waPriority: "asc" }, { createdAt: "asc" }],
+      }),
+      prisma.systemEvent.findMany({
+        where: { tenantId, source: "whatsapp-pool" },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, severity: true, message: true, createdAt: true },
+      }),
+    ]);
+    return {
+      poolUrl: `${publicApiUrl(request)}/public/wa/${tenantId}`,
+      // Nunca devolver config inteiro: tem o token e o app secret cifrados.
+      numbers: numbers.map((i) => {
+        const c = i.config as { displayPhone?: string; verifiedName?: string; phoneNumberId?: string };
+        return {
+          id: i.id,
+          name: i.name,
+          displayPhone: c.displayPhone ?? null,
+          verifiedName: c.verifiedName ?? null,
+          phoneNumberId: c.phoneNumberId ?? null,
+          enabled: i.enabled,
+          status: i.waStatus,
+          priority: i.waPriority,
+          failCount: i.waFailCount,
+          lastCheckAt: i.waLastCheckAt,
+          lastError: i.waLastError,
+          statusAt: i.waStatusAt,
+          createdAt: i.createdAt,
+        };
+      }),
+      events,
+    };
+  });
+
+  // Health check pedido pelo suporte. Mesma lógica do automático: se o número
+  // estiver comprovadamente em baixo, o failover acontece aqui também.
+  fastify.post<{ Params: { id: string }; Body: { inboxId?: string } }>("/:id/whatsapp/check", { preHandler }, async (request, reply) => {
+    const tenantId = request.params.id;
+    const inboxId = request.body?.inboxId;
+    const numbers = await prisma.inbox.findMany({
+      where: { tenantId, channel: "WHATSAPP", deletedAt: null, ...(inboxId && { id: inboxId }) },
+      select: { id: true },
+    });
+    if (!numbers.length) return reply.status(404).send({ error: "Número não encontrado" });
+    const results = [];
+    for (const n of numbers) results.push({ id: n.id, ...(await checkNumber(fastify, n.id)) });
+    await fastify.audit({
+      actorType: "ADMIN",
+      actorId: request.adminUser!.sub,
+      tenantId,
+      action: "whatsapp.pool.check",
+      targetType: "Inbox",
+      targetId: inboxId ?? tenantId,
+      after: results,
+      ip: request.ip,
+    });
+    return { results };
+  });
+
   fastify.get<{ Params: { id: string } }>("/:id/sms", { preHandler }, async (request, reply) => {
     const t = await prisma.tenant.findFirst({
       where: { id: request.params.id, deletedAt: null },
@@ -690,6 +770,24 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return { ok: true };
+  });
+
+  // ============ LOGO ============
+
+  // PUT /admin/tenants/:id/logo — logo do cliente no CRM (null = volta ao da Comunica)
+  fastify.put<{ Params: { id: string } }>("/:id/logo", { preHandler }, async (request, reply) => {
+    const parsed = logoSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? "Logo inválido" });
+    const { logoDataUrl } = parsed.data;
+    const admin = request.adminUser!;
+    const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null }, select: { id: true } });
+    if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
+    await prisma.tenant.update({ where: { id: request.params.id }, data: { logoDataUrl } });
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: logoDataUrl ? "tenant.logo_updated" : "tenant.logo_removed",
+      targetType: "Tenant", targetId: request.params.id, ip: request.ip,
+    });
+    return { logoDataUrl };
   });
 
   // ============ FUNCIONALIDADES ============

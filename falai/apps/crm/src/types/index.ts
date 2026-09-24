@@ -40,6 +40,8 @@ export interface Tenant {
   planId: string;
   plan: Plan;
   features?: TenantFeatures;
+  /** Logo definido pela Comunica no backoffice (data URL). Null = logo da Comunica. */
+  logoDataUrl?: string | null;
   onboardingCompletedAt: string | null;
 }
 
@@ -521,8 +523,20 @@ export interface Inbox {
   /** WhatsApp: a colar na app da Meta */
   webhookUrl?: string;
   verifyToken?: string;
+  poolUrl?: string;
+  /** WhatsApp: estado no pool Active/Standby do botão do site */
+  pool?: {
+    status: WaPoolStatus | null;
+    priority: number | null;
+    failCount: number;
+    lastCheckAt: string | null;
+    lastError: string | null;
+    statusAt: string | null;
+  };
   createdAt: string;
 }
+
+export type WaPoolStatus = 'ACTIVE' | 'DEGRADED' | 'STANDBY' | 'FAILED' | 'DISABLED';
 
 export interface ConversationMessage {
   id: string;
@@ -553,6 +567,14 @@ export interface Conversation {
 export interface ConversationDetail extends Conversation {
   messages: ConversationMessage[];
   authors: { id: string; name: string }[];
+  /** Outras conversas do mesmo contacto (todos os números e canais) */
+  previous: {
+    id: string;
+    status: ConversationStatus;
+    lastMessageAt: string;
+    messageCount: number;
+    inbox: { name: string; channel: Channel };
+  }[];
 }
 
 export interface CannedResponse {

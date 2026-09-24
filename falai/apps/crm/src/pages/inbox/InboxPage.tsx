@@ -142,7 +142,7 @@ export function InboxPage() {
             </div>
           </div>
 
-          {selected ? <Thread id={selected} /> : (
+          {selected ? <Thread id={selected} onOpen={setSelected} /> : (
             <div className="flex flex-1 items-center justify-center text-sm text-gray-400">{t('inbox.pick')}</div>
           )}
         </div>
@@ -151,7 +151,7 @@ export function InboxPage() {
   );
 }
 
-function Thread({ id }: { id: string }) {
+function Thread({ id, onOpen }: { id: string; onOpen: (id: string) => void }) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const toast = useToast();
@@ -267,7 +267,7 @@ function Thread({ id }: { id: string }) {
         <Composer conversationId={id} onSent={refresh} />
       </div>
 
-      <ContactPanel conv={conv} />
+      <ContactPanel conv={conv} onOpen={onOpen} />
     </>
   );
 }
@@ -338,7 +338,7 @@ function Composer({ conversationId, onSent }: { conversationId: string; onSent: 
   );
 }
 
-function ContactPanel({ conv }: { conv: ConversationDetail }) {
+function ContactPanel({ conv, onOpen }: { conv: ConversationDetail; onOpen: (id: string) => void }) {
   const { t } = useTranslation();
   const c = conv.contact;
   const rows: [string, string | null | undefined][] = [
@@ -364,6 +364,26 @@ function ContactPanel({ conv }: { conv: ConversationDetail }) {
       </dl>
       {c && (
         <Link to={`/contacts/${c.id}`} className="mt-4 block text-sm text-blue-600 hover:underline">{t('inbox.openContact')}</Link>
+      )}
+      {conv.previous.length > 0 && (
+        <div className="mt-5">
+          <p className="mb-1 text-xs text-gray-400">{t('inbox.previousConversations')}</p>
+          <ul className="space-y-1">
+            {conv.previous.map((p) => {
+              const Icon = channelIcon[p.inbox.channel];
+              return (
+                <li key={p.id}>
+                  <button onClick={() => onOpen(p.id)} className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs hover:bg-gray-50">
+                    <Icon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                    <span className="flex-1 truncate text-gray-700">{p.inbox.name}</span>
+                    <Badge className={statusColor[p.status]}>{t(`inbox.status.${p.status}`)}</Badge>
+                  </button>
+                  <p className="pl-7 text-[11px] text-gray-400">{formatDate(p.lastMessageAt)} · {p.messageCount} msg</p>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
     </aside>
   );

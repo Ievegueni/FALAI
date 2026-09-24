@@ -75,7 +75,11 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-700/60">
         <div className="flex items-center justify-center rounded-lg bg-white px-2 py-1.5">
-          <img src="/logo.png" alt="Comunica" className="h-5 w-auto" />
+          <img
+            src={tenant?.logoDataUrl ?? '/logo.png'}
+            alt={tenant?.logoDataUrl ? tenant.name : 'Comunica'}
+            className="h-5 w-auto max-w-[96px] object-contain"
+          />
         </div>
         <div>
           <p className="text-sm font-bold text-white leading-none">Falaí</p>

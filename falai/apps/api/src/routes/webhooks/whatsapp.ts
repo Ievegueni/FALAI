@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@falai/db";
 import { ingestInbound, inboxSecret } from "../../services/textChannels.service.js";
 import { tenantHasFeature } from "../../services/features.js";
+import { checkTenantPool } from "../../services/waPool.service.js";
 
 interface WaMessage {
   from: string; // wa_id = número em formato internacional sem "+"
@@ -19,7 +20,9 @@ interface WaMessage {
 interface WaWebhook {
   entry?: {
     changes?: {
+      field?: string;
       value?: {
+        metadata?: { phone_number_id?: string };
         contacts?: { wa_id: string; profile?: { name?: string } }[];
         messages?: WaMessage[];
       };
@@ -83,24 +86,41 @@ export const whatsappWebhookRoutes: FastifyPluginAsync = async (fastify) => {
       // Funcionalidade desligada: aceita (senão a Meta reenvia) e ignora.
       if (!(await tenantHasFeature(inbox.tenantId, "inbox"))) return { ok: true };
 
+      // Uma app da Meta tem um só URL de callback: os vários números da mesma
+      // app chegam todos aqui. Encaminhar pelo número de destino (mesmo tenant).
+      const siblings = await prisma.inbox.findMany({
+        where: { tenantId: inbox.tenantId, channel: "WHATSAPP", enabled: true, deletedAt: null },
+      });
+      const byPhoneId = new Map(siblings.map((i) => [String((i.config as { phoneNumberId?: string }).phoneNumberId ?? ""), i]));
+      let poolAlert = false;
+
       // A Meta também manda aqui os estados (sent/delivered/read) — ignorados por agora.
       for (const entry of request.body?.entry ?? []) {
         for (const change of entry.changes ?? []) {
+          // Ban/restrição/qualidade: o health check confirma e troca de número se for preciso.
+          if (change.field === "account_update" || change.field === "phone_number_quality_update") poolAlert = true;
           const value = change.value;
+          const pid = value?.metadata?.phone_number_id;
+          const target = pid ? byPhoneId.get(pid) : inbox;
+          if (!target) continue;
           for (const m of value?.messages ?? []) {
             // A Meta reenvia se não responder a tempo: não duplicar.
             // ponytail: sem índice em Message.externalId; criar um se o volume crescer.
-            const dup = await prisma.message.findFirst({ where: { externalId: m.id, conversation: { inboxId: inbox.id } }, select: { id: true } });
+            const dup = await prisma.message.findFirst({ where: { externalId: m.id, conversation: { inboxId: target.id } }, select: { id: true } });
             if (dup) continue;
             const name = value?.contacts?.find((c) => c.wa_id === m.from)?.profile?.name;
-            void ingestInbound(fastify, inbox, {
+            void ingestInbound(fastify, target, {
               externalRef: m.from,
               externalId: m.id,
               text: messageText(m),
               identity: { phone: m.from, ...(name && { name }) },
-            }).catch((err) => fastify.log.error({ err, inboxId: inbox.id }, "whatsapp.ingest_failed"));
+            }).catch((err) => fastify.log.error({ err, inboxId: target.id }, "whatsapp.ingest_failed"));
           }
         }
+      }
+      if (poolAlert) {
+        fastify.log.warn({ tenantId: inbox.tenantId, body: request.body }, "whatsapp.account_event");
+        void checkTenantPool(fastify, inbox.tenantId).catch((err) => fastify.log.error({ err }, "whatsapp.pool.check_error"));
       }
       return { ok: true };
     }

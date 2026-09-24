@@ -84,7 +84,16 @@ export const tenantConversationsRoutes: FastifyPluginAsync = async (fastify) => 
     if (!conv) return reply.status(404).send({ error: "Conversa não encontrada" });
     const authorIds = [...new Set(conv.messages.map((m) => m.authorId).filter((x): x is string => !!x))];
     const authors = await prisma.tenantUser.findMany({ where: { id: { in: authorIds } }, select: { id: true, name: true } });
-    return { ...conv, authors };
+    // Outras conversas do mesmo contacto (todos os números e canais) — o histórico não se perde numa troca de número.
+    const previous = conv.contactId
+      ? await prisma.conversation.findMany({
+          where: { tenantId, contactId: conv.contactId, id: { not: conv.id } },
+          orderBy: { lastMessageAt: "desc" },
+          take: 20,
+          select: { id: true, status: true, lastMessageAt: true, messageCount: true, inbox: { select: { name: true, channel: true } } },
+        })
+      : [];
+    return { ...conv, authors, previous };
   });
 
   // POST /tenant/conversations/:id/messages — resposta do operador (ou nota interna)
