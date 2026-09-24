@@ -13,7 +13,7 @@ import {
   tenantStatusColor, tenantStatusLabel,
   callStatusColor, callStatusLabel, txTypeLabel,
 } from '@/lib/utils';
-import type { TenantStatus, CallStatus, TransactionType, TenantLine, TenantLineInput, TenantUser, TenantRole, BillingMode, FeatureKey, TenantFeatures } from '@/types';
+import type { TenantStatus, CallStatus, TransactionType, TenantLine, TenantLineInput, TenantUser, TenantRole, BillingMode, FeatureKey, TenantFeatures, WaPoolStatus } from '@/types';
 
 const ROLE_LABELS: Record<TenantRole, string> = {
   OWNER: 'Proprietário',
@@ -281,6 +281,7 @@ export function TenantDetailPage() {
           { key: 'lines', label: 'Linhas' },
           { key: 'features', label: 'Funcionalidades' },
           { key: 'sms', label: 'SMS' },
+          { key: 'whatsapp', label: 'WhatsApp' },
           { key: 'api-keys', label: 'Chaves de API' },
           { key: 'calls', label: 'Chamadas' },
           { key: 'wallet', label: 'Carteira' },
@@ -290,6 +291,7 @@ export function TenantDetailPage() {
       />
 
       {tab === 'sms' && <SmsConfigTab tenantId={id!} />}
+      {tab === 'whatsapp' && <WhatsappPoolTab tenantId={id!} />}
       {tab === 'api-keys' && <ApiKeysTab tenantId={id!} />}
 
       {tab === 'overview' && (
@@ -1122,5 +1124,138 @@ function LogoCard({ tenantId, logo }: { tenantId: string; logo: string | null })
         </div>
       </div>
     </Card>
+  );
+}
+
+const WA_POOL_COLOR: Record<WaPoolStatus, string> = {
+  ACTIVE: 'bg-green-100 text-green-700',
+  DEGRADED: 'bg-amber-100 text-amber-700',
+  STANDBY: 'bg-blue-100 text-blue-700',
+  FAILED: 'bg-red-100 text-red-700',
+  DISABLED: 'bg-gray-100 text-gray-600',
+};
+
+const VERDICT_LABEL: Record<string, string> = {
+  ok: 'OK', warn: 'Aviso', ignore: 'Inconclusivo (Meta/rede/token)', suspect: 'Suspeito', fatal: 'Indisponível',
+};
+
+/** Números WhatsApp do cliente e estado do pool Active/Standby. O cliente gere-os no CRM; aqui o suporte vê e faz health check. */
+function WhatsappPoolTab({ tenantId }: { tenantId: string }) {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['tenant-whatsapp', tenantId],
+    queryFn: () => tenantsApi.whatsappPool(tenantId),
+    refetchInterval: 30_000,
+  });
+  const check = useMutation({
+    mutationFn: (inboxId?: string) => tenantsApi.whatsappCheck(tenantId, inboxId),
+    onSuccess: ({ results }) => {
+      for (const r of results) {
+        const name = data?.numbers.find((n) => n.id === r.id)?.displayPhone ?? r.id;
+        const msg = `${name}: ${VERDICT_LABEL[r.verdict] ?? r.verdict} — ${r.detail}`;
+        if (r.verdict === 'ok') toast.success(msg);
+        else toast.error(msg);
+      }
+      void qc.invalidateQueries({ queryKey: ['tenant-whatsapp', tenantId] });
+    },
+    onError: () => toast.error('Erro ao fazer o health check'),
+  });
+  if (isLoading || !data) return <PageSpinner />;
+  const inService = data.numbers.find((n) => n.status === 'ACTIVE' || n.status === 'DEGRADED');
+  const count = (st: WaPoolStatus) => data.numbers.filter((n) => n.status === st).length;
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          <div>
+            <span className="text-gray-500">Em serviço: </span>
+            {inService ? (
+              <span className="font-medium text-gray-900">{inService.name} · {inService.displayPhone ?? '—'}</span>
+            ) : (
+              <span className="font-medium text-red-600">nenhum — o botão do site está sem destino</span>
+            )}
+          </div>
+          <div className="text-gray-500">Standby: <b className="text-gray-900">{count('STANDBY')}</b></div>
+          <div className="text-gray-500">Falhados: <b className="text-gray-900">{count('FAILED')}</b></div>
+          <div className="text-gray-500">Desactivados: <b className="text-gray-900">{count('DISABLED')}</b></div>
+        </div>
+        <p className="mt-3 truncate text-xs text-gray-500">Link do botão: <code>{data.poolUrl}</code></p>
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-700">Números</h2>
+          {data.numbers.length > 0 && (
+            <Button size="sm" variant="secondary" icon={<RefreshCw className="h-4 w-4" />} loading={check.isPending && check.variables === undefined} disabled={check.isPending} onClick={() => check.mutate(undefined)}>
+              Health check a todos
+            </Button>
+          )}
+        </div>
+        <p className="mb-3 text-xs text-gray-500">O health check consulta a Meta agora. Se o número em serviço estiver comprovadamente em baixo, a troca para o standby seguinte acontece logo.</p>
+        {data.numbers.length === 0 ? (
+          <EmptyState title="Sem números WhatsApp" description="O cliente ainda não ligou nenhum número no CRM." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs text-gray-500">
+                <tr>
+                  <th className="py-2 pr-3">#</th>
+                  <th className="pr-3">Número</th>
+                  <th className="pr-3">Estado</th>
+                  <th className="pr-3">Último check</th>
+                  <th className="pr-3">Último erro</th>
+                  <th className="pr-3">Última mudança</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {data.numbers.map((n) => (
+                  <tr key={n.id} className="border-t border-gray-100 align-top">
+                    <td className="py-2 pr-3 text-gray-500">{n.priority ?? '—'}</td>
+                    <td className="pr-3">
+                      <div className="font-medium text-gray-900">{n.displayPhone ?? '—'}</div>
+                      <div className="text-xs text-gray-500">{n.name}{n.verifiedName ? ` · ${n.verifiedName}` : ''} · ID {n.phoneNumberId ?? '—'}</div>
+                    </td>
+                    <td className="pr-3">
+                      {n.status ? <Badge className={WA_POOL_COLOR[n.status]}>{n.status}</Badge> : '—'}
+                      {!n.enabled && <div className="text-xs text-gray-400">canal desligado</div>}
+                      {n.failCount > 0 && <div className="text-xs text-amber-600">{n.failCount} falha(s) seguida(s)</div>}
+                    </td>
+                    <td className="pr-3 text-xs text-gray-600">{n.lastCheckAt ? formatDate(n.lastCheckAt) : '—'}</td>
+                    <td className="max-w-[260px] pr-3 text-xs text-gray-600" title={n.lastError ?? ''}>
+                      <span className="line-clamp-2">{n.lastError ?? '—'}</span>
+                    </td>
+                    <td className="pr-3 text-xs text-gray-600">{n.statusAt ? formatDate(n.statusAt) : '—'}</td>
+                    <td>
+                      <Button size="sm" variant="ghost" loading={check.isPending && check.variables === n.id} disabled={check.isPending} onClick={() => check.mutate(n.id)}>
+                        Health check
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Histórico de trocas</h2>
+        {data.events.length === 0 ? (
+          <p className="text-sm text-gray-400">Sem trocas registadas.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {data.events.map((e) => (
+              <li key={e.id} className="flex gap-3">
+                <span className="w-36 shrink-0 text-xs text-gray-500">{formatDate(e.createdAt)}</span>
+                <span className={e.severity === 'ERROR' ? 'text-red-700' : 'text-gray-700'}>{e.message}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
   );
 }

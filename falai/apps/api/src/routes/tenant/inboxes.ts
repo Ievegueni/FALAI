@@ -4,6 +4,7 @@ import { prisma, type Inbox, type Prisma } from "@falai/db";
 import { z } from "zod";
 import { encryptSecret } from "../../services/crypto.service.js";
 import { telegramApi, whatsappApi, inboxSecret } from "../../services/textChannels.service.js";
+import { checkNumber, reconcilePool, setPoolStatus } from "../../services/waPool.service.js";
 
 /**
  * Inboxes dos canais de texto (Telegram, widget web, email).
@@ -56,7 +57,7 @@ const updateSchema = z.object({
   config: configSchema.optional(),
 });
 
-function publicApiUrl(request: FastifyRequest): string {
+export function publicApiUrl(request: FastifyRequest): string {
   const env = process.env["PUBLIC_API_URL"];
   if (env) return env.replace(/\/$/, "");
   return `${request.protocol}://${request.headers.host ?? "localhost:3000"}`;
@@ -96,6 +97,16 @@ function serialize(inbox: Inbox, request: FastifyRequest) {
       // Para colar na app da Meta (WhatsApp → Configuração → Webhook, campo "messages").
       webhookUrl: `${base}/webhooks/whatsapp/${inbox.id}`,
       verifyToken: inbox.webhookSecret,
+      // Botão do site: redirecciona para o número em serviço do pool Active/Standby.
+      poolUrl: `${base}/public/wa/${inbox.tenantId}`,
+      pool: {
+        status: inbox.waStatus,
+        priority: inbox.waPriority,
+        failCount: inbox.waFailCount,
+        lastCheckAt: inbox.waLastCheckAt,
+        lastError: inbox.waLastError,
+        statusAt: inbox.waStatusAt,
+      },
     }),
     ...(inbox.channel === "WEBCHAT" && {
       snippet: `<script src="${base}/public/chat/widget.js" data-inbox="${inbox.id}" async></script>`,
@@ -123,6 +134,24 @@ async function checkWhatsapp(phoneNumberId: string, accessToken: string) {
   return { displayPhone: info.display_phone_number ?? null, verifiedName: info.verified_name ?? null };
 }
 
+/**
+ * Um número WhatsApp só pode estar ligado a um canal, em toda a plataforma
+ * (índice "Inbox_wa_phone_number_unique" na BD). Não diz a que cliente pertence.
+ */
+async function whatsappNumberTaken(phoneNumberId: string, exceptInboxId?: string): Promise<boolean> {
+  const other = await prisma.inbox.findFirst({
+    where: {
+      channel: "WHATSAPP",
+      deletedAt: null,
+      config: { path: ["phoneNumberId"], equals: phoneNumberId },
+      ...(exceptInboxId && { id: { not: exceptInboxId } }),
+    },
+    select: { id: true },
+  });
+  return !!other;
+}
+const NUMBER_TAKEN = "Este número WhatsApp já está ligado a outro canal. Remova-o de lá primeiro.";
+
 export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
   const isAdmin = (request: FastifyRequest) => ["OWNER", "ADMIN"].includes(request.tenantUser!.role);
@@ -149,6 +178,7 @@ export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
       if (!phoneNumberId || !accessToken || !appSecret) {
         return reply.status(400).send({ error: "Phone number ID, access token e app secret são obrigatórios" });
       }
+      if (await whatsappNumberTaken(phoneNumberId)) return reply.status(409).send({ error: NUMBER_TAKEN });
       try {
         waInfo = await checkWhatsapp(phoneNumberId, accessToken);
       } catch (err) {
@@ -165,8 +195,20 @@ export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
         autoReply: body.autoReply ?? true,
         config: { ...mergeConfig({}, body.config), ...waInfo } as Prisma.InputJsonValue,
         webhookSecret: randomBytes(24).toString("hex"),
+        // Número novo entra no fim do pool; reconcilePool activa-o se for o único.
+        ...(body.channel === "WHATSAPP" && {
+          waStatus: "STANDBY" as const,
+          waStatusAt: new Date(),
+          waPriority:
+            ((await prisma.inbox.aggregate({ where: { tenantId, channel: "WHATSAPP", deletedAt: null }, _max: { waPriority: true } }))._max
+              .waPriority ?? 0) + 1,
+        }),
       },
     });
+    if (body.channel === "WHATSAPP") {
+      await reconcilePool(fastify, tenantId);
+      inbox = (await prisma.inbox.findUnique({ where: { id: inbox.id } }))!;
+    }
 
     if (body.channel === "TELEGRAM") {
       try {
@@ -217,6 +259,7 @@ export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
       const merged = config ?? (current.config as Record<string, unknown>);
       const phoneNumberId = String(merged["phoneNumberId"] ?? "");
       const accessToken = body.config?.accessToken ?? inboxSecret(current, "accessToken") ?? "";
+      if (await whatsappNumberTaken(phoneNumberId, current.id)) return reply.status(409).send({ error: NUMBER_TAKEN });
       try {
         config = { ...merged, ...(await checkWhatsapp(phoneNumberId, accessToken)) };
       } catch (err) {
@@ -234,6 +277,10 @@ export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
         ...(config && { config: config as Prisma.InputJsonValue }),
       },
     });
+    if (inbox.channel === "WHATSAPP" && body.enabled !== undefined && body.enabled !== current.enabled) {
+      await reconcilePool(fastify, tenantId);
+      return serialize((await prisma.inbox.findUnique({ where: { id: inbox.id } }))!, request);
+    }
     return serialize(inbox, request);
   });
 
@@ -246,7 +293,8 @@ export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
       const token = inboxSecret(inbox, "botToken");
       if (token) await telegramApi(token, "deleteWebhook", {}).catch(() => {});
     }
-    await prisma.inbox.update({ where: { id: inbox.id }, data: { deletedAt: new Date(), enabled: false } });
+    await prisma.inbox.update({ where: { id: inbox.id }, data: { deletedAt: new Date(), enabled: false, waStatus: null } });
+    if (inbox.channel === "WHATSAPP") await reconcilePool(fastify, tenantId);
     await fastify.audit({
       actorType: "TENANT_USER",
       actorId: request.tenantUser!.sub,
@@ -255,6 +303,41 @@ export const tenantInboxesRoutes: FastifyPluginAsync = async (fastify) => {
       targetId: inbox.id,
       ip: request.ip,
     });
+    return reply.status(204).send();
+  });
+
+  // ── Pool WhatsApp Active/Standby (docs/WHATSAPP-ACTIVE-STANDBY.md) ────────
+
+  const poolActionSchema = z.object({ action: z.enum(["activate", "standby", "disable", "check"]) });
+
+  fastify.post<{ Params: { id: string } }>("/:id/wa-pool", { preHandler }, async (request, reply) => {
+    if (!isAdmin(request)) return reply.status(403).send({ error: "Apenas OWNER ou ADMIN" });
+    const { tenantId, sub } = request.tenantUser!;
+    const { action } = poolActionSchema.parse(request.body);
+    const inbox = await prisma.inbox.findFirst({ where: { id: request.params.id, tenantId, channel: "WHATSAPP", deletedAt: null } });
+    if (!inbox) return reply.status(404).send({ error: "Número não encontrado" });
+
+    if (action === "check" || action === "activate") {
+      const result = await checkNumber(fastify, inbox.id);
+      if (action === "check") return result;
+      if (result.verdict === "fatal" || result.verdict === "suspect") {
+        return reply.status(400).send({ error: `O número não passou no health check: ${result.detail}` });
+      }
+      if (!inbox.enabled) return reply.status(400).send({ error: "Ligue o canal antes de o activar" });
+    }
+    await setPoolStatus(fastify, tenantId, inbox.id, action === "activate" ? "ACTIVE" : action === "standby" ? "STANDBY" : "DISABLED", sub);
+    return serialize((await prisma.inbox.findUnique({ where: { id: inbox.id } }))!, request);
+  });
+
+  fastify.put("/wa-pool/order", { preHandler }, async (request, reply) => {
+    if (!isAdmin(request)) return reply.status(403).send({ error: "Apenas OWNER ou ADMIN" });
+    const { tenantId } = request.tenantUser!;
+    const { ids } = z.object({ ids: z.array(z.string().min(1)).min(1).max(50) }).parse(request.body);
+    const pool = await prisma.inbox.findMany({ where: { tenantId, channel: "WHATSAPP", deletedAt: null }, select: { id: true } });
+    if (pool.length !== ids.length || new Set(ids).size !== ids.length || !pool.every((p) => ids.includes(p.id))) {
+      return reply.status(400).send({ error: "A lista tem de conter todos os números WhatsApp, uma vez cada" });
+    }
+    await prisma.$transaction(ids.map((id, i) => prisma.inbox.update({ where: { id }, data: { waPriority: i + 1 } })));
     return reply.status(204).send();
   });
 };

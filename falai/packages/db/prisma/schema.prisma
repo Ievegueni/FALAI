@@ -834,6 +834,16 @@ enum Channel {
   WHATSAPP // WhatsApp Business Cloud API (Meta)
 }
 
+// Pool Active/Standby do link público /public/wa/:tenantId.
+// Ver docs/WHATSAPP-ACTIVE-STANDBY.md.
+enum WaPoolStatus {
+  ACTIVE // recebe os cliques do botão
+  DEGRADED // em serviço, com erros abaixo do limiar
+  STANDBY
+  FAILED // confirmado indisponível; só volta por acção manual
+  DISABLED // retirado do pool pelo admin
+}
+
 enum ConversationStatus {
   OPEN
   PENDING
@@ -860,6 +870,13 @@ model Inbox {
   webhookSecret String
   autoReply     Boolean        @default(true)
   enabled       Boolean        @default(true)
+  // Só WHATSAPP. Um só ACTIVE/DEGRADED por tenant (índice parcial na migração).
+  waStatus      WaPoolStatus?
+  waPriority    Int?
+  waFailCount   Int            @default(0)
+  waLastCheckAt DateTime?
+  waLastError   String?
+  waStatusAt    DateTime?
   deletedAt     DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt

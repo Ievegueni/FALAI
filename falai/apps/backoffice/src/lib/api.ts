@@ -177,6 +177,11 @@ export const tenantsApi = {
   resetUserPassword: (id: string, userId: string, password: string) =>
     post<{ ok: boolean }>(`/admin/tenants/${id}/users/${userId}/reset-password`, { password }),
 
+  // Pool WhatsApp Active/Standby (só leitura)
+  whatsappPool: (id: string) => get<import('@/types').TenantWhatsappPool>(`/admin/tenants/${id}/whatsapp`),
+  whatsappCheck: (id: string, inboxId?: string) =>
+    post<{ results: { id: string; verdict: string; detail: string }[] }>(`/admin/tenants/${id}/whatsapp/check`, inboxId ? { inboxId } : {}),
+
   // SMS (gateway Futurix — configurado por cliente)
   smsConfig: (id: string) =>
     get<{ enabled: boolean; senderId: string | null; apiKeySet: boolean; priceSegmentCents: number | null; planPriceSegmentCents: number }>(

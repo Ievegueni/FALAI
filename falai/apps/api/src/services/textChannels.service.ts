@@ -7,6 +7,7 @@ import { decryptSecret } from "./crypto.service.js";
 import { sendEmailReply } from "./email.service.js";
 import { chargeTextMessage } from "./billing.service.js";
 import { emitWebhookAsync } from "./webhookEmitter.service.js";
+import { classifyError, checkNumber } from "./waPool.service.js";
 
 /**
  * Canais de texto (Telegram, widget web, email) — ver docs/PLANO-CANAIS-TEXTO.md.
@@ -39,14 +40,24 @@ export async function telegramApi(botToken: string, method: string, body: unknow
 
 export const GRAPH_API = "https://graph.facebook.com/v21.0";
 
+/** Erro da Graph API com o código da Meta — o pool (waPool.service) classifica por ele. */
+export class WhatsappApiError extends Error {
+  constructor(message: string, readonly code: number | null, readonly httpStatus: number) {
+    super(message);
+  }
+}
+
 export async function whatsappApi(accessToken: string, path: string, body?: unknown): Promise<unknown> {
   const res = await fetch(`${GRAPH_API}/${path}`, {
     method: body === undefined ? "GET" : "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     ...(body !== undefined && { body: JSON.stringify(body) }),
+    signal: AbortSignal.timeout(10_000),
   });
-  const json = (await res.json()) as { error?: { message?: string } };
-  if (!res.ok || json.error) throw new Error(`WhatsApp ${path}: ${json.error?.message ?? res.status}`);
+  const json = (await res.json().catch(() => ({}))) as { error?: { message?: string; code?: number } };
+  if (!res.ok || json.error) {
+    throw new WhatsappApiError(`WhatsApp ${path}: ${json.error?.message ?? res.status}`, json.error?.code ?? null, res.status);
+  }
   return json;
 }
 
@@ -335,5 +346,7 @@ export async function deliver(
       })
       .catch(() => {});
     fastify.incomingCalls.broadcast(inbox.tenantId, "conversation.deliveryFailed", { conversationId: conv.id, messageId });
+    // Erro que pode ser do número (conta bloqueada, não registado…): o health check confirma.
+    if (inbox.channel === "WHATSAPP" && classifyError(err) !== "ignore") void checkNumber(fastify, inbox.id);
   }
 }

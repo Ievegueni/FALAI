@@ -736,6 +736,9 @@ export const inboxesApi = {
   create: (data: InboxInput) => post<import('@/types').Inbox>('/tenant/inboxes', data),
   update: (id: string, data: InboxInput) => patch<import('@/types').Inbox>(`/tenant/inboxes/${id}`, data),
   remove: (id: string) => del<void>(`/tenant/inboxes/${id}`),
+  poolAction: (id: string, action: 'activate' | 'standby' | 'disable' | 'check') =>
+    post<import('@/types').Inbox | { verdict: string; detail: string }>(`/tenant/inboxes/${id}/wa-pool`, { action }),
+  poolOrder: (ids: string[]) => put<void>('/tenant/inboxes/wa-pool/order', { ids }),
 };
 
 export const conversationsApi = {
