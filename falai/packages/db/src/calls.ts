@@ -13,6 +13,12 @@ const DIALING_TIMEOUT_MS = 10 * 60 * 1000;
  */
 const IN_PROGRESS_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * Chamadas de campanha são automáticas e curtas; se ficarem presas bloqueiam a
+ * campanha (e a fila do cliente) até serem fechadas, por isso o prazo é menor.
+ */
+const CAMPAIGN_IN_PROGRESS_TIMEOUT_MS = 60 * 60 * 1000;
+
 export type ReconcileStaleCallsResult = {
   closed: number;
   ids: string[];
@@ -28,12 +34,14 @@ export type ReconcileStaleCallsResult = {
 export async function reconcileStaleCalls(now: Date = new Date()): Promise<ReconcileStaleCallsResult> {
   const dialingCutoff = new Date(now.getTime() - DIALING_TIMEOUT_MS);
   const inProgressCutoff = new Date(now.getTime() - IN_PROGRESS_TIMEOUT_MS);
+  const campaignInProgressCutoff = new Date(now.getTime() - CAMPAIGN_IN_PROGRESS_TIMEOUT_MS);
 
   const stale = await prisma.call.findMany({
     where: {
       OR: [
         { status: { in: ["DIALING", "RINGING"] }, updatedAt: { lt: dialingCutoff } },
-        { status: "IN_PROGRESS", updatedAt: { lt: inProgressCutoff } },
+        { status: "IN_PROGRESS", campaignId: null, updatedAt: { lt: inProgressCutoff } },
+        { status: "IN_PROGRESS", campaignId: { not: null }, updatedAt: { lt: campaignInProgressCutoff } },
       ],
     },
     select: { id: true, campaignId: true },
