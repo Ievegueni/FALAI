@@ -543,6 +543,7 @@ export interface IvrMenu {
   id: string;
   name: string;
   greeting: string;
+  greetingAudio?: boolean; // saudação é um ficheiro carregado (não TTS)
   options: IvrOption[];
   timeoutSecs: number;
   maxRetries: number;

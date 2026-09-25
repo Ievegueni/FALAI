@@ -402,6 +402,12 @@ export const telephonyApi = {
   createIvr: (data: Omit<IvrMenu, 'id'>) => post<{ id: string }>('/tenant/routing/ivr', data),
   updateIvr: (id: string, data: Omit<IvrMenu, 'id'>) => put<{ ok: true }>(`/tenant/routing/ivr/${id}`, data),
   deleteIvr: (id: string) => del<void>(`/tenant/routing/ivr/${id}`),
+  uploadIvrAudio: (id: string, wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'greeting.wav');
+    return post<{ ok: true }>(`/tenant/routing/ivr/${id}/audio`, fd);
+  },
+  removeIvrAudio: (id: string) => del<void>(`/tenant/routing/ivr/${id}/audio`),
 
   // Rotas de entrada (DID → destino)
   listInboundRoutes: () => get<InboundRoute[]>('/tenant/routing/inbound-routes'),

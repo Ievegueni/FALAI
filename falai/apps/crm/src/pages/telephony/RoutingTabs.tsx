@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2, ListTree, PhoneIncoming } from 'lucide-react';
+import { Plus, Trash2, ListTree, PhoneIncoming, Volume2 } from 'lucide-react';
 import { telephonyApi } from '@/lib/api';
+import { toTelephonyWav } from '@/lib/telephonyWav';
 import { Button } from '@/components/ui/Button';
 import { Input, Select, Textarea } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
@@ -57,13 +58,23 @@ function IvrModal({ editing, onClose }: { editing: IvrMenu | 'new'; onClose: () 
   const qc = useQueryClient();
   const { success, error } = useToast();
   const [form, setForm] = useState<Omit<IvrMenu, 'id'>>(editing === 'new' ? EMPTY_MENU : editing);
+  const [audio, setAudio] = useState<File | null>(null);
+  const [removeAudio, setRemoveAudio] = useState(false);
+  const keepsAudio = editing !== 'new' && !!editing.greetingAudio && !removeAudio;
 
   const setOption = (i: number, patch: Partial<IvrOption>) =>
     setForm((f) => ({ ...f, options: f.options.map((o, j) => (j === i ? { ...o, ...patch } : o)) }));
   const nextDigit = DIGITS.find((d) => !form.options.some((o) => o.digit === d));
 
   const save = useMutation({
-    mutationFn: (): Promise<unknown> => (editing === 'new' ? telephonyApi.createIvr(form) : telephonyApi.updateIvr(editing.id, form)),
+    mutationFn: async () => {
+      if (!audio && !keepsAudio && form.greeting.trim().length < 2) throw new Error(t('telephony.ivrNeedGreeting'));
+      // Converte antes de gravar: um ficheiro ilegível não deixa um menu a meio.
+      const wav = audio ? await toTelephonyWav(audio) : null;
+      const id = editing === 'new' ? (await telephonyApi.createIvr(form)).id : (await telephonyApi.updateIvr(editing.id, form), editing.id);
+      if (wav) await telephonyApi.uploadIvrAudio(id, wav);
+      else if (removeAudio) await telephonyApi.removeIvrAudio(id);
+    },
     onSuccess: () => { success(t('common.saved')); onClose(); },
     onError: (e: Error) => error(e.message),
     // Uma falha do TTS grava o menu na mesma — a lista tem de o mostrar.
@@ -78,6 +89,19 @@ function IvrModal({ editing, onClose }: { editing: IvrMenu | 'new'; onClose: () 
         <Textarea label={t('telephony.ivrGreeting')} rows={3} value={form.greeting} hint={t('telephony.ivrGreetingHint')}
           onChange={(e) => setForm((f) => ({ ...f, greeting: e.target.value }))}
           placeholder="Bem-vindo. Para vendas, prima 1. Para suporte, prima 2." />
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-1.5">{t('telephony.ivrAudio')}</p>
+          {keepsAudio && !audio ? (
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <Volume2 className="h-4 w-4 text-green-600" /> {t('telephony.ivrAudioLoaded')}
+              <Button size="sm" variant="ghost" onClick={() => setRemoveAudio(true)}>{t('telephony.ivrAudioRemove')}</Button>
+            </div>
+          ) : (
+            <input type="file" accept="audio/*" onChange={(e) => setAudio(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-gray-200" />
+          )}
+          <p className="mt-1 text-xs text-gray-500">{t('telephony.ivrAudioHint')}</p>
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <Input label={t('telephony.ivrTimeout')} type="number" min={2} max={30} value={form.timeoutSecs}
             onChange={(e) => setForm((f) => ({ ...f, timeoutSecs: Number(e.target.value) }))} />
@@ -141,7 +165,9 @@ export function IvrTab({ canManage }: { canManage: boolean }) {
               <ListTree className="h-4 w-4 text-gray-400 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900">{m.name}</p>
-                <p className="text-xs text-gray-500 truncate">“{m.greeting}”</p>
+                <p className="text-xs text-gray-500 truncate">
+                  {m.greetingAudio ? <><Volume2 className="inline h-3 w-3 mr-1" />{t('telephony.ivrAudioLoaded')}</> : `“${m.greeting}”`}
+                </p>
                 <p className="text-xs text-gray-400 mt-1">
                   {m.options.map((o) => `${o.digit} → ${label(o.destType, o.destValue)}`).join(' · ') || t('telephony.ivrNoOptions')}
                 </p>
