@@ -41,6 +41,11 @@ Duas frentes abertas, por esta ordem:
   não muda com nenhuma decisão de negócio.
 - O que **desapareceu do âmbito**: toda a paridade com o Yeastar (IVR, filas,
   grupos de toque, voicemail, softphone próprio). Era o plano antigo.
+- **Excepção (25/09/2026): o IVR voltou ao âmbito**, a pedido. Menus no CRM
+  (Telefonia → IVR), saudação por TTS, DTMF encaminha para extensão, grupo ou
+  submenu; rotas de entrada (DID → destino) também têm UI agora. Só no motor
+  Asterisk. Código: `inboundCallRouter.service.ts` (secção IVR) e
+  `routes/tenant/routing.ts` (`/tenant/routing/ivr`).
 
 Documento de referência completo: `docs/AVALIACAO-MODELO-SIP-ANGOVOIP.txt`
 (secções 9-C a 11 são as decisões actuais).

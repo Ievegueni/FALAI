@@ -5,6 +5,7 @@ import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyRawBody from "fastify-raw-body";
 import fastifyMultipart from "@fastify/multipart";
 import { Redis } from "ioredis";
+import { ZodError } from "zod";
 
 import { config } from "./config.js";
 import { resolveProviderConfig, type ResolvedProviderConfig } from "./services/providerConfig.service.js";
@@ -154,6 +155,14 @@ async function buildApp() {
   });
 
   // ── Core plugins ───────────────────────────────────────────────────────
+  // As rotas validam com `schema.parse(...)`: sem isto um corpo inválido saía
+  // como 500. Dados errados do cliente são 400, com a mensagem do Zod.
+  fastify.setErrorHandler((err, _request, reply) => {
+    if (err instanceof ZodError) {
+      return reply.status(400).send({ error: err.issues[0]?.message ?? "Dados inválidos", issues: err.issues });
+    }
+    return reply.send(err);
+  });
   await fastify.register(fastifyRawBody, { global: false });
   await fastify.register(fastifyMultipart, { limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
   // Em produção: usa a whitelist de ALLOWED_ORIGINS se definida; senão bloqueia

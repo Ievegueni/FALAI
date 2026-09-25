@@ -474,6 +474,33 @@ export interface TelephonyRole {
   _count?: { extensions: number };
 }
 
+export type IvrDestType = 'EXTENSION' | 'GROUP' | 'IVR';
+
+export interface IvrOption {
+  digit: string;
+  destType: IvrDestType;
+  destValue: string;
+}
+
+export interface IvrMenu {
+  id: string;
+  name: string;
+  greeting: string;
+  options: IvrOption[];
+  timeoutSecs: number;
+  maxRetries: number;
+}
+
+export interface InboundRoute {
+  id: string;
+  name: string;
+  trunkId: string;
+  trunkName: string;
+  didPattern: string;
+  destType: IvrDestType | 'AI_AGENT';
+  destValue: string;
+}
+
 export interface TrunkView {
   id: string;
   tenantId: string | null;

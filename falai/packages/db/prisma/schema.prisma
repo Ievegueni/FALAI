@@ -209,6 +209,7 @@ model Tenant {
   roles                Role[]
   outboundRoutes       OutboundRoute[]
   inboundRoutes        InboundRoute[]
+  ivrMenus             IvrMenu[]
   // Canais de texto — ver docs/PLANO-CANAIS-TEXTO.md
   inboxes              Inbox[]
   conversations        Conversation[]
@@ -395,6 +396,22 @@ model InboundRoute {
   createdAt  DateTime @default(now())
 
   @@index([tenantId])
+}
+
+// Menu de voz (IVR): toca a saudação e encaminha pelo dígito premido.
+// O áudio é gerado por TTS ao gravar e fica no Asterisk como custom/ivr_<id>.
+model IvrMenu {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  name        String
+  greeting    String // texto lido ao chamador
+  options     Json // [{ digit: "1", destType: "EXTENSION"|"GROUP"|"IVR", destValue }]
+  timeoutSecs Int      @default(6) // espera por um dígito depois da saudação
+  maxRetries  Int      @default(2) // repetições da saudação antes de desistir
+  createdAt   DateTime @default(now())
+
+  @@unique([tenantId, name])
 }
 
 // Fatura da subscrição mensal do CRM (produto CRM_BYO_PBX; também qualquer plano com mensalidade)

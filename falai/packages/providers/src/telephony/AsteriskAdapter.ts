@@ -221,8 +221,11 @@ export class AsteriskAdapter implements TelephonyProvider {
   async noRouteFallback(providerCallId: string): Promise<void> {
     try {
       await this.answerChannel(providerCallId);
-      await this.playPrompt({ providerCallId, number: "", prompts: ["ss-noservice"] });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      // Som de sistema do Asterisk, não um prompt nosso: via playPrompt ia
+      // procurar custom/ss-noservice, que não existe, e o chamador só ouvia
+      // silêncio até desligar. Dura ~5 s.
+      await this.api(`/channels/${encodeURIComponent(providerCallId)}/play?media=sound:ss-noservice`, { method: "POST" });
+      await new Promise((resolve) => setTimeout(resolve, 5500));
     } finally {
       await this.hangup(providerCallId).catch(() => {});
     }
@@ -308,6 +311,22 @@ export class AsteriskAdapter implements TelephonyProvider {
       }
     }
     // O fim real chega pelo evento PlaybackFinished do ARI.
+  }
+
+  /** Toca um prompt e devolve o id do playback, para o poder interromper (IVR). */
+  async playOnChannel(channelId: string, prompt: string): Promise<string> {
+    const q = new URLSearchParams({ media: this.mediaFor(prompt) });
+    const pb = await this.api<{ id: string }>(`/channels/${encodeURIComponent(channelId)}/play?${q}`, { method: "POST" });
+    return pb.id;
+  }
+
+  async stopPlayback(playbackId: string): Promise<void> {
+    try {
+      await this.api(`/playbacks/${encodeURIComponent(playbackId)}`, { method: "DELETE" });
+    } catch (err) {
+      // 404 = já acabou de tocar.
+      if (!(err instanceof AsteriskError && err.status === 404)) throw err;
+    }
   }
 
   /** Toca o próximo prompt de uma chamada de script fixo; desliga no fim. */

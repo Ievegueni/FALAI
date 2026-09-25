@@ -2,9 +2,9 @@
  * Encaminhamento de chamadas de entrada do motor Asterisk nativo (secção 6 do
  * plano do webphone). Antes disto, nada tratava o evento que o dialplan
  * entrega a Stasis(falai,inbound,${EXTEN}) — a chamada nunca tocava em lado
- * nenhum. Só suporta InboundRoute.destType === "EXTENSION" para já; GROUP/IVR/
- * AI_AGENT ficam no fallback de "sem rota" (fica registado, não é regressão:
- * nada disto tocava antes).
+ * nenhum. Destinos suportados: EXTENSION, GROUP (toca em todos os membros) e
+ * IVR (menu de voz — ver secção IVR abaixo). AI_AGENT fica no fallback de
+ * "sem rota".
  *
  * "Ring group": toca em simultâneo no endpoint de hardphone e no de webphone
  * da mesma extensão (ver asteriskNaming.ts); quem atender primeiro entra na
@@ -33,6 +33,9 @@ import {
 
 const RING_TIMEOUT_SECS = 25;
 
+type InboundEvent = Extract<CallEvent, { type: "INBOUND_CALL_STARTED" }>;
+interface Dest { destType: string; destValue: string }
+
 export function registerInboundCallRouter(
   onCallEvent: (handler: (event: CallEvent) => Promise<void>) => void,
   asterisk: AsteriskAdapter,
@@ -44,11 +47,22 @@ export function registerInboundCallRouter(
     // "Up"; para uma chamada de entrada isso não acontece (atendemo-la nós à
     // entrada), mas trata-se na mesma para o registo não ficar pendurado.
     if (event.type === "CALL_ENDED" || event.type === "CALL_FAILED") {
+      endIvr(event.providerCallId);
       await closeInboundCall(
         event.providerCallId,
         event.type === "CALL_ENDED" ? event.endedAt : new Date(),
         log
       );
+      return;
+    }
+    if (event.type === "DTMF") {
+      const s = ivrSessions.get(event.providerCallId);
+      if (s) await onIvrDigit(s, event.digit, asterisk, log);
+      return;
+    }
+    if (event.type === "PROMPT_FINISHED") {
+      const s = ivrSessions.get(event.providerCallId);
+      if (s && --s.pending <= 0) armIvrTimeout(s, asterisk, log);
       return;
     }
     if (event.type !== "INBOUND_CALL_STARTED") return;
@@ -62,7 +76,7 @@ export function registerInboundCallRouter(
 }
 
 async function handleInboundCall(
-  event: Extract<CallEvent, { type: "INBOUND_CALL_STARTED" }>,
+  event: InboundEvent,
   asterisk: AsteriskAdapter,
   log: FastifyBaseLogger
 ): Promise<void> {
@@ -75,18 +89,30 @@ async function handleInboundCall(
     ? await resolveInboundForTenant(event.tenantId, event.did)
     : await resolveInboundGlobal(event.did);
 
-  if (!route || route.destType !== "EXTENSION") {
-    log.info({ did: event.did, tenantId: event.tenantId ?? null, route }, "inbound_call_router.no_route");
+  if (!route) {
+    log.info({ did: event.did, tenantId: event.tenantId ?? null }, "inbound_call_router.no_route");
     await asterisk.noRouteFallback(event.providerCallId);
     return;
   }
+  await routeTo(event, route.tenantId, route, asterisk, log);
+}
 
-  const ext = await prisma.extension.findFirst({
-    where: { tenantId: route.tenantId, number: route.destValue, isActive: true },
-    select: { sipAuthUser: true },
-  });
-  if (!ext) {
-    log.warn({ did: event.did, route }, "inbound_call_router.extension_not_found");
+/** Encaminha para um destino — usado pela rota de entrada e pelas opções do IVR. */
+async function routeTo(
+  event: InboundEvent,
+  tenantId: string,
+  dest: Dest,
+  asterisk: AsteriskAdapter,
+  log: FastifyBaseLogger
+): Promise<void> {
+  if (dest.destType === "IVR") {
+    await startIvr(event, tenantId, dest.destValue, asterisk, log);
+    return;
+  }
+
+  const sipUsers = await resolveSipUsers(tenantId, dest);
+  if (sipUsers.length === 0) {
+    log.warn({ did: event.did, dest }, "inbound_call_router.no_target");
     await asterisk.noRouteFallback(event.providerCallId);
     return;
   }
@@ -96,9 +122,40 @@ async function handleInboundCall(
   // chamada é invisível — não aparece na lista nem conta para o consumo. Fica de
   // fora, de propósito, tudo o que caiu no noRouteFallback acima: uma chamada
   // que não tocou em ninguém não se regista nem se cobra.
-  await openInboundCall(event, route.tenantId, log);
+  await openInboundCall(event, tenantId, log);
+  await ringTargets(
+    event,
+    sipUsers.flatMap((u) => [extensionEndpointId(u), extensionWebEndpointId(u)]),
+    asterisk,
+    log
+  );
+}
 
-  const targets = [extensionEndpointId(ext.sipAuthUser), extensionWebEndpointId(ext.sipAuthUser)];
+/** Utilizadores SIP a tocar: a extensão, ou os membros activos do grupo. */
+async function resolveSipUsers(tenantId: string, dest: Dest): Promise<string[]> {
+  if (dest.destType === "EXTENSION") {
+    const ext = await prisma.extension.findFirst({
+      where: { tenantId, number: dest.destValue, isActive: true },
+      select: { sipAuthUser: true },
+    });
+    return ext ? [ext.sipAuthUser] : [];
+  }
+  if (dest.destType === "GROUP") {
+    const members = await prisma.extensionGroupMember.findMany({
+      where: { groupId: dest.destValue, group: { tenantId }, extension: { isActive: true } },
+      select: { extension: { select: { sipAuthUser: true } } },
+    });
+    return members.map((m) => m.extension.sipAuthUser);
+  }
+  return [];
+}
+
+async function ringTargets(
+  event: InboundEvent,
+  targets: string[],
+  asterisk: AsteriskAdapter,
+  log: FastifyBaseLogger
+): Promise<void> {
   const bridge = await asterisk.createBridge();
   await asterisk.answerChannel(event.providerCallId);
   await asterisk.addChannelToBridge(bridge.id, event.providerCallId);
@@ -144,6 +201,112 @@ async function handleInboundCall(
   );
 }
 
+// ─── IVR ────────────────────────────────────────────────────────────────────
+// Toca a saudação do menu (custom/ivr_<id>, gerada por TTS ao gravar) e espera
+// por um dígito. O chamador pode premir a meio da saudação. Dígito inválido ou
+// silêncio repetem a saudação até maxRetries; depois cai no aviso de "sem
+// serviço". O tempo no menu não se cobra: a cobrança conta de quando uma
+// extensão atende (ver closeInboundCall).
+// ponytail: sessões em memória — um reinício da API larga os menus a meio;
+// passar para Redis se houver mais de uma instância da API.
+
+export interface IvrOption extends Dest { digit: string }
+
+interface IvrSession {
+  event: InboundEvent;
+  tenantId: string;
+  menu: { id: string; options: IvrOption[]; timeoutSecs: number; maxRetries: number };
+  retries: number;
+  /** Playbacks ainda a tocar — o tempo de espera só começa quando chega a 0. */
+  pending: number;
+  playbackId?: string;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+const ivrSessions = new Map<string, IvrSession>();
+
+async function startIvr(
+  event: InboundEvent,
+  tenantId: string,
+  menuId: string,
+  asterisk: AsteriskAdapter,
+  log: FastifyBaseLogger
+): Promise<void> {
+  const menu = await prisma.ivrMenu.findFirst({
+    where: { id: menuId, tenantId },
+    select: { id: true, options: true, timeoutSecs: true, maxRetries: true },
+  });
+  if (!menu) {
+    log.warn({ did: event.did, menuId }, "inbound_call_router.ivr_not_found");
+    await asterisk.noRouteFallback(event.providerCallId);
+    return;
+  }
+  await openInboundCall(event, tenantId, log);
+  await asterisk.answerChannel(event.providerCallId);
+
+  endIvr(event.providerCallId); // submenu: substitui a sessão do menu anterior
+  const s: IvrSession = {
+    event,
+    tenantId,
+    menu: { ...menu, options: Array.isArray(menu.options) ? (menu.options as unknown as IvrOption[]) : [] },
+    retries: 0,
+    pending: 0,
+  };
+  ivrSessions.set(event.providerCallId, s);
+  await playGreeting(s, asterisk, log);
+}
+
+async function playGreeting(s: IvrSession, asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
+  const id = s.event.providerCallId;
+  try {
+    s.pending++;
+    s.playbackId = await asterisk.playOnChannel(id, `ivr_${s.menu.id}`);
+  } catch (err) {
+    log.error({ err, providerCallId: id }, "inbound_call_router.ivr_play_failed");
+    endIvr(id);
+    await asterisk.noRouteFallback(id).catch(() => {});
+  }
+}
+
+function armIvrTimeout(s: IvrSession, asterisk: AsteriskAdapter, log: FastifyBaseLogger): void {
+  clearTimeout(s.timer);
+  s.timer = setTimeout(() => {
+    if (ivrSessions.get(s.event.providerCallId) === s) void retryIvr(s, asterisk, log);
+  }, s.menu.timeoutSecs * 1000);
+}
+
+async function retryIvr(s: IvrSession, asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
+  const id = s.event.providerCallId;
+  if (++s.retries > s.menu.maxRetries) {
+    log.info({ providerCallId: id, menuId: s.menu.id }, "inbound_call_router.ivr_gave_up");
+    endIvr(id);
+    await asterisk.noRouteFallback(id).catch(() => {});
+    return;
+  }
+  if (s.playbackId) await asterisk.stopPlayback(s.playbackId).catch(() => {});
+  await playGreeting(s, asterisk, log);
+}
+
+async function onIvrDigit(s: IvrSession, digit: string, asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
+  clearTimeout(s.timer);
+  const opt = s.menu.options.find((o) => o.digit === digit);
+  log.info({ providerCallId: s.event.providerCallId, digit, dest: opt ?? null }, "inbound_call_router.ivr_digit");
+  if (!opt) {
+    await retryIvr(s, asterisk, log);
+    return;
+  }
+  endIvr(s.event.providerCallId);
+  if (s.playbackId) await asterisk.stopPlayback(s.playbackId).catch(() => {});
+  await routeTo(s.event, s.tenantId, opt, asterisk, log);
+}
+
+function endIvr(providerCallId: string): void {
+  const s = ivrSessions.get(providerCallId);
+  if (!s) return;
+  clearTimeout(s.timer);
+  ivrSessions.delete(providerCallId);
+}
+
 /**
  * Abre o registo da chamada de entrada. Idempotente pelo id do canal do trunk:
  * a coluna `yeastarCallId` é única, por isso uma reentrega do StasisStart (ou
@@ -151,7 +314,7 @@ async function handleInboundCall(
  * RINGING — é a mesma garantia que o CDR do webphone usa.
  */
 async function openInboundCall(
-  event: Extract<CallEvent, { type: "INBOUND_CALL_STARTED" }>,
+  event: InboundEvent,
   tenantId: string,
   log: FastifyBaseLogger
 ): Promise<void> {

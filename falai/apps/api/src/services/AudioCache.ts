@@ -98,4 +98,15 @@ export class AudioCache {
 
     return name;
   }
+
+  /**
+   * Saudação de um menu IVR. Sem cache: o texto pode mudar a cada gravação e o
+   * nome é fixo por menu, por isso sintetiza e substitui sempre.
+   */
+  async prepareIvrPrompt(menuId: string, text: string): Promise<string> {
+    const name = `ivr_${menuId}`;
+    const { wavBuffer } = await this.tts.synthesize({ text, voiceId: this.defaultVoiceId });
+    await this.telephony.uploadPrompt(name, wavBuffer);
+    return name;
+  }
 }

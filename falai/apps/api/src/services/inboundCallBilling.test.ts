@@ -70,6 +70,20 @@ const prisma = {
   extension: {
     findFirst: vi.fn(async () => ({ sipAuthUser: "Ab12" })),
   },
+  extensionGroupMember: {
+    findMany: vi.fn(async () => [{ extension: { sipAuthUser: "G1" } }, { extension: { sipAuthUser: "G2" } }]),
+  },
+  ivrMenu: {
+    findFirst: vi.fn(async () => ({
+      id: "ivr1",
+      timeoutSecs: 5,
+      maxRetries: 1,
+      options: [
+        { digit: "1", destType: "EXTENSION", destValue: "201" },
+        { digit: "2", destType: "GROUP", destValue: "grp1" },
+      ],
+    })),
+  },
   tenant: {
     findUnique: vi.fn(async () => ({
       billingModeOverride: null,
@@ -121,6 +135,8 @@ function setup() {
     noRouteFallback: vi.fn(async () => {}),
     destroyBridge: vi.fn(async () => {}),
     hangup: vi.fn(async () => {}),
+    playOnChannel: vi.fn(async () => "pb1"),
+    stopPlayback: vi.fn(async () => {}),
   };
   registerInboundCallRouter((h) => { handler = h; }, asterisk as never, log);
   return {
@@ -224,5 +240,76 @@ describe("chamada de entrada — cobrança", () => {
 
     expect(wallet).toHaveLength(1);
     expect(rows[0]!.costCents).toBe(30);
+  });
+});
+
+describe("IVR", () => {
+  const ID = "chan-trunk-1";
+  beforeEach(() => {
+    resolveInboundForTenant.mockResolvedValue({ tenantId: "tnt_1", destType: "IVR", destValue: "ivr1" });
+  });
+
+  it("toca a saudação e encaminha pelo dígito para a extensão", async () => {
+    const s = setup();
+    await s.emit(START);
+    expect(s.asterisk.playOnChannel).toHaveBeenCalledWith(ID, "ivr_ivr1");
+    expect(rows).toHaveLength(1); // a chamada chegou ao cliente: fica registada
+    expect(s.asterisk.originateToPjsipEndpoint).not.toHaveBeenCalled();
+
+    await s.emit({ type: "DTMF", providerCallId: ID, digit: "1" });
+    expect(s.asterisk.stopPlayback).toHaveBeenCalledWith("pb1");
+    const targets = s.asterisk.originateToPjsipEndpoint.mock.calls.map((c) => c[0]);
+    expect(targets).toEqual(["ext_Ab12", "extweb_Ab12"]);
+  });
+
+  it("opção de grupo toca em todos os membros", async () => {
+    const s = setup();
+    await s.emit(START);
+    await s.emit({ type: "DTMF", providerCallId: ID, digit: "2" });
+    const targets = s.asterisk.originateToPjsipEndpoint.mock.calls.map((c) => c[0]);
+    expect(targets).toEqual(["ext_G1", "extweb_G1", "ext_G2", "extweb_G2"]);
+  });
+
+  it("dígito inválido repete; esgotadas as tentativas cai no aviso", async () => {
+    const s = setup();
+    await s.emit(START);
+    await s.emit({ type: "DTMF", providerCallId: ID, digit: "9" });
+    expect(s.asterisk.playOnChannel).toHaveBeenCalledTimes(2);
+    expect(s.asterisk.noRouteFallback).not.toHaveBeenCalled();
+
+    await s.emit({ type: "DTMF", providerCallId: ID, digit: "9" }); // maxRetries = 1
+    expect(s.asterisk.noRouteFallback).toHaveBeenCalledWith(ID);
+    // Depois de desistir, dígitos já não fazem nada.
+    await s.emit({ type: "DTMF", providerCallId: ID, digit: "1" });
+    expect(s.asterisk.originateToPjsipEndpoint).not.toHaveBeenCalled();
+  });
+
+  it("silêncio depois da saudação repete ao fim do timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      await s.emit(START);
+      await s.emit({ type: "PROMPT_FINISHED", providerCallId: ID });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(s.asterisk.playOnChannel).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("desligar a meio do menu não deixa o timer a correr", async () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      await s.emit(START);
+      await s.emit({ type: "PROMPT_FINISHED", providerCallId: ID });
+      await s.emit({ type: "CALL_ENDED", providerCallId: ID, endedAt: new Date(), durationSecs: 3, hangupCause: "NORMAL" });
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(s.asterisk.playOnChannel).toHaveBeenCalledTimes(1);
+      expect(rows[0]!.status).toBe("NO_ANSWER");
+      expect(wallet).toHaveLength(0); // tempo no menu não se cobra
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -14,6 +14,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import type { Extension, ExtensionGroup, TelephonyRole, TrunkView } from '@/types';
+import { IvrTab, InboundRoutesTab } from './RoutingTabs';
 
 // ─── Mostrador de credenciais SIP (uma única vez) ────────────────────────────
 function SipCredentialsModal({ ext, onClose }: { ext: Extension | null; onClose: () => void }) {
@@ -434,12 +435,16 @@ export function TelephonyPage() {
             { key: 'extensions', label: t('telephony.tabExtensions') },
             { key: 'groups', label: t('telephony.tabGroups') },
             { key: 'roles', label: t('telephony.tabRoles') },
+            { key: 'ivr', label: t('telephony.tabIvr') },
+            { key: 'inbound', label: t('telephony.tabInbound') },
             { key: 'trunk', label: t('telephony.tabTrunk') },
           ]}
         />
         {tab === 'extensions' && <ExtensionsTab canManage={canManage} roles={roles ?? []} />}
         {tab === 'groups' && <GroupsTab canManage={canManage} />}
         {tab === 'roles' && <RolesTab canManage={canManage} />}
+        {tab === 'ivr' && <IvrTab canManage={canManage} />}
+        {tab === 'inbound' && <InboundRoutesTab canManage={canManage} />}
         {tab === 'trunk' && <TrunkTab />}
       </div>
     </>
