@@ -383,6 +383,17 @@ export class AsteriskAdapter implements TelephonyProvider {
   }
 
   /** Corta um playback a meio. 404 = já acabou sozinho, não é erro. */
+  /**
+   * Sinal de chamada em banda para quem liga, enquanto as extensões tocam. O
+   * canal já foi atendido (está numa bridge), por isso o 180 Ringing não chega:
+   * sem isto o chamador ouve silêncio e desliga. Toca até stopPlayback.
+   * Tons europeus (425 Hz), os mesmos de Angola.
+   */
+  async startRingback(channelId: string): Promise<{ id: string }> {
+    const q = new URLSearchParams({ media: "tone:ring;tonezone=pt" });
+    return this.api<{ id: string }>(`/channels/${encodeURIComponent(channelId)}/play?${q}`, { method: "POST" });
+  }
+
   async stopPlayback(playbackId: string): Promise<void> {
     try {
       await this.api(`/playbacks/${encodeURIComponent(playbackId)}`, { method: "DELETE" });

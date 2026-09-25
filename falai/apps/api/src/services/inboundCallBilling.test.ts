@@ -150,6 +150,7 @@ function setup() {
     hangup: vi.fn(async () => {}),
     playMediaOnChannel: vi.fn(async () => ({ id: "pb1" })),
     stopPlayback: vi.fn(async () => {}),
+    startRingback: vi.fn(async () => ({ id: "rb1" })),
   };
   registerInboundCallRouter((h) => { handler = h; }, asterisk as never, {} as never, log);
   return {

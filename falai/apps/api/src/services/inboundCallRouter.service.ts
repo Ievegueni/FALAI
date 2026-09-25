@@ -219,6 +219,17 @@ async function ringTargets(
   // atenderam" de "desligou no menu".
   if (channelIds.length > 0) rangExtension.add(event.providerCallId);
 
+  // Sinal de chamada para quem liga enquanto toca; sem ele ouve silêncio.
+  let ringbackId: string | null = null;
+  if (channelIds.length > 0) {
+    try {
+      ringbackId = (await asterisk.startRingback(event.providerCallId)).id;
+    } catch (err) {
+      log.warn({ err, providerCallId: event.providerCallId }, "inbound_call_router.ringback_failed");
+    }
+  }
+  const stopRingback = () => (ringbackId ? asterisk.stopPlayback(ringbackId).catch(() => {}) : Promise.resolve());
+
   if (channelIds.length === 0) {
     log.warn({ did: event.did, targets }, "inbound_call_router.no_target_reachable");
     await asterisk.noRouteFallback(event.providerCallId);
@@ -234,8 +245,8 @@ async function ringTargets(
       // Instante em que ALGUÉM atendeu — é a partir daqui que há conversa e,
       // portanto, tempo a cobrar.
       void markInboundAnswered(event.providerCallId, log);
-      asterisk
-        .addChannelToBridge(bridge.id, answeredId)
+      stopRingback()
+        .then(() => asterisk.addChannelToBridge(bridge.id, answeredId))
         .then(() => {
           // Só depois de os dois lados estarem na bridge é que há conversa para
           // gravar — gravar antes disso dava um ficheiro com o sinal de chamada.
@@ -250,7 +261,7 @@ async function ringTargets(
     },
     () => {
       log.info({ did: event.did }, "inbound_call_router.nobody_answered");
-      asterisk.noRouteFallback(event.providerCallId).catch(() => {});
+      void stopRingback().then(() => asterisk.noRouteFallback(event.providerCallId).catch(() => {}));
       asterisk.destroyBridge(bridge.id).catch(() => {});
     }
   );
