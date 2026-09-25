@@ -13,7 +13,7 @@
  * como no Yeastar. O streaming em tempo real para a IA (externalMedia) é a
  * Etapa 4 e não faz parte deste adaptador.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { WebSocket } from "ws";
 import type { CallEvent } from "@falai/shared";
@@ -264,9 +264,15 @@ export class AsteriskAdapter implements TelephonyProvider {
       throw new AsteriskError("soundsDir não configurado — não há onde guardar os prompts");
     }
     await mkdir(this.cfg.soundsDir, { recursive: true });
-    // .wav16 e não .wav: o Asterisk lê a extensão ".wav" como slin 8 kHz e
-    // recusa o ficheiro com "frequency mismatch", porque o TTS devolve 16 kHz.
-    await writeFile(join(this.cfg.soundsDir, `${name}.wav16`), wavBuffer);
+    // O Asterisk escolhe o formato pela extensão e recusa com "frequency
+    // mismatch" se não bater com o cabeçalho: ".wav" é 8 kHz, ".wav16" é
+    // 16 kHz. O TTS devolve 16 kHz; o áudio carregado no CRM vem a 8 kHz.
+    const rate = wavBuffer.length >= 28 ? wavBuffer.readUInt32LE(24) : 16000;
+    const [ext, other] = rate === 8000 ? ["wav", "wav16"] : ["wav16", "wav"];
+    await writeFile(join(this.cfg.soundsDir, `${name}.${ext}`), wavBuffer);
+    // Tira a versão no outro formato (ex.: TTS antigo), senão ficam duas com o
+    // mesmo nome e o Asterisk toca a que preferir.
+    await rm(join(this.cfg.soundsDir, `${name}.${other}`), { force: true });
   }
 
   /**

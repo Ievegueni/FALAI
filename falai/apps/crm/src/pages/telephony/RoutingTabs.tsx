@@ -61,6 +61,9 @@ function IvrModal({ editing, onClose }: { editing: IvrMenu | 'new'; onClose: () 
   const [audio, setAudio] = useState<File | null>(null);
   const [removeAudio, setRemoveAudio] = useState(false);
   const keepsAudio = editing !== 'new' && !!editing.greetingAudio && !removeAudio;
+  const [welcome, setWelcome] = useState<File | null>(null);
+  const [removeWelcome, setRemoveWelcome] = useState(false);
+  const keepsWelcome = editing !== 'new' && !!editing.welcomeAudio && !removeWelcome;
 
   const setOption = (i: number, patch: Partial<IvrOption>) =>
     setForm((f) => ({ ...f, options: f.options.map((o, j) => (j === i ? { ...o, ...patch } : o)) }));
@@ -71,9 +74,12 @@ function IvrModal({ editing, onClose }: { editing: IvrMenu | 'new'; onClose: () 
       if (!audio && !keepsAudio && form.greeting.trim().length < 2) throw new Error(t('telephony.ivrNeedGreeting'));
       // Converte antes de gravar: um ficheiro ilegível não deixa um menu a meio.
       const wav = audio ? await toTelephonyWav(audio) : null;
+      const welcomeWav = welcome ? await toTelephonyWav(welcome) : null;
       const id = editing === 'new' ? (await telephonyApi.createIvr(form)).id : (await telephonyApi.updateIvr(editing.id, form), editing.id);
       if (wav) await telephonyApi.uploadIvrAudio(id, wav);
       else if (removeAudio) await telephonyApi.removeIvrAudio(id);
+      if (welcomeWav) await telephonyApi.uploadIvrWelcome(id, welcomeWav);
+      else if (removeWelcome) await telephonyApi.removeIvrWelcome(id);
     },
     onSuccess: () => { success(t('common.saved')); onClose(); },
     onError: (e: Error) => error(e.message),
@@ -101,6 +107,19 @@ function IvrModal({ editing, onClose }: { editing: IvrMenu | 'new'; onClose: () 
               className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-gray-200" />
           )}
           <p className="mt-1 text-xs text-gray-500">{t('telephony.ivrAudioHint')}</p>
+        </div>
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-1.5">{t('telephony.ivrWelcome')}</p>
+          {keepsWelcome && !welcome ? (
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <Volume2 className="h-4 w-4 text-green-600" /> {t('telephony.ivrAudioLoaded')}
+              <Button size="sm" variant="ghost" onClick={() => setRemoveWelcome(true)}>{t('telephony.ivrWelcomeRemove')}</Button>
+            </div>
+          ) : (
+            <input type="file" accept="audio/*" onChange={(e) => setWelcome(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-gray-200" />
+          )}
+          <p className="mt-1 text-xs text-gray-500">{t('telephony.ivrWelcomeHint')}</p>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Input label={t('telephony.ivrTimeout')} type="number" min={2} max={30} value={form.timeoutSecs}
@@ -166,6 +185,7 @@ export function IvrTab({ canManage }: { canManage: boolean }) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900">{m.name}</p>
                 <p className="text-xs text-gray-500 truncate">
+                  {m.welcomeAudio && <><Volume2 className="inline h-3 w-3 mr-1" />{t('telephony.ivrWelcomeShort')} + </>}
                   {m.greetingAudio ? <><Volume2 className="inline h-3 w-3 mr-1" />{t('telephony.ivrAudioLoaded')}</> : `“${m.greeting}”`}
                 </p>
                 <p className="text-xs text-gray-400 mt-1">

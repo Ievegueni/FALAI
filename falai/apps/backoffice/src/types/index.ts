@@ -544,6 +544,7 @@ export interface IvrMenu {
   name: string;
   greeting: string;
   greetingAudio?: boolean; // saudação é um ficheiro carregado (não TTS)
+  welcomeAudio?: boolean; // boas-vindas carregadas, tocadas uma vez antes da saudação
   options: IvrOption[];
   timeoutSecs: number;
   maxRetries: number;

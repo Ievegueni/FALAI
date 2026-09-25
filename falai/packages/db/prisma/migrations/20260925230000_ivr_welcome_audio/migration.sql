@@ -1,0 +1,1 @@
+ALTER TABLE "IvrMenu" ADD COLUMN "welcomeAudio" BOOLEAN NOT NULL DEFAULT false;

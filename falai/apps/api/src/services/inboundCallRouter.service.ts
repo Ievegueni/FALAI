@@ -94,8 +94,12 @@ export function registerInboundCallRouter(
     if (event.type === "PROMPT_FINISHED") {
       const s = ivrSessions.get(event.providerCallId);
       // Só o fim da saudação actual arma a espera: um playback cortado a meio
-      // (repetição) também gera PROMPT_FINISHED, com o id antigo.
-      if (s && event.playbackId === s.playbackId) armIvrTimeout(s, asterisk, log);
+      // (repetição) também gera PROMPT_FINISHED, com o id antigo. O fim das
+      // boas-vindas não arma nada: passa à saudação das opções.
+      if (s && event.playbackId === s.playbackId) {
+        if (s.welcome) await playGreeting(s, asterisk, log);
+        else armIvrTimeout(s, asterisk, log);
+      }
       return;
     }
     if (event.type !== "INBOUND_CALL_STARTED") return;
@@ -253,7 +257,8 @@ async function ringTargets(
 }
 
 // ─── IVR ────────────────────────────────────────────────────────────────────
-// Toca a saudação do menu (custom/ivr_<id>, gerada por TTS ao gravar) e espera
+// Toca as boas-vindas, se o menu as tiver (custom/ivr_<id>_welcome, só uma vez),
+// depois a saudação do menu (custom/ivr_<id>, gerada por TTS ao gravar) e espera
 // por um dígito. O chamador pode premir a meio da saudação. Dígito inválido ou
 // silêncio repetem a saudação até maxRetries; depois cai no aviso de "sem
 // serviço". O tempo no menu não se cobra: a cobrança conta de quando uma
@@ -269,6 +274,8 @@ interface IvrSession {
   menu: { id: string; options: IvrOption[]; timeoutSecs: number; maxRetries: number };
   retries: number;
   playbackId?: string;
+  /** A tocar as boas-vindas: o fim do playback passa à saudação, não arma a espera. */
+  welcome?: boolean;
   timer?: ReturnType<typeof setTimeout>;
 }
 
@@ -283,7 +290,7 @@ async function startIvr(
 ): Promise<void> {
   const menu = await prisma.ivrMenu.findFirst({
     where: { id: menuId, tenantId },
-    select: { id: true, options: true, timeoutSecs: true, maxRetries: true },
+    select: { id: true, options: true, timeoutSecs: true, maxRetries: true, welcomeAudio: true },
   });
   if (!menu) {
     log.warn({ did: event.did, menuId }, "inbound_call_router.ivr_not_found");
@@ -294,18 +301,34 @@ async function startIvr(
   await asterisk.answerChannel(event.providerCallId);
 
   endIvr(event.providerCallId); // submenu: substitui a sessão do menu anterior
+  const { welcomeAudio, ...menuData } = menu;
   const s: IvrSession = {
     event,
     tenantId,
-    menu: { ...menu, options: Array.isArray(menu.options) ? (menu.options as unknown as IvrOption[]) : [] },
+    menu: { ...menuData, options: Array.isArray(menu.options) ? (menu.options as unknown as IvrOption[]) : [] },
     retries: 0,
   };
   ivrSessions.set(event.providerCallId, s);
-  await playGreeting(s, asterisk, log);
+  if (welcomeAudio) await playWelcome(s, asterisk, log);
+  else await playGreeting(s, asterisk, log);
+}
+
+// Boas-vindas: tocam uma vez; um dígito a meio já conta (onIvrDigit). Se
+// falharem, segue-se para a saudação em vez de largar a chamada.
+async function playWelcome(s: IvrSession, asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
+  const id = s.event.providerCallId;
+  try {
+    s.welcome = true;
+    s.playbackId = (await asterisk.playMediaOnChannel(id, `ivr_${s.menu.id}_welcome`)).id;
+  } catch (err) {
+    log.warn({ err, providerCallId: id }, "inbound_call_router.ivr_welcome_failed");
+    await playGreeting(s, asterisk, log);
+  }
 }
 
 async function playGreeting(s: IvrSession, asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
   const id = s.event.providerCallId;
+  s.welcome = false;
   try {
     s.playbackId = (await asterisk.playMediaOnChannel(id, `ivr_${s.menu.id}`)).id;
   } catch (err) {

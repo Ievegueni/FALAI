@@ -244,6 +244,12 @@ export const tenantsApi = {
     return post<{ ok: true }>(`/admin/tenants/${id}/ivr/${menuId}/audio`, fd);
   },
   removeIvrAudio: (id: string, menuId: string) => del<void>(`/admin/tenants/${id}/ivr/${menuId}/audio`),
+  uploadIvrWelcome: (id: string, menuId: string, wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'welcome.wav');
+    return post<{ ok: true }>(`/admin/tenants/${id}/ivr/${menuId}/welcome`, fd);
+  },
+  removeIvrWelcome: (id: string, menuId: string) => del<void>(`/admin/tenants/${id}/ivr/${menuId}/welcome`),
   listInboundRoutes: (id: string) => get<InboundRoute[]>(`/admin/tenants/${id}/inbound-routes`),
   createInboundRoute: (id: string, data: Omit<InboundRoute, 'id' | 'trunkName'>) =>
     post<{ id: string }>(`/admin/tenants/${id}/inbound-routes`, data),

@@ -213,7 +213,7 @@ export function registerIvrRouting(
     return prisma.ivrMenu.findMany({
       where: { tenantId },
       orderBy: { createdAt: "asc" },
-      select: { id: true, name: true, greeting: true, greetingAudio: true, options: true, timeoutSecs: true, maxRetries: true },
+      select: { id: true, name: true, greeting: true, greetingAudio: true, welcomeAudio: true, options: true, timeoutSecs: true, maxRetries: true },
     });
   });
 
@@ -285,6 +285,37 @@ export function registerIvrRouting(
     await fastify.audit({ actorType: c.actorType, actorId: c.actorId, tenantId, action: "tenant.ivr.audio_removed", targetType: "IvrMenu", targetId: existing.id, ip: request.ip });
     const ttsError = await synthGreeting(existing.id, existing.greeting);
     if (ttsError) return reply.status(502).send({ error: ttsError });
+    return reply.status(204).send();
+  });
+
+  // Boas-vindas: áudio opcional tocado uma vez antes da saudação das opções
+  // (que é a que se repete). Só por ficheiro, sem TTS.
+  fastify.post<P>(`${base}/ivr/:itemId/welcome`, { preHandler }, async (request, reply) => {
+    const c = await ctx(request, reply, true);
+    if (!c) return;
+    const { tenantId } = c;
+    const existing = await prisma.ivrMenu.findFirst({ where: { id: request.params.itemId, tenantId } });
+    if (!existing) return reply.status(404).send({ error: "Menu não encontrado" });
+    const file = request.isMultipart() ? await request.file() : undefined;
+    if (!file) return reply.status(400).send({ error: "Envie o áudio num campo 'file' (multipart)" });
+    const wav = await file.toBuffer();
+    if (!isTelephonyWav(wav)) return reply.status(400).send({ error: "Áudio tem de ser WAV PCM 16-bit, 8 kHz, mono" });
+
+    await fastify.callEngine.audioCache.uploadIvrWelcome(existing.id, wav);
+    await prisma.ivrMenu.update({ where: { id: existing.id }, data: { welcomeAudio: true } });
+    await fastify.audit({ actorType: c.actorType, actorId: c.actorId, tenantId, action: "tenant.ivr.welcome_uploaded", targetType: "IvrMenu", targetId: existing.id, ip: request.ip });
+    return { ok: true };
+  });
+
+  fastify.delete<P>(`${base}/ivr/:itemId/welcome`, { preHandler }, async (request, reply) => {
+    const c = await ctx(request, reply, true);
+    if (!c) return;
+    const { tenantId } = c;
+    const existing = await prisma.ivrMenu.findFirst({ where: { id: request.params.itemId, tenantId } });
+    if (!existing) return reply.status(404).send({ error: "Menu não encontrado" });
+    // O ficheiro fica no disco mas deixa de tocar (o runtime só o toca com a flag).
+    await prisma.ivrMenu.update({ where: { id: existing.id }, data: { welcomeAudio: false } });
+    await fastify.audit({ actorType: c.actorType, actorId: c.actorId, tenantId, action: "tenant.ivr.welcome_removed", targetType: "IvrMenu", targetId: existing.id, ip: request.ip });
     return reply.status(204).send();
   });
 

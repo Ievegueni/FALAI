@@ -56,6 +56,9 @@ function IvrModal({ tenantId, editing, onClose }: { tenantId: string; editing: I
   const [audio, setAudio] = useState<File | null>(null);
   const [removeAudio, setRemoveAudio] = useState(false);
   const keepsAudio = editing !== 'new' && !!editing.greetingAudio && !removeAudio;
+  const [welcome, setWelcome] = useState<File | null>(null);
+  const [removeWelcome, setRemoveWelcome] = useState(false);
+  const keepsWelcome = editing !== 'new' && !!editing.welcomeAudio && !removeWelcome;
 
   const setOption = (i: number, patch: Partial<IvrOption>) =>
     setForm((f) => ({ ...f, options: f.options.map((o, j) => (j === i ? { ...o, ...patch } : o)) }));
@@ -66,11 +69,14 @@ function IvrModal({ tenantId, editing, onClose }: { tenantId: string; editing: I
       if (!audio && !keepsAudio && form.greeting.trim().length < 2) throw new Error('Escreva a saudação ou carregue um ficheiro de áudio');
       // Converte antes de gravar: um ficheiro ilegível não deixa um menu a meio.
       const wav = audio ? await toTelephonyWav(audio) : null;
+      const welcomeWav = welcome ? await toTelephonyWav(welcome) : null;
       const id = editing === 'new'
         ? (await tenantsApi.createIvr(tenantId, form)).id
         : (await tenantsApi.updateIvr(tenantId, editing.id, form), editing.id);
       if (wav) await tenantsApi.uploadIvrAudio(tenantId, id, wav);
       else if (removeAudio) await tenantsApi.removeIvrAudio(tenantId, id);
+      if (welcomeWav) await tenantsApi.uploadIvrWelcome(tenantId, id, welcomeWav);
+      else if (removeWelcome) await tenantsApi.removeIvrWelcome(tenantId, id);
     },
     onSuccess: () => { toast.success('Menu gravado'); onClose(); },
     onError: (e: Error) => toast.error(e.message),
@@ -99,6 +105,19 @@ function IvrModal({ tenantId, editing, onClose }: { tenantId: string; editing: I
               className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-gray-200" />
           )}
           <p className="mt-1 text-xs text-gray-500">MP3, WAV, M4A… Se carregar áudio, é este que o chamador ouve em vez do texto.</p>
+        </div>
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-1.5">Boas-vindas (opcional)</p>
+          {keepsWelcome && !welcome ? (
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <Volume2 className="h-4 w-4 text-green-600" /> Áudio carregado
+              <Button size="sm" variant="ghost" onClick={() => setRemoveWelcome(true)}>Remover</Button>
+            </div>
+          ) : (
+            <input type="file" accept="audio/*" onChange={(e) => setWelcome(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-gray-200" />
+          )}
+          <p className="mt-1 text-xs text-gray-500">Toca uma vez, antes da saudação. Sem resposta, só a saudação se repete.</p>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Input label="Espera por dígito (s)" type="number" min={2} max={30} value={form.timeoutSecs}
@@ -214,6 +233,7 @@ export function TenantIvrTab({ tenantId }: { tenantId: string }) {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900">{m.name}</p>
                   <p className="text-xs text-gray-500 truncate">
+                    {m.welcomeAudio && <><Volume2 className="inline h-3 w-3 mr-1" />Boas-vindas + </>}
                     {m.greetingAudio ? <><Volume2 className="inline h-3 w-3 mr-1" />Áudio carregado</> : `“${m.greeting}”`}
                   </p>
                   <p className="text-xs text-gray-400 mt-1">

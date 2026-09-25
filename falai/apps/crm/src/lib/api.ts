@@ -408,6 +408,12 @@ export const telephonyApi = {
     return post<{ ok: true }>(`/tenant/routing/ivr/${id}/audio`, fd);
   },
   removeIvrAudio: (id: string) => del<void>(`/tenant/routing/ivr/${id}/audio`),
+  uploadIvrWelcome: (id: string, wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'welcome.wav');
+    return post<{ ok: true }>(`/tenant/routing/ivr/${id}/welcome`, fd);
+  },
+  removeIvrWelcome: (id: string) => del<void>(`/tenant/routing/ivr/${id}/welcome`),
 
   // Rotas de entrada (DID → destino)
   listInboundRoutes: () => get<InboundRoute[]>('/tenant/routing/inbound-routes'),

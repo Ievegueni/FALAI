@@ -114,4 +114,9 @@ export class AudioCache {
   async uploadIvrPrompt(menuId: string, wavBuffer: Buffer): Promise<void> {
     await this.telephony.uploadPrompt(`ivr_${menuId}`, wavBuffer);
   }
+
+  /** Boas-vindas do menu IVR, tocadas uma vez antes da saudação. */
+  async uploadIvrWelcome(menuId: string, wavBuffer: Buffer): Promise<void> {
+    await this.telephony.uploadPrompt(`ivr_${menuId}_welcome`, wavBuffer);
+  }
 }
