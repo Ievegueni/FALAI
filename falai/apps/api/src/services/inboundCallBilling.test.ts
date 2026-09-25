@@ -407,3 +407,39 @@ describe("chamada de entrada — o que ouve quem liga enquanto toca", () => {
     expect(s.asterisk.startRingback).toHaveBeenCalled();
   });
 });
+
+describe("chamada de entrada — alguém desliga", () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const END = (id: string): CallEvent => ({ type: "CALL_ENDED", providerCallId: id, endedAt: new Date(), durationSecs: 5, hangupCause: "NORMAL" });
+
+  it("quem liga desliga a meio do toque: cancela os toques das extensões e desfaz a bridge", async () => {
+    const s = setup();
+    await s.emit(START);
+    await s.emit(END("chan-trunk-1"));
+    const hung = (s.asterisk.hangup.mock.calls as unknown[][]).map((c) => c[0]);
+    expect(hung).toEqual(expect.arrayContaining(["chan_ext_Ab12", "chan_extweb_Ab12"]));
+    expect(s.asterisk.destroyBridge).toHaveBeenCalledWith("br1");
+    // O fim dos toques cancelados não é "ninguém atendeu": nada de aviso.
+    s.nobodyAnswers();
+    expect(s.asterisk.noRouteFallback).not.toHaveBeenCalled();
+  });
+
+  it("quem liga desliga depois de atender: desliga o agente", async () => {
+    const s = setup();
+    await s.emit(START);
+    s.answer();
+    await tick();
+    await s.emit(END("chan-trunk-1"));
+    expect((s.asterisk.hangup.mock.calls as unknown[][]).map((c) => c[0])).toContain("chan_ext_Ab12");
+  });
+
+  it("o agente desliga: desliga quem ligou", async () => {
+    const s = setup();
+    await s.emit(START);
+    s.answer();
+    await tick();
+    s.asterisk.hangup.mockClear();
+    await s.emit(END("chan_ext_Ab12"));
+    expect(s.asterisk.hangup).toHaveBeenCalledWith("chan-trunk-1");
+  });
+});

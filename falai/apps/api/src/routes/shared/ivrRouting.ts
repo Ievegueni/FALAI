@@ -36,7 +36,7 @@ const ivrCreate = z.object({
   // Vazio só faz sentido com áudio carregado (POST .../audio a seguir ao create).
   greeting: z.string().max(1000).default(""),
   options: z.array(ivrOption).max(12).refine((o) => new Set(o.map((x) => x.digit)).size === o.length, "Dígito repetido"),
-  timeoutSecs: z.number().int().min(2).max(30).default(6),
+  timeoutSecs: z.number().int().min(2).max(30).default(3),
   maxRetries: z.number().int().min(0).max(5).default(2),
 });
 const ivrUpdate = ivrCreate.partial();
@@ -193,6 +193,31 @@ export function registerIvrRouting(
       && b.readUInt16LE(20) === 1 && b.readUInt16LE(22) === 1 && b.readUInt32LE(24) === 8000 && b.readUInt16LE(34) === 16;
   }
 
+  /**
+   * Corta o silêncio do início e do fim de um WAV de telefone (PCM 16-bit mono,
+   * cabeçalho de 44 bytes), deixando 0,2 s de margem. Um áudio gravado com uns
+   * segundos de silêncio no fim somava-se à espera por dígito, e o menu parecia
+   * não repetir nunca.
+   */
+  function trimSilence(wav: Buffer): Buffer {
+    const rate = wav.readUInt32LE(24);
+    const samples = (wav.length - 44) >> 1;
+    const loud = (i: number) => Math.abs(wav.readInt16LE(44 + i * 2)) > 500;
+    let first = 0;
+    while (first < samples && !loud(first)) first++;
+    if (first === samples) return wav; // só silêncio: deixa estar, não é connosco
+    let last = samples - 1;
+    while (last > first && !loud(last)) last--;
+    const margin = Math.round(rate * 0.2);
+    const from = Math.max(0, first - margin);
+    const to = Math.min(samples, last + 1 + margin);
+    const data = wav.subarray(44 + from * 2, 44 + to * 2);
+    const header = Buffer.from(wav.subarray(0, 44));
+    header.writeUInt32LE(36 + data.length, 4);
+    header.writeUInt32LE(data.length, 40);
+    return Buffer.concat([header, data]);
+  }
+
   // Gera a saudação por TTS. Uma falha não desfaz o menu gravado: devolve-se o
   // erro para o cliente voltar a gravar.
   async function synthGreeting(menuId: string, greeting: string): Promise<string | null> {
@@ -266,7 +291,7 @@ export function registerIvrRouting(
     const wav = await file.toBuffer();
     if (!isTelephonyWav(wav)) return reply.status(400).send({ error: "Áudio tem de ser WAV PCM 16-bit, 8 kHz, mono" });
 
-    await fastify.callEngine.audioCache.uploadIvrPrompt(existing.id, wav);
+    await fastify.callEngine.audioCache.uploadIvrPrompt(existing.id, trimSilence(wav));
     await prisma.ivrMenu.update({ where: { id: existing.id }, data: { greetingAudio: true } });
     await fastify.audit({ actorType: c.actorType, actorId: c.actorId, tenantId, action: "tenant.ivr.audio_uploaded", targetType: "IvrMenu", targetId: existing.id, ip: request.ip });
     return { ok: true };
@@ -338,7 +363,7 @@ export function registerIvrRouting(
     const wav = await file.toBuffer();
     if (!isTelephonyWav(wav)) return reply.status(400).send({ error: "Áudio tem de ser WAV PCM 16-bit, 8 kHz, mono" });
 
-    await fastify.callEngine.audioCache.uploadIvrWelcome(existing.id, wav);
+    await fastify.callEngine.audioCache.uploadIvrWelcome(existing.id, trimSilence(wav));
     await prisma.ivrMenu.update({ where: { id: existing.id }, data: { welcomeAudio: true } });
     await fastify.audit({ actorType: c.actorType, actorId: c.actorId, tenantId, action: "tenant.ivr.welcome_uploaded", targetType: "IvrMenu", targetId: existing.id, ip: request.ip });
     return { ok: true };

@@ -51,6 +51,32 @@ interface Dest { destType: string; destValue: string }
  */
 const rangExtension = new Set<string>();
 
+/**
+ * Pernas de cada chamada de entrada que chegou a tocar em extensões, pelo id do
+ * canal do trunk. Quando quem liga desliga, as extensões ainda a tocar (ou a
+ * que atendeu) têm de ser desligadas por nós — sem isto o webphone continuava
+ * a tocar para uma chamada que já não existia.
+ */
+interface InboundLegs {
+  bridgeId: string;
+  ringing: string[];
+  answered?: string;
+  stopHold: () => Promise<unknown>;
+}
+const legsByCaller = new Map<string, InboundLegs>();
+/** Extensão que atendeu → canal do trunk: se o agente desliga, cai quem liga. */
+const callerByAgent = new Map<string, string>();
+
+async function releaseCallerLegs(callerId: string, asterisk: AsteriskAdapter): Promise<void> {
+  const legs = legsByCaller.get(callerId);
+  if (!legs) return;
+  legsByCaller.delete(callerId);
+  if (legs.answered) callerByAgent.delete(legs.answered);
+  await legs.stopHold();
+  await Promise.all([...legs.ringing, ...(legs.answered ? [legs.answered] : [])].map((id) => asterisk.hangup(id).catch(() => {})));
+  await asterisk.destroyBridge(legs.bridgeId).catch(() => {});
+}
+
 export function registerInboundCallRouter(
   onCallEvent: (handler: (event: CallEvent) => Promise<void>) => void,
   asterisk: AsteriskAdapter,
@@ -63,7 +89,16 @@ export function registerInboundCallRouter(
     // "Up"; para uma chamada de entrada isso não acontece (atendemo-la nós à
     // entrada), mas trata-se na mesma para o registo não ficar pendurado.
     if (event.type === "CALL_ENDED" || event.type === "CALL_FAILED") {
+      // O agente desligou: desliga-se também quem ligou (ficava em silêncio).
+      const caller = callerByAgent.get(event.providerCallId);
+      if (caller) {
+        callerByAgent.delete(event.providerCallId);
+        await asterisk.hangup(caller).catch(() => {});
+        return;
+      }
       endIvr(event.providerCallId);
+      // Quem ligou desligou: cancela os toques / desliga o agente.
+      await releaseCallerLegs(event.providerCallId, asterisk);
       await closeInboundCall(
         event.providerCallId,
         event.type === "CALL_ENDED" ? event.endedAt : new Date(),
@@ -249,6 +284,8 @@ async function ringTargets(
       : ringbackId
         ? asterisk.stopPlayback(ringbackId).catch(() => {})
         : Promise.resolve();
+  const legs: InboundLegs = { bridgeId: bridge.id, ringing: channelIds, stopHold: stopRingback };
+  legsByCaller.set(event.providerCallId, legs);
 
   if (channelIds.length === 0) {
     log.warn({ did: event.did, targets }, "inbound_call_router.no_target_reachable");
@@ -262,6 +299,14 @@ async function ringTargets(
   asterisk.registerRingGroup(
     channelIds,
     (answeredId) => {
+      // Quem ligou pode ter desligado entre o toque e o atendimento.
+      if (legsByCaller.get(event.providerCallId) !== legs) {
+        asterisk.hangup(answeredId).catch(() => {});
+        return;
+      }
+      legs.ringing = [];
+      legs.answered = answeredId;
+      callerByAgent.set(answeredId, event.providerCallId);
       // Instante em que ALGUÉM atendeu — é a partir daqui que há conversa e,
       // portanto, tempo a cobrar.
       void markInboundAnswered(event.providerCallId, log);
@@ -280,6 +325,9 @@ async function ringTargets(
       }
     },
     () => {
+      // Toques cancelados por quem ligou ter desligado: já está tudo limpo.
+      if (legsByCaller.get(event.providerCallId) !== legs) return;
+      legsByCaller.delete(event.providerCallId);
       log.info({ did: event.did }, "inbound_call_router.nobody_answered");
       void stopRingback().then(() => asterisk.noRouteFallback(event.providerCallId).catch(() => {}));
       asterisk.destroyBridge(bridge.id).catch(() => {});

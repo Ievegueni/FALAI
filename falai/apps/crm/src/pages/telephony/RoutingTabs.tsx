@@ -51,7 +51,7 @@ function DestPicker({ type, value, onChange, exclude }: {
 }
 
 // ─── IVR ──────────────────────────────────────────────────────────────────────
-const EMPTY_MENU: Omit<IvrMenu, 'id'> = { name: '', greeting: '', options: [], timeoutSecs: 6, maxRetries: 2 };
+const EMPTY_MENU: Omit<IvrMenu, 'id'> = { name: '', greeting: '', options: [], timeoutSecs: 3, maxRetries: 2 };
 
 function IvrModal({ editing, onClose }: { editing: IvrMenu | 'new'; onClose: () => void }) {
   const { t } = useTranslation();

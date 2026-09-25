@@ -47,7 +47,7 @@ function DestPicker({ tenantId, type, value, onChange, exclude }: {
   );
 }
 
-const EMPTY_MENU: Omit<IvrMenu, 'id'> = { name: '', greeting: '', options: [], timeoutSecs: 6, maxRetries: 2 };
+const EMPTY_MENU: Omit<IvrMenu, 'id'> = { name: '', greeting: '', options: [], timeoutSecs: 3, maxRetries: 2 };
 
 function IvrModal({ tenantId, editing, onClose }: { tenantId: string; editing: IvrMenu | 'new'; onClose: () => void }) {
   const qc = useQueryClient();

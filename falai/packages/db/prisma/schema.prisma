@@ -424,7 +424,7 @@ model IvrMenu {
   greetingAudio Boolean @default(false) // true = ficheiro carregado pelo cliente, não se regera por TTS
   welcomeAudio Boolean @default(false) // true = há boas-vindas carregadas (custom/ivr_<id>_welcome), tocadas uma vez antes da saudação
   options     Json // [{ digit: "1", destType: "EXTENSION"|"GROUP"|"IVR", destValue }]
-  timeoutSecs Int      @default(6) // espera por um dígito depois da saudação
+  timeoutSecs Int      @default(3) // espera por um dígito depois da saudação
   maxRetries  Int      @default(2) // repetições da saudação antes de desistir
   createdAt   DateTime @default(now())
 
