@@ -29,13 +29,15 @@
 import { chmod, chown, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TrunkRuntimeAdapter, PbxSyncPayload, PbxSyncResult } from "@falai/providers";
-import { trunkEndpointId, extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
+import { trunkEndpointId, extensionEndpointId, extensionWebEndpointId, holdMusicClass, holdMusicDir } from "@falai/providers";
 
 const AMI_URL = process.env["ASTERISK_AMI_URL"] ?? "";
 const AMI_USER = process.env["ASTERISK_AMI_USER"] ?? "";
 const AMI_PASSWORD = process.env["ASTERISK_AMI_PASSWORD"] ?? "";
 /** Pasta partilhada com o contentor do Asterisk (infra/asterisk/generated). */
 const GENERATED_DIR = process.env["ASTERISK_GENERATED_DIR"] ?? "";
+/** Pasta de sons do motor — é lá que ficam as músicas de espera (moh/<tenant>). */
+const SOUNDS_DIR = process.env["ASTERISK_SOUNDS_DIR"] ?? "";
 /**
  * Intervalo entre recarregamentos de módulos. O Asterisk não diz quando acabou
  * um reload, por isso é uma margem: 2s é folgado para o que medimos (um reload
@@ -117,6 +119,9 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
       // Um contexto de entrada por cliente com trunk exclusivo. Tem de ser
       // gerado porque os clientes mudam; o resto do dialplan é estático.
       await write("extensions-falai.conf", this.buildDialplan(payload));
+      // Uma classe de música de espera por cliente que a carregou. Incluído
+      // pelo musiconhold.conf (#include "generated/musiconhold-falai.conf").
+      await write("musiconhold-falai.conf", this.buildHoldMusic(payload));
     } catch (err) {
       this.log?.("pbx.runtime.write_failed", { err: String(err) });
       return { ok: false, engine: "asterisk", details: `não foi possível escrever a configuração: ${String(err)}` };
@@ -141,6 +146,15 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
   }
 
   /** Variáveis que o dialplan usa para saber por onde sair. */
+  private buildHoldMusic(payload: PbxSyncPayload): string {
+    const lines = ["; Gerado pela API do Falaí — não editar. Música de espera por cliente.", ""];
+    if (!SOUNDS_DIR) return lines.join("\n");
+    for (const tenantId of payload.holdMusicTenants ?? []) {
+      lines.push(`[${holdMusicClass(tenantId)}]`, "mode=files", `directory=${join(SOUNDS_DIR, holdMusicDir(tenantId))}`, "");
+    }
+    return lines.join("\n");
+  }
+
   private buildGlobals(payload: PbxSyncPayload): string {
     const trunk = payload.trunks.find((t) => t.enabled);
 
@@ -433,20 +447,21 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         return false;
       }
 
-      // Três reloads, por esta ordem, e todos são necessários:
+      // Quatro reloads, por esta ordem, e todos são necessários:
       //  - res_pjsip: relê endpoints, auths e aors.
       //  - res_pjsip_outbound_registration: sem este, um trunk REMOVIDO ou
       //    desactivado continua registado na operadora, porque o reload do
       //    res_pjsip não desmonta registos que deixaram de existir.
       //  - pbx_config: relê o dialplan, que é onde vivem as variáveis do trunk
       //    (globals-falai.conf). Sem ele, mudar de trunk não muda a saída.
+      //  - res_musiconhold: relê as classes de música de espera dos clientes.
       // ESPAÇADOS DE PROPÓSITO. O Asterisk trata um reload de cada vez: um
       // pedido que chegue com outro ainda em curso responde "Success" na mesma
       // e é DESCARTADO em silêncio. Enviados em rajada, os três anulavam-se e a
       // configuração nova não entrava no motor — medido a 28/07/2026, era a
       // razão de mexer no backoffice não chegar às chamadas.
       let ok = true;
-      const modules = ["res_pjsip", "res_pjsip_outbound_registration", "pbx_config"];
+      const modules = ["res_pjsip", "res_pjsip_outbound_registration", "pbx_config", "res_musiconhold"];
       for (const [i, mod] of modules.entries()) {
         if (i > 0) await new Promise((resolve) => setTimeout(resolve, RELOAD_GAP_MS));
         const res = await fetch(`${AMI_URL}/rawman?action=Reload&Module=${mod}`, {

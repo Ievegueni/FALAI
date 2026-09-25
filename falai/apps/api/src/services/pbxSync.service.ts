@@ -41,7 +41,7 @@ function safeDecrypt(v: string): string {
  * PbxSyncPayload (packages/providers).
  */
 export async function buildPbxSyncPayload(): Promise<PbxSyncPayload> {
-  const [trunks, extensions, outboundRoutes, inboundRoutes] = await Promise.all([
+  const [trunks, extensions, outboundRoutes, inboundRoutes, holdTenants] = await Promise.all([
     prisma.trunk.findMany({ include: { dids: true } }),
     prisma.extension.findMany({
       where: { isActive: true, tenant: { status: { not: "CLOSED" }, deletedAt: null } },
@@ -49,6 +49,7 @@ export async function buildPbxSyncPayload(): Promise<PbxSyncPayload> {
     }),
     prisma.outboundRoute.findMany({ include: { permissions: { include: { extension: { select: { number: true } } } } } }),
     prisma.inboundRoute.findMany(),
+    prisma.tenant.findMany({ where: { holdAudio: true, deletedAt: null }, select: { id: true } }),
   ]);
 
   return {
@@ -103,6 +104,7 @@ export async function buildPbxSyncPayload(): Promise<PbxSyncPayload> {
       destType: r.destType,
       destValue: r.destValue,
     })),
+    holdMusicTenants: holdTenants.map((t) => t.id),
   };
 }
 

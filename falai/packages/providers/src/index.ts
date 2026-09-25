@@ -10,6 +10,8 @@ export {
   sipAuthUserFromEndpointId,
   formatDialNumber,
   parseDialFormat,
+  holdMusicClass,
+  holdMusicDir,
 } from "./telephony/asteriskNaming.js";
 export type { DialFormat } from "./telephony/asteriskNaming.js";
 export { NoopTrunkRuntimeAdapter } from "./telephony/TrunkRuntimeAdapter.js";

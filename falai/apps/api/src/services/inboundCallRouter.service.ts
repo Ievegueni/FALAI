@@ -19,7 +19,7 @@
  * webphoneCdr.service.ts.
  */
 import type { AsteriskAdapter } from "@falai/providers";
-import { extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
+import { extensionEndpointId, extensionWebEndpointId, holdMusicClass } from "@falai/providers";
 import type { CallEvent } from "@falai/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { prisma } from "@falai/db";
@@ -219,16 +219,36 @@ async function ringTargets(
   // atenderam" de "desligou no menu".
   if (channelIds.length > 0) rangExtension.add(event.providerCallId);
 
-  // Sinal de chamada para quem liga enquanto toca; sem ele ouve silêncio.
+  // Enquanto toca, quem liga ouve a música de espera do cliente (na bridge,
+  // onde por agora só está ele) ou, sem música, o sinal de chamada. Sem nada
+  // ouvia silêncio e desligava.
   let ringbackId: string | null = null;
+  let moh = false;
   if (channelIds.length > 0) {
-    try {
-      ringbackId = (await asterisk.startRingback(event.providerCallId)).id;
-    } catch (err) {
-      log.warn({ err, providerCallId: event.providerCallId }, "inbound_call_router.ringback_failed");
+    const t = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { holdAudio: true } });
+    if (t?.holdAudio) {
+      try {
+        await asterisk.startBridgeMoh(bridge.id, holdMusicClass(tenantId));
+        moh = true;
+      } catch (err) {
+        log.warn({ err, providerCallId: event.providerCallId }, "inbound_call_router.hold_music_failed");
+      }
+    }
+    if (!moh) {
+      try {
+        ringbackId = (await asterisk.startRingback(event.providerCallId)).id;
+      } catch (err) {
+        log.warn({ err, providerCallId: event.providerCallId }, "inbound_call_router.ringback_failed");
+      }
     }
   }
-  const stopRingback = () => (ringbackId ? asterisk.stopPlayback(ringbackId).catch(() => {}) : Promise.resolve());
+  // A música pára ANTES de o agente entrar na bridge, senão ouvia-a também.
+  const stopRingback = () =>
+    moh
+      ? asterisk.stopBridgeMoh(bridge.id).catch(() => {})
+      : ringbackId
+        ? asterisk.stopPlayback(ringbackId).catch(() => {})
+        : Promise.resolve();
 
   if (channelIds.length === 0) {
     log.warn({ did: event.did, targets }, "inbound_call_router.no_target_reachable");

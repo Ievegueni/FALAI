@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { WebSocket } from "ws";
 import type { CallEvent } from "@falai/shared";
 import type { TelephonyProvider, DialParams, PlayPromptParams } from "./TelephonyProvider.js";
-import { formatDialNumber, type DialFormat } from "./asteriskNaming.js";
+import { formatDialNumber, holdMusicDir, type DialFormat } from "./asteriskNaming.js";
 
 export interface AsteriskConfig {
   /** Ex.: http://127.0.0.1:8088 */
@@ -273,6 +273,36 @@ export class AsteriskAdapter implements TelephonyProvider {
     // Tira a versão no outro formato (ex.: TTS antigo), senão ficam duas com o
     // mesmo nome e o Asterisk toca a que preferir.
     await rm(join(this.cfg.soundsDir, `${name}.${other}`), { force: true });
+  }
+
+  /**
+   * Música de espera do cliente: um único ficheiro na pasta da classe MOH
+   * (ver holdMusicDir). Mesma regra de formato que uploadPrompt.
+   */
+  async uploadHoldMusic(tenantId: string, wavBuffer: Buffer): Promise<void> {
+    if (!this.cfg.soundsDir) {
+      throw new AsteriskError("soundsDir não configurado — não há onde guardar a música");
+    }
+    const dir = join(this.cfg.soundsDir, holdMusicDir(tenantId));
+    await mkdir(dir, { recursive: true });
+    const rate = wavBuffer.length >= 28 ? wavBuffer.readUInt32LE(24) : 16000;
+    const [ext, other] = rate === 8000 ? ["wav", "wav16"] : ["wav16", "wav"];
+    await writeFile(join(dir, `hold.${ext}`), wavBuffer);
+    await rm(join(dir, `hold.${other}`), { force: true });
+  }
+
+  /** Música de espera na bridge (toca a quem lá estiver) até stopBridgeMoh. */
+  async startBridgeMoh(bridgeId: string, mohClass: string): Promise<void> {
+    const q = new URLSearchParams({ mohClass });
+    await this.api(`/bridges/${encodeURIComponent(bridgeId)}/moh?${q}`, { method: "POST" });
+  }
+
+  async stopBridgeMoh(bridgeId: string): Promise<void> {
+    try {
+      await this.api(`/bridges/${encodeURIComponent(bridgeId)}/moh`, { method: "DELETE" });
+    } catch (err) {
+      if (!(err instanceof AsteriskError && err.status === 404)) throw err;
+    }
   }
 
   /**

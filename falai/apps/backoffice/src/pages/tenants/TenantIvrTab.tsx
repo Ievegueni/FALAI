@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, ListTree, PhoneIncoming, Volume2 } from 'lucide-react';
+import { Plus, Trash2, ListTree, PhoneIncoming, Volume2, Music } from 'lucide-react';
 import { tenantsApi } from '@/lib/api';
 import { toTelephonyWav } from '@/lib/telephonyWav';
 import { Card, Button, Modal, Input, Select, Textarea, PageSpinner } from '@/components/ui';
@@ -196,6 +196,56 @@ function InboundRouteModal({ tenantId, editing, onClose }: { tenantId: string; e
   );
 }
 
+/** Música de espera do cliente: toca a quem liga enquanto a extensão toca. */
+function HoldMusicCard({ tenantId }: { tenantId: string }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { data } = useQuery({ queryKey: ['tenant-hold-audio', tenantId], queryFn: () => tenantsApi.getHoldAudio(tenantId) });
+  const done = (msg: string) => { toast.success(msg); void qc.invalidateQueries({ queryKey: ['tenant-hold-audio', tenantId] }); };
+  const upload = useMutation({
+    mutationFn: async (file: File) => tenantsApi.uploadHoldAudio(tenantId, await toTelephonyWav(file)),
+    onSuccess: () => done('Música de espera carregada'),
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const remove = useMutation({
+    mutationFn: () => tenantsApi.removeHoldAudio(tenantId),
+    onSuccess: () => done('Música de espera removida'),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Card>
+      <div className="flex items-start gap-3">
+        <Music className="h-4 w-4 text-gray-400 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-gray-900">Música de espera</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Toca a quem liga enquanto a extensão toca (depois de escolher uma opção do IVR ou numa rota directa). Sem música, ouve o sinal de chamada.
+          </p>
+          <p className="text-xs mt-2">
+            {data?.enabled
+              ? <span className="text-green-700"><Volume2 className="inline h-3 w-3 mr-1" />Áudio carregado</span>
+              : <span className="text-gray-400">Sem música: sinal de chamada</span>}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="cursor-pointer text-sm font-medium text-indigo-600 hover:text-indigo-800">
+            {upload.isPending ? 'A carregar…' : data?.enabled ? 'Substituir' : 'Carregar áudio'}
+            <input type="file" accept="audio/*" className="hidden" disabled={upload.isPending}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ''; }} />
+          </label>
+          {data?.enabled && (
+            <button className="text-gray-400 hover:text-red-500" title="Remover"
+              onClick={() => { if (confirm('Remover a música de espera? Quem liga volta a ouvir o sinal de chamada.')) remove.mutate(); }}>
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function TenantIvrTab({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -220,6 +270,7 @@ export function TenantIvrTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-6">
+      <HoldMusicCard tenantId={tenantId} />
       <section>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-gray-900">Menus IVR</h3>

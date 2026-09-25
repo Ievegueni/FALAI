@@ -42,7 +42,11 @@ mkdir -p /etc/asterisk /etc/asterisk/generated
 # Os dois ficheiros que a API gera. Criados vazios para o Asterisk arrancar
 # mesmo antes do primeiro sync — sem eles, os #include falham e o dialplan não
 # carrega de todo.
-touch /etc/asterisk/generated/pjsip-falai.conf /etc/asterisk/generated/globals-falai.conf
+touch /etc/asterisk/generated/pjsip-falai.conf /etc/asterisk/generated/globals-falai.conf \
+  /etc/asterisk/generated/musiconhold-falai.conf
+# Música de espera por cliente: classes geradas pela API, incluídas aqui.
+grep -q 'generated/musiconhold-falai.conf' /etc/asterisk/musiconhold.conf 2>/dev/null \
+  || echo '#include "generated/musiconhold-falai.conf"' >> /etc/asterisk/musiconhold.conf
 for tpl in /templates/*.template; do
   out="/etc/asterisk/$(basename "${tpl}" .template)"
   envsubst "${SUBST_VARS}" < "${tpl}" > "${out}"

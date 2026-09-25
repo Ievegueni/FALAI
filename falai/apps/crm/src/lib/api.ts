@@ -414,6 +414,13 @@ export const telephonyApi = {
     return post<{ ok: true }>(`/tenant/routing/ivr/${id}/welcome`, fd);
   },
   removeIvrWelcome: (id: string) => del<void>(`/tenant/routing/ivr/${id}/welcome`),
+  getHoldAudio: () => get<{ enabled: boolean }>('/tenant/routing/hold-audio'),
+  uploadHoldAudio: (wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'hold.wav');
+    return post<{ ok: true }>('/tenant/routing/hold-audio', fd);
+  },
+  removeHoldAudio: () => del<void>('/tenant/routing/hold-audio'),
 
   // Rotas de entrada (DID → destino)
   listInboundRoutes: () => get<InboundRoute[]>('/tenant/routing/inbound-routes'),

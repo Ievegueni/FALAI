@@ -79,6 +79,8 @@ export interface PbxSyncPayload {
   extensions: SipExtensionConfig[];
   outboundRoutes: OutboundRouteConfig[];
   inboundRoutes: InboundRouteConfig[];
+  /** Clientes com música de espera carregada (uma classe MOH cada). */
+  holdMusicTenants?: string[];
 }
 
 export interface PbxSyncResult {

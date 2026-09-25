@@ -32,6 +32,7 @@ let seq = 0;
 
 const byUid = (uid: string) => rows.find((r) => r.yeastarCallId === uid);
 
+const tenantRow = { holdAudio: false };
 const prisma = {
   call: {
     upsert: vi.fn(async ({ where, create }: any) => {
@@ -88,6 +89,7 @@ const prisma = {
     findUnique: vi.fn(async () => ({
       billingModeOverride: null,
       plan: { billingMode: "PER_MINUTE", pricePerMinuteCents: 30, pricePerCallCents: 100 },
+      holdAudio: tenantRow.holdAudio,
     })),
     findUniqueOrThrow: vi.fn(async () => ({ balanceCents })),
     update: vi.fn(async () => ({})),
@@ -108,6 +110,7 @@ vi.mock("@falai/db", () => ({ prisma }));
 vi.mock("@falai/providers", () => ({
   extensionEndpointId: (s: string) => `ext_${s}`,
   extensionWebEndpointId: (s: string) => `extweb_${s}`,
+  holdMusicClass: (s: string) => `falai_${s}`,
 }));
 
 const resolveInboundForTenant = vi.fn();
@@ -151,6 +154,8 @@ function setup() {
     playMediaOnChannel: vi.fn(async () => ({ id: "pb1" })),
     stopPlayback: vi.fn(async () => {}),
     startRingback: vi.fn(async () => ({ id: "rb1" })),
+    startBridgeMoh: vi.fn(async () => {}),
+    stopBridgeMoh: vi.fn(async () => {}),
   };
   registerInboundCallRouter((h) => { handler = h; }, asterisk as never, {} as never, log);
   return {
@@ -364,5 +369,41 @@ describe("IVR", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("chamada de entrada — o que ouve quem liga enquanto toca", () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  beforeEach(() => { tenantRow.holdAudio = false; });
+
+  it("sem música de espera: sinal de chamada, parado antes de ligar o agente", async () => {
+    const s = setup();
+    await s.emit(START);
+    expect(s.asterisk.startRingback).toHaveBeenCalledWith("chan-trunk-1");
+    expect(s.asterisk.startBridgeMoh).not.toHaveBeenCalled();
+    s.answer();
+    await tick();
+    expect(s.asterisk.stopPlayback).toHaveBeenCalledWith("rb1");
+  });
+
+  it("com música de espera: toca a classe do cliente na bridge e pára antes de o agente entrar", async () => {
+    tenantRow.holdAudio = true;
+    const s = setup();
+    await s.emit(START);
+    expect(s.asterisk.startBridgeMoh).toHaveBeenCalledWith("br1", "falai_tnt_1");
+    expect(s.asterisk.startRingback).not.toHaveBeenCalled();
+    s.answer();
+    await tick();
+    const stopAt = s.asterisk.stopBridgeMoh.mock.invocationCallOrder[0]!;
+    const joinAt = s.asterisk.addChannelToBridge.mock.invocationCallOrder.at(-1)!;
+    expect(stopAt).toBeLessThan(joinAt);
+  });
+
+  it("se a música falhar, cai no sinal de chamada", async () => {
+    tenantRow.holdAudio = true;
+    const s = setup();
+    s.asterisk.startBridgeMoh.mockRejectedValueOnce(new Error("no class"));
+    await s.emit(START);
+    expect(s.asterisk.startRingback).toHaveBeenCalled();
   });
 });

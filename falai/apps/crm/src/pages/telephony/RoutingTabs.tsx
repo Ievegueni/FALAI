@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2, ListTree, PhoneIncoming, Volume2 } from 'lucide-react';
+import { Plus, Trash2, ListTree, PhoneIncoming, Volume2, Music } from 'lucide-react';
 import { telephonyApi } from '@/lib/api';
 import { toTelephonyWav } from '@/lib/telephonyWav';
 import { Button } from '@/components/ui/Button';
@@ -156,6 +156,55 @@ function IvrModal({ editing, onClose }: { editing: IvrMenu | 'new'; onClose: () 
   );
 }
 
+/** Música de espera do cliente: toca a quem liga enquanto a extensão toca. */
+function HoldMusicCard({ canManage }: { canManage: boolean }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const { success, error } = useToast();
+  const { data } = useQuery({ queryKey: ['telephony', 'hold-audio'], queryFn: telephonyApi.getHoldAudio });
+  const done = (msg: string) => { success(msg); void qc.invalidateQueries({ queryKey: ['telephony', 'hold-audio'] }); };
+  const upload = useMutation({
+    mutationFn: async (file: File) => telephonyApi.uploadHoldAudio(await toTelephonyWav(file)),
+    onSuccess: () => done(t('telephony.holdUploaded')),
+    onError: (e: Error) => error(e.message),
+  });
+  const remove = useMutation({
+    mutationFn: () => telephonyApi.removeHoldAudio(),
+    onSuccess: () => done(t('telephony.holdRemoved')),
+    onError: (e: Error) => error(e.message),
+  });
+
+  return (
+    <Card className="mb-4">
+      <div className="flex items-start gap-3">
+        <Music className="h-4 w-4 text-gray-400 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-gray-900">{t('telephony.holdTitle')}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{t('telephony.holdHint')}</p>
+          <p className="text-xs mt-2">
+            {data?.enabled
+              ? <span className="text-green-700"><Volume2 className="inline h-3 w-3 mr-1" />{t('telephony.ivrAudioLoaded')}</span>
+              : <span className="text-gray-400">{t('telephony.holdNone')}</span>}
+          </p>
+        </div>
+        {canManage && (
+          <div className="flex items-center gap-2">
+            <label className="cursor-pointer text-sm font-medium text-indigo-600 hover:text-indigo-800">
+              {upload.isPending ? t('common.loading') : data?.enabled ? t('telephony.holdReplace') : t('telephony.holdUpload')}
+              <input type="file" accept="audio/*" className="hidden" disabled={upload.isPending}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ''; }} />
+            </label>
+            {data?.enabled && (
+              <Button size="sm" variant="ghost" icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
+                onClick={() => { if (confirm(t('telephony.holdRemoveConfirm'))) remove.mutate(); }} />
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export function IvrTab({ canManage }: { canManage: boolean }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -174,6 +223,7 @@ export function IvrTab({ canManage }: { canManage: boolean }) {
 
   return (
     <>
+      <HoldMusicCard canManage={canManage} />
       <div className="flex justify-end mb-3">
         {canManage && <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setEditing('new')}>{t('telephony.newIvr')}</Button>}
       </div>

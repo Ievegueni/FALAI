@@ -288,6 +288,43 @@ export function registerIvrRouting(
     return reply.status(204).send();
   });
 
+  // ── Música de espera ───────────────────────────────────────────────────────
+  // Uma por cliente: toca a quem liga enquanto a extensão/grupo toca (em vez
+  // do sinal de chamada). Ver inboundCallRouter.ringTargets.
+  fastify.get(`${base}/hold-audio`, { preHandler }, async (request, reply) => {
+    const c = await ctx(request, reply, false);
+    if (!c) return;
+    const t = await prisma.tenant.findUniqueOrThrow({ where: { id: c.tenantId }, select: { holdAudio: true } });
+    return { enabled: t.holdAudio };
+  });
+
+  fastify.post(`${base}/hold-audio`, { preHandler }, async (request, reply) => {
+    const c = await ctx(request, reply, true);
+    if (!c) return;
+    const { tenantId } = c;
+    if (!fastify.asterisk) return reply.status(503).send({ error: "Motor de telefonia próprio não configurado" });
+    const file = request.isMultipart() ? await request.file() : undefined;
+    if (!file) return reply.status(400).send({ error: "Envie o áudio num campo 'file' (multipart)" });
+    const wav = await file.toBuffer();
+    if (!isTelephonyWav(wav)) return reply.status(400).send({ error: "Áudio tem de ser WAV PCM 16-bit, 8 kHz, mono" });
+
+    await fastify.asterisk.uploadHoldMusic(tenantId, wav);
+    await prisma.tenant.update({ where: { id: tenantId }, data: { holdAudio: true } });
+    await fastify.audit({ actorType: c.actorType, actorId: c.actorId, tenantId, action: "tenant.hold_audio.uploaded", targetType: "Tenant", targetId: tenantId, ip: request.ip });
+    scheduleTenantPbxSync(tenantId); // cria a classe MOH do cliente
+    return { ok: true };
+  });
+
+  fastify.delete(`${base}/hold-audio`, { preHandler }, async (request, reply) => {
+    const c = await ctx(request, reply, true);
+    if (!c) return;
+    const { tenantId } = c;
+    await prisma.tenant.update({ where: { id: tenantId }, data: { holdAudio: false } });
+    await fastify.audit({ actorType: c.actorType, actorId: c.actorId, tenantId, action: "tenant.hold_audio.removed", targetType: "Tenant", targetId: tenantId, ip: request.ip });
+    scheduleTenantPbxSync(tenantId);
+    return reply.status(204).send();
+  });
+
   // Boas-vindas: áudio opcional tocado uma vez antes da saudação das opções
   // (que é a que se repete). Só por ficheiro, sem TTS.
   fastify.post<P>(`${base}/ivr/:itemId/welcome`, { preHandler }, async (request, reply) => {
