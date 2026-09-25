@@ -85,7 +85,7 @@ export function registerIvrRouting(
     const [extensions, groups, trunks] = await Promise.all([
       prisma.extension.findMany({ where: { tenantId: c.tenantId }, orderBy: { number: "asc" }, select: { number: true, displayName: true } }),
       prisma.extensionGroup.findMany({ where: { tenantId: c.tenantId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-      prisma.trunk.findMany({ where: { OR: [{ tenantId: c.tenantId }, { tenantId: null }] }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      prisma.trunk.findMany({ where: { tenantId: c.tenantId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     ]);
     return { extensions, groups, trunks };
   });

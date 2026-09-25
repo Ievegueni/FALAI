@@ -36,6 +36,8 @@ import type {
   Trunk,
   EngineStatus,
   WalletTransaction,
+  TenantExtension,
+  TenantExtensionInput,
 } from '@/types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -223,6 +225,14 @@ export const tenantsApi = {
   revokeApiKey: (id: string, keyId: string) => del<void>(`/admin/tenants/${id}/api-keys/${keyId}`),
 
   // IVR e rotas de entrada do cliente
+  listExtensions: (id: string) => get<TenantExtension[]>(`/admin/tenants/${id}/extensions`),
+  createExtension: (id: string, data: TenantExtensionInput) =>
+    post<TenantExtension & { sipAuthSecret: string }>(`/admin/tenants/${id}/extensions`, data),
+  updateExtension: (id: string, extId: string, data: TenantExtensionInput) =>
+    put<TenantExtension>(`/admin/tenants/${id}/extensions/${extId}`, data),
+  resetExtensionSip: (id: string, extId: string) =>
+    post<TenantExtension & { sipAuthSecret: string }>(`/admin/tenants/${id}/extensions/${extId}/reset-sip`, {}),
+  deleteExtension: (id: string, extId: string) => del<void>(`/admin/tenants/${id}/extensions/${extId}`),
   routingOptions: (id: string) => get<RoutingOptions>(`/admin/tenants/${id}/routing-options`),
   listIvr: (id: string) => get<IvrMenu[]>(`/admin/tenants/${id}/ivr`),
   createIvr: (id: string, data: Omit<IvrMenu, 'id'>) => post<{ id: string }>(`/admin/tenants/${id}/ivr`, data),

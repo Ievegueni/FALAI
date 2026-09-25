@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { prisma, chargeMonthlyInvoice } from "@falai/db";
 import { z } from "zod";
 import { hashPassword } from "../../services/auth.service.js";
@@ -11,7 +11,8 @@ import { encryptSecret } from "../../services/crypto.service.js";
 import { invalidateTenantSms } from "../../services/sms.service.js";
 import { publicApiUrl } from "../tenant/inboxes.js";
 import { checkNumber } from "../../services/waPool.service.js";
-import { registerIvrRouting } from "../shared/ivrRouting.js";
+import { registerIvrRouting, type RoutingCtx } from "../shared/ivrRouting.js";
+import { registerExtensions } from "../shared/extensions.js";
 
 const lineCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -956,19 +957,19 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.status(201).send({ ...user, twoFaEnabled: false });
   });
 
-  // Rotas de entrada e menus IVR do cliente, geridos pelo operador sem entrar
-  // no CRM — ver routes/shared/ivrRouting.ts.
-  registerIvrRouting(fastify, {
-    base: "/:id",
-    preHandler,
-    ctx: async (request, reply) => {
-      const { id } = request.params as { id: string };
-      const tenant = await prisma.tenant.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
-      if (!tenant) {
-        reply.status(404).send({ error: "Tenant não encontrado" });
-        return null;
-      }
-      return { tenantId: tenant.id, actorType: "ADMIN", actorId: request.adminUser!.sub };
-    },
-  });
+  // O operador gere o cliente sem entrar no CRM, com o mesmo código que o CRM
+  // usa — o que se configura aqui é o que o cliente vê no perfil.
+  const adminCtx = async (request: FastifyRequest, reply: FastifyReply): Promise<RoutingCtx | null> => {
+    const { id } = request.params as { id: string };
+    const tenant = await prisma.tenant.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+    if (!tenant) {
+      reply.status(404).send({ error: "Tenant não encontrado" });
+      return null;
+    }
+    return { tenantId: tenant.id, actorType: "ADMIN", actorId: request.adminUser!.sub };
+  };
+  // Rotas de entrada e menus IVR — ver routes/shared/ivrRouting.ts.
+  registerIvrRouting(fastify, { base: "/:id", preHandler, ctx: adminCtx });
+  // Extensões — ver routes/shared/extensions.ts.
+  registerExtensions(fastify, { base: "/:id/extensions", preHandler, ctx: adminCtx });
 };

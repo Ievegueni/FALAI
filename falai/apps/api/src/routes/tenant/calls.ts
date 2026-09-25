@@ -396,10 +396,17 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // ── Chamadas directas (click-to-call, sem agente/IA) ──────────────────────
 
-  // GET /tenant/calls/extensions — lista as linhas do próprio cliente para o dropdown
-  // (não expõe extensões de outros clientes no PBX partilhado)
+  // GET /tenant/calls/extensions — extensões do próprio cliente para o dropdown
+  // (não expõe extensões de outros clientes no PBX partilhado). Fonte: modelo
+  // Extension; TenantLine só para quem ainda não tem extensões (compat §6).
   fastify.get("/extensions", { preHandler, config: { feature: "directCall" } }, async (request) => {
     const { tenantId } = request.tenantUser!;
+    const exts = await prisma.extension.findMany({
+      where: { tenantId, isActive: true },
+      orderBy: [{ isDefault: "desc" }, { number: "asc" }],
+      select: { number: true, displayName: true },
+    });
+    if (exts.length > 0) return { extensions: exts.map((e) => ({ number: e.number, name: e.displayName ?? e.number })) };
     const lines = await prisma.tenantLine.findMany({
       where: { tenantId, isActive: true },
       orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
@@ -430,11 +437,16 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     const admin = request.tenantUser!;
     const { tenantId } = admin;
 
-    // A extensão de origem tem de ser uma linha activa deste cliente
-    const ownLine = await prisma.tenantLine.findFirst({
-      where: { tenantId, isActive: true, extension: body.fromExtension },
-      select: { id: true },
-    });
+    // A extensão de origem tem de ser uma extensão (ou linha antiga) activa deste cliente
+    const ownLine =
+      (await prisma.extension.findFirst({
+        where: { tenantId, isActive: true, number: body.fromExtension },
+        select: { id: true },
+      })) ??
+      (await prisma.tenantLine.findFirst({
+        where: { tenantId, isActive: true, extension: body.fromExtension },
+        select: { id: true },
+      }));
     if (!ownLine) {
       return reply.status(422).send({ error: "Extensão de origem inválida — não pertence a nenhuma linha activa deste cliente." });
     }

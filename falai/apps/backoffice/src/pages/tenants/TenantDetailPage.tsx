@@ -9,6 +9,7 @@ import {
 } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
 import { TenantIvrTab } from './TenantIvrTab';
+import { TenantExtensionsTab } from './TenantExtensionsTab';
 import {
   formatAOA, formatDate, formatDuration,
   tenantStatusColor, tenantStatusLabel,
@@ -340,7 +341,9 @@ export function TenantDetailPage() {
         tabs={[
           { key: 'overview', label: 'Visão geral' },
           { key: 'users', label: 'Utilizadores' },
-          { key: 'lines', label: 'Linhas' },
+          { key: 'extensions', label: 'Extensões' },
+          // Tabela antiga (TenantLine): o CRM não a mostra. Só aparece a quem ainda tem linhas.
+          ...((tenant.lines ?? []).length > 0 ? [{ key: 'lines', label: 'Linhas (antigo)' }] : []),
           { key: 'features', label: 'Funcionalidades' },
           { key: 'sms', label: 'SMS' },
           { key: 'whatsapp', label: 'WhatsApp' },
@@ -357,6 +360,7 @@ export function TenantDetailPage() {
       {tab === 'sms' && <SmsConfigTab tenantId={id!} />}
       {tab === 'whatsapp' && <WhatsappPoolTab tenantId={id!} />}
       {tab === 'ivr' && <TenantIvrTab tenantId={id!} />}
+      {tab === 'extensions' && <TenantExtensionsTab tenantId={id!} />}
       {tab === 'api-keys' && <ApiKeysTab tenantId={id!} />}
 
       {tab === 'overview' && (
@@ -559,7 +563,7 @@ export function TenantDetailPage() {
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <div>
               <h2 className="text-sm font-semibold text-gray-700">Linhas de chamadas</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Cada linha é uma extensão/DID que o cliente pode usar para chamadas.</p>
+              <p className="text-xs text-gray-500 mt-0.5">Configuração antiga, que o cliente não vê no CRM. Usa o separador Extensões.</p>
             </div>
             <Button
               size="sm"

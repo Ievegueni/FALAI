@@ -564,3 +564,25 @@ export interface RoutingOptions {
   groups: { id: string; name: string }[];
   trunks: { id: string; name: string }[];
 }
+
+/** Extensão do PBX nativo — a mesma que o cliente vê no CRM (Telefonia → Extensões). */
+export interface TenantExtension {
+  id: string;
+  number: string;
+  callerId: string;
+  displayName: string | null;
+  sipAuthUser: string;
+  isActive: boolean;
+  isDefault: boolean;
+  phoneNumber: string | null;
+  createdAt: string;
+}
+
+export interface TenantExtensionInput {
+  number?: string;
+  displayName?: string | null;
+  callerId?: string;
+  phoneNumber?: string | null;
+  isActive?: boolean;
+  isDefault?: boolean;
+}

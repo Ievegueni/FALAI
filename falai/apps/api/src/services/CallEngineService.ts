@@ -101,14 +101,22 @@ export class CallEngineService {
       // Para onde é lícito transferir esta chamada. Sem isto, um modelo do
       // cliente podia devolver `escalate` para um número qualquer e desviar a
       // chamada do cliente final. Ver guardrail.service.ts.
-      const lines = await prisma.tenantLine.findMany({
-        where: { tenantId: params.tenantId, isActive: true },
-        select: { phoneNumber: true, extension: true },
-      });
+      const [lines, exts] = await Promise.all([
+        prisma.tenantLine.findMany({
+          where: { tenantId: params.tenantId, isActive: true },
+          select: { phoneNumber: true, extension: true },
+        }),
+        prisma.extension.findMany({
+          where: { tenantId: params.tenantId, isActive: true },
+          select: { phoneNumber: true, number: true },
+        }),
+      ]);
       allowedEscalationNumbers = [
         params.escalationNumber,
         ...lines.map((l) => l.phoneNumber),
         ...lines.map((l) => l.extension),
+        ...exts.map((e) => e.phoneNumber),
+        ...exts.map((e) => e.number),
       ].filter((n): n is string => typeof n === "string" && n.trim() !== "");
     } catch (err) {
       this.cfg.log.error(
