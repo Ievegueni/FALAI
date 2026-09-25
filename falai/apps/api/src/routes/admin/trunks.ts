@@ -7,7 +7,10 @@ import { getAsteriskStatus } from "../../services/asteriskStatus.service.js";
 import { trunkEndpointId } from "@falai/providers";
 import { scheduleAllPbxSync } from "../../services/pbxSync.service.js";
 
-const didSchema = z.object({ did: z.string().min(3).max(32), name: z.string().max(64).optional().nullable() });
+// No update o dono vem à parte: o schema partilhado não aceita null.
+const ownerSchema = z.object({ tenantId: z.string().min(1).nullable().optional() });
+
+const didSchema =z.object({ did: z.string().min(3).max(32), name: z.string().max(64).optional().nullable() });
 
 export const adminTrunksRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.authenticate];
@@ -101,7 +104,7 @@ export const adminTrunksRoutes: FastifyPluginAsync = async (fastify) => {
   // PUT /admin/trunks/:id
   fastify.put<{ Params: { id: string } }>("/:id", { preHandler }, async (request, reply) => {
     const admin = request.adminUser!;
-    const body = trunkUpdateSchema.parse(request.body);
+    const body = trunkUpdateSchema.omit({ tenantId: true }).parse(request.body);
 
     const existing = await prisma.trunk.findUnique({ where: { id: request.params.id } });
     if (!existing) return reply.status(404).send({ error: "Trunk não encontrado" });
@@ -111,9 +114,32 @@ export const adminTrunksRoutes: FastifyPluginAsync = async (fastify) => {
     const authProblem = validateTrunkAuth(body, existing);
     if (authProblem) return reply.status(400).send({ error: authProblem });
 
+    // Mudar o dono: é o que associa o trunk a um cliente (é o único que o vê
+    // no CRM). null = volta a partilhado do operador.
+    const { tenantId: newOwner } = ownerSchema.parse(request.body);
+    if (newOwner !== undefined && newOwner !== existing.tenantId) {
+      if (newOwner) {
+        const tenant = await prisma.tenant.findFirst({ where: { id: newOwner, deletedAt: null }, select: { id: true } });
+        if (!tenant) return reply.status(400).send({ error: "Cliente não encontrado" });
+      }
+      // Rotas de outro cliente a apontar para este trunk ficariam a usar um
+      // trunk que já não é dele.
+      const notOwner = newOwner ? { not: newOwner } : undefined;
+      const [inb, outb] = await Promise.all([
+        prisma.inboundRoute.count({ where: { trunkId: existing.id, ...(notOwner && { tenantId: notOwner }) } }),
+        prisma.outboundRoute.count({ where: { trunkId: existing.id, ...(notOwner && { tenantId: notOwner }) } }),
+      ]);
+      if (inb + outb > 0) {
+        return reply.status(400).send({ error: "Há rotas de outro cliente a usar este trunk. Remove-as antes de mudar o dono." });
+      }
+    }
+
     const trunk = await prisma.trunk.update({
       where: { id: existing.id },
-      data: trunkDataFromBody(body, encryptSecret),
+      data: {
+        ...trunkDataFromBody(body, encryptSecret),
+        ...(newOwner !== undefined ? { tenantId: newOwner } : {}),
+      },
       include,
     });
 

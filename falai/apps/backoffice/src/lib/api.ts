@@ -390,13 +390,11 @@ export const productsApi = {
 export type TrunkInput = Partial<Omit<Trunk, 'id' | 'shared' | 'dids' | 'secretSet' | 'createdAt' | 'updatedAt' | 'tenantId'>> & {
   authSecret?: string;
   /**
-   * Cliente dono do trunk. Ausente = trunk partilhado do operador.
-   *
-   * Só na CRIAÇÃO: o backend não deixa mudar o dono depois, e ainda bem —
-   * trocar o dono de um trunk activo mudava em silêncio para onde vão as
-   * chamadas que entram por ele.
+   * Cliente dono do trunk (o único que o vê no CRM). Na criação, ausente =
+   * partilhado do operador; na edição, null = passa a partilhado. O backend
+   * recusa a mudança se houver rotas de outro cliente a usar o trunk.
    */
-  tenantId?: string;
+  tenantId?: string | null;
 };
 
 export const trunksApi = {

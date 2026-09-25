@@ -45,8 +45,9 @@ const defined = <T extends object>(o: T) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as { [K in keyof T]-?: Exclude<T[K], undefined> };
 
 // Valida que o trunk é utilizável pelo tenant (partilhado ou próprio)
+/** Rotas só podem usar trunks associados ao tenant — os mesmos que ele vê no CRM. */
 export async function assertTrunk(tenantId: string, trunkId: string): Promise<boolean> {
-  const trunk = await prisma.trunk.findFirst({ where: { id: trunkId, OR: [{ tenantId: null }, { tenantId }] } });
+  const trunk = await prisma.trunk.findFirst({ where: { id: trunkId, tenantId } });
   return !!trunk;
 }
 
