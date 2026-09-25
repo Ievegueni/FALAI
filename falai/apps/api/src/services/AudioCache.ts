@@ -109,4 +109,9 @@ export class AudioCache {
     await this.telephony.uploadPrompt(name, wavBuffer);
     return name;
   }
+
+  /** Saudação IVR carregada pelo cliente — substitui a de TTS com o mesmo nome. */
+  async uploadIvrPrompt(menuId: string, wavBuffer: Buffer): Promise<void> {
+    await this.telephony.uploadPrompt(`ivr_${menuId}`, wavBuffer);
+  }
 }

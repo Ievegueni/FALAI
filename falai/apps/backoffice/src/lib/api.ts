@@ -71,7 +71,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 const get = <T>(path: string) => request<T>(path);
 const post = <T>(path: string, body?: unknown) =>
-  request<T>(path, { method: 'POST', body: JSON.stringify(body) });
+  request<T>(path, { method: 'POST', body: body instanceof FormData ? body : JSON.stringify(body) });
 const put = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 const patch = <T>(path: string, body: unknown) =>
@@ -212,6 +212,12 @@ export const tenantsApi = {
   createIvr: (id: string, data: Omit<IvrMenu, 'id'>) => post<{ id: string }>(`/admin/tenants/${id}/ivr`, data),
   updateIvr: (id: string, menuId: string, data: Omit<IvrMenu, 'id'>) => put<{ ok: true }>(`/admin/tenants/${id}/ivr/${menuId}`, data),
   deleteIvr: (id: string, menuId: string) => del<void>(`/admin/tenants/${id}/ivr/${menuId}`),
+  uploadIvrAudio: (id: string, menuId: string, wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'greeting.wav');
+    return post<{ ok: true }>(`/admin/tenants/${id}/ivr/${menuId}/audio`, fd);
+  },
+  removeIvrAudio: (id: string, menuId: string) => del<void>(`/admin/tenants/${id}/ivr/${menuId}/audio`),
   listInboundRoutes: (id: string) => get<InboundRoute[]>(`/admin/tenants/${id}/inbound-routes`),
   createInboundRoute: (id: string, data: Omit<InboundRoute, 'id' | 'trunkName'>) =>
     post<{ id: string }>(`/admin/tenants/${id}/inbound-routes`, data),

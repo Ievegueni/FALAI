@@ -32,7 +32,8 @@ const ivrOption = z.object({
 });
 const ivrCreate = z.object({
   name: z.string().min(2).max(64),
-  greeting: z.string().min(2).max(1000),
+  // Vazio só faz sentido com áudio carregado (POST .../audio a seguir ao create).
+  greeting: z.string().max(1000).default(""),
   options: z.array(ivrOption).max(12).refine((o) => new Set(o.map((x) => x.digit)).size === o.length, "Dígito repetido"),
   timeoutSecs: z.number().int().min(2).max(30).default(6),
   maxRetries: z.number().int().min(0).max(5).default(2),
@@ -151,9 +152,20 @@ export function registerIvrRouting(
     return null;
   }
 
+  /**
+   * O Asterisk toca .wav só em PCM 16-bit 8 kHz mono; o browser converte o
+   * ficheiro do cliente (mp3, m4a, wav…) para isto antes de enviar. Cabeçalho
+   * canónico de 44 bytes, que é o que o conversor do CRM/backoffice escreve.
+   */
+  function isTelephonyWav(b: Buffer): boolean {
+    return b.length > 44 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WAVE"
+      && b.readUInt16LE(20) === 1 && b.readUInt16LE(22) === 1 && b.readUInt32LE(24) === 8000 && b.readUInt16LE(34) === 16;
+  }
+
   // Gera a saudação por TTS. Uma falha não desfaz o menu gravado: devolve-se o
   // erro para o cliente voltar a gravar.
   async function synthGreeting(menuId: string, greeting: string): Promise<string | null> {
+    if (greeting.trim().length < 2) return null; // sem texto: o áudio vem por upload
     try {
       await fastify.callEngine.audioCache.prepareIvrPrompt(menuId, greeting);
       return null;
@@ -170,7 +182,7 @@ export function registerIvrRouting(
     return prisma.ivrMenu.findMany({
       where: { tenantId },
       orderBy: { createdAt: "asc" },
-      select: { id: true, name: true, greeting: true, options: true, timeoutSecs: true, maxRetries: true },
+      select: { id: true, name: true, greeting: true, greetingAudio: true, options: true, timeoutSecs: true, maxRetries: true },
     });
   });
 
@@ -205,10 +217,44 @@ export function registerIvrRouting(
 
     const menu = await prisma.ivrMenu.update({ where: { id: existing.id }, data: defined(body) });
     await fastify.audit({ actorType: c.actorType, actorId: c.actorId, tenantId, action: "tenant.ivr.updated", targetType: "IvrMenu", targetId: menu.id, ip: request.ip });
-    // Regera sempre: também repõe o áudio se a gravação anterior tiver falhado.
-    const ttsError = await synthGreeting(menu.id, menu.greeting);
+    // Regera sempre (repõe o áudio se a gravação anterior falhou), excepto se o
+    // cliente carregou um ficheiro — esse só sai com DELETE .../audio.
+    const ttsError = menu.greetingAudio ? null : await synthGreeting(menu.id, menu.greeting);
     if (ttsError) return reply.status(502).send({ error: ttsError, id: menu.id });
     return { ok: true };
+  });
+
+  fastify.post<P>(`${base}/ivr/:itemId/audio`, { preHandler }, async (request, reply) => {
+    const c = await ctx(request, reply, true);
+    if (!c) return;
+    const { tenantId } = c;
+    const existing = await prisma.ivrMenu.findFirst({ where: { id: request.params.itemId, tenantId } });
+    if (!existing) return reply.status(404).send({ error: "Menu não encontrado" });
+    const file = request.isMultipart() ? await request.file() : undefined;
+    if (!file) return reply.status(400).send({ error: "Envie o áudio num campo 'file' (multipart)" });
+    const wav = await file.toBuffer();
+    if (!isTelephonyWav(wav)) return reply.status(400).send({ error: "Áudio tem de ser WAV PCM 16-bit, 8 kHz, mono" });
+
+    await fastify.callEngine.audioCache.uploadIvrPrompt(existing.id, wav);
+    await prisma.ivrMenu.update({ where: { id: existing.id }, data: { greetingAudio: true } });
+    await fastify.audit({ actorType: c.actorType, actorId: c.actorId, tenantId, action: "tenant.ivr.audio_uploaded", targetType: "IvrMenu", targetId: existing.id, ip: request.ip });
+    return { ok: true };
+  });
+
+  // Volta à saudação por TTS a partir do texto do menu.
+  fastify.delete<P>(`${base}/ivr/:itemId/audio`, { preHandler }, async (request, reply) => {
+    const c = await ctx(request, reply, true);
+    if (!c) return;
+    const { tenantId } = c;
+    const existing = await prisma.ivrMenu.findFirst({ where: { id: request.params.itemId, tenantId } });
+    if (!existing) return reply.status(404).send({ error: "Menu não encontrado" });
+    if (existing.greeting.trim().length < 2) return reply.status(400).send({ error: "Escreva o texto da saudação antes de remover o áudio" });
+
+    await prisma.ivrMenu.update({ where: { id: existing.id }, data: { greetingAudio: false } });
+    await fastify.audit({ actorType: c.actorType, actorId: c.actorId, tenantId, action: "tenant.ivr.audio_removed", targetType: "IvrMenu", targetId: existing.id, ip: request.ip });
+    const ttsError = await synthGreeting(existing.id, existing.greeting);
+    if (ttsError) return reply.status(502).send({ error: ttsError });
+    return reply.status(204).send();
   });
 
   fastify.delete<P>(`${base}/ivr/:itemId`, { preHandler }, async (request, reply) => {

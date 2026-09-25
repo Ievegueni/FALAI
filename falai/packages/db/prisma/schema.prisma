@@ -405,7 +405,8 @@ model IvrMenu {
   tenantId    String
   tenant      Tenant   @relation(fields: [tenantId], references: [id])
   name        String
-  greeting    String // texto lido ao chamador
+  greeting    String // texto lido ao chamador (TTS), ou descrição se greetingAudio
+  greetingAudio Boolean @default(false) // true = ficheiro carregado pelo cliente, não se regera por TTS
   options     Json // [{ digit: "1", destType: "EXTENSION"|"GROUP"|"IVR", destValue }]
   timeoutSecs Int      @default(6) // espera por um dígito depois da saudação
   maxRetries  Int      @default(2) // repetições da saudação antes de desistir
