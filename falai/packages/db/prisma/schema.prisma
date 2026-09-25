@@ -410,43 +410,20 @@ model InboundRoute {
   @@index([tenantId])
 }
 
-// Atendimento automático: toca um anúncio ("para vendas prima 1...") e encaminha
-// a chamada conforme a tecla premida. Chega-se aqui por uma InboundRoute com
-// destType "IVR", em que destValue é o id deste menu.
+// Menu de voz (IVR): toca a saudação e encaminha pelo dígito premido.
+// O áudio é gerado por TTS ao gravar e fica no Asterisk como custom/ivr_<id>.
 model IvrMenu {
-  id             String  @id @default(cuid())
-  tenantId       String
-  tenant         Tenant  @relation(fields: [tenantId], references: [id])
-  name           String
-  greetingPrompt String // ficheiro de som carregado no Asterisk (sem extensão)
-  invalidPrompt  String? // tocado quando a tecla premida não está no menu
-  // Quanto tempo esperar por uma tecla depois de o anúncio acabar, e quantas
-  // vezes repetir o anúncio antes de desistir.
-  timeoutSecs    Int     @default(5)
-  maxRetries     Int     @default(3)
-  // Destino de quem não escolhe nada (ou erra vezes de mais). Vazio = aviso de
-  // "sem serviço" e desliga.
-  timeoutDestType  String?
-  timeoutDestValue String?
-
-  options   IvrOption[]
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  name        String
+  greeting    String // texto lido ao chamador
+  options     Json // [{ digit: "1", destType: "EXTENSION"|"GROUP"|"IVR", destValue }]
+  timeoutSecs Int      @default(6) // espera por um dígito depois da saudação
+  maxRetries  Int      @default(2) // repetições da saudação antes de desistir
+  createdAt   DateTime @default(now())
 
   @@unique([tenantId, name])
-  @@index([tenantId])
-}
-
-model IvrOption {
-  id        String  @id @default(cuid())
-  menuId    String
-  menu      IvrMenu @relation(fields: [menuId], references: [id], onDelete: Cascade)
-  digit     String // "0"-"9", "*" ou "#"
-  destType  String  @default("EXTENSION")
-  destValue String // número da extensão
-  label     String? // rótulo legível, ex: "Vendas"
-
-  @@unique([menuId, digit])
 }
 
 // Fatura da subscrição mensal do CRM (produto CRM_BYO_PBX; também qualquer plano com mensalidade)

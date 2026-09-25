@@ -23,6 +23,23 @@ const inboundCreate = z.object({
 });
 const inboundUpdate = inboundCreate.partial();
 
+const ivrOption = z.object({
+  digit: z.string().regex(/^[0-9*#]$/),
+  destType: z.enum(["EXTENSION", "GROUP", "IVR"]),
+  destValue: z.string().min(1).max(128),
+});
+const ivrCreate = z.object({
+  name: z.string().min(2).max(64),
+  greeting: z.string().min(2).max(1000),
+  options: z.array(ivrOption).max(12).refine((o) => new Set(o.map((x) => x.digit)).size === o.length, "Dígito repetido"),
+  timeoutSecs: z.number().int().min(2).max(30).default(6),
+  maxRetries: z.number().int().min(0).max(5).default(2),
+});
+const ivrUpdate = ivrCreate.partial();
+/** Tira os campos ausentes (exactOptionalPropertyTypes não deixa passar `undefined` ao Prisma). */
+const defined = <T extends object>(o: T) =>
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as { [K in keyof T]-?: Exclude<T[K], undefined> };
+
 export const tenantRoutingRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
 
@@ -199,6 +216,88 @@ export const tenantRoutingRoutes: FastifyPluginAsync = async (fastify) => {
     await prisma.inboundRoute.delete({ where: { id: existing.id } });
     await fastify.audit({ actorType: "TENANT_USER", actorId: sub, action: "tenant.inbound_route.deleted", targetType: "InboundRoute", targetId: existing.id, ip: request.ip });
     scheduleTenantPbxSync(tenantId);
+    return reply.status(204).send();
+  });
+
+  // ── Menus IVR ──────────────────────────────────────────────────────────────
+  // Destinos das opções têm de ser do próprio tenant (o runtime volta a filtrar
+  // por tenant, mas assim o erro aparece ao gravar e não a meio de uma chamada).
+  async function invalidIvrOption(tenantId: string, options: z.infer<typeof ivrOption>[]): Promise<string | null> {
+    for (const o of options) {
+      const found =
+        o.destType === "EXTENSION" ? await prisma.extension.findFirst({ where: { tenantId, number: o.destValue }, select: { id: true } })
+        : o.destType === "GROUP" ? await prisma.extensionGroup.findFirst({ where: { tenantId, id: o.destValue }, select: { id: true } })
+        : await prisma.ivrMenu.findFirst({ where: { tenantId, id: o.destValue }, select: { id: true } });
+      if (!found) return `Destino inválido na opção ${o.digit}`;
+    }
+    return null;
+  }
+
+  // Gera a saudação por TTS. Uma falha não desfaz o menu gravado: devolve-se o
+  // erro para o cliente voltar a gravar.
+  async function synthGreeting(menuId: string, greeting: string): Promise<string | null> {
+    try {
+      await fastify.callEngine.audioCache.prepareIvrPrompt(menuId, greeting);
+      return null;
+    } catch (err) {
+      fastify.log.error({ err, menuId }, "ivr.greeting_tts_failed");
+      return "Menu gravado, mas falhou a geração do áudio da saudação — tente gravar de novo";
+    }
+  }
+
+  fastify.get("/ivr", { preHandler }, async (request) => {
+    const { tenantId } = request.tenantUser!;
+    return prisma.ivrMenu.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, name: true, greeting: true, options: true, timeoutSecs: true, maxRetries: true },
+    });
+  });
+
+  fastify.post("/ivr", { preHandler }, async (request, reply) => {
+    const { tenantId, role, sub } = request.tenantUser!;
+    if (!requireManager(role, reply)) return;
+    const body = ivrCreate.parse(request.body);
+    const bad = await invalidIvrOption(tenantId, body.options);
+    if (bad) return reply.status(400).send({ error: bad });
+    const dup = await prisma.ivrMenu.findUnique({ where: { tenantId_name: { tenantId, name: body.name } } });
+    if (dup) return reply.status(409).send({ error: "Já existe um menu com esse nome" });
+
+    const menu = await prisma.ivrMenu.create({ data: { tenantId, ...body } });
+    await fastify.audit({ actorType: "TENANT_USER", actorId: sub, action: "tenant.ivr.created", targetType: "IvrMenu", targetId: menu.id, ip: request.ip });
+    const ttsError = await synthGreeting(menu.id, menu.greeting);
+    if (ttsError) return reply.status(502).send({ error: ttsError, id: menu.id });
+    return reply.status(201).send({ id: menu.id });
+  });
+
+  fastify.put<{ Params: { id: string } }>("/ivr/:id", { preHandler }, async (request, reply) => {
+    const { tenantId, role, sub } = request.tenantUser!;
+    if (!requireManager(role, reply)) return;
+    const body = ivrUpdate.parse(request.body);
+    const existing = await prisma.ivrMenu.findFirst({ where: { id: request.params.id, tenantId } });
+    if (!existing) return reply.status(404).send({ error: "Menu não encontrado" });
+    if (body.options) {
+      const bad = await invalidIvrOption(tenantId, body.options);
+      if (bad) return reply.status(400).send({ error: bad });
+    }
+
+    const menu = await prisma.ivrMenu.update({ where: { id: existing.id }, data: defined(body) });
+    await fastify.audit({ actorType: "TENANT_USER", actorId: sub, action: "tenant.ivr.updated", targetType: "IvrMenu", targetId: menu.id, ip: request.ip });
+    // Regera sempre: também repõe o áudio se a gravação anterior tiver falhado.
+    const ttsError = await synthGreeting(menu.id, menu.greeting);
+    if (ttsError) return reply.status(502).send({ error: ttsError, id: menu.id });
+    return { ok: true };
+  });
+
+  fastify.delete<{ Params: { id: string } }>("/ivr/:id", { preHandler }, async (request, reply) => {
+    const { tenantId, role, sub } = request.tenantUser!;
+    if (!requireManager(role, reply)) return;
+    const existing = await prisma.ivrMenu.findFirst({ where: { id: request.params.id, tenantId } });
+    if (!existing) return reply.status(404).send({ error: "Menu não encontrado" });
+    const inUse = await prisma.inboundRoute.count({ where: { tenantId, destType: "IVR", destValue: existing.id } });
+    if (inUse) return reply.status(409).send({ error: "Menu em uso numa rota de entrada" });
+    await prisma.ivrMenu.delete({ where: { id: existing.id } });
+    await fastify.audit({ actorType: "TENANT_USER", actorId: sub, action: "tenant.ivr.deleted", targetType: "IvrMenu", targetId: existing.id, ip: request.ip });
     return reply.status(204).send();
   });
 };

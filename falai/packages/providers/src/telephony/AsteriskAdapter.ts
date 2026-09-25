@@ -224,8 +224,11 @@ export class AsteriskAdapter implements TelephonyProvider {
   async noRouteFallback(providerCallId: string): Promise<void> {
     try {
       await this.answerChannel(providerCallId);
-      await this.playPrompt({ providerCallId, number: "", prompts: ["ss-noservice"] });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      // Som de sistema do Asterisk, não um prompt nosso: via playPrompt ia
+      // procurar custom/ss-noservice, que não existe, e o chamador só ouvia
+      // silêncio até desligar. Dura ~5 s.
+      await this.api(`/channels/${encodeURIComponent(providerCallId)}/play?media=sound:ss-noservice`, { method: "POST" });
+      await new Promise((resolve) => setTimeout(resolve, 5500));
     } finally {
       await this.hangup(providerCallId).catch(() => {});
     }

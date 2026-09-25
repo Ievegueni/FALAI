@@ -16,6 +16,8 @@ import type {
   ExtensionGroup,
   TelephonyRole,
   TrunkView,
+  IvrMenu,
+  InboundRoute,
   ImportResult,
   LoginResponse,
   MeResponse,
@@ -394,6 +396,18 @@ export const telephonyApi = {
   // Trunk (só-leitura no produto Voice AI; editável no BYO-PBX)
   listTrunks: () => get<{ productType: string; trunks: TrunkView[] }>('/tenant/trunks'),
   updateTrunk: (id: string, data: Record<string, unknown>) => put<{ trunk: TrunkView }>(`/tenant/trunks/${id}`, data),
+
+  // Menus IVR
+  listIvr: () => get<IvrMenu[]>('/tenant/routing/ivr'),
+  createIvr: (data: Omit<IvrMenu, 'id'>) => post<{ id: string }>('/tenant/routing/ivr', data),
+  updateIvr: (id: string, data: Omit<IvrMenu, 'id'>) => put<{ ok: true }>(`/tenant/routing/ivr/${id}`, data),
+  deleteIvr: (id: string) => del<void>(`/tenant/routing/ivr/${id}`),
+
+  // Rotas de entrada (DID → destino)
+  listInboundRoutes: () => get<InboundRoute[]>('/tenant/routing/inbound-routes'),
+  createInboundRoute: (data: Omit<InboundRoute, 'id' | 'trunkName'>) => post<{ id: string }>('/tenant/routing/inbound-routes', data),
+  updateInboundRoute: (id: string, data: Omit<InboundRoute, 'id' | 'trunkName'>) => put<{ ok: true }>(`/tenant/routing/inbound-routes/${id}`, data),
+  deleteInboundRoute: (id: string) => del<void>(`/tenant/routing/inbound-routes/${id}`),
 };
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────
