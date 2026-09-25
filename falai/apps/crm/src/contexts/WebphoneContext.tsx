@@ -16,6 +16,7 @@ import type * as JsSIPType from 'jssip';
 import type { RTCSession } from 'jssip/lib/RTCSession';
 import type { RTCSessionEvent } from 'jssip/lib/UA';
 import { webphoneApi } from '@/lib/api';
+import { startRingtone, stopRingtone, unlockRingtone } from '@/lib/ringtone';
 import { useToast } from '@/contexts/ToastContext';
 
 export type RegistrationState = 'unregistered' | 'registering' | 'registered' | 'failed';
@@ -108,6 +109,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
 
   const selectExtension = useCallback(
     async (id: string) => {
+      unlockRingtone(); // gesto do utilizador: autoriza o toque para depois
       teardownUa();
       setError(null);
       setExtensionId(id);
@@ -187,6 +189,24 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
   const sendDTMF = useCallback((digit: string) => sessionRef.current?.sendDTMF(digit), []);
 
   useEffect(() => () => teardownUa(), [teardownUa]);
+
+  // Toque no browser enquanto a chamada de entrada não é atendida/rejeitada.
+  useEffect(() => {
+    if (callState === 'incoming') startRingtone();
+    else stopRingtone();
+  }, [callState]);
+  useEffect(() => stopRingtone, []);
+
+  // Com a página recarregada, o gesto de escolher a linha pode não voltar a
+  // acontecer (linha reposta automaticamente): qualquer clique autoriza o som.
+  useEffect(() => {
+    window.addEventListener('pointerdown', unlockRingtone);
+    window.addEventListener('keydown', unlockRingtone);
+    return () => {
+      window.removeEventListener('pointerdown', unlockRingtone);
+      window.removeEventListener('keydown', unlockRingtone);
+    };
+  }, []);
 
   // Se uma chamada de entrada tocar noutra página, dar um atalho fácil ao
   // agente para a ir atender sem ter de navegar manualmente.
