@@ -27,6 +27,9 @@ import type {
   TenantLineInput,
   AgentStatus,
   TenantApiKey,
+  IvrMenu,
+  InboundRoute,
+  RoutingOptions,
   TenantModel,
   TenantUser,
   TenantUserInput,
@@ -218,6 +221,19 @@ export const tenantsApi = {
     patch<TenantApiKey>(`/admin/tenants/${id}/api-keys/${keyId}`, data),
 
   revokeApiKey: (id: string, keyId: string) => del<void>(`/admin/tenants/${id}/api-keys/${keyId}`),
+
+  // IVR e rotas de entrada do cliente
+  routingOptions: (id: string) => get<RoutingOptions>(`/admin/tenants/${id}/routing-options`),
+  listIvr: (id: string) => get<IvrMenu[]>(`/admin/tenants/${id}/ivr`),
+  createIvr: (id: string, data: Omit<IvrMenu, 'id'>) => post<{ id: string }>(`/admin/tenants/${id}/ivr`, data),
+  updateIvr: (id: string, menuId: string, data: Omit<IvrMenu, 'id'>) => put<{ ok: true }>(`/admin/tenants/${id}/ivr/${menuId}`, data),
+  deleteIvr: (id: string, menuId: string) => del<void>(`/admin/tenants/${id}/ivr/${menuId}`),
+  listInboundRoutes: (id: string) => get<InboundRoute[]>(`/admin/tenants/${id}/inbound-routes`),
+  createInboundRoute: (id: string, data: Omit<InboundRoute, 'id' | 'trunkName'>) =>
+    post<{ id: string }>(`/admin/tenants/${id}/inbound-routes`, data),
+  updateInboundRoute: (id: string, routeId: string, data: Omit<InboundRoute, 'id' | 'trunkName'>) =>
+    put<{ ok: true }>(`/admin/tenants/${id}/inbound-routes/${routeId}`, data),
+  deleteInboundRoute: (id: string, routeId: string) => del<void>(`/admin/tenants/${id}/inbound-routes/${routeId}`),
 };
 
 // ─── Agents (Moderation) ─────────────────────────────────────────────────────

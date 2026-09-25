@@ -529,3 +529,37 @@ export interface TenantWhatsappPool {
   }[];
   events: { id: string; severity: string; message: string; createdAt: string }[];
 }
+
+// ─── IVR e rotas de entrada (geridos por tenant) ─────────────────────────────
+export type IvrDestType = 'EXTENSION' | 'GROUP' | 'IVR';
+
+export interface IvrOption {
+  digit: string;
+  destType: IvrDestType;
+  destValue: string;
+}
+
+export interface IvrMenu {
+  id: string;
+  name: string;
+  greeting: string;
+  options: IvrOption[];
+  timeoutSecs: number;
+  maxRetries: number;
+}
+
+export interface InboundRoute {
+  id: string;
+  name: string;
+  trunkId: string;
+  trunkName: string;
+  didPattern: string;
+  destType: IvrDestType | 'AI_AGENT';
+  destValue: string;
+}
+
+export interface RoutingOptions {
+  extensions: { number: string; displayName: string | null }[];
+  groups: { id: string; name: string }[];
+  trunks: { id: string; name: string }[];
+}

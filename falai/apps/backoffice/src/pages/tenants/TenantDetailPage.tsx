@@ -8,6 +8,7 @@ import {
   EmptyState, Pagination,
 } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
+import { TenantIvrTab } from './TenantIvrTab';
 import {
   formatAOA, formatDate, formatDuration,
   tenantStatusColor, tenantStatusLabel,
@@ -343,6 +344,7 @@ export function TenantDetailPage() {
           { key: 'features', label: 'Funcionalidades' },
           { key: 'sms', label: 'SMS' },
           { key: 'whatsapp', label: 'WhatsApp' },
+          { key: 'ivr', label: 'IVR' },
           { key: 'api-keys', label: 'Chaves de API' },
           { key: 'calls', label: 'Chamadas' },
           { key: 'campaigns', label: 'Campanhas' },
@@ -354,6 +356,7 @@ export function TenantDetailPage() {
 
       {tab === 'sms' && <SmsConfigTab tenantId={id!} />}
       {tab === 'whatsapp' && <WhatsappPoolTab tenantId={id!} />}
+      {tab === 'ivr' && <TenantIvrTab tenantId={id!} />}
       {tab === 'api-keys' && <ApiKeysTab tenantId={id!} />}
 
       {tab === 'overview' && (

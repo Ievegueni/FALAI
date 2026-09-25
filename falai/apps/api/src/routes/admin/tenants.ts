@@ -11,6 +11,7 @@ import { encryptSecret } from "../../services/crypto.service.js";
 import { invalidateTenantSms } from "../../services/sms.service.js";
 import { publicApiUrl } from "../tenant/inboxes.js";
 import { checkNumber } from "../../services/waPool.service.js";
+import { registerIvrRouting } from "../shared/ivrRouting.js";
 
 const lineCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -953,5 +954,21 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return reply.status(201).send({ ...user, twoFaEnabled: false });
+  });
+
+  // Rotas de entrada e menus IVR do cliente, geridos pelo operador sem entrar
+  // no CRM — ver routes/shared/ivrRouting.ts.
+  registerIvrRouting(fastify, {
+    base: "/:id",
+    preHandler,
+    ctx: async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const tenant = await prisma.tenant.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+      if (!tenant) {
+        reply.status(404).send({ error: "Tenant não encontrado" });
+        return null;
+      }
+      return { tenantId: tenant.id, actorType: "ADMIN", actorId: request.adminUser!.sub };
+    },
   });
 };
