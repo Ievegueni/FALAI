@@ -41,7 +41,7 @@ const settingsItem = { to: '/settings', icon: Settings, labelKey: 'nav.settings'
 const smsItem = { to: '/sms', icon: MessageSquare, labelKey: 'nav.sms' };
 const telephonyItem = { to: '/telephony', icon: Network, labelKey: 'nav.telephony' };
 
-export function Sidebar() {
+export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const { tenant, logout } = useAuth();
   const navigate = useNavigate();
@@ -71,7 +71,14 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex h-screen w-60 flex-col bg-slate-900 text-slate-100 fixed left-0 top-0 z-30">
+    <>
+    {open && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={onClose} />}
+    <aside
+      className={clsx(
+        'flex h-full w-60 flex-col bg-slate-900 text-slate-100 fixed left-0 top-0 z-40 transition-transform lg:translate-x-0',
+        open ? 'translate-x-0' : '-translate-x-full',
+      )}
+    >
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-700/60">
         <div className="flex items-center justify-center rounded-lg bg-white px-2 py-1.5">
@@ -124,5 +131,6 @@ export function Sidebar() {
         </button>
       </div>
     </aside>
+    </>
   );
 }

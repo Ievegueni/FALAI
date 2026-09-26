@@ -32,9 +32,16 @@ const NAV = [
   { to: '/settings', icon: Settings, label: 'Configurações' },
 ];
 
-export function Sidebar() {
+export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <aside className="flex h-full w-60 flex-col border-r border-gray-200 bg-slate-900">
+    <>
+    {open && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={onClose} />}
+    <aside
+      className={clsx(
+        'fixed inset-y-0 left-0 z-40 flex h-full w-60 shrink-0 flex-col border-r border-gray-200 bg-slate-900 transition-transform lg:static lg:translate-x-0',
+        open ? 'translate-x-0' : '-translate-x-full',
+      )}
+    >
       <div className="flex h-16 items-center gap-2.5 px-5 border-b border-slate-700">
         <div className="flex items-center justify-center rounded-lg bg-white px-2 py-1.5">
           <img src="/logo.png" alt="Comunica" className="h-5 w-auto" />
@@ -72,5 +79,6 @@ export function Sidebar() {
         <p className="px-3 text-xs text-slate-500">COMUNICA internal</p>
       </div>
     </aside>
+    </>
   );
 }
