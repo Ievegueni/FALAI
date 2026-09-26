@@ -33,6 +33,9 @@ import type {
   TenantModel,
   TenantUser,
   TenantUserInput,
+  AccessProfile,
+  AccessProfileInput,
+  FeatureKey,
   Trunk,
   EngineStatus,
   WalletTransaction,
@@ -197,6 +200,22 @@ export const tenantsApi = {
 
   resetUserPassword: (id: string, userId: string, password: string) =>
     post<{ ok: boolean }>(`/admin/tenants/${id}/users/${userId}/reset-password`, { password }),
+
+  setUserAccessProfile: (id: string, userId: string, accessProfileId: string | null) =>
+    put<{ ok: true; accessProfileId: string | null }>(`/admin/tenants/${id}/users/${userId}/access-profile`, { accessProfileId }),
+
+  // Perfis de acesso ao CRM
+  accessProfiles: (id: string) =>
+    get<{ profiles: AccessProfile[]; modules: { key: FeatureKey; label: string; hint: string }[] }>(`/admin/tenants/${id}/access-profiles`),
+
+  createAccessProfile: (id: string, data: AccessProfileInput) =>
+    post<AccessProfile>(`/admin/tenants/${id}/access-profiles`, data),
+
+  updateAccessProfile: (id: string, profileId: string, data: Partial<AccessProfileInput>) =>
+    put<AccessProfile>(`/admin/tenants/${id}/access-profiles/${profileId}`, data),
+
+  deleteAccessProfile: (id: string, profileId: string) =>
+    del<void>(`/admin/tenants/${id}/access-profiles/${profileId}`),
 
   // Pool WhatsApp Active/Standby (só leitura)
   whatsappPool: (id: string) => get<import('@/types').TenantWhatsappPool>(`/admin/tenants/${id}/whatsapp`),

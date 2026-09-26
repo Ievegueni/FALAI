@@ -10,6 +10,7 @@ import {
 import { useToast } from '@/contexts/ToastContext';
 import { TenantIvrTab } from './TenantIvrTab';
 import { TenantExtensionsTab } from './TenantExtensionsTab';
+import { TenantAccessProfilesTab } from './TenantAccessProfilesTab';
 import {
   formatAOA, formatDate, formatDuration,
   tenantStatusColor, tenantStatusLabel,
@@ -87,7 +88,7 @@ export function TenantDetailPage() {
   const [resetUser, setResetUser] = useState<TenantUser | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [userModal, setUserModal] = useState(false);
-  const [userForm, setUserForm] = useState<{ name: string; email: string; password: string; role: TenantRole }>({ name: '', email: '', password: '', role: 'MEMBER' });
+  const [userForm, setUserForm] = useState<{ name: string; email: string; password: string; role: TenantRole; accessProfileId: string }>({ name: '', email: '', password: '', role: 'MEMBER', accessProfileId: '' });
 
   const { data: tenant, isLoading, isError } = useQuery({
     queryKey: ['admin', 'tenant', id],
@@ -239,14 +240,36 @@ export function TenantDetailPage() {
   });
 
   const createUserMut = useMutation({
-    mutationFn: () => tenantsApi.createUser(id!, userForm),
+    mutationFn: () => tenantsApi.createUser(id!, {
+      ...userForm,
+      accessProfileId: userForm.role === 'OWNER' ? null : userForm.accessProfileId || null,
+    }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] });
+      void qc.invalidateQueries({ queryKey: ['tenant-access-profiles', id] });
       toast.success('Utilizador criado.');
       setUserModal(false);
-      setUserForm({ name: '', email: '', password: '', role: 'MEMBER' });
+      setUserForm({ name: '', email: '', password: '', role: 'MEMBER', accessProfileId: '' });
     },
     onError: (e: Error) => toast.error(e.message || 'Erro ao criar utilizador.'),
+  });
+
+  const { data: accessProfilesData } = useQuery({
+    queryKey: ['tenant-access-profiles', id],
+    queryFn: () => tenantsApi.accessProfiles(id!),
+    enabled: !!id && (tab === 'users' || userModal),
+  });
+  const accessProfiles = accessProfilesData?.profiles ?? [];
+
+  const setUserProfileMut = useMutation({
+    mutationFn: ({ userId, accessProfileId }: { userId: string; accessProfileId: string | null }) =>
+      tenantsApi.setUserAccessProfile(id!, userId, accessProfileId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] });
+      void qc.invalidateQueries({ queryKey: ['tenant-access-profiles', id] });
+      toast.success('Perfil de acesso actualizado.');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao mudar o perfil.'),
   });
 
   const [smsTextDraft, setSmsTextDraft] = useState<string | null>(null);
@@ -341,6 +364,7 @@ export function TenantDetailPage() {
         tabs={[
           { key: 'overview', label: 'Visão geral' },
           { key: 'users', label: 'Utilizadores' },
+          { key: 'access-profiles', label: 'Perfis de acesso' },
           { key: 'extensions', label: 'Extensões' },
           // Tabela antiga (TenantLine): o CRM não a mostra. Só aparece a quem ainda tem linhas.
           ...((tenant.lines ?? []).length > 0 ? [{ key: 'lines', label: 'Linhas (antigo)' }] : []),
@@ -362,6 +386,7 @@ export function TenantDetailPage() {
       {tab === 'ivr' && <TenantIvrTab tenantId={id!} />}
       {tab === 'extensions' && <TenantExtensionsTab tenantId={id!} />}
       {tab === 'api-keys' && <ApiKeysTab tenantId={id!} />}
+      {tab === 'access-profiles' && <TenantAccessProfilesTab tenantId={id!} features={tenant.features} />}
 
       {tab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -516,7 +541,7 @@ export function TenantDetailPage() {
             <Button
               size="sm"
               icon={<UserPlus className="h-4 w-4" />}
-              onClick={() => { setUserForm({ name: '', email: '', password: '', role: 'MEMBER' }); setUserModal(true); }}
+              onClick={() => { setUserForm({ name: '', email: '', password: '', role: 'MEMBER', accessProfileId: '' }); setUserModal(true); }}
             >
               Novo utilizador
             </Button>
@@ -543,6 +568,21 @@ export function TenantDetailPage() {
                   <div className="text-right text-xs text-gray-400 hidden sm:block">
                     {u.lastLoginAt ? `Último acesso ${formatDate(u.lastLoginAt)}` : 'Nunca acedeu'}
                   </div>
+                  {u.role === 'OWNER' ? (
+                    <span className="w-48 text-xs text-gray-400">Acesso total (proprietário)</span>
+                  ) : (
+                    <div className="w-48">
+                      <Select
+                        aria-label={`Perfil de acesso de ${u.name}`}
+                        value={u.accessProfileId ?? ''}
+                        disabled={setUserProfileMut.isPending}
+                        onChange={(e) => setUserProfileMut.mutate({ userId: u.id, accessProfileId: e.target.value || null })}
+                      >
+                        <option value="">Sem perfil (tudo)</option>
+                        {accessProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </Select>
+                    </div>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -970,6 +1010,17 @@ export function TenantDetailPage() {
             <option value="MEMBER">Membro</option>
             <option value="VIEWER">Leitura</option>
           </Select>
+          {userForm.role !== 'OWNER' && (
+            <Select
+              label="Perfil de acesso"
+              value={userForm.accessProfileId}
+              onChange={(e) => setUserForm((f) => ({ ...f, accessProfileId: e.target.value }))}
+              hint="Os perfis criam-se no separador Perfis de acesso."
+            >
+              <option value="">Sem perfil (todos os módulos activos)</option>
+              {accessProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          )}
         </div>
       </Modal>
     </div>

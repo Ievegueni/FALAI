@@ -112,9 +112,30 @@ export interface TenantUser {
   name: string;
   email: string;
   role: TenantRole;
+  /** Perfil de acesso ao CRM. Null = sem restrição além da função. */
+  accessProfileId?: string | null;
   lastLoginAt: string | null;
   twoFaEnabled?: boolean;
   createdAt?: string;
+}
+
+/** none = não vê o módulo; read = só consulta; write = acesso completo */
+export type AccessLevel = 'none' | 'read' | 'write';
+
+export interface AccessProfile {
+  id: string;
+  name: string;
+  description: string | null;
+  permissions: Record<FeatureKey, AccessLevel>;
+  createdAt: string;
+  updatedAt: string;
+  _count: { users: number };
+}
+
+export interface AccessProfileInput {
+  name: string;
+  description?: string | null;
+  permissions: Partial<Record<FeatureKey, AccessLevel>>;
 }
 
 export type ModelProtocol = 'FALAI_TURN' | 'OPENAI_CHAT' | 'ANTHROPIC_MESSAGES';
@@ -164,6 +185,7 @@ export interface TenantUserInput {
   email: string;
   password: string;
   role?: TenantRole;
+  accessProfileId?: string | null;
 }
 
 export interface Tenant {

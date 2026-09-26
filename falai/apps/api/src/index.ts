@@ -30,6 +30,7 @@ import { adminPlansRoutes } from "./routes/admin/plans.js";
 import { adminProductsRoutes } from "./routes/admin/products.js";
 import { adminTenantsRoutes } from "./routes/admin/tenants.js";
 import { adminTenantApiKeysRoutes } from "./routes/admin/tenant-api-keys.js";
+import { adminTenantAccessProfilesRoutes } from "./routes/admin/tenant-access-profiles.js";
 import { adminAgentsModerationRoutes } from "./routes/admin/agents-moderation.js";
 import { adminModelsModerationRoutes } from "./routes/admin/models-moderation.js";
 import { tenantAuthRoutes } from "./routes/tenant/auth.js";
@@ -322,6 +323,7 @@ async function buildApp() {
   await fastify.register(adminProductsRoutes, { prefix: "/admin/products" });
   await fastify.register(adminTenantsRoutes, { prefix: "/admin/tenants" });
   await fastify.register(adminTenantApiKeysRoutes, { prefix: "/admin/tenants" });
+  await fastify.register(adminTenantAccessProfilesRoutes, { prefix: "/admin/tenants" });
   await fastify.register(adminTrunksRoutes, { prefix: "/admin/trunks" });
   await fastify.register(adminAgentsModerationRoutes, { prefix: "/admin/agents" });
   await fastify.register(adminModelsModerationRoutes, { prefix: "/admin/models" });

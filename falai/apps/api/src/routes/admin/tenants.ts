@@ -94,6 +94,7 @@ const userCreateSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   role: z.enum(["OWNER", "ADMIN", "MEMBER", "VIEWER"]).optional(),
+  accessProfileId: z.string().nullable().optional(),
 });
 
 function mapTenant(t: any) {
@@ -229,7 +230,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
       where: { id: request.params.id, deletedAt: null },
       include: {
         plan: true,
-        users: { select: { id: true, name: true, email: true, role: true, lastLoginAt: true } },
+        users: { select: { id: true, name: true, email: true, role: true, accessProfileId: true, lastLoginAt: true } },
         lines: { orderBy: { createdAt: "asc" } },
         _count: { select: { agents: true, calls: true, contacts: true } },
       },
@@ -885,13 +886,13 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     const users = await prisma.tenantUser.findMany({
       where: { tenantId: request.params.id },
       orderBy: { createdAt: "asc" },
-      select: { id: true, name: true, email: true, role: true, lastLoginAt: true, twoFaSecret: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, accessProfileId: true, lastLoginAt: true, twoFaSecret: true, createdAt: true },
     });
 
     // Nunca expomos a passwordHash. Indicamos apenas se o 2FA está activo.
     return {
       users: users.map((u) => ({
-        id: u.id, name: u.name, email: u.email, role: u.role,
+        id: u.id, name: u.name, email: u.email, role: u.role, accessProfileId: u.accessProfileId,
         lastLoginAt: u.lastLoginAt, twoFaEnabled: !!u.twoFaSecret, createdAt: u.createdAt,
       })),
     };
@@ -937,6 +938,11 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     const existingEmail = await prisma.tenantUser.findUnique({ where: { email: body.email } });
     if (existingEmail) return reply.status(409).send({ error: "Email já registado" });
 
+    if (body.accessProfileId) {
+      const profile = await prisma.accessProfile.findFirst({ where: { id: body.accessProfileId, tenantId: tenant.id }, select: { id: true } });
+      if (!profile) return reply.status(400).send({ error: "Perfil de acesso inválido" });
+    }
+
     const user = await prisma.tenantUser.create({
       data: {
         tenantId: request.params.id,
@@ -944,8 +950,9 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         email: body.email,
         passwordHash: await hashPassword(body.password),
         role: body.role ?? "MEMBER",
+        accessProfileId: body.accessProfileId ?? null,
       },
-      select: { id: true, name: true, email: true, role: true, lastLoginAt: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, accessProfileId: true, lastLoginAt: true, createdAt: true },
     });
 
     await fastify.audit({

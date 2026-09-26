@@ -211,6 +211,7 @@ model Tenant {
   updatedAt            DateTime            @updatedAt
   apiKeys              ApiKey[]
   users                TenantUser[]
+  accessProfiles       AccessProfile[]
   agents               Agent[]
   models               TenantModel[]
   calls                Call[]
@@ -488,18 +489,39 @@ model ApiKey {
 }
 
 model TenantUser {
-  id            String         @id @default(cuid())
-  tenantId      String
-  tenant        Tenant         @relation(fields: [tenantId], references: [id])
-  name          String
-  email         String         @unique
-  passwordHash  String
-  role          TenantRole     @default(MEMBER)
-  twoFaSecret   String?
-  lastLoginAt   DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  conversations Conversation[]
+  id              String         @id @default(cuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id])
+  name            String
+  email           String         @unique
+  passwordHash    String
+  role            TenantRole     @default(MEMBER)
+  // Perfil de acesso definido no backoffice. Null = sem restrição além do role.
+  accessProfileId String?
+  accessProfile   AccessProfile? @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
+  twoFaSecret     String?
+  lastLoginAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  conversations   Conversation[]
+}
+
+// Perfil de acesso ao CRM, gerido pela Comunica no backoffice. A matriz diz,
+// por funcionalidade (FEATURE_KEYS), se o utilizador não vê, só consulta ou
+// pode alterar: { "contacts": "write", "wallet": "read", "team": "none" }.
+// Chave em falta = "none". Nunca se aplica a um OWNER.
+model AccessProfile {
+  id          String       @id @default(cuid())
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  name        String
+  description String?
+  permissions Json
+  users       TenantUser[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([tenantId, name])
 }
 
 // ============ OPERADOR (COMUNICA) ============

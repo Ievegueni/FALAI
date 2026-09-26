@@ -12,6 +12,7 @@ import {
   pending2FaTenantKey,
 } from "../../services/auth.service.js";
 import { computeFeatures } from "../../services/features.js";
+import { applyProfile, sanitizePermissions, type ProfilePermissions } from "../../services/accessProfiles.js";
 
 // Selecção comum do tenant devolvida ao CRM (login e /me)
 const tenantClientSelect = {
@@ -24,21 +25,30 @@ const tenantClientSelect = {
   plan: { select: { name: true, productType: true, aiAgentsEnabled: true, clinicEnabled: true, smsEnabled: true, maxAgents: true, maxConcurrent: true } },
 } as const;
 
-// Substitui o campo `features` cru (overrides) pelas features efectivas calculadas
+// Substitui o campo `features` cru (overrides) pelas features efectivas calculadas,
+// já sem os módulos que o perfil de acesso do utilizador esconde
 function shapeTenant<
   T extends { features: unknown; plan: { aiAgentsEnabled: boolean; smsEnabled?: boolean; productType?: string } | null },
->(tenant: T | null) {
+>(tenant: T | null, permissions: ProfilePermissions | null = null) {
   if (!tenant) return null;
   return {
     ...tenant,
-    features: computeFeatures({
+    features: applyProfile(computeFeatures({
       overrides: tenant.features,
       aiAgentsEnabled: tenant.plan?.aiAgentsEnabled ?? true,
       ...(tenant.plan?.smsEnabled !== undefined && { smsEnabled: tenant.plan.smsEnabled }),
       ...(tenant.plan?.productType !== undefined && { productType: tenant.plan.productType }),
-    }),
+    }), permissions),
   };
 }
+
+// Perfil de acesso a devolver ao CRM (o OWNER nunca é restringido)
+function profileOf(user: { role: string; accessProfile: { id: string; name: string; permissions: unknown } | null }) {
+  if (user.role === "OWNER" || !user.accessProfile) return null;
+  return { id: user.accessProfile.id, name: user.accessProfile.name, permissions: sanitizePermissions(user.accessProfile.permissions) };
+}
+
+const accessProfileSelect = { select: { id: true, name: true, permissions: true } } as const;
 
 const PENDING_2FA_TTL = 5 * 60;
 
@@ -123,7 +133,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
 
     const user = await prisma.tenantUser.findUnique({
       where: { email: body.email },
-      include: { tenant: { select: { id: true, status: true, deletedAt: true } } },
+      include: { tenant: { select: { id: true, status: true, deletedAt: true } }, accessProfile: accessProfileSelect },
     });
 
     if (!user) return reply.status(401).send({ error: "Credenciais inválidas" });
@@ -160,11 +170,12 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id: user.tenantId },
         select: tenantClientSelect,
       });
+      const accessProfile = profileOf(user);
       return {
         token,
         requiresTwoFactor: false,
-        user: { id: user.id, name: user.name, email: user.email, role: user.role, twoFaEnabled: false },
-        tenant: shapeTenant(tenantRecord),
+        user: { id: user.id, name: user.name, email: user.email, role: user.role, twoFaEnabled: false, accessProfile },
+        tenant: shapeTenant(tenantRecord, accessProfile?.permissions ?? null),
       };
     }
 
@@ -240,8 +251,9 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
     const user = request.tenantUser!;
     const tenantUser = await prisma.tenantUser.findUniqueOrThrow({
       where: { id: user.sub },
-      include: { tenant: { select: tenantClientSelect } },
+      include: { tenant: { select: tenantClientSelect }, accessProfile: accessProfileSelect },
     });
+    const accessProfile = profileOf(tenantUser);
     return {
       user: {
         id: tenantUser.id,
@@ -249,8 +261,9 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
         email: tenantUser.email,
         role: tenantUser.role,
         twoFaEnabled: !!tenantUser.twoFaSecret,
+        accessProfile,
       },
-      tenant: shapeTenant(tenantUser.tenant),
+      tenant: shapeTenant(tenantUser.tenant, accessProfile?.permissions ?? null),
     };
   });
 };

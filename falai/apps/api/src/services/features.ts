@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest, RouteOptions, preHandlerHookHandler } from "fastify";
 import { prisma } from "@falai/db";
+import { userPermissions, levelAllows } from "./accessProfiles.js";
 
 /**
  * Funcionalidades que o operador pode activar/desactivar por cliente no backoffice.
@@ -210,6 +211,19 @@ export function requireFeature(key: FeatureKey | FeatureKey[]): preHandlerHookHa
     // Lista = basta uma estar activa (ex.: extensões servem Telefonia e Webphone).
     if (!keys.some((k) => features[k])) {
       return reply.status(403).send({ error: `Funcionalidade não activa: ${keys.map((k) => FEATURE_LABELS[k]).join(" / ")}`, feature: keys[0] });
+    }
+    // Perfil de acesso do utilizador do CRM (as API keys regem-se pelos scopes).
+    if (!viaApi && request.tenantUser) {
+      const permissions = await userPermissions(request.tenantUser.sub);
+      if (permissions && !keys.some((k) => features[k] && levelAllows(permissions[k], request.method))) {
+        const canRead = keys.some((k) => features[k] && permissions[k] !== "none");
+        return reply.status(403).send({
+          error: canRead
+            ? `O teu perfil só permite consultar: ${keys.map((k) => FEATURE_LABELS[k]).join(" / ")}`
+            : `O teu perfil não dá acesso a: ${keys.map((k) => FEATURE_LABELS[k]).join(" / ")}`,
+          feature: keys[0],
+        });
+      }
     }
   };
 }
