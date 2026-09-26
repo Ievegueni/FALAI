@@ -21,6 +21,7 @@ export const tenantWalletRoutes: FastifyPluginAsync = async (fastify) => {
         select: {
           balanceCents: true,
           creditLimitCents: true,
+          pricePerMinuteOverrideCents: true,
           plan: { select: { name: true, pricePerMinuteCents: true, pricePerCallCents: true, monthlyFeeCents: true } },
         },
       }),
@@ -31,7 +32,12 @@ export const tenantWalletRoutes: FastifyPluginAsync = async (fastify) => {
       }),
     ]);
 
-    return { balance: tenant, recentTransactions: recentTx };
+    // O cliente vê o preço que lhe é cobrado: o seu, se tiver, senão o do plano
+    const { pricePerMinuteOverrideCents, ...balance } = tenant;
+    if (balance.plan && pricePerMinuteOverrideCents !== null) {
+      balance.plan = { ...balance.plan, pricePerMinuteCents: pricePerMinuteOverrideCents };
+    }
+    return { balance, recentTransactions: recentTx };
   });
 
   // GET /tenant/wallet/transactions — paginated history

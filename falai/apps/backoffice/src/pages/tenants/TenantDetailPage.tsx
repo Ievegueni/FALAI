@@ -294,6 +294,14 @@ export function TenantDetailPage() {
     onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar cobrança.'),
   });
 
+  // Preço por minuto só deste cliente (null = o do plano). Vale para as
+  // cobranças por minuto e por segundo; a chamada fixa usa sempre o plano.
+  const priceOverrideMut = useMutation({
+    mutationFn: (cents: number | null) => tenantsApi.update(id!, { pricePerMinuteOverrideCents: cents } as never),
+    onSuccess: () => { invalidateTenant(); toast.success('Preço por minuto do cliente actualizado.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar o preço.'),
+  });
+
   // Limite de chamadas simultâneas do cliente. É este valor (e não o do plano)
   // que o dispatcher de campanhas respeita, por isso tem de ser editável aqui:
   // sem o campo, um cliente com um plano de 10 ficava preso no 1 por omissão e
@@ -421,6 +429,41 @@ export function TenantDetailPage() {
                   </Select>
                 </dd>
               </div>
+              {(tenant.billingModeOverride ?? tenant.plan?.billingMode) !== 'PER_CALL' && (
+                <div className="flex justify-between items-center gap-4">
+                  <dt className="text-gray-500">Preço por minuto</dt>
+                  <dd className="flex items-center gap-2">
+                    <Input
+                      key={tenant.pricePerMinuteOverrideCents ?? 'plano'}
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className="w-28 text-right"
+                      placeholder={tenant.plan ? String(tenant.plan.pricePerMinCents / 100) : ''}
+                      defaultValue={tenant.pricePerMinuteOverrideCents != null ? String(tenant.pricePerMinuteOverrideCents / 100) : ''}
+                      disabled={priceOverrideMut.isPending}
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim().replace(',', '.');
+                        // Vazio = volta ao preço do plano
+                        const cents = raw === '' ? null : Math.round(parseFloat(raw) * 100);
+                        if (cents !== null && (Number.isNaN(cents) || cents < 0)) {
+                          e.target.value = tenant.pricePerMinuteOverrideCents != null ? String(tenant.pricePerMinuteOverrideCents / 100) : '';
+                          return;
+                        }
+                        if (cents !== (tenant.pricePerMinuteOverrideCents ?? null)) priceOverrideMut.mutate(cents);
+                      }}
+                    />
+                    <span className="text-xs text-gray-500">Kz</span>
+                  </dd>
+                </div>
+              )}
+              {(tenant.billingModeOverride ?? tenant.plan?.billingMode) !== 'PER_CALL' && (
+                <p className="text-right text-xs text-gray-400 -mt-2">
+                  {tenant.pricePerMinuteOverrideCents != null
+                    ? 'Preço próprio deste cliente. Apaga o valor para voltar ao do plano.'
+                    : `Vazio = usa o do plano${tenant.plan ? ` (${formatAOA(tenant.plan.pricePerMinCents)}/min)` : ''}.`}
+                </p>
+              )}
               <div className="flex justify-between items-center gap-4">
                 <dt className="text-gray-500">Chamadas simultâneas</dt>
                 <dd className="flex items-center gap-2">

@@ -2,7 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { prisma, type BillingMode, type CampaignContact, type Contact } from "@falai/db";
 import type { TelephonyProvider } from "@falai/providers";
 import type { CallEngineService } from "./CallEngineService.js";
-import { reserveBalance, computeReservation, effectiveBillingMode, type PriceConfig } from "./billing.service.js";
+import { reserveBalance, computeReservation, effectivePrice, type PriceConfig } from "./billing.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "./outboundExtension.service.js";
 import { enqueueWebhook } from "./webhookDispatch.service.js";
 
@@ -146,7 +146,7 @@ export class CampaignDispatcher {
       throttlePerMinute: number;
       scheduleJson: unknown;
       retryPolicy: unknown;
-      tenant: { balanceCents: number; creditLimitCents: number; maxConcurrent: number; billingModeOverride: BillingMode | null; plan: { billingMode: BillingMode; pricePerMinuteCents: number; pricePerCallCents: number } };
+      tenant: { balanceCents: number; creditLimitCents: number; maxConcurrent: number; billingModeOverride: BillingMode | null; pricePerMinuteOverrideCents: number | null; plan: { billingMode: BillingMode; pricePerMinuteCents: number; pricePerCallCents: number } };
       agent: { systemPrompt: string; ttsVoiceId: string | null; maxCallSeconds: number; maxTurnSeconds: number; escalationNumber: string | null } | null;
     },
     now: Date
@@ -185,11 +185,7 @@ export class CampaignDispatcher {
 
     const price: PriceConfig = campaign.mode === "FIXED_SCRIPT"
       ? { billingMode: "PER_CALL", pricePerMinuteCents: 0, pricePerCallCents: tenant.plan.pricePerCallCents }
-      : {
-          billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
-          pricePerMinuteCents: tenant.plan.pricePerMinuteCents,
-          pricePerCallCents: tenant.plan.pricePerCallCents,
-        };
+      : effectivePrice(tenant);
     const estimatedCost = campaign.mode === "FIXED_SCRIPT"
       ? tenant.plan.pricePerCallCents
       : computeReservation(agent?.maxCallSeconds ?? 300, price);

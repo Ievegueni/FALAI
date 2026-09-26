@@ -19,7 +19,7 @@ import { sipAuthUserFromEndpointId } from "@falai/providers";
 import { notifyMissedCall } from "./missedCallSms.service.js";
 import {
   computeCallCost,
-  effectiveBillingMode,
+  effectivePrice,
   reserveBalance,
   type PriceConfig,
 } from "./billing.service.js";
@@ -69,6 +69,7 @@ export async function recordWebphoneCall(
         select: {
           id: true,
           billingModeOverride: true,
+      pricePerMinuteOverrideCents: true,
           plan: {
             select: { billingMode: true, pricePerMinuteCents: true, pricePerCallCents: true },
           },
@@ -89,11 +90,7 @@ export async function recordWebphoneCall(
   if (existing) return;
 
   const { tenant } = ext;
-  const price: PriceConfig = {
-    billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
-    pricePerMinuteCents: tenant.plan.pricePerMinuteCents,
-    pricePerCallCents: tenant.plan.pricePerCallCents,
-  };
+  const price: PriceConfig = effectivePrice(tenant);
   const status = statusFrom(cdr.disposition, cdr.billsec);
   // Chamada não atendida não se cobra, seja qual for o modo de cobrança.
   const costCents = status === "COMPLETED" ? computeCallCost(cdr.billsec, price) : 0;

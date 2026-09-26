@@ -6,7 +6,7 @@ import { prisma, type Prisma } from "@falai/db";
 import { z } from "zod";
 import { recordingSettings } from "../../services/callRecording.service.js";
 import { YeastarAdapter } from "@falai/providers";
-import { reserveBalance, computeReservation, effectiveBillingMode } from "../../services/billing.service.js";
+import { reserveBalance, computeReservation, effectivePrice } from "../../services/billing.service.js";
 import { getTenantTelephony, getTenantAsterisk } from "../../services/tenantTelephony.service.js";
 import {
   startAsteriskDirectCall,
@@ -265,7 +265,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       prisma.tenant.findUnique({
         where: { id: tenantId },
         select: {
-          billingModeOverride: true,
+          billingModeOverride: true, pricePerMinuteOverrideCents: true,
           plan: { select: { billingMode: true, pricePerMinuteCents: true, pricePerCallCents: true, aiAgentsEnabled: true } },
         },
       }),
@@ -291,11 +291,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       throw err;
     }
 
-    const price = {
-      billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
-      pricePerMinuteCents: tenant.plan.pricePerMinuteCents,
-      pricePerCallCents: tenant.plan.pricePerCallCents,
-    };
+    const price = effectivePrice(tenant);
     const estimatedCents = computeReservation(agent.maxCallSeconds, price);
 
     const reserved = await reserveBalance(tenantId, estimatedCents);

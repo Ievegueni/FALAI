@@ -67,6 +67,7 @@ const updateSchema = z.object({
   webhookUrl: z.string().url().optional(),
   webhookSecret: z.string().min(16).optional(),
   billingModeOverride: z.enum(["PER_MINUTE", "PER_SECOND", "PER_CALL"]).nullable().optional(),
+  pricePerMinuteOverrideCents: z.number().int().min(0).nullable().optional(),
   recordCalls: z.boolean().optional(),
   recordingAnnounce: z.boolean().optional(),
   missedCallSms: z.boolean().optional(),
@@ -132,6 +133,7 @@ function mapTenant(t: any) {
     // O limite efectivo: é este que o dispatcher de campanhas respeita.
     maxConcurrentCalls: t.maxConcurrent,
     billingModeOverride: t.billingModeOverride ?? null,
+    pricePerMinuteOverrideCents: t.pricePerMinuteOverrideCents ?? null,
     recordCalls: t.recordCalls ?? false,
     recordingAnnounce: t.recordingAnnounce ?? false,
     missedCallSms: t.missedCallSms ?? false,
@@ -270,6 +272,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.webhookUrl !== undefined && { webhookUrl: body.webhookUrl }),
         ...(body.webhookSecret !== undefined && { webhookSecret: body.webhookSecret }),
         ...(body.billingModeOverride !== undefined && { billingModeOverride: body.billingModeOverride }),
+        ...(body.pricePerMinuteOverrideCents !== undefined && { pricePerMinuteOverrideCents: body.pricePerMinuteOverrideCents }),
         ...(body.recordCalls !== undefined && { recordCalls: body.recordCalls }),
         ...(body.recordingAnnounce !== undefined && { recordingAnnounce: body.recordingAnnounce }),
         ...(body.missedCallSms !== undefined && { missedCallSms: body.missedCallSms }),

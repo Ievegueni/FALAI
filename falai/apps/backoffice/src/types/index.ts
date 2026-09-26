@@ -212,6 +212,8 @@ export interface Tenant {
   /** Funcionalidades que o plano desliga e nenhum override liga. */
   lockedByPlan?: FeatureKey[];
   billingModeOverride?: BillingMode | null;
+  /** Preço por minuto próprio do cliente, em cêntimos. Null = usa o do plano. */
+  pricePerMinuteOverrideCents?: number | null;
   recordCalls?: boolean;
   recordingAnnounce?: boolean;
   missedCallSms?: boolean;

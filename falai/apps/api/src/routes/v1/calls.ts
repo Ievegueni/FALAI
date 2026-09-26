@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, type Prisma } from "@falai/db";
-import { reserveBalance, computeReservation, effectiveBillingMode } from "../../services/billing.service.js";
+import { reserveBalance, computeReservation, effectivePrice } from "../../services/billing.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
 import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
 
@@ -34,7 +34,7 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
       prisma.tenant.findUnique({
         where: { id: tenantId },
         select: {
-          balanceCents: true, creditLimitCents: true, billingModeOverride: true,
+          balanceCents: true, creditLimitCents: true, billingModeOverride: true, pricePerMinuteOverrideCents: true,
           plan: { select: { billingMode: true, pricePerMinuteCents: true, pricePerCallCents: true, maxConcurrent: true } },
         },
       }),
@@ -56,11 +56,7 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
       throw err;
     }
 
-    const price = {
-      billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
-      pricePerMinuteCents: tenant.plan.pricePerMinuteCents,
-      pricePerCallCents: tenant.plan.pricePerCallCents,
-    };
+    const price = effectivePrice(tenant);
     const estimatedCents = computeReservation(agent.maxCallSeconds, price);
 
     const reserved = await reserveBalance(tenantId, estimatedCents);

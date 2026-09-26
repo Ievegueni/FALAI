@@ -32,7 +32,7 @@ import {
 import { notifyMissedCall } from "./missedCallSms.service.js";
 import {
   computeCallCost,
-  effectiveBillingMode,
+  effectivePrice,
   reserveBalance,
   type PriceConfig,
 } from "./billing.service.js";
@@ -590,16 +590,13 @@ async function chargeInboundCall(
     where: { id: tenantId },
     select: {
       billingModeOverride: true,
+      pricePerMinuteOverrideCents: true,
       plan: { select: { billingMode: true, pricePerMinuteCents: true, pricePerCallCents: true } },
     },
   });
   if (!tenant) return;
 
-  const price: PriceConfig = {
-    billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
-    pricePerMinuteCents: tenant.plan.pricePerMinuteCents,
-    pricePerCallCents: tenant.plan.pricePerCallCents,
-  };
+  const price: PriceConfig = effectivePrice(tenant);
   const costCents = computeCallCost(billedSecs, price);
   if (costCents <= 0) return;
 

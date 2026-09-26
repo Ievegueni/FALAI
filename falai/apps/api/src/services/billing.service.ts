@@ -52,6 +52,22 @@ export function computeReservation(maxCallSeconds: number, price: PriceConfig): 
   }
 }
 
+/**
+ * Preço efectivo de um cliente: o do plano, com as excepções definidas na
+ * ficha do cliente no backoffice (modo de cobrança e preço por minuto).
+ */
+export function effectivePrice(tenant: {
+  billingModeOverride: BillingMode | null;
+  pricePerMinuteOverrideCents: number | null;
+  plan: { billingMode: BillingMode; pricePerMinuteCents: number; pricePerCallCents: number };
+}): PriceConfig {
+  return {
+    billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
+    pricePerMinuteCents: tenant.pricePerMinuteOverrideCents ?? tenant.plan.pricePerMinuteCents,
+    pricePerCallCents: tenant.plan.pricePerCallCents,
+  };
+}
+
 /** Modo de cobrança efectivo: override do tenant tem prioridade sobre o do plano. */
 export function effectiveBillingMode(
   planMode: BillingMode,
