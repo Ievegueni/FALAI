@@ -11,7 +11,7 @@ export interface TenantUser {
   twoFaEnabled: boolean;
   createdAt: string;
   /** Perfil definido pela Comunica no backoffice; null = sem restrição. Os módulos "none" já vêm desligados em tenant.features. */
-  accessProfile?: { id: string; name: string; permissions: Partial<Record<FeatureKey, 'none' | 'read' | 'write'>> } | null;
+  accessProfile?: { id: string; name: string; permissions: Partial<Record<FeatureKey | 'dashboard', 'none' | 'read' | 'write'>> } | null;
 }
 
 export type FeatureKey =

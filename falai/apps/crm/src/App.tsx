@@ -6,7 +6,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ToastProvider } from '@/contexts/ToastContext';
 import { WebphoneProvider } from '@/contexts/WebphoneContext';
 import { AppLayout, AuthLayout } from '@/components/layout/AppLayout';
-import { RequireFeature } from '@/components/layout/RequireFeature';
+import { RequireFeature, RequireDashboard } from '@/components/layout/RequireFeature';
 import { PageSpinner } from '@/components/ui/Spinner';
 
 // Só o login entra no bundle de arranque — é a única página garantidamente
@@ -65,7 +65,7 @@ export default function App() {
               {/* Protected app routes */}
               <Route element={<AppLayout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/dashboard" element={<RequireDashboard><DashboardPage /></RequireDashboard>} />
 
                 <Route path="/agents" element={<RequireFeature feature="agents"><AgentsPage /></RequireFeature>} />
                 <Route path="/agents/new" element={<RequireFeature feature="agents"><AgentFormPage /></RequireFeature>} />

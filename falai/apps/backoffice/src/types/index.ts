@@ -122,11 +122,14 @@ export interface TenantUser {
 /** none = não vê o módulo; read = só consulta; write = acesso completo */
 export type AccessLevel = 'none' | 'read' | 'write';
 
+/** Chaves de um perfil: as features e o Dashboard (que não é feature do tenant). */
+export type ProfileKey = FeatureKey | 'dashboard';
+
 export interface AccessProfile {
   id: string;
   name: string;
   description: string | null;
-  permissions: Record<FeatureKey, AccessLevel>;
+  permissions: Record<ProfileKey, AccessLevel>;
   createdAt: string;
   updatedAt: string;
   _count: { users: number };
@@ -135,7 +138,7 @@ export interface AccessProfile {
 export interface AccessProfileInput {
   name: string;
   description?: string | null;
-  permissions: Partial<Record<FeatureKey, AccessLevel>>;
+  permissions: Partial<Record<ProfileKey, AccessLevel>>;
 }
 
 export type ModelProtocol = 'FALAI_TURN' | 'OPENAI_CHAT' | 'ANTHROPIC_MESSAGES';

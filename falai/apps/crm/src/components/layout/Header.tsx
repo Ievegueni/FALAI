@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { walletApi } from '@/lib/api';
 import { formatAOA } from '@/lib/utils';
+import { useProfileLabel } from './nav';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
 interface Props {
@@ -12,6 +13,7 @@ interface Props {
 
 export function Header({ title, actions }: Props) {
   const { user, tenant } = useAuth();
+  const profileLabel = useProfileLabel();
 
   const { data: wallet } = useQuery({
     queryKey: ['wallet', 'balance'],
@@ -54,7 +56,7 @@ export function Header({ title, actions }: Props) {
           </div>
           <div className="hidden sm:block">
             <p className="text-xs font-medium text-gray-900 leading-none">{user?.name}</p>
-            <p className="text-xs text-gray-400 leading-none mt-0.5">{user?.role}</p>
+            <p className="text-xs text-gray-400 leading-none mt-0.5">{profileLabel}</p>
           </div>
         </div>
 

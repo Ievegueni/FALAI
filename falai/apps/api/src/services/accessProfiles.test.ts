@@ -12,6 +12,12 @@ describe("sanitizePermissions", () => {
     expect("bogus" in p).toBe(false);
   });
 
+  it("dashboard em falta fica read (perfis antigos); só none o tira", () => {
+    expect(sanitizePermissions({}).dashboard).toBe("read");
+    expect(sanitizePermissions({ dashboard: "write" }).dashboard).toBe("read");
+    expect(sanitizePermissions({ dashboard: "none" }).dashboard).toBe("none");
+  });
+
   it("aceita lixo sem rebentar", () => {
     expect(sanitizePermissions(null).calls).toBe("none");
     expect(sanitizePermissions("x").calls).toBe("none");

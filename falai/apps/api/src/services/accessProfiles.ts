@@ -1,3 +1,4 @@
+import type { FastifyReply, FastifyRequest } from "fastify";
 import { prisma } from "@falai/db";
 import { FEATURE_KEYS, type FeatureKey, type Features } from "./features.js";
 
@@ -12,20 +13,36 @@ import { FEATURE_KEYS, type FeatureKey, type Features } from "./features.js";
  *
  * Utilizador sem perfil = sem restrição além do role. O OWNER nunca é
  * restringido, para o cliente não ficar trancado fora da própria conta.
+ *
+ * Além dos módulos (features), o perfil controla o Dashboard, que não é uma
+ * feature do tenant (todos o têm) mas mostra saldo e totais da conta que nem
+ * todos os membros devem ver. Só tem "none" e "read".
  */
 
 export const ACCESS_LEVELS = ["none", "read", "write"] as const;
 export type AccessLevel = (typeof ACCESS_LEVELS)[number];
-export type ProfilePermissions = Record<FeatureKey, AccessLevel>;
 
-/** Mantém só chaves conhecidas com níveis válidos; o resto fica "none". */
+/** Chaves do perfil que não são features do tenant. */
+export const EXTRA_PROFILE_KEYS = ["dashboard"] as const;
+export type ProfileKey = (typeof EXTRA_PROFILE_KEYS)[number] | FeatureKey;
+export type ProfilePermissions = Record<ProfileKey, AccessLevel>;
+
+/**
+ * Mantém só chaves conhecidas com níveis válidos; o resto fica "none".
+ * Excepção: o Dashboard em falta fica "read", porque os perfis criados antes
+ * de ele existir davam-no a toda a gente. "write" no Dashboard vale "read".
+ */
 export function sanitizePermissions(input: unknown): ProfilePermissions {
   const obj = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const out = {} as ProfilePermissions;
-  for (const key of FEATURE_KEYS) {
+  // Lista montada aqui e não ao carregar o módulo: features.ts importa este
+  // ficheiro, e no bundle FEATURE_KEYS ainda não existe nesse momento.
+  const keys: ProfileKey[] = [...EXTRA_PROFILE_KEYS, ...FEATURE_KEYS];
+  for (const key of keys) {
     const v = obj[key];
     out[key] = (ACCESS_LEVELS as readonly string[]).includes(v as string) ? (v as AccessLevel) : "none";
   }
+  out.dashboard = obj.dashboard === "none" ? "none" : "read";
   return out;
 }
 
@@ -69,4 +86,18 @@ export function levelAllows(level: AccessLevel, method: string): boolean {
   if (level === "write") return true;
   if (level === "read") return method === "GET" || method === "HEAD";
   return false;
+}
+
+/**
+ * preHandler para rotas do CRM guardadas por uma chave do perfil que não é
+ * feature (ex.: Dashboard). As features passam por requireFeature.
+ */
+export function requireProfileAccess(key: (typeof EXTRA_PROFILE_KEYS)[number]) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!request.tenantUser) return;
+    const permissions = await userPermissions(request.tenantUser.sub);
+    if (permissions && !levelAllows(permissions[key], request.method)) {
+      return reply.status(403).send({ error: "O teu perfil não dá acesso ao Dashboard", feature: key });
+    }
+  };
 }

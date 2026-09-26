@@ -55,7 +55,13 @@ export const adminTenantAccessProfilesRoutes: FastifyPluginAsync = async (fastif
     });
     return {
       profiles: profiles.map(shape),
-      modules: FEATURE_KEYS.map((key) => ({ key, label: FEATURE_LABELS[key], hint: FEATURE_HINTS[key] })),
+      modules: [
+        {
+          key: "dashboard", label: "Dashboard", hint: "Saldo, custos e totais de chamadas da conta",
+          levels: ["none", "read"],
+        },
+        ...FEATURE_KEYS.map((key) => ({ key, label: FEATURE_LABELS[key], hint: FEATURE_HINTS[key] })),
+      ],
     };
   });
 

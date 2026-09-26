@@ -1,69 +1,16 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import {
-  LayoutDashboard,
-  Bot,
-  Users,
-  Phone,
-  MessageSquare,
-  Megaphone,
-  BarChart3,
-  Wallet,
-  UserCheck,
-  Code2,
-  Settings,
-  Server,
-  Network,
-  LogOut,
-  PhoneCall,
-  Inbox,
-} from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { clsx } from '@/lib/utils';
-
-import type { FeatureKey } from '@/types';
-
-const dashboardItem = { to: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard' };
-const inboxItem = { to: '/inbox', icon: Inbox, labelKey: 'nav.inbox' };
-// Cada item pode declarar a feature que o activa; sem feature = sempre visível
-const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: FeatureKey }[] = [
-  { to: '/agents', icon: Bot, labelKey: 'nav.agents', feature: 'agents' },
-  { to: '/campaigns', icon: Megaphone, labelKey: 'nav.campaigns', feature: 'campaigns' },
-  { to: '/contacts', icon: Users, labelKey: 'nav.contacts', feature: 'contacts' },
-  { to: '/calls', icon: Phone, labelKey: 'nav.calls', feature: 'calls' },
-  { to: '/webphone', icon: PhoneCall, labelKey: 'nav.webphone', feature: 'webphone' },
-  { to: '/reports', icon: BarChart3, labelKey: 'nav.reports', feature: 'reports' },
-  { to: '/wallet', icon: Wallet, labelKey: 'nav.wallet', feature: 'wallet' },
-  { to: '/team', icon: UserCheck, labelKey: 'nav.team', feature: 'team' },
-  { to: '/developers', icon: Code2, labelKey: 'nav.developers', feature: 'developers' },
-];
-const settingsItem = { to: '/settings', icon: Settings, labelKey: 'nav.settings' };
-const smsItem = { to: '/sms', icon: MessageSquare, labelKey: 'nav.sms' };
-const telephonyItem = { to: '/telephony', icon: Network, labelKey: 'nav.telephony' };
+import { useNavItems, useProfileLabel } from './nav';
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
-  const { tenant, logout } = useAuth();
+  const { user, tenant, logout } = useAuth();
   const navigate = useNavigate();
-
-  const features = tenant?.features;
-  const ownPbx = tenant?.plan?.productType === 'CRM_BYO_PBX';
-
-  // Mostra um item se a sua feature estiver activa (default: visível se não houver info de features)
-  const isOn = (f: FeatureKey) => features?.[f] !== false;
-
-  // SMS: a feature já vem desligada da API quando o plano não inclui SMS
-  const smsOn = tenant?.plan?.smsEnabled === true && isOn('sms');
-
-  const nav = [
-    dashboardItem,
-    ...(features?.inbox ? [inboxItem] : []),
-    ...featureItems.filter((i) => isOn(i.feature)),
-    ...(smsOn ? [smsItem] : []),
-    ...(isOn('telephony') ? [telephonyItem] : []),
-    settingsItem,
-    ...(ownPbx ? [{ to: '/settings/pbx', icon: Server, labelKey: 'nav.pbx' }] : []),
-  ];
+  const nav = useNavItems();
+  const profileLabel = useProfileLabel();
 
   function handleLogout() {
     logout();
@@ -122,6 +69,16 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
       {/* Footer */}
       <div className="border-t border-slate-700/60 p-3">
+        {/* No telemóvel o cabeçalho esconde o utilizador; mostra-se aqui */}
+        <div className="mb-2 flex items-center gap-2.5 px-3 py-1 lg:hidden">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
+            {user?.name.charAt(0).toUpperCase() ?? '?'}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-white">{user?.name}</p>
+            <p className="truncate text-xs text-slate-400">{profileLabel}</p>
+          </div>
+        </div>
         <button
           onClick={handleLogout}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"

@@ -4,7 +4,7 @@ import { Plus, Pencil, Trash2, ShieldCheck } from 'lucide-react';
 import { tenantsApi } from '@/lib/api';
 import { Card, Button, Modal, Input, PageSpinner, EmptyState } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
-import type { AccessLevel, AccessProfile, FeatureKey, TenantFeatures } from '@/types';
+import type { AccessLevel, AccessProfile, ProfileKey, TenantFeatures } from '@/types';
 
 /**
  * Perfis de acesso ao CRM do cliente. Cada perfil diz, por módulo, se o
@@ -27,10 +27,10 @@ const LEVEL_BADGE: Record<AccessLevel, string> = {
 
 type Draft = { name: string; description: string; permissions: Record<string, AccessLevel> };
 
-function LevelPicker({ value, onChange }: { value: AccessLevel; onChange: (v: AccessLevel) => void }) {
+function LevelPicker({ value, onChange, levels }: { value: AccessLevel; onChange: (v: AccessLevel) => void; levels?: AccessLevel[] }) {
   return (
-    <div className="inline-flex overflow-hidden rounded-lg border border-gray-200">
-      {LEVELS.map((l) => (
+    <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-gray-200">
+      {LEVELS.filter((l) => !levels || levels.includes(l.value)).map((l) => (
         <button
           key={l.value}
           type="button"
@@ -82,7 +82,7 @@ export function TenantAccessProfilesTab({ tenantId, features }: { tenantId: stri
       const body = {
         name: draft.name.trim(),
         description: draft.description.trim() || null,
-        permissions: draft.permissions as Record<FeatureKey, AccessLevel>,
+        permissions: draft.permissions as Record<ProfileKey, AccessLevel>,
       };
       return editing
         ? tenantsApi.updateAccessProfile(tenantId, editing.id, body)
@@ -102,8 +102,14 @@ export function TenantAccessProfilesTab({ tenantId, features }: { tenantId: stri
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Módulos com menos níveis (ex.: Dashboard só tem Sem acesso / Ver) ficam no mais alto que têm
   const setAll = (level: AccessLevel) =>
-    setDraft((d) => ({ ...d, permissions: Object.fromEntries(modules.map((m) => [m.key, level])) }));
+    setDraft((d) => ({
+      ...d,
+      permissions: Object.fromEntries(
+        modules.map((m): [string, AccessLevel] => [m.key, !m.levels || m.levels.includes(level) ? level : m.levels[m.levels.length - 1]!]),
+      ),
+    }));
 
   if (isLoading || !data) return <PageSpinner />;
 
@@ -203,7 +209,7 @@ export function TenantAccessProfilesTab({ tenantId, features }: { tenantId: stri
             </div>
             <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
               {modules.map((m) => {
-                const off = features ? features[m.key] === false : false;
+                const off = features && m.key !== 'dashboard' ? features[m.key] === false : false;
                 return (
                   <div key={m.key} className="flex items-center justify-between gap-4 px-3 py-2">
                     <div className="min-w-0">
@@ -213,6 +219,7 @@ export function TenantAccessProfilesTab({ tenantId, features }: { tenantId: stri
                       </p>
                     </div>
                     <LevelPicker
+                      levels={m.levels}
                       value={draft.permissions[m.key] ?? 'none'}
                       onChange={(v) => setDraft((d) => ({ ...d, permissions: { ...d.permissions, [m.key]: v } }))}
                     />

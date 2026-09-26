@@ -1,9 +1,10 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
+import { requireProfileAccess } from "../../services/accessProfiles.js";
 import { ensureCdrSynced, mapPbxCall, pbxCallStatus, PBX_CALL_SELECT, activeInboundCalls } from "../../services/pbxCdr.service.js";
 
 export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
-  const preHandler = [fastify.verifyTenant];
+  const preHandler = [fastify.verifyTenant, requireProfileAccess("dashboard")];
 
   // GET /tenant/dashboard — key metrics for the CRM home screen
   fastify.get("/", { preHandler }, async (request) => {

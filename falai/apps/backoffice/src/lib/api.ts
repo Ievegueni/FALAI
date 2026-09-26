@@ -206,7 +206,7 @@ export const tenantsApi = {
 
   // Perfis de acesso ao CRM
   accessProfiles: (id: string) =>
-    get<{ profiles: AccessProfile[]; modules: { key: FeatureKey; label: string; hint: string }[] }>(`/admin/tenants/${id}/access-profiles`),
+    get<{ profiles: AccessProfile[]; modules: { key: import('@/types').ProfileKey; label: string; hint: string; levels?: import('@/types').AccessLevel[] }[] }>(`/admin/tenants/${id}/access-profiles`),
 
   createAccessProfile: (id: string, data: AccessProfileInput) =>
     post<AccessProfile>(`/admin/tenants/${id}/access-profiles`, data),
