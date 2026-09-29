@@ -22,7 +22,8 @@ export async function v1ContactsRoutes(fastify: FastifyInstance): Promise<void> 
       prisma.contact.findMany({
         where,
         select: { id: true, phone: true, name: true, attributes: true, optedOutAt: true, createdAt: true },
-        orderBy: { createdAt: "desc" },
+        // id desempata os criados em lote (mesmo createdAt): paginação estável.
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: limit,
         skip: offset,
       }),

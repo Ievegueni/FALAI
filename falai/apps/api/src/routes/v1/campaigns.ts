@@ -506,7 +506,9 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
           callId: true, status: true, attempts: true, nextRetryAt: true, createdAt: true, updatedAt: true,
           contact: { select: { id: true, phone: true, name: true } },
         },
-        orderBy: { createdAt: "asc" },
+        // id desempata: os contactos postos em lote têm todos o mesmo createdAt,
+        // e sem ordem total o Postgres devolve-os por ordem diferente a cada página.
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         take: limit,
         skip: offset,
       }),
