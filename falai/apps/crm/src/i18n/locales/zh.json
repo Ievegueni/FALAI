@@ -43,7 +43,9 @@
     "telephony": "电话",
     "webphone": "网络电话",
     "inbox": "收件箱",
-    "supervision": "监控"
+    "supervision": "监控",
+    "pin": "固定菜单",
+    "unpin": "取消固定菜单"
   },
   "login": {
     "subtitle": "登录您的账户",

@@ -1,11 +1,22 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LogOut } from 'lucide-react';
+import { useState } from 'react';
+import { LogOut, Pin, PinOff } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { clsx } from '@/lib/utils';
 import { useNavItems, useProfileLabel } from './nav';
 
-export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+interface Props {
+  open: boolean; // gaveta no telemóvel
+  onClose: () => void;
+  pinned: boolean; // ecrã grande: fixada aberta
+  onTogglePin: () => void;
+}
+
+export function Sidebar({ open, onClose, pinned, onTogglePin }: Props) {
+  const [hover, setHover] = useState(false);
+  // No telemóvel só se vê aberta (gaveta), por isso aí está sempre larga
+  const wide = pinned || hover || open;
   const { t } = useTranslation();
   const { user, tenant, logout } = useAuth();
   const navigate = useNavigate();
@@ -21,26 +32,43 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
     <>
     {open && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={onClose} />}
     <aside
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
       className={clsx(
-        'flex h-full w-60 flex-col bg-slate-900 text-slate-100 fixed left-0 top-0 z-40 transition-transform lg:translate-x-0',
+        'flex h-full flex-col overflow-hidden bg-slate-900 text-slate-100 fixed left-0 top-0 z-40 transition-[transform,width] duration-200 lg:translate-x-0',
         open ? 'translate-x-0' : '-translate-x-full',
+        wide ? 'w-60' : 'w-16',
+        hover && !pinned && 'lg:shadow-2xl',
       )}
     >
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-700/60">
-        <div className="flex items-center justify-center rounded-lg bg-white px-2 py-1.5">
+      <div className={clsx('flex items-center gap-2.5 py-5 border-b border-slate-700/60', wide ? 'px-5' : 'px-2 justify-center')}>
+        <div className="flex shrink-0 items-center justify-center rounded-lg bg-white px-2 py-1.5">
           <img
             src={tenant?.logoDataUrl ?? '/logo.png'}
             alt={tenant?.logoDataUrl ? tenant.name : 'Comunica'}
-            className="h-5 w-auto max-w-[96px] object-contain"
+            className={clsx('h-5 w-auto object-contain', wide ? 'max-w-[96px]' : 'max-w-[28px]')}
           />
         </div>
-        <div>
+        <div className={clsx('min-w-0 flex-1', !wide && 'hidden')}>
           <p className="text-sm font-bold text-white leading-none">Falaí</p>
           <p className="text-xs text-slate-400 leading-none mt-0.5 truncate max-w-[120px]">
             {tenant?.name ?? '…'}
           </p>
         </div>
+        {wide && (
+          <button
+            onClick={onTogglePin}
+            title={pinned ? t('nav.unpin') : t('nav.pin')}
+            aria-label={pinned ? t('nav.unpin') : t('nav.pin')}
+            className={clsx(
+              'hidden shrink-0 rounded-md p-1.5 transition-colors lg:block',
+              pinned ? 'text-blue-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-800 hover:text-white',
+            )}
+          >
+            {pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+          </button>
+        )}
       </div>
 
       {/* Nav */}
@@ -50,6 +78,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             <li key={to}>
               <NavLink
                 to={to}
+                title={wide ? undefined : t(labelKey)}
                 className={({ isActive }) =>
                   clsx(
                     'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
@@ -60,7 +89,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                 }
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
-                {t(labelKey)}
+                {wide && <span className="truncate">{t(labelKey)}</span>}
               </NavLink>
             </li>
           ))}
@@ -81,10 +110,11 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         </div>
         <button
           onClick={handleLogout}
+          title={wide ? undefined : t('nav.logout')}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
         >
-          <LogOut className="h-4 w-4" />
-          {t('nav.logout')}
+          <LogOut className="h-4 w-4 flex-shrink-0" />
+          {wide && <span className="truncate">{t('nav.logout')}</span>}
         </button>
       </div>
     </aside>

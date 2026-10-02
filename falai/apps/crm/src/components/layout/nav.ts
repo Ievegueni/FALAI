@@ -20,28 +20,12 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import type { FeatureKey, TenantUser } from '@/types';
 
-const dashboardItem = { to: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard' };
-const inboxItem = { to: '/inbox', icon: Inbox, labelKey: 'nav.inbox' };
-// Cada item pode declarar a feature que o activa; sem feature = sempre visível
-const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: FeatureKey }[] = [
-  { to: '/agents', icon: Bot, labelKey: 'nav.agents', feature: 'agents' },
-  { to: '/campaigns', icon: Megaphone, labelKey: 'nav.campaigns', feature: 'campaigns' },
-  { to: '/contacts', icon: Users, labelKey: 'nav.contacts', feature: 'contacts' },
-  { to: '/calls', icon: Phone, labelKey: 'nav.calls', feature: 'calls' },
-  { to: '/webphone', icon: PhoneCall, labelKey: 'nav.webphone', feature: 'webphone' },
-  { to: '/reports', icon: BarChart3, labelKey: 'nav.reports', feature: 'reports' },
-  { to: '/wallet', icon: Wallet, labelKey: 'nav.wallet', feature: 'wallet' },
-  { to: '/team', icon: UserCheck, labelKey: 'nav.team', feature: 'team' },
-  { to: '/developers', icon: Code2, labelKey: 'nav.developers', feature: 'developers' },
-];
-const settingsItem = { to: '/settings', icon: Settings, labelKey: 'nav.settings' };
-const smsItem = { to: '/sms', icon: MessageSquare, labelKey: 'nav.sms' };
-const telephonyItem = { to: '/telephony', icon: Network, labelKey: 'nav.telephony' };
-const supervisionItem = { to: '/supervision', icon: Headphones, labelKey: 'nav.supervision' };
+type NavItem = { to: string; icon: typeof Bot; labelKey: string };
+const item = (to: string, icon: typeof Bot, key: string): NavItem => ({ to, icon, labelKey: `nav.${key}` });
 const SUPERVISION_ROLES = new Set(['OWNER', 'ADMIN', 'SUPERVISOR']);
 
-/** Itens do menu que o utilizador pode ver (features do tenant + perfil de acesso). */
-export function useNavItems() {
+/** Itens do menu que o utilizador pode ver (features do tenant + perfil de acesso), pela ordem do menu. */
+export function useNavItems(): NavItem[] {
   const { user, tenant } = useAuth();
 
   const features = tenant?.features;
@@ -53,16 +37,25 @@ export function useNavItems() {
   // SMS: a feature já vem desligada da API quando o plano não inclui SMS
   const smsOn = tenant?.plan?.smsEnabled === true && isOn('sms');
 
-  return [
-    ...(canSeeDashboard(user) ? [dashboardItem] : []),
-    ...(features?.inbox ? [inboxItem] : []),
-    ...featureItems.filter((i) => isOn(i.feature)),
-    ...(isOn('webphone') && user && SUPERVISION_ROLES.has(user.role) ? [supervisionItem] : []),
-    ...(smsOn ? [smsItem] : []),
-    ...(isOn('telephony') ? [telephonyItem] : []),
-    settingsItem,
-    ...(ownPbx ? [{ to: '/settings/pbx', icon: Server, labelKey: 'nav.pbx' }] : []),
+  const all: [boolean, NavItem][] = [
+    [canSeeDashboard(user), item('/dashboard', LayoutDashboard, 'dashboard')],
+    [isOn('calls'), item('/calls', Phone, 'calls')],
+    [isOn('webphone'), item('/webphone', PhoneCall, 'webphone')],
+    [smsOn, item('/sms', MessageSquare, 'sms')],
+    [features?.inbox === true, item('/inbox', Inbox, 'inbox')],
+    [isOn('webphone') && !!user && SUPERVISION_ROLES.has(user.role), item('/supervision', Headphones, 'supervision')],
+    [isOn('contacts'), item('/contacts', Users, 'contacts')],
+    [isOn('campaigns'), item('/campaigns', Megaphone, 'campaigns')],
+    [isOn('agents'), item('/agents', Bot, 'agents')],
+    [isOn('team'), item('/team', UserCheck, 'team')],
+    [isOn('reports'), item('/reports', BarChart3, 'reports')],
+    [isOn('wallet'), item('/wallet', Wallet, 'wallet')],
+    [isOn('developers'), item('/developers', Code2, 'developers')],
+    [isOn('telephony'), item('/telephony', Network, 'telephony')],
+    [true, item('/settings', Settings, 'settings')],
+    [ownPbx, item('/settings/pbx', Server, 'pbx')],
   ];
+  return all.filter(([show]) => show).map(([, i]) => i);
 }
 
 /** O perfil de acesso pode tirar o Dashboard (tem saldo e totais da conta). */

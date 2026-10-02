@@ -43,7 +43,9 @@
     "telephony": "Telephony",
     "webphone": "Webphone",
     "inbox": "Inbox",
-    "supervision": "Supervision"
+    "supervision": "Supervision",
+    "pin": "Pin menu",
+    "unpin": "Unpin menu"
   },
   "login": {
     "subtitle": "Sign in to your account",

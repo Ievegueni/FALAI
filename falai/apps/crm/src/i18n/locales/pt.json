@@ -43,7 +43,9 @@
     "telephony": "Telefonia",
     "webphone": "Webphone",
     "inbox": "Caixa de entrada",
-    "supervision": "Supervisão"
+    "supervision": "Supervisão",
+    "pin": "Fixar menu",
+    "unpin": "Soltar menu"
   },
   "login": {
     "subtitle": "Inicie sessão na sua conta",

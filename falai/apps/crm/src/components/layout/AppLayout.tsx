@@ -13,6 +13,16 @@ export function AppLayout() {
   // Em ecrãs pequenos a sidebar é uma gaveta; fecha ao mudar de página
   const [navOpen, setNavOpen] = useState(false);
   useEffect(() => setNavOpen(false), [pathname]);
+  // No ecrã grande a sidebar fica recolhida (só ícones) e abre ao passar o rato; fixada fica sempre aberta
+  const [pinned, setPinned] = useState(() => {
+    try { return localStorage.getItem('falai_sidebar_pinned') === '1'; } catch { return false; }
+  });
+  const togglePin = () => {
+    setPinned((p) => {
+      try { localStorage.setItem('falai_sidebar_pinned', p ? '0' : '1'); } catch { /* sem storage: só nesta sessão */ }
+      return !p;
+    });
+  };
 
   if (loading) {
     return (
@@ -27,8 +37,8 @@ export function AppLayout() {
   return (
     <div className="flex h-screen bg-gray-50">
       <IncomingCallBanner />
-      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
-      <div className="flex min-w-0 flex-1 flex-col lg:ml-60">
+      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} pinned={pinned} onTogglePin={togglePin} />
+      <div className={`flex min-w-0 flex-1 flex-col transition-[margin] ${pinned ? 'lg:ml-60' : 'lg:ml-16'}`}>
         <div className="flex h-12 shrink-0 items-center gap-3 bg-slate-900 px-4 lg:hidden">
           <button
             onClick={() => setNavOpen(true)}
