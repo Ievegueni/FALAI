@@ -37,6 +37,9 @@ const TILE_SUB: Record<string, string> = {
 };
 
 const fmtInt = (n: number) => n.toLocaleString("pt-PT");
+/** A Helvetica do PDF só tem WinAnsi: setas e afins (comuns no texto da IA) saíam como lixo. */
+const pdfSafe = (s: string) =>
+  s.replace(/→/g, "->").replace(/←/g, "<-").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/≈/g, "~").replace(/[\u2010-\u2012]/g, "-").replace(/[^\x00-\xFF€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]/g, "");
 export function fmtSecs(s: number | null): string {
   if (s === null) return "—";
   if (s < 60) return `${s}s`;
@@ -131,9 +134,9 @@ export function renderOverviewPdf(o: Overview, tenantName: string, analysis?: { 
     doc.moveDown(1.2);
     for (const s of analysisSections(analysis.result)) {
       if (doc.y > doc.page.height - 110) doc.addPage();
-      doc.fillColor(SERIES[0]!).font("Helvetica-Bold").fontSize(11).text(s.title, L, doc.y, { width: W });
+      doc.fillColor(SERIES[0]!).font("Helvetica-Bold").fontSize(11).text(pdfSafe(s.title), L, doc.y, { width: W });
       doc.moveDown(0.25);
-      for (const line of s.lines) doc.fillColor(INK).font("Helvetica").fontSize(9.5).text(line, L, doc.y, { width: W, lineGap: 2 }).moveDown(0.3);
+      for (const line of s.lines) doc.fillColor(INK).font("Helvetica").fontSize(9.5).text(pdfSafe(line), L, doc.y, { width: W, lineGap: 2 }).moveDown(0.3);
       doc.moveDown(0.6);
     }
   }

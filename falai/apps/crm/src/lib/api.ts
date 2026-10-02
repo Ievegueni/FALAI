@@ -1011,6 +1011,31 @@ export interface CallReportSummary {
   sms: { total: number; sent: number; failed: number; costCents: number };
 }
 
+export interface ReportAnalysisResult {
+  headline: string;
+  summary: string;
+  comparison: string;
+  anomalies: { title: string; detail: string; severity: 'info' | 'warning' | 'critical' }[];
+  agents: { above: { who: string; why: string }[]; below: { who: string; why: string }[] };
+  groups: { above: { who: string; why: string }[]; below: { who: string; why: string }[] };
+  typingTrends: { label: string; detail: string }[];
+  recommendations: { title: string; detail: string }[];
+}
+export interface ReportAnalysisRow {
+  id: string;
+  result: ReportAnalysisResult;
+  createdAt: string;
+  model: string;
+}
+export interface ReportAnalysisState {
+  analysis: ReportAnalysisRow | null;
+  canAnalyze: boolean;
+  canConfigure: boolean;
+  agentNames: boolean;
+  dailyLimit: number;
+  usedToday: number;
+}
+
 export const reportsApi = {
   summary: (params?: { from?: string; to?: string }) =>
     get<CallReportSummary>(`/tenant/reports${qs({ from: params?.from, to: params?.to })}`),
@@ -1032,9 +1057,16 @@ export const reportsApi = {
   overview: (params: { from?: string; to?: string }) =>
     get<ReportsOverview>(`/tenant/reports/overview${qs({ from: params.from, to: params.to })}`),
   /** O Resumo em Excel já formatado (várias folhas), gerado no servidor. */
-  downloadOverviewXlsx: async (params: { from?: string; to?: string }) => {
+  // ─── Análise com IA (melhoria 6) ───
+  analysis: (f: AttendanceFilters) => get<ReportAnalysisState>(`/tenant/reports/analysis${qs({ ...f })}`),
+  analyze: (f: AttendanceFilters) =>
+    post<{ analysis: ReportAnalysisRow; cached: boolean }>('/tenant/reports/analysis', f),
+  analysisSettings: (agentNames: boolean) => put<{ ok: true }>('/tenant/reports/analysis/settings', { agentNames }),
+
+  /** O Resumo em Excel; os filtros de agente/grupo/tipificação só servem para juntar a análise IA desses filtros. */
+  downloadOverviewXlsx: async (params: AttendanceFilters) => {
     const token = localStorage.getItem('falai_token');
-    const res = await fetch(`${API_BASE}/tenant/reports/overview.xlsx${qs({ from: params.from, to: params.to })}`, {
+    const res = await fetch(`${API_BASE}/tenant/reports/overview.xlsx${qs({ ...params })}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!res.ok) throw new ApiError(res.status, 'Erro ao gerar o Excel');
@@ -1043,9 +1075,9 @@ export const reportsApi = {
     return { blob, filename: match?.[1] ?? 'relatorio.xlsx' };
   },
   /** PDF do resumo, gerado no servidor (não é uma impressão da página). */
-  downloadOverviewPdf: async (params: { from?: string; to?: string }) => {
+  downloadOverviewPdf: async (params: AttendanceFilters) => {
     const token = localStorage.getItem('falai_token');
-    const res = await fetch(`${API_BASE}/tenant/reports/overview.pdf${qs({ from: params.from, to: params.to })}`, {
+    const res = await fetch(`${API_BASE}/tenant/reports/overview.pdf${qs({ ...params })}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!res.ok) throw new ApiError(res.status, 'Erro ao gerar o PDF');

@@ -322,6 +322,7 @@ export async function runAnalysis(p: RunAnalysisParams): Promise<{ analysis: { i
   const hitParsed = hit?.result ? analysisResultSchema.safeParse(hit.result) : null;
   if (hit && hitParsed?.success) return { analysis: { id: hit.id, result: hitParsed.data, createdAt: hit.createdAt, model: hit.model }, cached: true };
 
+  if (p.dailyLimit <= 0) throw new AnalysisError("A análise com IA não está activa nesta conta. Fale com o suporte.", 403);
   if ((await usedToday(p.tenantId)) >= p.dailyLimit) {
     throw new AnalysisError(`Atingiu o limite de ${p.dailyLimit} análises com IA por dia. Volte a tentar amanhã ou fale com o suporte.`, 429);
   }

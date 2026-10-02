@@ -874,7 +874,8 @@
       "groups": "By group",
       "reasons": "Declines",
       "calls": "Calls",
-      "typing": "Call types"
+      "typing": "Call types",
+      "analysis": "AI analysis"
     },
     "period": "Period",
     "all": "All",
@@ -955,7 +956,31 @@
       "byState": "By status",
       "byTyping": "By call type"
     },
-    "exportExcel": "Export Excel"
+    "exportExcel": "Export Excel",
+    "ai": {
+      "analyze": "Analyse with AI",
+      "analyzing": "Analysing…",
+      "error": "Could not analyse the report.",
+      "cached": "The data has not changed: same analysis.",
+      "usage": "Analyses today: {{used}} of {{limit}}",
+      "agentNames": "Send agent names to the AI (otherwise only the extension)",
+      "privacy": "Only aggregated numbers are sent — no phone numbers, customers or notes.",
+      "emptyTitle": "No analysis yet for these filters",
+      "emptyText": "The AI reads the report summary with the active filters, compares it with the previous period, flags anomalies and suggests actions.",
+      "noPermission": "Available to supervisors and administrators.",
+      "comparison": "Versus the previous period",
+      "generatedAt": "Generated on {{date}}",
+      "stub": "test mode (no Claude key)",
+      "anomalies": "Anomalies",
+      "agents": "Agents",
+      "groups": "Groups",
+      "above": "Above average",
+      "below": "Below average",
+      "none": "None.",
+      "typingTrends": "Growing typings",
+      "recommendations": "Recommendations",
+      "disclaimer": "Automatic interpretation of the report numbers — check before deciding. Also included in the Excel and PDF exports for these filters."
+    }
   },
   "sms": {
     "notEnabled": "Your plan does not include SMS. Contact support.",

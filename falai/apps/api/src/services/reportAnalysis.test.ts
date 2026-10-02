@@ -129,7 +129,7 @@ describe("validação do JSON da IA", () => {
 
 describe("runAnalysis: cache, limite, custo e erros", () => {
   const input = svc.prepareAnalysisInput(report() as never, previous as never, filters, opts);
-  const llm = { structured: vi.fn() };
+  const llm = { structured: vi.fn(async (_p: any): Promise<any> => null) };
   const params = { tenantId: "t1", userId: "u1", filters, input, llm: llm as never, model: "claude-sonnet-4-6", dailyLimit: 3 };
 
   beforeEach(() => {
@@ -157,12 +157,17 @@ describe("runAnalysis: cache, limite, custo e erros", () => {
     const r = await svc.runAnalysis(params);
     expect(r.cached).toBe(true);
     expect(llm.structured).not.toHaveBeenCalled();
-    expect(db.reportAnalysis.findFirst.mock.calls[0]![0]).toMatchObject({ where: { tenantId: "t1", filtersKey: svc.filtersKey(filters), dataHash: svc.dataHash(input) } });
+    expect((db.reportAnalysis.findFirst.mock.calls[0] as any)[0]).toMatchObject({ where: { tenantId: "t1", filtersKey: svc.filtersKey(filters), dataHash: svc.dataHash(input) } });
   });
 
   it("limite diário atingido → 429 sem chamar a IA", async () => {
     db.reportAnalysis.count.mockResolvedValue(3);
     await expect(svc.runAnalysis(params)).rejects.toMatchObject({ status: 429 });
+    expect(llm.structured).not.toHaveBeenCalled();
+  });
+
+  it("limite 0 (desligado no backoffice) → 403", async () => {
+    await expect(svc.runAnalysis({ ...params, dailyLimit: 0 })).rejects.toMatchObject({ status: 403 });
     expect(llm.structured).not.toHaveBeenCalled();
   });
 

@@ -874,7 +874,8 @@
       "groups": "按组",
       "reasons": "拒接",
       "calls": "通话",
-      "typing": "通话分类"
+      "typing": "通话分类",
+      "analysis": "AI 分析"
     },
     "period": "时间段",
     "all": "全部",
@@ -955,7 +956,31 @@
       "byState": "按状态",
       "byTyping": "按分类"
     },
-    "exportExcel": "导出 Excel"
+    "exportExcel": "导出 Excel",
+    "ai": {
+      "analyze": "AI 分析",
+      "analyzing": "分析中…",
+      "error": "无法分析报告。",
+      "cached": "数据未变化：沿用同一分析。",
+      "usage": "今日分析：{{used}} / {{limit}}",
+      "agentNames": "向 AI 发送坐席姓名（否则仅分机号）",
+      "privacy": "仅发送汇总数据——不含电话号码、客户或备注。",
+      "emptyTitle": "这些筛选条件尚无分析",
+      "emptyText": "AI 会读取当前筛选条件下的报告摘要，与上一周期比较，指出异常并给出建议。",
+      "noPermission": "仅主管和管理员可用。",
+      "comparison": "与上一周期相比",
+      "generatedAt": "生成于 {{date}}",
+      "stub": "测试模式（无 Claude 密钥）",
+      "anomalies": "异常",
+      "agents": "坐席",
+      "groups": "组",
+      "above": "高于平均",
+      "below": "低于平均",
+      "none": "无。",
+      "typingTrends": "增长中的分类",
+      "recommendations": "建议",
+      "disclaimer": "对报告数字的自动解读——决策前请核实。也会包含在这些筛选条件的 Excel 和 PDF 导出中。"
+    }
   },
   "sms": {
     "notEnabled": "您的套餐不包含短信。请联系支持。",

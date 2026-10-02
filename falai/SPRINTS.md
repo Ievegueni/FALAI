@@ -244,3 +244,14 @@ página própria). Sem email nem relatórios agendados (não pedidos).
 - [x] Rotas `GET/POST /tenant/reports/analysis`, `PUT /tenant/reports/analysis/settings`; owner/admin tudo, supervisor só os seus grupos/agentes.
 - [x] Exportações (`overview.xlsx`, `overview.pdf`, `attendance/export`) juntam a última análise dos mesmos filtros (nunca chamam a IA).
 - [x] Testes (17): resumo, JSON, cache, limite, erros/timeout, exportação.
+
+### Fase 2 — CRM, exportações e backoffice ✅
+- [x] Botão "Analisar com IA" nos Relatórios (supervisor/admin; não no separador Chamadas) → abre o separador "Análise IA" (conclusão, leitura, comparação, anomalias, agentes/grupos acima e abaixo da média, tipificações a crescer, recomendações). No Resumo usa só o período.
+- [x] No separador: uso do dia (x de N), opção do admin "enviar nomes dos agentes", aviso de privacidade; Exportar Excel/PDF levam a análise.
+- [x] PDF: página "Análise com IA" (texto da IA normalizado para a fonte do PDF — setas saíam como lixo).
+- [x] Backoffice → detalhe do cliente: limite diário (0 = desligado) e uso do mês (análises, tokens, US$).
+- [x] Testado em dev (modo de teste, sem chave do Claude): análise, cache, supervisor só com os seus grupos, Excel com a folha, PDF com a página.
+
+### Pendente / a validar
+- [ ] Definir a chave do Claude (backoffice → Configurações) e validar uma análise real (qualidade do texto, tokens, custo).
+- [ ] Produção: `migrate deploy` (com backup) da migração `20261004120000_report_analysis`.

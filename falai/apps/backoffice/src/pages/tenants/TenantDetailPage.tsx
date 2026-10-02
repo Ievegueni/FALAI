@@ -289,6 +289,12 @@ export function TenantDetailPage() {
     onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar a gravação.'),
   });
 
+  const aiLimitMut = useMutation({
+    mutationFn: (v: number) => tenantsApi.update(id!, { aiReportDailyLimit: v } as never),
+    onSuccess: () => { invalidateTenant(); toast.success('Limite de análises IA actualizado.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar o limite.'),
+  });
+
   const billingOverrideMut = useMutation({
     mutationFn: (mode: BillingMode | null) => tenantsApi.update(id!, { billingModeOverride: mode } as never),
     onSuccess: () => { invalidateTenant(); toast.success('Modo de cobrança do cliente actualizado.'); },
@@ -487,6 +493,35 @@ export function TenantDetailPage() {
                   <span className="text-xs text-gray-400">plano: {tenant.plan?.maxConcurrentCalls ?? '–'}</span>
                 </dd>
               </div>
+              <div className="flex justify-between items-center gap-4">
+                <dt className="text-gray-500">Análises IA dos relatórios / dia</dt>
+                <dd className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={1000}
+                    className="w-20 text-right"
+                    defaultValue={String(tenant.aiReportDailyLimit ?? 20)}
+                    disabled={aiLimitMut.isPending}
+                    onBlur={(e) => {
+                      const value = parseInt(e.target.value, 10);
+                      if (Number.isNaN(value) || value < 0 || value > 1000) {
+                        e.target.value = String(tenant.aiReportDailyLimit ?? 20);
+                        return;
+                      }
+                      if (value !== tenant.aiReportDailyLimit) aiLimitMut.mutate(value);
+                    }}
+                  />
+                  <span className="text-xs text-gray-400">0 = desligado</span>
+                </dd>
+              </div>
+              {tenant.aiReportUsageMonth && (
+                <p className="text-right text-xs text-gray-400 -mt-2">
+                  Este mês: {tenant.aiReportUsageMonth.analyses} análises ·{' '}
+                  {(tenant.aiReportUsageMonth.inputTokens + tenant.aiReportUsageMonth.outputTokens).toLocaleString('pt-PT')} tokens ·{' '}
+                  US$ {tenant.aiReportUsageMonth.costUsd.toFixed(2)}
+                </p>
+              )}
               <div className="flex justify-between"><dt className="text-gray-500">Webhook URL</dt><dd className="font-medium text-right max-w-[200px] truncate">{tenant.webhookUrl ?? '–'}</dd></div>
               <div className="flex justify-between"><dt className="text-gray-500">Onboarding</dt><dd className="font-medium">{tenant.onboardingCompletedAt ? formatDate(tenant.onboardingCompletedAt) : 'Pendente'}</dd></div>
             </dl>

@@ -218,6 +218,9 @@ export interface Tenant {
   recordingAnnounce?: boolean;
   missedCallSms?: boolean;
   missedCallSmsText?: string | null;
+  /** Análise IA dos relatórios (melhoria 6). */
+  aiReportDailyLimit?: number;
+  aiReportUsageMonth?: { analyses: number; inputTokens: number; outputTokens: number; costUsd: number };
   lines?: TenantLine[];
   users?: TenantUser[];
   createdAt: string;

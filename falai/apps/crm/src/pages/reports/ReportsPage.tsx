@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { FileSpreadsheet, FileText } from 'lucide-react';
-import { reportsApi, telephonyApi, callTypingApi, type AttendanceFilters } from '@/lib/api';
+import { FileSpreadsheet, FileText, Sparkles } from 'lucide-react';
+import { reportsApi, telephonyApi, callTypingApi, ApiError, type AttendanceFilters } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Tabs } from '@/components/ui/Tabs';
 import { AttendanceTab, type AttendanceView } from './AttendanceTabs';
 import { SummaryTab } from './SummaryTab';
+import { AnalysisTab } from './AnalysisTab';
 import { useToast } from '@/contexts/ToastContext';
 import { clsx } from '@/lib/utils';
 
@@ -32,7 +33,7 @@ function periodRange(p: Exclude<Period, 'custom'>): { from: string; to: string }
   return { from: isoDaysAgo(days), to: new Date().toISOString().slice(0, 10) };
 }
 
-type ReportTab = 'summary' | AttendanceView;
+type ReportTab = 'summary' | AttendanceView | 'analysis';
 const EXPORTABLE: Partial<Record<ReportTab, 'agents' | 'groups' | 'reasons' | 'typing'>> = {
   agents: 'agents',
   groups: 'groups',
@@ -85,6 +86,31 @@ export function ReportsPage() {
   const { data: categories } = useQuery({ queryKey: ['call-categories'], queryFn: callTypingApi.categories, retry: false });
   const catName = (id: string | null) => categories?.find((c) => c.id === id)?.name;
 
+  // Análise com IA (melhoria 6): no Resumo só conta o período (os outros
+  // filtros não se vêem lá); nos restantes separadores, todos os filtros.
+  const qc = useQueryClient();
+  const aiFilters: AttendanceFilters = tab === 'summary' ? { from, to } : filters;
+  const { data: aiState } = useQuery({
+    queryKey: ['reports', 'analysis', aiFilters],
+    queryFn: () => reportsApi.analysis(aiFilters),
+    retry: false,
+  });
+  const analyze = useMutation({
+    mutationFn: () => reportsApi.analyze(aiFilters),
+    onSuccess: (r) => {
+      // O separador "Análise IA" usa os filtros completos; no Resumo, o período.
+      qc.setQueryData(['reports', 'analysis', aiFilters], (old: typeof aiState) => (old ? { ...old, analysis: r.analysis, usedToday: old.usedToday + (r.cached || r.analysis.model === 'stub' ? 0 : 1) } : old));
+      void qc.invalidateQueries({ queryKey: ['reports', 'analysis'] });
+      if (tab === 'summary') {
+        // Leva a análise para o separador com os mesmos filtros (só período).
+        setExtensionId(''); setGroupId(''); setCategoryId('');
+      }
+      setTab('analysis');
+      if (r.cached) toast.success(t('reports.ai.cached'));
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('reports.ai.error')),
+  });
+
   const exportAttendance = async (format: 'xlsx') => {
     const view = EXPORTABLE[tab];
     if (!view) return;
@@ -101,7 +127,7 @@ export function ReportsPage() {
   const exportPdf = async () => {
     setDownloading(true);
     try {
-      saveBlob(await reportsApi.downloadOverviewPdf({ from, to }));
+      saveBlob(await reportsApi.downloadOverviewPdf(aiFilters));
     } catch {
       toast.error(t('reports.exportError'));
     } finally {
@@ -112,7 +138,7 @@ export function ReportsPage() {
   const exportXlsx = async () => {
     setDownloading(true);
     try {
-      saveBlob(await reportsApi.downloadOverviewXlsx({ from, to }));
+      saveBlob(await reportsApi.downloadOverviewXlsx(aiFilters));
     } catch {
       toast.error(t('reports.exportError'));
     } finally {
@@ -126,7 +152,12 @@ export function ReportsPage() {
         title={t('nav.reports')}
         actions={
           <>
-            {tab === 'summary' && (
+            {aiState?.canAnalyze && tab !== 'calls' && (
+              <Button variant="outline" size="sm" icon={<Sparkles className="h-4 w-4 text-blue-600" />} onClick={() => analyze.mutate()} loading={analyze.isPending}>
+                {analyze.isPending ? t('reports.ai.analyzing') : t('reports.ai.analyze')}
+              </Button>
+            )}
+            {(tab === 'summary' || tab === 'analysis') && (
               <>
                 <Button variant="outline" size="sm" icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => void exportXlsx()} disabled={downloading}>
                   {t('reports.exportExcel')}
@@ -157,6 +188,7 @@ export function ReportsPage() {
             { key: 'reasons', label: t('reports.tabs.reasons') },
             { key: 'typing', label: t('reports.tabs.typing') },
             { key: 'calls', label: t('reports.tabs.calls') },
+            { key: 'analysis', label: t('reports.tabs.analysis') },
           ]}
         />
 
@@ -236,7 +268,13 @@ export function ReportsPage() {
           )}
         </Card>
 
-        {tab === 'summary' ? <SummaryTab from={from} to={to} /> : <AttendanceTab view={tab} filters={filters} />}
+        {tab === 'summary' ? (
+          <SummaryTab from={from} to={to} />
+        ) : tab === 'analysis' ? (
+          <AnalysisTab state={aiState} analyzing={analyze.isPending} onAnalyze={() => analyze.mutate()} />
+        ) : (
+          <AttendanceTab view={tab} filters={filters} />
+        )}
       </div>
     </div>
   );

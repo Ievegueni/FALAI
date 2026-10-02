@@ -874,7 +874,8 @@
       "groups": "Por grupo",
       "reasons": "Recusas",
       "calls": "Chamadas",
-      "typing": "Tipificação"
+      "typing": "Tipificação",
+      "analysis": "Análise IA"
     },
     "period": "Período",
     "all": "Todos",
@@ -955,7 +956,31 @@
       "byState": "Por estado",
       "byTyping": "Por tipificação"
     },
-    "exportExcel": "Exportar Excel"
+    "exportExcel": "Exportar Excel",
+    "ai": {
+      "analyze": "Analisar com IA",
+      "analyzing": "A analisar…",
+      "error": "Não foi possível analisar o relatório.",
+      "cached": "Os dados não mudaram: é a mesma análise.",
+      "usage": "Análises hoje: {{used}} de {{limit}}",
+      "agentNames": "Enviar nomes dos agentes à IA (senão, só a extensão)",
+      "privacy": "Só seguem números agregados — sem telefones, clientes nem notas.",
+      "emptyTitle": "Ainda não há análise para estes filtros",
+      "emptyText": "A IA lê o resumo do relatório com os filtros activos, compara com o período anterior, aponta anomalias e sugere o que fazer.",
+      "noPermission": "Disponível para supervisores e administradores.",
+      "comparison": "Face ao período anterior",
+      "generatedAt": "Gerada em {{date}}",
+      "stub": "modo de teste (sem chave do Claude)",
+      "anomalies": "Anomalias",
+      "agents": "Agentes",
+      "groups": "Grupos",
+      "above": "Acima da média",
+      "below": "Abaixo da média",
+      "none": "Nenhum.",
+      "typingTrends": "Tipificações em crescimento",
+      "recommendations": "Recomendações",
+      "disclaimer": "Interpretação automática dos números do relatório — confirme antes de decidir. Vai também nas exportações Excel e PDF destes filtros."
+    }
   },
   "sms": {
     "notEnabled": "O seu plano não inclui SMS. Contacte o suporte.",

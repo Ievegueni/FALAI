@@ -72,6 +72,7 @@ const updateSchema = z.object({
   recordingAnnounce: z.boolean().optional(),
   missedCallSms: z.boolean().optional(),
   missedCallSmsText: z.string().max(480).nullable().optional(),
+  aiReportDailyLimit: z.number().int().min(0).max(1000).optional(), // análises IA dos relatórios por dia (0 = desligado)
 });
 
 const smsConfigSchema = z.object({
@@ -138,6 +139,7 @@ function mapTenant(t: any) {
     recordingAnnounce: t.recordingAnnounce ?? false,
     missedCallSms: t.missedCallSms ?? false,
     missedCallSmsText: t.missedCallSmsText ?? null,
+    aiReportDailyLimit: t.aiReportDailyLimit ?? 20,
     // features efectivas (o que o cliente vê) + overrides crus (o que o operador definiu)
     features: computeFeatures({
       overrides: t.features,
@@ -238,7 +240,24 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
       },
     });
     if (!tenant) return reply.status(404).send({ error: "Tenant não encontrado" });
-    return mapTenant(tenant);
+    // Análise IA dos relatórios (melhoria 6): uso e custo deste mês.
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const ai = await prisma.reportAnalysis.aggregate({
+      where: { tenantId: tenant.id, createdAt: { gte: monthStart }, error: null, model: { not: "stub" } },
+      _count: true,
+      _sum: { inputTokens: true, outputTokens: true, costMicroUsd: true },
+    });
+    return {
+      ...mapTenant(tenant),
+      aiReportUsageMonth: {
+        analyses: ai._count,
+        inputTokens: ai._sum.inputTokens ?? 0,
+        outputTokens: ai._sum.outputTokens ?? 0,
+        costUsd: (ai._sum.costMicroUsd ?? 0) / 1_000_000,
+      },
+    };
   });
 
   // PATCH /admin/tenants/:id
@@ -277,6 +296,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.recordingAnnounce !== undefined && { recordingAnnounce: body.recordingAnnounce }),
         ...(body.missedCallSms !== undefined && { missedCallSms: body.missedCallSms }),
         ...(body.missedCallSmsText !== undefined && { missedCallSmsText: body.missedCallSmsText }),
+        ...(body.aiReportDailyLimit !== undefined && { aiReportDailyLimit: body.aiReportDailyLimit }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },
     });
