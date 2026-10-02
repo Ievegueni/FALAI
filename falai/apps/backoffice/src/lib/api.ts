@@ -468,6 +468,20 @@ export const testCallApi = {
 
 // ─── System Settings ─────────────────────────────────────────────────────────
 
+export interface SystemStatus {
+  startedAt: string;
+  env: string;
+  running: { aiStubMode: boolean; anthropicConfigured: boolean };
+  saved: { aiStubMode: boolean; anthropicConfigured: boolean };
+  pendingRestart: boolean;
+}
+
+/** Estado da API e reinício para aplicar configurações (Configurações). */
+export const systemApi = {
+  status: () => get<SystemStatus>('/admin/system/status'),
+  restart: () => post<{ ok: true; startedAt: string }>('/admin/system/restart'),
+};
+
 export const settingsApi = {
   list: () =>
     get<{ settings: SystemSetting[] }>('/admin/settings').then((r) => r.settings),

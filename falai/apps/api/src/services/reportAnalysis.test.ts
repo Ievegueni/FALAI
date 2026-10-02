@@ -157,7 +157,9 @@ describe("runAnalysis: cache, limite, custo e erros", () => {
     const r = await svc.runAnalysis(params);
     expect(r.cached).toBe(true);
     expect(llm.structured).not.toHaveBeenCalled();
-    expect((db.reportAnalysis.findFirst.mock.calls[0] as any)[0]).toMatchObject({ where: { tenantId: "t1", filtersKey: svc.filtersKey(filters), dataHash: svc.dataHash(input) } });
+    expect((db.reportAnalysis.findFirst.mock.calls[0] as any)[0]).toMatchObject({
+      where: { tenantId: "t1", filtersKey: svc.filtersKey(filters), dataHash: svc.dataHash(input), model: { not: "stub" } },
+    });
   });
 
   it("limite diário atingido → 429 sem chamar a IA", async () => {

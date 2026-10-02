@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { settingsApi } from '@/lib/api';
 import { Card, Button, Input } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
+import { SystemControls } from './SystemControls';
 
 type FieldType = 'text' | 'secret' | 'bool';
 
@@ -134,8 +135,9 @@ export function ProvidersSettings() {
     },
     onSuccess: (count) => {
       void qc.invalidateQueries({ queryKey: ['admin', 'settings'] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'system'] });
       setForm({});
-      toast.success(count === 0 ? 'Nada para guardar.' : `${count} chave(s) actualizada(s). Reinicia a API para aplicar.`);
+      toast.success(count === 0 ? 'Nada para guardar.' : `${count} chave(s) actualizada(s). Carregue em "Reiniciar API" para aplicar.`);
     },
     onError: () => toast.error('Erro ao guardar as chaves.'),
   });
@@ -145,12 +147,14 @@ export function ProvidersSettings() {
       <div className="flex items-start justify-between mb-1">
         <div>
           <h2 className="text-base font-semibold text-gray-900">Provedores &amp; Integrações</h2>
-          <p className="text-sm text-gray-500">Chaves de API dos serviços externos. Segredos são encriptados; alterações aplicam-se após reiniciar a API.</p>
+          <p className="text-sm text-gray-500">Chaves de API dos serviços externos. Segredos são encriptados; alterações aplicam-se ao reiniciar a API (botão abaixo).</p>
         </div>
         <Button icon={<Save className="h-4 w-4" />} loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
           Guardar alterações
         </Button>
       </div>
+
+      <SystemControls />
 
       <div className="mt-5 space-y-8">
         {SECTIONS.map((section) => (

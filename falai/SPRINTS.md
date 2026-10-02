@@ -253,5 +253,6 @@ página própria). Sem email nem relatórios agendados (não pedidos).
 - [x] Testado em dev (modo de teste, sem chave do Claude): análise, cache, supervisor só com os seus grupos, Excel com a folha, PDF com a página.
 
 ### Pendente / a validar
-- [ ] Definir a chave do Claude (backoffice → Configurações) e validar uma análise real (qualidade do texto, tokens, custo).
+- [x] Chave do Claude definida e análise real validada em dev: claude-sonnet-4-6, ~4,1k tokens de entrada e ~2,2k de saída, ~US$ 0,05 e ~40 s por análise. A v1 do prompt esgotava os 2 500 tokens de saída (JSON cortado, recusado pela validação) → v2 com limites de tamanho e 4 096 tokens.
+- [x] Backoffice → Configurações: interruptor "Modo de teste da IA" (SystemSetting `AI_STUB_MODE`, prevalece sobre o .env), estado "IA em uso agora" e botão "Reiniciar API" (`/admin/system/status|restart`; produção: sai e o pm2 reinicia; dev: toca no index.ts para o tsx watch). Análises de teste nunca servem de cache para as reais.
 - [ ] Produção: `migrate deploy` (com backup) da migração `20261004120000_report_analysis`.

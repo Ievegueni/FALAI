@@ -20,7 +20,7 @@ import { deltaPct, type Overview } from "./reportsOverview.service.js";
 
 // ─── Prompt (versionado) ─────────────────────────────────────────────────────
 
-export const PROMPT_VERSION = "report-analysis/v1";
+export const PROMPT_VERSION = "report-analysis/v2"; // v2: limites de tamanho (a v1 esgotava os tokens de saída)
 
 export const SYSTEM_PROMPT = `És um analista de operações de call center. Recebes o RESUMO AGREGADO de um relatório de atendimento (JSON) de uma empresa angolana.
 
@@ -34,6 +34,7 @@ Regras:
 - Refere os agentes exactamente pela etiqueta que recebes (ref).
 - Se houver poucos dados (ex.: menos de 20 chamadas), avisa que as conclusões são frágeis.
 - Recomendações: práticas, concretas e ligadas aos números (máximo 5).
+- Sê conciso: "summary" até 120 palavras, "comparison" até 60, cada "detail"/"why" até 35 palavras; no máximo 5 anomalias e 3 agentes/grupos por lista. Preenche SEMPRE todos os campos, incluindo "recommendations".
 - Responde SEMPRE através da ferramenta report_analysis.`;
 
 // ─── Resultado (JSON validado) ───────────────────────────────────────────────
@@ -280,7 +281,7 @@ export function stubResult(input: AnalysisInput): AnalysisResult {
   const c = input.calls as Record<string, { current: number | null; previous: number | null; deltaPct: number | null }>;
   return {
     headline: `[Modo de teste] ${c["total"]?.current ?? 0} chamadas no período, taxa de atendimento ${c["answerRate"]?.current ?? "—"}%.`,
-    summary: "A IA está em modo de teste (sem chave do Claude ou AI_STUB_MODE activo). Esta análise lista apenas os sinais calculados pelo sistema.",
+    summary: "A IA está em modo de teste (sem chave do Claude ou com o modo de teste ligado no backoffice). Esta análise lista apenas os sinais calculados pelo sistema.",
     comparison: `Período anterior: ${c["total"]?.previous ?? 0} chamadas (${c["total"]?.deltaPct ?? "—"}%).`,
     anomalies: input.signals.slice(0, 8).map((s) => ({ title: s.split(":")[0]!.slice(0, 150), detail: s.slice(0, 500), severity: "warning" as const })),
     agents: {
@@ -314,8 +315,9 @@ export async function runAnalysis(p: RunAnalysisParams): Promise<{ analysis: { i
   const fKey = filtersKey(p.filters);
   const dHash = dataHash(p.input);
 
+  // A análise de teste (sem IA) nunca serve de cache: ao ligar o Claude, a próxima é real.
   const hit = await prisma.reportAnalysis.findFirst({
-    where: { tenantId: p.tenantId, filtersKey: fKey, dataHash: dHash, error: null },
+    where: { tenantId: p.tenantId, filtersKey: fKey, dataHash: dHash, error: null, model: { not: "stub" } },
     orderBy: { createdAt: "desc" },
     select: { id: true, result: true, createdAt: true, model: true },
   });
@@ -343,7 +345,7 @@ export async function runAnalysis(p: RunAnalysisParams): Promise<{ analysis: { i
       user: `Resumo agregado do relatório (JSON):\n${JSON.stringify(p.input)}`,
       tool: ANALYSIS_TOOL,
       model: p.model,
-      maxTokens: 2500,
+      maxTokens: 4096,
       timeoutMs: 60_000,
     });
   } catch (e) {

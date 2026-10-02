@@ -77,11 +77,11 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // ── Análise com IA (melhoria 6) ────────────────────────────────────────────
   // Claude da plataforma (mesma chave/configuração das chamadas). Sem chave ou
-  // com AI_STUB_MODE responde em modo de teste, sem gastar tokens.
+  // com o modo de teste ligado (backoffice) responde sem gastar tokens.
   const llm = new ClaudeAdapter({
     apiKey: fastify.providerConfig.anthropic.apiKey,
     model: config.AI_REPORT_MODEL,
-    stubMode: config.AI_STUB_MODE || !fastify.providerConfig.anthropic.apiKey,
+    stubMode: fastify.providerConfig.aiStubMode || !fastify.providerConfig.anthropic.apiKey,
   });
 
   /**

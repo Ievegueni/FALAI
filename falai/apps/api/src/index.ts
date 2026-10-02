@@ -23,6 +23,7 @@ import campaignDispatcherPlugin from "./plugins/campaignDispatcher.js";
 
 import { adminAuthRoutes } from "./routes/admin/auth.js";
 import { adminSettingsRoutes } from "./routes/admin/settings.js";
+import { adminSystemRoutes } from "./routes/admin/system.js";
 import { adminTestCallRoutes } from "./routes/admin/test-call.js";
 import { adminCallsRoutes } from "./routes/admin/calls.js";
 import { adminSimulateRoutes } from "./routes/admin/simulate-conversation.js";
@@ -333,6 +334,7 @@ async function buildApp() {
   // ── Admin routes ────────────────────────────────────────────────────────
   await fastify.register(adminAuthRoutes, { prefix: "/admin/auth" });
   await fastify.register(adminSettingsRoutes, { prefix: "/admin/settings" });
+  await fastify.register(adminSystemRoutes, { prefix: "/admin/system" });
   await fastify.register(adminTestCallRoutes, { prefix: "/admin/test-call" });
   await fastify.register(adminCallsRoutes, { prefix: "/admin/calls" });
   await fastify.register(adminSimulateRoutes, { prefix: "/admin/simulate-conversation" });
