@@ -859,11 +859,21 @@ export const billingApi = {
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 
+export interface TeamMemberInput {
+  name?: string;
+  password?: string;
+  role?: import('@/types').TenantRole;
+  extensionId?: string | null;
+  groupIds?: string[];
+  supervisedGroupIds?: string[];
+}
+
 export const teamApi = {
   list: () => get<import('@/types').TenantUser[]>('/tenant/team'),
 
-  invite: (data: { email: string; name: string; role: import('@/types').TenantRole }) =>
-    post<import('@/types').TenantUser>('/tenant/team/invite', data),
+  /** O gestor cria o utilizador já com password (sem convite por email). */
+  create: (data: TeamMemberInput & { email: string; name: string; password: string; role: import('@/types').TenantRole }) =>
+    post<import('@/types').TenantUser>('/tenant/team', data),
 
   updateRole: (userId: string, role: import('@/types').TenantRole) =>
     patch<import('@/types').TenantUser>(`/tenant/team/${userId}`, { role }),
@@ -871,10 +881,7 @@ export const teamApi = {
   remove: (userId: string) => del<void>(`/tenant/team/${userId}`),
 
   /** Papel, extensão do utilizador e grupos que supervisiona (melhoria 4). */
-  update: (
-    userId: string,
-    data: { role?: import('@/types').TenantRole; extensionId?: string | null; supervisedGroupIds?: string[] },
-  ) => patch<import('@/types').TenantUser>(`/tenant/team/${userId}`, data),
+  update: (userId: string, data: TeamMemberInput) => patch<import('@/types').TenantUser>(`/tenant/team/${userId}`, data),
 };
 
 // ─── API Keys ─────────────────────────────────────────────────────────────────

@@ -14,6 +14,8 @@ export interface TenantUser {
   accessProfile?: { id: string; name: string; permissions: Partial<Record<FeatureKey | 'dashboard', 'none' | 'read' | 'write'>> } | null;
   /** Extensão do utilizador e grupos que supervisiona (melhoria 4) — vêm da lista da Equipa. */
   extensionId?: string | null;
+  /** Grupos onde a extensão do utilizador atende. */
+  groupIds?: string[];
   supervisedGroupIds?: string[];
 }
 

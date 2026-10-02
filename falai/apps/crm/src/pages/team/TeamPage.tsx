@@ -31,134 +31,153 @@ const ROLE_COLORS: Record<TenantRole, string> = {
   VIEWER: 'bg-slate-100 text-slate-600',
 };
 
-function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+const ROLE_OPTIONS: TenantRole[] = ['ADMIN', 'SUPERVISOR', 'MEMBER', 'VIEWER'];
+const ROLE_OPT_KEYS: Record<string, string> = {
+  ADMIN: 'team.roleAdminOpt',
+  SUPERVISOR: 'team.roleSupervisorOpt',
+  MEMBER: 'team.roleMemberOpt',
+  VIEWER: 'team.roleViewerOpt',
+};
+
+function GroupChecks({ groups, value, onChange, disabled }: {
+  groups: { id: string; name: string }[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1">
+      {groups.map((g) => (
+        <label key={g.id} className={`flex items-center gap-2 text-sm text-gray-700 ${disabled ? 'opacity-50' : ''}`}>
+          <input
+            type="checkbox"
+            disabled={disabled}
+            checked={value.includes(g.id)}
+            onChange={(e) => onChange(e.target.checked ? [...value, g.id] : value.filter((x) => x !== g.id))}
+          />
+          {g.name}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Criar ou editar um utilizador: o gestor define a password (não há convite),
+ * o papel, a extensão, os grupos onde a extensão atende e — se for supervisor —
+ * os grupos que supervisiona.
+ */
+function MemberModal({ open, member, onClose }: { open: boolean; member: TenantUser | null; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { success, error } = useToast();
-  const [form, setForm] = useState({ email: '', name: '', role: 'MEMBER' as TenantRole });
+  const isNew = member === null;
+  const blank = { name: '', email: '', password: '', role: 'MEMBER' as TenantRole, extensionId: '', groupIds: [] as string[], supervisedGroupIds: [] as string[] };
+  const [form, setForm] = useState(blank);
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  const key = open ? (member?.id ?? 'new') : null;
+  if (key !== loadedFor) {
+    setLoadedFor(key);
+    setForm(member ? {
+      name: member.name,
+      email: member.email,
+      password: '',
+      role: member.role,
+      extensionId: member.extensionId ?? '',
+      groupIds: member.groupIds ?? [],
+      supervisedGroupIds: member.supervisedGroupIds ?? [],
+    } : blank);
+  }
+  const set = <K extends keyof typeof blank>(k: K, v: (typeof blank)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
-  const invite = useMutation({
-    mutationFn: () => teamApi.invite(form),
+  const { data: extensions } = useQuery({ queryKey: ['telephony', 'extensions'], queryFn: telephonyApi.listExtensions, retry: false, enabled: open });
+  const { data: groups } = useQuery({ queryKey: ['telephony', 'groups'], queryFn: telephonyApi.listGroups, retry: false, enabled: open });
+
+  const save = useMutation({
+    mutationFn: () => {
+      const common = {
+        extensionId: form.extensionId || null,
+        ...(form.extensionId ? { groupIds: form.groupIds } : {}),
+        ...(form.role === 'SUPERVISOR' ? { supervisedGroupIds: form.supervisedGroupIds } : {}),
+      };
+      if (isNew) return teamApi.create({ ...common, name: form.name, email: form.email, password: form.password, role: form.role });
+      return teamApi.update(member.id, {
+        ...common,
+        name: form.name,
+        ...(member.role !== 'OWNER' && { role: form.role }),
+        ...(form.password && { password: form.password }),
+      });
+    },
     onSuccess: () => {
-      success(t('team.inviteSent'));
+      success(isNew ? t('team.userCreated') : t('common.saved'));
       void qc.invalidateQueries({ queryKey: ['team'] });
+      void qc.invalidateQueries({ queryKey: ['telephony', 'groups'] });
       onClose();
-      setForm({ email: '', name: '', role: 'MEMBER' });
     },
     onError: (e: Error) => error(e.message),
   });
+
+  const passwordOk = isNew ? form.password.length >= 8 : form.password === '' || form.password.length >= 8;
+  const canSave = form.name.trim().length >= 2 && (!isNew || form.email.includes('@')) && passwordOk;
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={t('team.inviteMember')}
+      title={isNew ? t('team.newUser') : (member?.name ?? '')}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button loading={invite.isPending} onClick={() => invite.mutate()}>{t('team.invite')}</Button>
+          <Button loading={save.isPending} disabled={!canSave} onClick={() => save.mutate()}>
+            {isNew ? t('team.createUser') : t('common.save')}
+          </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
+        <Input label={t('team.name')} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder={t('team.namePlaceholder')} required autoFocus />
         <Input
           label={t('team.email')}
           type="email"
           value={form.email}
-          onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+          onChange={(e) => set('email', e.target.value)}
           placeholder={t('team.emailPlaceholder')}
-          required
-          autoFocus
+          hint={isNew ? t('team.emailHint') : undefined}
+          disabled={!isNew}
+          required={isNew}
         />
         <Input
-          label={t('team.name')}
-          value={form.name}
-          onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          placeholder={t('team.namePlaceholder')}
-          required
+          label={isNew ? t('team.password') : t('team.newPassword')}
+          type="text"
+          autoComplete="new-password"
+          value={form.password}
+          onChange={(e) => set('password', e.target.value)}
+          hint={isNew ? t('team.passwordHint') : t('team.newPasswordHint')}
+          error={form.password && form.password.length < 8 ? t('team.passwordShort') : undefined}
+          required={isNew}
         />
-        <Select
-          label={t('team.role')}
-          value={form.role}
-          onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as TenantRole }))}
-        >
-          <option value="ADMIN">{t('team.roleAdminOpt')}</option>
-          <option value="SUPERVISOR">{t('team.roleSupervisorOpt')}</option>
-          <option value="MEMBER">{t('team.roleMemberOpt')}</option>
-          <option value="VIEWER">{t('team.roleViewerOpt')}</option>
-        </Select>
-      </div>
-    </Modal>
-  );
-}
-
-/**
- * Papel, extensão do utilizador e — se for supervisor — os grupos que
- * supervisiona (melhoria 4). A extensão é por onde o supervisor ouve e o que
- * impede supervisionar a própria chamada.
- */
-function EditMemberModal({ member, onClose }: { member: TenantUser | null; onClose: () => void }) {
-  const { t } = useTranslation();
-  const qc = useQueryClient();
-  const { success, error } = useToast();
-  const [role, setRole] = useState<TenantRole>('MEMBER');
-  const [extensionId, setExtensionId] = useState('');
-  const [groupIds, setGroupIds] = useState<string[]>([]);
-  const [lastId, setLastId] = useState<string | null>(null);
-  if (member && member.id !== lastId) {
-    setLastId(member.id);
-    setRole(member.role);
-    setExtensionId(member.extensionId ?? '');
-    setGroupIds(member.supervisedGroupIds ?? []);
-  }
-  const { data: extensions } = useQuery({ queryKey: ['telephony', 'extensions'], queryFn: telephonyApi.listExtensions, retry: false, enabled: member !== null });
-  const { data: groups } = useQuery({ queryKey: ['telephony', 'groups'], queryFn: telephonyApi.listGroups, retry: false, enabled: member !== null });
-
-  const save = useMutation({
-    mutationFn: () =>
-      teamApi.update(member!.id, {
-        ...(member!.role !== 'OWNER' && { role }),
-        extensionId: extensionId || null,
-        ...(role === 'SUPERVISOR' && { supervisedGroupIds: groupIds }),
-      }),
-    onSuccess: () => { success(t('common.saved')); void qc.invalidateQueries({ queryKey: ['team'] }); onClose(); },
-    onError: (e: Error) => error(e.message),
-  });
-
-  return (
-    <Modal
-      open={member !== null}
-      onClose={onClose}
-      title={member?.name ?? ''}
-      footer={<><Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate()}>{t('common.save')}</Button></>}
-    >
-      <div className="flex flex-col gap-4">
         {member?.role !== 'OWNER' && (
-          <Select label={t('team.role')} value={role} onChange={(e) => setRole(e.target.value as TenantRole)}>
-            <option value="ADMIN">{t('team.roleAdminOpt')}</option>
-            <option value="SUPERVISOR">{t('team.roleSupervisorOpt')}</option>
-            <option value="MEMBER">{t('team.roleMemberOpt')}</option>
-            <option value="VIEWER">{t('team.roleViewerOpt')}</option>
+          <Select label={t('team.role')} value={form.role} onChange={(e) => set('role', e.target.value as TenantRole)}>
+            {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{t(ROLE_OPT_KEYS[r]!)}</option>)}
           </Select>
         )}
-        <Select label={t('team.extension')} hint={t('team.extensionHint')} value={extensionId} onChange={(e) => setExtensionId(e.target.value)}>
+        <Select label={t('team.extension')} hint={t('team.extensionHint')} value={form.extensionId} onChange={(e) => set('extensionId', e.target.value)}>
           <option value="">—</option>
           {extensions?.map((x) => (
             <option key={x.id} value={x.id}>{x.number}{x.displayName && x.displayName !== x.number ? ` — ${x.displayName}` : ''}</option>
           ))}
         </Select>
-        {role === 'SUPERVISOR' && (
+        {(groups?.length ?? 0) > 0 && (
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-1">{t('team.groups')}</p>
+            <GroupChecks groups={groups!} value={form.groupIds} onChange={(v) => set('groupIds', v)} disabled={!form.extensionId} />
+            <p className="mt-1 text-xs text-gray-500">{form.extensionId ? t('team.groupsHint') : t('team.groupsNeedExtension')}</p>
+          </div>
+        )}
+        {form.role === 'SUPERVISOR' && (groups?.length ?? 0) > 0 && (
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1">{t('team.supervisedGroups')}</p>
-            <div className="space-y-1">
-              {(groups ?? []).map((g) => (
-                <label key={g.id} className="flex items-center gap-2 text-sm text-gray-700">
-                  <input type="checkbox" checked={groupIds.includes(g.id)}
-                    onChange={(e) => setGroupIds((ids) => (e.target.checked ? [...ids, g.id] : ids.filter((x) => x !== g.id)))} />
-                  {g.name}
-                </label>
-              ))}
-            </div>
+            <GroupChecks groups={groups!} value={form.supervisedGroupIds} onChange={(v) => set('supervisedGroupIds', v)} />
           </div>
         )}
       </div>
@@ -171,8 +190,8 @@ export function TeamPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const { success, error } = useToast();
-  const [showInvite, setShowInvite] = useState(false);
-  const [editing, setEditing] = useState<TenantUser | null>(null);
+  // null = fechado; 'new' = criar; um membro = editar
+  const [editing, setEditing] = useState<TenantUser | 'new' | null>(null);
 
   const { data: team, isLoading } = useQuery({
     queryKey: ['team'],
@@ -193,8 +212,8 @@ export function TeamPage() {
         title={t('team.title')}
         actions={
           canManage && (
-            <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowInvite(true)}>
-              {t('team.invite')}
+            <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setEditing('new')}>
+              {t('team.newUser')}
             </Button>
           )
         }
@@ -258,8 +277,7 @@ export function TeamPage() {
         )}
       </div>
 
-      <InviteModal open={showInvite} onClose={() => setShowInvite(false)} />
-      <EditMemberModal member={editing} onClose={() => setEditing(null)} />
+      <MemberModal open={editing !== null} member={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
     </>
   );
 }
