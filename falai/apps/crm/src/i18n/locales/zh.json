@@ -42,7 +42,8 @@
     "sms": "短信",
     "telephony": "电话",
     "webphone": "网络电话",
-    "inbox": "收件箱"
+    "inbox": "收件箱",
+    "supervision": "监控"
   },
   "login": {
     "subtitle": "登录您的账户",
@@ -594,7 +595,12 @@
     "legendViewer": "<0>VIEWER</0> — 仅限仪表板、历史记录与报表。",
     "you": "（您）",
     "removeConfirm": "将 {{name}} 从团队中移除？",
-    "roleSupervisor": "主管"
+    "roleSupervisor": "主管",
+    "roleSupervisorOpt": "主管 — 监控其所属组的通话",
+    "legendSupervisor": "<0>主管</0> — 与成员相同，并可实时监控分配给他的组。",
+    "extension": "用户分机",
+    "extensionHint": "主管通过此分机监听；防止监控自己的通话。",
+    "supervisedGroups": "监控的组"
   },
   "settings": {
     "title": "设置",
@@ -950,7 +956,17 @@
     "untypedTitle": "待分类（{{count}}）",
     "typingLeft": "剩余 {{secs}} 秒",
     "typingNotTyped": "未分类",
-    "typingAction": "分类"
+    "typingAction": "分类",
+    "pause": "暂停",
+    "resume": "恢复",
+    "pausedHint": "已暂停：不会收到来电。",
+    "availableHint": "可接听来电。",
+    "supervising": "正在监听通话 — 在监控面板中切换模式或结束。",
+    "supervised": {
+      "LISTEN": "主管正在监听此通话。",
+      "WHISPER": "主管正在与您说话（客户听不到）。",
+      "BARGE": "主管已加入通话（客户能听到）。"
+    }
   },
   "telephony": {
     "title": "电话",
@@ -1099,5 +1115,62 @@
       "FAILED": "失败",
       "BUSY": "忙"
     }
+  },
+  "supervision": {
+    "tabLive": "实时",
+    "tabLog": "记录",
+    "tabSettings": "设置",
+    "kpi": {
+      "queued": "当前排队",
+      "tme": "今日平均等待",
+      "answered": "今日已接",
+      "missed": "今日未接"
+    },
+    "activeCalls": "进行中的通话（{{count}}）",
+    "audioHint": "监控会呼叫您的分机（团队中设置）：请保持网页电话开启或话机空闲。",
+    "noCalls": "没有进行中的通话。",
+    "agent": "坐席",
+    "group": "组",
+    "customer": "客户",
+    "duration": "时长",
+    "actions": "监控",
+    "ownCall": "您的通话",
+    "byOther": "其他主管正在监控",
+    "connecting": "正在呼叫您的分机…",
+    "end": "结束",
+    "mode": {
+      "LISTEN": "监听",
+      "WHISPER": "耳语",
+      "BARGE": "强插"
+    },
+    "agents": "坐席（{{count}}）",
+    "state": {
+      "IN_CALL": "通话中",
+      "RINGING": "振铃",
+      "WRAP_UP": "话后处理",
+      "PAUSED": "暂停",
+      "AVAILABLE": "空闲",
+      "OFFLINE": "离线"
+    },
+    "logHint": "所有监控的不可修改记录。",
+    "logEmpty": "该时段没有监控记录。",
+    "started": "开始",
+    "supervisor": "主管",
+    "modes": "模式",
+    "ended": "结束",
+    "ongoing": "进行中",
+    "endReason": {
+      "SUPERVISOR": "主管结束",
+      "CALL_ENDED": "通话结束",
+      "SUPERVISOR_HUNGUP": "主管挂断",
+      "SUPERVISOR_NO_ANSWER": "主管未接听",
+      "ERROR": "错误"
+    },
+    "notifyListen": "监听时通知坐席",
+    "notifyListenHint": "耳语和强插时总会通知坐席。",
+    "monitoringNotice": "告知客户通话可能被监控",
+    "monitoringNoticeHint": "安哥拉第 22/11 号个人数据保护法：通话开始时向双方播放。",
+    "uploadNotice": "上传提示音",
+    "noticeUploaded": "提示音已上传"
   }
 }

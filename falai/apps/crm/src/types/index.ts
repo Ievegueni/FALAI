@@ -12,6 +12,9 @@ export interface TenantUser {
   createdAt: string;
   /** Perfil definido pela Comunica no backoffice; null = sem restrição. Os módulos "none" já vêm desligados em tenant.features. */
   accessProfile?: { id: string; name: string; permissions: Partial<Record<FeatureKey | 'dashboard', 'none' | 'read' | 'write'>> } | null;
+  /** Extensão do utilizador e grupos que supervisiona (melhoria 4) — vêm da lista da Equipa. */
+  extensionId?: string | null;
+  supervisedGroupIds?: string[];
 }
 
 export type FeatureKey =

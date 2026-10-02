@@ -344,6 +344,62 @@ export interface RejectReason {
   sortOrder: number;
 }
 
+// ─── Supervisão em tempo real (melhoria 4) ───────────────────────────────────
+
+export type SupervisionMode = 'LISTEN' | 'WHISPER' | 'BARGE';
+export type AgentLiveState = 'IN_CALL' | 'RINGING' | 'WRAP_UP' | 'PAUSED' | 'AVAILABLE' | 'OFFLINE';
+
+export interface SupervisionLive {
+  now: string;
+  agents: { extensionId: string; number: string; name: string | null; state: AgentLiveState; since: string | null }[];
+  calls: {
+    callId: string;
+    agent: string | null;
+    agentNumber: string | null;
+    group: string | null;
+    customer: string | null;
+    number: string | null;
+    since: string;
+    ownCall: boolean;
+    supervision: { sessionId: string; mode: SupervisionMode; status: 'CONNECTING' | 'ACTIVE'; mine: boolean } | null;
+  }[];
+  kpis: { queued: number; tmeSecs: number | null; missed: number; answered: number };
+}
+
+export interface SupervisionLogEntry {
+  sessionId: string;
+  supervisor: string;
+  agent: string | null;
+  callId: string;
+  customer: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+  modes: { mode: SupervisionMode; at: string }[];
+}
+
+export const supervisionApi = {
+  live: () => get<SupervisionLive>('/tenant/supervision/live'),
+  start: (callId: string, mode: SupervisionMode) =>
+    post<{ sessionId: string; status: string; mode: SupervisionMode }>(`/tenant/supervision/calls/${callId}`, { mode }),
+  setMode: (sessionId: string, mode: SupervisionMode) =>
+    patch<{ sessionId: string; mode: SupervisionMode }>(`/tenant/supervision/sessions/${sessionId}`, { mode }),
+  end: (sessionId: string) => del<void>(`/tenant/supervision/sessions/${sessionId}`),
+  log: (q: { from?: string; to?: string; page: number }) =>
+    get<{ total: number; page: number; pageSize: number; data: SupervisionLogEntry[] }>(`/tenant/supervision/log${qs(q)}`),
+  settings: () => get<{ supervisionNotifyListen: boolean; monitoringNotice: boolean }>('/tenant/supervision/settings'),
+  updateSettings: (data: { supervisionNotifyListen?: boolean; monitoringNotice?: boolean }) =>
+    patch<{ supervisionNotifyListen: boolean; monitoringNotice: boolean }>('/tenant/supervision/settings', data),
+  uploadNotice: (wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'aviso.wav');
+    return post<{ ok: true }>('/tenant/supervision/notice-audio', fd);
+  },
+  pause: (extensionId: string) => get<{ paused: boolean; since: string | null }>(`/tenant/supervision/pause${qs({ extensionId })}`),
+  setPause: (extensionId: string, paused: boolean) =>
+    post<{ paused: boolean }>('/tenant/supervision/pause', { extensionId, paused }),
+};
+
 // ─── Painel do cliente na entrada (melhoria 3) ───────────────────────────────
 
 export type CallerInfo =
@@ -777,6 +833,12 @@ export const teamApi = {
     patch<import('@/types').TenantUser>(`/tenant/team/${userId}`, { role }),
 
   remove: (userId: string) => del<void>(`/tenant/team/${userId}`),
+
+  /** Papel, extensão do utilizador e grupos que supervisiona (melhoria 4). */
+  update: (
+    userId: string,
+    data: { role?: import('@/types').TenantRole; extensionId?: string | null; supervisedGroupIds?: string[] },
+  ) => patch<import('@/types').TenantUser>(`/tenant/team/${userId}`, data),
 };
 
 // ─── API Keys ─────────────────────────────────────────────────────────────────

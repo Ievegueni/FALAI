@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation, Trans } from 'react-i18next';
 import { Plus, UserCheck, Trash2, Shield } from 'lucide-react';
-import { teamApi } from '@/lib/api';
+import { teamApi, telephonyApi } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -13,7 +13,7 @@ import { Modal } from '@/components/ui/Modal';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { formatDate } from '@/lib/utils';
-import type { TenantRole } from '@/types';
+import type { TenantRole, TenantUser } from '@/types';
 
 const ROLE_LABEL_KEYS: Record<TenantRole, string> = {
   OWNER: 'team.roleOwner',
@@ -83,9 +83,84 @@ function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) 
           onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as TenantRole }))}
         >
           <option value="ADMIN">{t('team.roleAdminOpt')}</option>
+          <option value="SUPERVISOR">{t('team.roleSupervisorOpt')}</option>
           <option value="MEMBER">{t('team.roleMemberOpt')}</option>
           <option value="VIEWER">{t('team.roleViewerOpt')}</option>
         </Select>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Papel, extensão do utilizador e — se for supervisor — os grupos que
+ * supervisiona (melhoria 4). A extensão é por onde o supervisor ouve e o que
+ * impede supervisionar a própria chamada.
+ */
+function EditMemberModal({ member, onClose }: { member: TenantUser | null; onClose: () => void }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const { success, error } = useToast();
+  const [role, setRole] = useState<TenantRole>('MEMBER');
+  const [extensionId, setExtensionId] = useState('');
+  const [groupIds, setGroupIds] = useState<string[]>([]);
+  const [lastId, setLastId] = useState<string | null>(null);
+  if (member && member.id !== lastId) {
+    setLastId(member.id);
+    setRole(member.role);
+    setExtensionId(member.extensionId ?? '');
+    setGroupIds(member.supervisedGroupIds ?? []);
+  }
+  const { data: extensions } = useQuery({ queryKey: ['telephony', 'extensions'], queryFn: telephonyApi.listExtensions, retry: false, enabled: member !== null });
+  const { data: groups } = useQuery({ queryKey: ['telephony', 'groups'], queryFn: telephonyApi.listGroups, retry: false, enabled: member !== null });
+
+  const save = useMutation({
+    mutationFn: () =>
+      teamApi.update(member!.id, {
+        ...(member!.role !== 'OWNER' && { role }),
+        extensionId: extensionId || null,
+        ...(role === 'SUPERVISOR' && { supervisedGroupIds: groupIds }),
+      }),
+    onSuccess: () => { success(t('common.saved')); void qc.invalidateQueries({ queryKey: ['team'] }); onClose(); },
+    onError: (e: Error) => error(e.message),
+  });
+
+  return (
+    <Modal
+      open={member !== null}
+      onClose={onClose}
+      title={member?.name ?? ''}
+      footer={<><Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button><Button loading={save.isPending} onClick={() => save.mutate()}>{t('common.save')}</Button></>}
+    >
+      <div className="flex flex-col gap-4">
+        {member?.role !== 'OWNER' && (
+          <Select label={t('team.role')} value={role} onChange={(e) => setRole(e.target.value as TenantRole)}>
+            <option value="ADMIN">{t('team.roleAdminOpt')}</option>
+            <option value="SUPERVISOR">{t('team.roleSupervisorOpt')}</option>
+            <option value="MEMBER">{t('team.roleMemberOpt')}</option>
+            <option value="VIEWER">{t('team.roleViewerOpt')}</option>
+          </Select>
+        )}
+        <Select label={t('team.extension')} hint={t('team.extensionHint')} value={extensionId} onChange={(e) => setExtensionId(e.target.value)}>
+          <option value="">—</option>
+          {extensions?.map((x) => (
+            <option key={x.id} value={x.id}>{x.number}{x.displayName && x.displayName !== x.number ? ` — ${x.displayName}` : ''}</option>
+          ))}
+        </Select>
+        {role === 'SUPERVISOR' && (
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-1">{t('team.supervisedGroups')}</p>
+            <div className="space-y-1">
+              {(groups ?? []).map((g) => (
+                <label key={g.id} className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="checkbox" checked={groupIds.includes(g.id)}
+                    onChange={(e) => setGroupIds((ids) => (e.target.checked ? [...ids, g.id] : ids.filter((x) => x !== g.id)))} />
+                  {g.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -97,6 +172,7 @@ export function TeamPage() {
   const qc = useQueryClient();
   const { success, error } = useToast();
   const [showInvite, setShowInvite] = useState(false);
+  const [editing, setEditing] = useState<TenantUser | null>(null);
 
   const { data: team, isLoading } = useQuery({
     queryKey: ['team'],
@@ -130,6 +206,7 @@ export function TeamPage() {
           <div className="text-xs text-blue-700">
             <p><Trans i18nKey="team.legendOwner" components={[<strong key="0" />]} /></p>
             <p><Trans i18nKey="team.legendAdmin" components={[<strong key="0" />]} /></p>
+            <p><Trans i18nKey="team.legendSupervisor" components={[<strong key="0" />]} /></p>
             <p><Trans i18nKey="team.legendMember" components={[<strong key="0" />]} /></p>
             <p><Trans i18nKey="team.legendViewer" components={[<strong key="0" />]} /></p>
           </div>
@@ -159,6 +236,9 @@ export function TeamPage() {
                     {member.twoFaEnabled && (
                       <Badge className="bg-emerald-100 text-emerald-700">2FA</Badge>
                     )}
+                    {canManage && (
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(member)}>{t('common.edit')}</Button>
+                    )}
                     {canManage && member.id !== user?.id && member.role !== 'OWNER' && (
                       <Button
                         size="sm"
@@ -179,6 +259,7 @@ export function TeamPage() {
       </div>
 
       <InviteModal open={showInvite} onClose={() => setShowInvite(false)} />
+      <EditMemberModal member={editing} onClose={() => setEditing(null)} />
     </>
   );
 }

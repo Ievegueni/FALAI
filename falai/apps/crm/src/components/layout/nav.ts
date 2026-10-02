@@ -15,6 +15,7 @@ import {
   Network,
   PhoneCall,
   Inbox,
+  Headphones,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import type { FeatureKey, TenantUser } from '@/types';
@@ -36,6 +37,8 @@ const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: F
 const settingsItem = { to: '/settings', icon: Settings, labelKey: 'nav.settings' };
 const smsItem = { to: '/sms', icon: MessageSquare, labelKey: 'nav.sms' };
 const telephonyItem = { to: '/telephony', icon: Network, labelKey: 'nav.telephony' };
+const supervisionItem = { to: '/supervision', icon: Headphones, labelKey: 'nav.supervision' };
+const SUPERVISION_ROLES = new Set(['OWNER', 'ADMIN', 'SUPERVISOR']);
 
 /** Itens do menu que o utilizador pode ver (features do tenant + perfil de acesso). */
 export function useNavItems() {
@@ -54,6 +57,7 @@ export function useNavItems() {
     ...(canSeeDashboard(user) ? [dashboardItem] : []),
     ...(features?.inbox ? [inboxItem] : []),
     ...featureItems.filter((i) => isOn(i.feature)),
+    ...(isOn('webphone') && user && SUPERVISION_ROLES.has(user.role) ? [supervisionItem] : []),
     ...(smsOn ? [smsItem] : []),
     ...(isOn('telephony') ? [telephonyItem] : []),
     settingsItem,
@@ -69,6 +73,7 @@ export function canSeeDashboard(user: TenantUser | null | undefined): boolean {
 const ROLE_KEYS: Record<string, string> = {
   OWNER: 'team.roleOwner',
   ADMIN: 'team.roleAdmin',
+  SUPERVISOR: 'team.roleSupervisor',
   MEMBER: 'team.roleMember',
   VIEWER: 'team.roleViewer',
 };

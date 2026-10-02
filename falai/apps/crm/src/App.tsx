@@ -43,6 +43,7 @@ const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then((m)
 const PbxIntegrationPage = lazy(() => import('@/pages/settings/PbxIntegrationPage').then((m) => ({ default: m.PbxIntegrationPage })));
 const TelephonyPage = lazy(() => import('@/pages/telephony/TelephonyPage').then((m) => ({ default: m.TelephonyPage })));
 const WebphonePage = lazy(() => import('@/pages/calls/WebphonePage').then((m) => ({ default: m.WebphonePage })));
+const SupervisionPage = lazy(() => import('@/pages/supervision/SupervisionPage').then((m) => ({ default: m.SupervisionPage })));
 
 export default function App() {
   return (
@@ -95,6 +96,7 @@ export default function App() {
                 <Route path="/team" element={<RequireFeature feature="team"><TeamPage /></RequireFeature>} />
                 <Route path="/developers" element={<RequireFeature feature="developers"><DevelopersPage /></RequireFeature>} />
                 <Route path="/webphone" element={<RequireFeature feature="webphone"><WebphonePage /></RequireFeature>} />
+                <Route path="/supervision" element={<RequireFeature feature="webphone"><SupervisionPage /></RequireFeature>} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/pbx" element={<PbxIntegrationPage />} />
                 <Route path="/telephony" element={<RequireFeature feature="telephony"><TelephonyPage /></RequireFeature>} />

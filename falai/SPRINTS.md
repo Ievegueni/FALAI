@@ -158,7 +158,12 @@ Decisões da Fase 0:
 - [x] Equipa: papel SUPERVISOR, extensão e grupos supervisionados.
 - [x] Testes: cada modo, troca de modo, fim durante a supervisão, órfãos, própria chamada, 1 por chamada, âmbito, estados.
 
-### Fase 2 — Frontend
-- [ ] Página Supervisão (painel ao vivo, acções, registo, definições).
-- [ ] Webphone: atende a supervisão sozinho, aviso ao agente, botão Pausa.
-- [ ] Equipa: editar papel, extensão e grupos.
+### Fase 2 — Frontend ✅
+- [x] Página Supervisão (menu só para OWNER/ADMIN/SUPERVISOR): ao vivo (polling 2 s, contadores ao segundo), Escutar/Sussurrar/Intervir/Terminar, registo e definições (aviso em Escuta, aviso ao cliente + áudio).
+- [x] Webphone: atende sozinho a chamada de supervisão (`X-Falai-Supervise`), aviso ao agente (SSE `supervision.agent`), botão Pausa.
+- [x] Equipa: editar papel (com SUPERVISOR), extensão do utilizador e grupos supervisionados.
+
+### Pendente / a validar (com chamadas reais)
+- [ ] Escuta/Sussurro/Intervenção numa chamada real: direcção do áudio do snoop (`whisper=out` → só o agente ouve) e latência.
+- [ ] Aviso ao cliente: carregar o áudio e confirmar que toca no início da conversa.
+- [ ] Reinício da API a meio de uma supervisão → a bridge `supervise-*` é varrida no arranque.

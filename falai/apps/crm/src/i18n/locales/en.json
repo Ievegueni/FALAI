@@ -42,7 +42,8 @@
     "sms": "SMS",
     "telephony": "Telephony",
     "webphone": "Webphone",
-    "inbox": "Inbox"
+    "inbox": "Inbox",
+    "supervision": "Supervision"
   },
   "login": {
     "subtitle": "Sign in to your account",
@@ -594,7 +595,12 @@
     "legendViewer": "<0>VIEWER</0> — dashboards, history and reports only.",
     "you": "(you)",
     "removeConfirm": "Remove {{name}} from the team?",
-    "roleSupervisor": "Supervisor"
+    "roleSupervisor": "Supervisor",
+    "roleSupervisorOpt": "Supervisor — supervises calls of their groups",
+    "legendSupervisor": "<0>Supervisor</0> — like Member, and supervises the groups you assign in real time.",
+    "extension": "User's extension",
+    "extensionHint": "Where the supervisor hears calls; prevents supervising their own call.",
+    "supervisedGroups": "Supervised groups"
   },
   "settings": {
     "title": "Settings",
@@ -950,7 +956,17 @@
     "untypedTitle": "To type ({{count}})",
     "typingLeft": "{{secs}}s left",
     "typingNotTyped": "untyped",
-    "typingAction": "Type"
+    "typingAction": "Type",
+    "pause": "Pause",
+    "resume": "Resume",
+    "pausedHint": "Paused: you won't get incoming calls.",
+    "availableHint": "Available for incoming calls.",
+    "supervising": "Supervising a call — use the Supervision panel to change mode or stop.",
+    "supervised": {
+      "LISTEN": "A supervisor is listening to this call.",
+      "WHISPER": "A supervisor is talking to you (the customer can't hear).",
+      "BARGE": "A supervisor joined the call (the customer hears them)."
+    }
   },
   "telephony": {
     "title": "Telephony",
@@ -1171,5 +1187,62 @@
       "FAILED": "failed",
       "BUSY": "busy"
     }
+  },
+  "supervision": {
+    "tabLive": "Live",
+    "tabLog": "Log",
+    "tabSettings": "Settings",
+    "kpi": {
+      "queued": "Queued now",
+      "tme": "AWT today",
+      "answered": "Answered today",
+      "missed": "Missed today"
+    },
+    "activeCalls": "Active calls ({{count}})",
+    "audioHint": "Supervision calls your extension (Team): keep the webphone open or your phone free.",
+    "noCalls": "No active calls.",
+    "agent": "Agent",
+    "group": "Group",
+    "customer": "Customer",
+    "duration": "Duration",
+    "actions": "Supervision",
+    "ownCall": "Your call",
+    "byOther": "With another supervisor",
+    "connecting": "Calling your extension…",
+    "end": "Stop",
+    "mode": {
+      "LISTEN": "Listen",
+      "WHISPER": "Whisper",
+      "BARGE": "Barge in"
+    },
+    "agents": "Agents ({{count}})",
+    "state": {
+      "IN_CALL": "In call",
+      "RINGING": "Ringing",
+      "WRAP_UP": "Wrap-up",
+      "PAUSED": "Paused",
+      "AVAILABLE": "Available",
+      "OFFLINE": "Offline"
+    },
+    "logHint": "Immutable log of every supervision.",
+    "logEmpty": "No supervisions in the period.",
+    "started": "Start",
+    "supervisor": "Supervisor",
+    "modes": "Modes",
+    "ended": "End",
+    "ongoing": "ongoing",
+    "endReason": {
+      "SUPERVISOR": "stopped by supervisor",
+      "CALL_ENDED": "call ended",
+      "SUPERVISOR_HUNGUP": "supervisor hung up",
+      "SUPERVISOR_NO_ANSWER": "supervisor didn't answer",
+      "ERROR": "error"
+    },
+    "notifyListen": "Notify the agent when in Listen mode",
+    "notifyListenHint": "In Whisper and Barge-in the agent is always notified.",
+    "monitoringNotice": "Tell the customer the call may be monitored",
+    "monitoringNoticeHint": "Data protection (Angolan Law 22/11): the audio plays to both when the conversation starts.",
+    "uploadNotice": "Upload notice audio",
+    "noticeUploaded": "Notice audio uploaded"
   }
 }

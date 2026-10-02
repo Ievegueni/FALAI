@@ -42,7 +42,8 @@
     "sms": "SMS",
     "telephony": "Telefonia",
     "webphone": "Webphone",
-    "inbox": "Caixa de entrada"
+    "inbox": "Caixa de entrada",
+    "supervision": "Supervisão"
   },
   "login": {
     "subtitle": "Inicie sessão na sua conta",
@@ -594,7 +595,12 @@
     "legendViewer": "<0>LEITOR</0> — apenas dashboards, histórico e relatórios.",
     "you": "(você)",
     "removeConfirm": "Remover {{name}} da equipa?",
-    "roleSupervisor": "Supervisor"
+    "roleSupervisor": "Supervisor",
+    "roleSupervisorOpt": "Supervisor — supervisiona as chamadas dos seus grupos",
+    "legendSupervisor": "<0>Supervisor</0> — como Membro, e supervisiona em tempo real os grupos que lhe atribuir.",
+    "extension": "Extensão do utilizador",
+    "extensionHint": "Por onde o supervisor ouve as chamadas; impede supervisionar a própria chamada.",
+    "supervisedGroups": "Grupos que supervisiona"
   },
   "settings": {
     "title": "Definições",
@@ -950,7 +956,17 @@
     "untypedTitle": "Por tipificar ({{count}})",
     "typingLeft": "faltam {{secs}}s",
     "typingNotTyped": "não tipificada",
-    "typingAction": "Tipificar"
+    "typingAction": "Tipificar",
+    "pause": "Pausa",
+    "resume": "Retomar",
+    "pausedHint": "Em pausa: não recebe chamadas de entrada.",
+    "availableHint": "Disponível para chamadas de entrada.",
+    "supervising": "A supervisionar uma chamada — use o painel de Supervisão para mudar de modo ou terminar.",
+    "supervised": {
+      "LISTEN": "Um supervisor está a ouvir esta chamada.",
+      "WHISPER": "Um supervisor está a falar consigo (o cliente não ouve).",
+      "BARGE": "Um supervisor entrou na chamada (o cliente ouve-o)."
+    }
   },
   "telephony": {
     "title": "Telefonia",
@@ -1171,5 +1187,62 @@
       "FAILED": "falhou",
       "BUSY": "ocupado"
     }
+  },
+  "supervision": {
+    "tabLive": "Ao vivo",
+    "tabLog": "Registo",
+    "tabSettings": "Definições",
+    "kpi": {
+      "queued": "Em fila agora",
+      "tme": "TME hoje",
+      "answered": "Atendidas hoje",
+      "missed": "Perdidas hoje"
+    },
+    "activeCalls": "Chamadas activas ({{count}})",
+    "audioHint": "A supervisão liga para a sua extensão (Equipa): tenha o webphone aberto ou o telefone livre.",
+    "noCalls": "Sem chamadas activas.",
+    "agent": "Agente",
+    "group": "Grupo",
+    "customer": "Cliente",
+    "duration": "Duração",
+    "actions": "Supervisão",
+    "ownCall": "A sua chamada",
+    "byOther": "Com outro supervisor",
+    "connecting": "A ligar para a sua extensão…",
+    "end": "Terminar",
+    "mode": {
+      "LISTEN": "Escutar",
+      "WHISPER": "Sussurrar",
+      "BARGE": "Intervir"
+    },
+    "agents": "Agentes ({{count}})",
+    "state": {
+      "IN_CALL": "Em chamada",
+      "RINGING": "A tocar",
+      "WRAP_UP": "Pós-chamada",
+      "PAUSED": "Pausa",
+      "AVAILABLE": "Disponível",
+      "OFFLINE": "Offline"
+    },
+    "logHint": "Registo imutável de todas as supervisões.",
+    "logEmpty": "Sem supervisões no período.",
+    "started": "Início",
+    "supervisor": "Supervisor",
+    "modes": "Modos",
+    "ended": "Fim",
+    "ongoing": "em curso",
+    "endReason": {
+      "SUPERVISOR": "terminada pelo supervisor",
+      "CALL_ENDED": "a chamada acabou",
+      "SUPERVISOR_HUNGUP": "o supervisor desligou",
+      "SUPERVISOR_NO_ANSWER": "o supervisor não atendeu",
+      "ERROR": "erro"
+    },
+    "notifyListen": "Avisar o agente quando está em Escuta",
+    "notifyListenHint": "Em Sussurro e Intervenção o agente é sempre avisado.",
+    "monitoringNotice": "Avisar o cliente de que a chamada pode ser monitorizada",
+    "monitoringNoticeHint": "Lei 22/11 (Protecção de Dados Pessoais): o áudio toca a ambos quando a conversa começa.",
+    "uploadNotice": "Carregar áudio do aviso",
+    "noticeUploaded": "Áudio do aviso carregado"
   }
 }

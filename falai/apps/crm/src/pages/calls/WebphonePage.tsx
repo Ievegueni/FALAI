@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { PhoneCall, PhoneOff, Mic, MicOff, Delete } from 'lucide-react';
-import { telephonyApi, rejectReasonsApi } from '@/lib/api';
+import { PhoneCall, PhoneOff, Mic, MicOff, Delete, Pause, Play, Headphones } from 'lucide-react';
+import { telephonyApi, rejectReasonsApi, supervisionApi } from '@/lib/api';
 import { useWebphone, type RegistrationState } from '@/contexts/WebphoneContext';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -120,6 +120,8 @@ export function WebphonePage() {
     answer,
     hangup,
     reject,
+    supervising,
+    supervisedMode,
     mute,
     unmute,
     sendDTMF,
@@ -128,6 +130,17 @@ export function WebphonePage() {
   const [target, setTarget] = useState('');
   const [muted, setMuted] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const qc = useQueryClient();
+  // Pausa (melhoria 4): em pausa a extensão não recebe chamadas de entrada.
+  const { data: pause } = useQuery({
+    queryKey: ['agent-pause', extensionId],
+    queryFn: () => supervisionApi.pause(extensionId!),
+    enabled: extensionId !== null,
+  });
+  const togglePause = useMutation({
+    mutationFn: () => supervisionApi.setPause(extensionId!, !pause?.paused),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['agent-pause', extensionId] }),
+  });
   const [typingLegId, setTypingLegId] = useState<string | null>(null);
   // Chamada de entrada atendida aqui: quando acabar, abre a tipificação.
   const answeredLegRef = useRef<string | null>(null);
@@ -196,7 +209,28 @@ export function WebphonePage() {
             {t(REGISTRATION_LABEL[registration])}
           </p>
           {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+          {extensionId && (
+            <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
+              <p className="text-xs text-gray-500">{pause?.paused ? t('webphone.pausedHint') : t('webphone.availableHint')}</p>
+              <Button
+                size="sm"
+                variant={pause?.paused ? 'primary' : 'outline'}
+                icon={pause?.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                loading={togglePause.isPending}
+                onClick={() => togglePause.mutate()}
+              >
+                {pause?.paused ? t('webphone.resume') : t('webphone.pause')}
+              </Button>
+            </div>
+          )}
         </Card>
+
+        {(supervising || supervisedMode) && (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <Headphones className="h-4 w-4" />
+            {supervising ? t('webphone.supervising') : t(`webphone.supervised.${supervisedMode}`)}
+          </div>
+        )}
 
         <Card>
           {incoming ? (
