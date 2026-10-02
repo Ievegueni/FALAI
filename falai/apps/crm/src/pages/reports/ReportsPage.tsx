@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Phone, PhoneIncoming, PhoneOutgoing, CheckCircle, PhoneMissed, Clock, MessageSquare, Download, Printer } from 'lucide-react';
+import { Phone, PhoneIncoming, PhoneOutgoing, CheckCircle, PhoneMissed, Clock, MessageSquare, Download, Printer, FileSpreadsheet } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -12,10 +12,12 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { reportsApi } from '@/lib/api';
+import { reportsApi, telephonyApi, type AttendanceFilters } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Card, StatCard } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Tabs } from '@/components/ui/Tabs';
+import { AttendanceTab, type AttendanceView } from './AttendanceTabs';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { formatDuration, formatAOA } from '@/lib/utils';
@@ -26,28 +28,93 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+type Period = 'today' | 'week' | 'month' | '30d' | 'custom';
+
+/** Intervalo de um atalho de período (semana começa à segunda). */
+function periodRange(p: Exclude<Period, 'custom'>): { from: string; to: string } {
+  const today = new Date();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  if (p === 'today') return { from: iso(today), to: iso(today) };
+  if (p === 'week') {
+    const d = new Date(today);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return { from: iso(d), to: iso(today) };
+  }
+  if (p === 'month') return { from: iso(new Date(today.getFullYear(), today.getMonth(), 1, 12)), to: iso(today) };
+  return { from: isoDaysAgo(30), to: iso(today) };
+}
+
+type ReportTab = 'summary' | AttendanceView;
+const EXPORTABLE: Partial<Record<ReportTab, 'agents' | 'groups' | 'reasons'>> = {
+  agents: 'agents',
+  groups: 'groups',
+  reasons: 'reasons',
+};
+
+function saveBlob({ blob, filename }: { blob: Blob; filename: string }) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function ReportsPage() {
   const { t } = useTranslation();
   const toast = useToast();
+  const [tab, setTab] = useState<ReportTab>('summary');
+  const [period, setPeriod] = useState<Period>('30d');
   const [from, setFrom] = useState(isoDaysAgo(30));
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [extensionId, setExtensionId] = useState('');
+  const [groupId, setGroupId] = useState('');
   const [downloading, setDownloading] = useState(false);
+
+  const choosePeriod = (p: Period) => {
+    setPeriod(p);
+    if (p !== 'custom') {
+      const r = periodRange(p);
+      setFrom(r.from);
+      setTo(r.to);
+    }
+  };
+
+  const filters: AttendanceFilters = {
+    from,
+    to,
+    ...(extensionId && { extensionId }),
+    ...(groupId && { groupId }),
+  };
+
+  // Opções dos filtros. Sem a funcionalidade de telefonia estas listas falham
+  // — os filtros ficam só com "Todos" em vez de partir a página.
+  const { data: extensions } = useQuery({ queryKey: ['telephony', 'extensions'], queryFn: telephonyApi.listExtensions, retry: false });
+  const { data: groups } = useQuery({ queryKey: ['telephony', 'groups'], queryFn: telephonyApi.listGroups, retry: false });
+
+  const exportAttendance = async (format: 'csv' | 'xlsx') => {
+    const view = EXPORTABLE[tab];
+    if (!view) return;
+    setDownloading(true);
+    try {
+      saveBlob(await reportsApi.downloadAttendance({ ...filters, view, format }));
+    } catch {
+      toast.error(t('reports.exportError'));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const { data, isLoading } = useQuery({
     queryKey: ['reports', from, to],
     queryFn: () => reportsApi.summary({ from, to }),
+    enabled: tab === 'summary',
   });
 
   const exportCsv = async () => {
     setDownloading(true);
     try {
-      const { blob, filename } = await reportsApi.downloadCsv({ from, to });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      saveBlob(await reportsApi.downloadCsv({ from, to }));
     } catch {
       toast.error(t('reports.exportError'));
     } finally {
@@ -72,23 +139,60 @@ export function ReportsPage() {
             <Button variant="outline" size="sm" icon={<Printer className="h-4 w-4" />} onClick={() => window.print()}>
               {t('reports.pdf')}
             </Button>
-            <Button size="sm" icon={<Download className="h-4 w-4" />} onClick={exportCsv} disabled={downloading}>
-              {t('reports.exportCsv')}
-            </Button>
+            {tab === 'summary' && (
+              <Button size="sm" icon={<Download className="h-4 w-4" />} onClick={exportCsv} disabled={downloading}>
+                {t('reports.exportCsv')}
+              </Button>
+            )}
+            {EXPORTABLE[tab] && (
+              <>
+                <Button variant="outline" size="sm" icon={<Download className="h-4 w-4" />} onClick={() => void exportAttendance('csv')} disabled={downloading}>
+                  CSV
+                </Button>
+                <Button size="sm" icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => void exportAttendance('xlsx')} disabled={downloading}>
+                  Excel
+                </Button>
+              </>
+            )}
           </>
         }
       />
 
       <div className="p-6 space-y-6">
-        {/* Filtro de intervalo */}
+        <Tabs
+          active={tab}
+          onChange={(k) => setTab(k as ReportTab)}
+          tabs={[
+            { key: 'summary', label: t('reports.tabs.summary') },
+            { key: 'attendance', label: t('reports.tabs.attendance') },
+            { key: 'agents', label: t('reports.tabs.agents') },
+            { key: 'groups', label: t('reports.tabs.groups') },
+            { key: 'reasons', label: t('reports.tabs.reasons') },
+            { key: 'calls', label: t('reports.tabs.calls') },
+          ]}
+        />
+
+        {/* Filtros comuns a todos os separadores */}
         <Card className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{t('reports.period')}</label>
+            <select
+              value={period}
+              onChange={(e) => choosePeriod(e.target.value as Period)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            >
+              {(['today', 'week', 'month', '30d', 'custom'] as const).map((p) => (
+                <option key={p} value={p}>{t(`reports.periods.${p}`)}</option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">{t('reports.from')}</label>
             <input
               type="date"
               value={from}
               max={to}
-              onChange={(e) => setFrom(e.target.value)}
+              onChange={(e) => { setPeriod('custom'); setFrom(e.target.value); }}
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
@@ -99,13 +203,37 @@ export function ReportsPage() {
               value={to}
               min={from}
               max={new Date().toISOString().slice(0, 10)}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={(e) => { setPeriod('custom'); setTo(e.target.value); }}
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
+          {tab !== 'summary' && (
+            <>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{t('reports.att.agent')}</label>
+                <select value={extensionId} onChange={(e) => setExtensionId(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  <option value="">{t('reports.all')}</option>
+                  {extensions?.map((x) => (
+                    <option key={x.id} value={x.id}>{x.number}{x.displayName && x.displayName !== x.number ? ` — ${x.displayName}` : ''}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{t('reports.att.group')}</label>
+                <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                  <option value="">{t('reports.all')}</option>
+                  {groups?.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
         </Card>
 
-        {isLoading || !totals ? (
+        {tab !== 'summary' ? (
+          <AttendanceTab view={tab} filters={filters} />
+        ) : isLoading || !totals ? (
           <PageSpinner />
         ) : (
           <>

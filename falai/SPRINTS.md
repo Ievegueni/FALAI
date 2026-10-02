@@ -41,7 +41,13 @@ Decisões da Fase 0:
 - [x] Comparação com a média do tenant (`vsTenant`); BYO-PBX devolve `limited: true`.
 - [x] Testes de cada KPI (`attendanceReport.test.ts`).
 
-### Fase 4 — Aba Relatórios
-- [ ] Separadores: Resumo (actual), Atendimento, Por agente, Por grupo, Recusas, Chamadas.
-- [ ] Filtros comuns: hoje/semana/mês/intervalo, agente, grupo.
-- [ ] Exportação CSV/Excel.
+### Fase 4 — Aba Relatórios ✅
+- [x] Separadores: Resumo (actual), Atendimento, Por agente, Por grupo, Recusas, Chamadas.
+- [x] Filtros comuns: hoje/semana/mês/30 dias/intervalo, agente, grupo.
+- [x] Comparação com a média da empresa (Δ por linha; cartão "vs média" com filtro).
+- [x] Exportação CSV/Excel (por agente, por grupo, motivos); CSV do Resumo mantém-se.
+
+### Pendente / a validar
+- [ ] Teste real: recusa no webphone com motivo → perna REJECTED com o motivo
+      (precisa de uma chamada de entrada real pelo trunk).
+- [ ] Confirmar que o PJSIP_HEADER do originate chega ao INVITE do webphone.

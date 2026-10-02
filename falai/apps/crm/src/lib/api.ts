@@ -746,7 +746,96 @@ export const reportsApi = {
     const match = /filename="?([^"]+)"?/.exec(disposition);
     return { blob, filename: match?.[1] ?? 'chamadas.csv' };
   },
+
+  // ── Atendimento (KPIs por agente/grupo) ──
+  attendance: (f: AttendanceFilters) => get<AttendanceReport>(`/tenant/reports/attendance${qs({ ...f })}`),
+  attendanceCalls: (f: AttendanceFilters & { page: number; pageSize?: number }) =>
+    get<AttendanceCallsPage>(
+      `/tenant/reports/attendance/calls${qs({ ...f, pageSize: f.pageSize ?? 25 })}`,
+    ),
+  downloadAttendance: async (f: AttendanceFilters & { view: 'agents' | 'groups' | 'reasons'; format: 'csv' | 'xlsx' }) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/reports/attendance/export${qs({ ...f })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao exportar');
+    const blob = await res.blob();
+    const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+    return { blob, filename: match?.[1] ?? `atendimento.${f.format}` };
+  },
 };
+
+export interface AttendanceFilters {
+  from?: string;
+  to?: string;
+  extensionId?: string;
+  groupId?: string;
+}
+
+export interface AttendanceCallKpis {
+  total: number;
+  answered: number;
+  missed: number;
+  abandoned: number;
+  answerRate: number | null;
+  tmaSecs: number | null;
+  tmeSecs: number | null;
+}
+
+export interface AttendanceAgentKpis {
+  offered: number;
+  answered: number;
+  rejected: number;
+  noAnswer: number;
+  busy: number;
+  failed: number;
+  cancelled: number;
+  answerRate: number | null;
+  rejectRate: number | null;
+  tmaSecs: number | null;
+  tmeSecs: number | null;
+  responseSecs: number | null;
+}
+
+export interface AttendanceReport {
+  from: string;
+  to: string;
+  limited: boolean;
+  tenant: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
+  selection: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
+  reasons: { reason: string; count: number; pct: number }[];
+  byAgent: (AttendanceAgentKpis & {
+    extensionId: string | null;
+    number: string;
+    name: string | null;
+    vsTenant: { answerRate: number | null; rejectRate: number | null; tmaSecs: number | null; responseSecs: number | null };
+  })[];
+  byGroup: (AttendanceCallKpis & {
+    groupId: string | null;
+    name: string;
+    rejected: number;
+    vsTenant: { answerRate: number | null; tmaSecs: number | null; tmeSecs: number | null };
+  })[];
+}
+
+export type CallLegOutcome = 'ANSWERED' | 'NO_ANSWER' | 'REJECTED' | 'BUSY' | 'CANCELLED' | 'FAILED';
+
+export interface AttendanceCallsPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  data: {
+    id: string;
+    from: string | null;
+    to: string;
+    startedAt: string;
+    group: string | null;
+    answered: boolean;
+    waitSecs: number | null;
+    talkSecs: number | null;
+    legs: { extension: string; outcome: CallLegOutcome | null; responseSecs: number | null; reason: string | null }[];
+  }[];
+}
 
 // ─── SMS ──────────────────────────────────────────────────────────────────────
 
