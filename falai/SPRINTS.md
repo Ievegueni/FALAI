@@ -33,11 +33,13 @@ Decisões da Fase 0:
 - [x] CRM: aba Telefonia → Motivos de recusa.
 - [x] Webphone: "Recusar" abre o modal de motivo (lista + "Outro") e só depois envia 603.
 
-### Fase 3 — KPIs no backend
-- [ ] Serviço de KPIs (TMA, TME, tempo de resposta, perdidas, recusadas, motivos).
-- [ ] Endpoints `/tenant/reports/attendance*` com período, agente, grupo e paginação.
-- [ ] Comparação com a média do tenant; exportação CSV e Excel.
-- [ ] Testes de cada KPI.
+### Fase 3 — KPIs no backend ✅
+- [x] `attendanceReport.service.ts`: TMA, TME, tempo de resposta, perdidas/abandonadas, recusadas, motivos.
+- [x] `GET /tenant/reports/attendance` (tenant, selecção, por agente, por grupo, motivos; filtros from/to/extensionId/groupId).
+- [x] `GET /tenant/reports/attendance/calls` (paginado, com pernas).
+- [x] `GET /tenant/reports/attendance/export?view=agents|groups|reasons&format=csv|xlsx`.
+- [x] Comparação com a média do tenant (`vsTenant`); BYO-PBX devolve `limited: true`.
+- [x] Testes de cada KPI (`attendanceReport.test.ts`).
 
 ### Fase 4 — Aba Relatórios
 - [ ] Separadores: Resumo (actual), Atendimento, Por agente, Por grupo, Recusas, Chamadas.
