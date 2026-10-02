@@ -187,7 +187,7 @@ export function ContactsPage() {
 
       <div className="p-6 space-y-4">
         <div className="flex items-center gap-3">
-          <div className="flex-1 max-w-sm">
+          <div className="min-w-0 flex-1 max-w-sm">
             <Input
               placeholder={t('contacts.searchPlaceholder')}
               icon={<Search className="h-4 w-4" />}
@@ -196,7 +196,7 @@ export function ContactsPage() {
             />
           </div>
           {data && (
-            <p className="text-sm text-gray-500">{t('contacts.count', { count: data.total })}</p>
+            <p className="shrink-0 whitespace-nowrap text-sm text-gray-500">{t('contacts.count', { count: data.total })}</p>
           )}
         </div>
 

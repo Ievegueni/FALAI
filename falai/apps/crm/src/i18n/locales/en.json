@@ -109,7 +109,8 @@
       "NO_ANSWER": "No answer",
       "FAILED": "Failed",
       "CANCELLED": "Cancelled",
-      "ESCALATED": "Escalated"
+      "ESCALATED": "Escalated",
+      "BUSY": "Busy"
     },
     "campaign": {
       "DRAFT": "Draft",

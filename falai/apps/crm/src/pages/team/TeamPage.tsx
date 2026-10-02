@@ -237,20 +237,20 @@ export function TeamPage() {
           <Card padding={false}>
             <div className="divide-y divide-gray-100">
               {team?.map((member) => (
-                <div key={member.id} className="flex items-center gap-4 px-6 py-3">
+                <div key={member.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
                   <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 text-sm font-semibold">
                     {member.name.charAt(0).toUpperCase()}
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-[10rem] flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-900">{member.name}</p>
+                      <p className="truncate text-sm font-medium text-gray-900">{member.name}</p>
                       {member.id === user?.id && (
-                        <span className="text-xs text-gray-400">{t('team.you')}</span>
+                        <span className="shrink-0 text-xs text-gray-400">{t('team.you')}</span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-400">{member.email}</p>
+                    <p className="truncate text-xs text-gray-400">{member.email}</p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="ml-auto flex items-center gap-3">
                     <Badge className={ROLE_COLORS[member.role]}>{t(ROLE_LABEL_KEYS[member.role])}</Badge>
                     {member.twoFaEnabled && (
                       <Badge className="bg-emerald-100 text-emerald-700">2FA</Badge>

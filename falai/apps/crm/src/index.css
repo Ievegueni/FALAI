@@ -24,6 +24,17 @@
   input[type='number'] {
     -moz-appearance: textfield;
   }
+
+  /* Tabelas largas deslizam dentro da sua caixa (no telemóvel) em vez de
+     esticarem a página; células numa linha — quem precisar de quebrar usa
+     whitespace-normal. */
+  :where(div, section):has(> table) {
+    overflow-x: auto;
+  }
+  th,
+  td {
+    white-space: nowrap;
+  }
 }
 
 @layer utilities {

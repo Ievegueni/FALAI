@@ -342,7 +342,7 @@ function WaPoolCard({ inboxes }: { inboxes: Inbox[] }) {
                     {!i.enabled && <div className="text-xs text-gray-400">{t('inbox.disabled')}</div>}
                   </td>
                   <td className="pr-2 text-xs text-gray-600">{fmt(i.pool?.lastCheckAt)}</td>
-                  <td className="max-w-[220px] pr-2 text-xs text-gray-600" title={i.pool?.lastError ?? ''}>
+                  <td className="max-w-[220px] whitespace-normal pr-2 text-xs text-gray-600" title={i.pool?.lastError ?? ''}>
                     <span className="line-clamp-2">{i.pool?.lastError ?? '—'}</span>
                   </td>
                   <td className="pr-2 text-xs text-gray-600">{fmt(i.pool?.statusAt)}</td>

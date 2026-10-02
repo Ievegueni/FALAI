@@ -182,6 +182,7 @@ export type CallStatus =
   | 'IN_PROGRESS'
   | 'COMPLETED'
   | 'NO_ANSWER'
+  | 'BUSY'
   | 'FAILED'
   | 'CANCELLED'
   | 'ESCALATED';

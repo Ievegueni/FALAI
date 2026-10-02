@@ -224,7 +224,7 @@ export function CallsPage() {
                   key={key}
                   type="button"
                   onClick={() => choosePeriod(key)}
-                  className={clsx('rounded-md px-3 py-1.5 text-sm', period === key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100')}
+                  className={clsx('whitespace-nowrap rounded-md px-3 py-1.5 text-sm', period === key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100')}
                 >
                   {t(`calls.periods.${key}`)}
                 </button>

@@ -109,7 +109,8 @@
       "NO_ANSWER": "无人接听",
       "FAILED": "失败",
       "CANCELLED": "已取消",
-      "ESCALATED": "已转接"
+      "ESCALATED": "已转接",
+      "BUSY": "占线"
     },
     "campaign": {
       "DRAFT": "草稿",

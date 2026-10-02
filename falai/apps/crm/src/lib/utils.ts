@@ -84,6 +84,7 @@ export const callStatusColor: Record<CallStatus, string> = {
   IN_PROGRESS: 'bg-indigo-100 text-indigo-700',
   COMPLETED: 'bg-emerald-100 text-emerald-700',
   NO_ANSWER: 'bg-amber-100 text-amber-700',
+  BUSY: 'bg-amber-100 text-amber-700',
   FAILED: 'bg-red-100 text-red-700',
   CANCELLED: 'bg-gray-100 text-gray-500',
   ESCALATED: 'bg-purple-100 text-purple-700',
