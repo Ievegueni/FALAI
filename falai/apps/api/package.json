@@ -11,7 +11,8 @@
     "otp:prompts": "tsx --env-file=../../.env scripts/setup-otp-prompts.mts",
     "test": "vitest run",
     "contactos:normalizar": "tsx --env-file=../../.env scripts/normalizar-telefones-legado.mts",
-    "contactos:associar-chamadas": "tsx --env-file=../../.env scripts/associar-contactos-chamadas.mts"
+    "contactos:associar-chamadas": "tsx --env-file=../../.env scripts/associar-contactos-chamadas.mts",
+    "dados:mock": "tsx --env-file=../../.env scripts/dados-mock.mts"
   },
   "dependencies": {
     "@falai/db": "workspace:*",
