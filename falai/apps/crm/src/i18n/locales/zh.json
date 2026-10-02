@@ -871,7 +871,10 @@
       "incoming": "来自",
       "ended": "通话结束",
       "idle": ""
-    }
+    },
+    "rejectReasonTitle": "为什么拒接此来电？",
+    "rejectOther": "其他",
+    "rejectOtherPlaceholder": "请输入原因"
   },
   "telephony": {
     "title": "电话",
@@ -970,6 +973,12 @@
     "inboundDidHint": "完整号码或前缀",
     "inboundDeleted": "路由已删除",
     "inboundDeleteConfirm": "删除路由 {{name}}？",
-    "noInbound": "暂无呼入路由。"
+    "noInbound": "暂无呼入路由。",
+    "tabRejectReasons": "拒接原因",
+    "rejectReasonsHint": "坐席在网页电话中拒接来电时选择其中一个原因（或\"其他\"），会显示在报表中。",
+    "rejectReasonPlaceholder": "例如：开会中",
+    "noRejectReasons": "未配置原因 — 坐席只能使用\"其他\"。",
+    "deactivate": "停用",
+    "activate": "启用"
   }
 }

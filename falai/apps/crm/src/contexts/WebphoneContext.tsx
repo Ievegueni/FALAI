@@ -27,12 +27,16 @@ interface WebphoneContextValue {
   registration: RegistrationState;
   callState: CallState;
   remoteIdentity: string | null;
+  /** Perna da chamada a entrar (cabeçalho X-Falai-Leg-Id) — para gravar o motivo de uma recusa. */
+  incomingLegId: string | null;
   error: string | null;
   selectExtension: (extensionId: string) => Promise<void>;
   unregister: () => void;
   call: (number: string) => void;
   answer: () => void;
   hangup: () => void;
+  /** Recusa a chamada a entrar com 603 Decline — conta como recusa nos relatórios. */
+  reject: () => void;
   mute: () => void;
   unmute: () => void;
   sendDTMF: (digit: string) => void;
@@ -55,6 +59,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
   const [registration, setRegistration] = useState<RegistrationState>('unregistered');
   const [callState, setCallState] = useState<CallState>('idle');
   const [remoteIdentity, setRemoteIdentity] = useState<string | null>(null);
+  const [incomingLegId, setIncomingLegId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // <audio> escondido para tocar o stream remoto — não há UI própria disso.
@@ -82,6 +87,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
       sessionRef.current = session;
       setCallState(initialState);
       setRemoteIdentity(session.remote_identity?.uri?.user ?? null);
+      setIncomingLegId(null);
 
       session.on('progress', () => setCallState((s) => (s === 'incoming' ? s : 'ringing')));
       session.on('accepted', () => setCallState('in-call'));
@@ -136,12 +142,15 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
           setError(e.cause ?? 'Falha no registo SIP');
         });
 
-        ua.on('newRTCSession', ({ session, originator }: RTCSessionEvent) => {
+        ua.on('newRTCSession', ({ session, originator, request }: RTCSessionEvent) => {
           if (originator !== 'remote') return;
           // Chamada de entrada — se o agente não estiver na página do
           // webphone, o único aviso é este toast (a sessão continua viva no
           // Context, mas sem UI própria aqui para atender).
           attachSession(session, 'incoming');
+          // Posto pelo router de entrada (inboundCallRouter.service.ts) para
+          // o motivo de uma recusa ficar na perna certa dos relatórios.
+          setIncomingLegId(request.getHeader('X-Falai-Leg-Id') || null);
           if (locationRef.current !== '/webphone') {
             info('Chamada a entrar — abra o Webphone para atender.');
           }
@@ -182,6 +191,11 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
 
   const hangup = useCallback(() => {
     sessionRef.current?.terminate();
+  }, []);
+
+  // Sem status_code o JsSIP manda 480, que é igual a "ninguém atendeu".
+  const reject = useCallback(() => {
+    sessionRef.current?.terminate({ status_code: 603, reason_phrase: 'Decline' });
   }, []);
 
   const mute = useCallback(() => sessionRef.current?.mute({ audio: true }), []);
@@ -227,12 +241,14 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
         registration,
         callState,
         remoteIdentity,
+        incomingLegId,
         error,
         selectExtension,
         unregister,
         call,
         answer,
         hangup,
+        reject,
         mute,
         unmute,
         sendDTMF,

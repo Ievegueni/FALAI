@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { PhoneCall, PhoneOff, Mic, MicOff, Delete } from 'lucide-react';
-import { telephonyApi } from '@/lib/api';
+import { telephonyApi, rejectReasonsApi } from '@/lib/api';
 import { useWebphone, type RegistrationState } from '@/contexts/WebphoneContext';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
-import { Select } from '@/components/ui/Input';
+import { Select, Textarea } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal';
 import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { clsx } from '@/lib/utils';
@@ -27,6 +28,82 @@ const REGISTRATION_COLOR: Record<RegistrationState, string> = {
   failed: 'text-red-600',
 };
 
+const OTHER = '__other__';
+
+/**
+ * Motivo obrigatório antes de recusar (relatórios de atendimento). A recusa só
+ * segue depois de escolhido o motivo; se a chamada deixar de tocar entretanto,
+ * o modal fecha e nada se envia.
+ */
+function RejectReasonModal({ open, legId, onCancel, onRejected }: {
+  open: boolean;
+  legId: string | null;
+  onCancel: () => void;
+  onRejected: () => void;
+}) {
+  const { t } = useTranslation();
+  const [choice, setChoice] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const { data: reasons } = useQuery({
+    queryKey: ['reject-reasons'],
+    queryFn: () => rejectReasonsApi.list(),
+    enabled: open,
+  });
+
+  useEffect(() => {
+    if (open) { setChoice(''); setNote(''); }
+  }, [open]);
+
+  const valid = choice === OTHER ? note.trim().length > 0 : choice !== '';
+
+  const confirm = async () => {
+    setSaving(true);
+    try {
+      // Sem perna (chamada interna, não veio pelo router de entrada) não há
+      // onde gravar: recusa-se na mesma. Um erro ao gravar também não pode
+      // deixar o telefone a tocar.
+      if (legId) {
+        await rejectReasonsApi
+          .saveForLeg(legId, choice === OTHER ? { note: note.trim() } : { reasonId: choice })
+          .catch(() => {});
+      }
+    } finally {
+      setSaving(false);
+      onRejected();
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onCancel}
+      title={t('webphone.rejectReasonTitle')}
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onCancel}>{t('common.cancel')}</Button>
+          <Button variant="danger" disabled={!valid} loading={saving} onClick={() => void confirm()}>
+            {t('webphone.reject')}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-2">
+        {[...(reasons ?? []).map((r) => ({ id: r.id, label: r.label })), { id: OTHER, label: t('webphone.rejectOther') }].map((r) => (
+          <label key={r.id} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input type="radio" name="reject-reason" value={r.id} checked={choice === r.id} onChange={() => setChoice(r.id)} />
+            {r.label}
+          </label>
+        ))}
+        {choice === OTHER && (
+          <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('webphone.rejectOtherPlaceholder')} rows={2} maxLength={500} autoFocus />
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export function WebphonePage() {
   const { t } = useTranslation();
   const {
@@ -34,11 +111,13 @@ export function WebphonePage() {
     registration,
     callState,
     remoteIdentity,
+    incomingLegId,
     error,
     selectExtension,
     call,
     answer,
     hangup,
+    reject,
     mute,
     unmute,
     sendDTMF,
@@ -46,6 +125,7 @@ export function WebphonePage() {
 
   const [target, setTarget] = useState('');
   const [muted, setMuted] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
 
   const { data: extensions, isLoading: loadingExt } = useQuery({
     queryKey: ['telephony', 'extensions'],
@@ -59,6 +139,11 @@ export function WebphonePage() {
 
   const inCall = callState === 'in-call' || callState === 'calling' || callState === 'ringing';
   const incoming = callState === 'incoming';
+
+  // A chamada deixou de tocar (atendeu noutro aparelho, quem ligou desistiu…).
+  useEffect(() => {
+    if (!incoming) setRejecting(false);
+  }, [incoming]);
 
   function toggleMute() {
     if (muted) unmute();
@@ -105,7 +190,7 @@ export function WebphonePage() {
               <p className="text-sm text-gray-600">{t('webphone.incomingCall')}</p>
               <p className="text-lg font-semibold text-gray-900">{remoteIdentity}</p>
               <div className="flex gap-3">
-                <Button variant="danger" icon={<PhoneOff className="h-4 w-4" />} onClick={hangup}>
+                <Button variant="danger" icon={<PhoneOff className="h-4 w-4" />} onClick={() => setRejecting(true)}>
                   {t('webphone.reject')}
                 </Button>
                 <Button icon={<PhoneCall className="h-4 w-4" />} onClick={answer}>
@@ -172,6 +257,12 @@ export function WebphonePage() {
           )}
         </Card>
       </div>
+      <RejectReasonModal
+        open={rejecting}
+        legId={incomingLegId}
+        onCancel={() => setRejecting(false)}
+        onRejected={() => { setRejecting(false); reject(); }}
+      />
     </>
   );
 }

@@ -335,6 +335,26 @@ export const webphoneApi = {
     get<WebphoneCredentials>(`/tenant/extensions/${encodeURIComponent(extensionId)}/webphone-credentials`),
 };
 
+// ─── Motivos de recusa (relatórios de atendimento) ───────────────────────────
+
+export interface RejectReason {
+  id: string;
+  label: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export const rejectReasonsApi = {
+  list: (all = false) =>
+    get<{ data: RejectReason[] }>(`/tenant/reject-reasons${all ? '?all=1' : ''}`).then((r) => r.data),
+  create: (data: { label: string; sortOrder?: number }) => post<RejectReason>('/tenant/reject-reasons', data),
+  update: (id: string, data: Partial<Pick<RejectReason, 'label' | 'isActive' | 'sortOrder'>>) =>
+    patch<{ ok: true }>(`/tenant/reject-reasons/${id}`, data),
+  /** Motivo de uma recusa no webphone — `legId` vem do cabeçalho X-Falai-Leg-Id. */
+  saveForLeg: (legId: string, data: { reasonId: string } | { note: string }) =>
+    post<{ ok: true }>(`/tenant/call-legs/${encodeURIComponent(legId)}/reject-reason`, data),
+};
+
 // ─── Integração PBX (bring-your-own-PBX) ─────────────────────────────────────
 
 export interface PbxConfig {

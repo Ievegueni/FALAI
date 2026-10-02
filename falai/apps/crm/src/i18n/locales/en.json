@@ -871,7 +871,10 @@
       "incoming": "Call from",
       "ended": "Call ended",
       "idle": ""
-    }
+    },
+    "rejectReasonTitle": "Why are you declining this call?",
+    "rejectOther": "Other",
+    "rejectOtherPlaceholder": "Type the reason"
   },
   "telephony": {
     "title": "Telephony",
@@ -970,7 +973,13 @@
     "inboundDidHint": "Full number or prefix",
     "inboundDeleted": "Route deleted",
     "inboundDeleteConfirm": "Delete route {{name}}?",
-    "noInbound": "No inbound routes."
+    "noInbound": "No inbound routes.",
+    "tabRejectReasons": "Decline reasons",
+    "rejectReasonsHint": "Agents pick one of these reasons (or \"Other\") when declining a call in the webphone. They show up in reports.",
+    "rejectReasonPlaceholder": "E.g.: In a meeting",
+    "noRejectReasons": "No reasons configured — agents can only use \"Other\".",
+    "deactivate": "Deactivate",
+    "activate": "Activate"
   },
   "inbox": {
     "waPool": "WhatsApp pool (Active/Standby)",

@@ -27,10 +27,11 @@ Decisões da Fase 0:
 - [x] Router de entrada grava pernas (ANSWERED/REJECTED/BUSY/NO_ANSWER/CANCELLED/FAILED).
 - [x] Testes: classificação das causas e fluxo do router.
 
-### Fase 2 — Motivos de recusa
-- [ ] CRUD de motivos por tenant (OWNER/ADMIN) + página no CRM.
-- [ ] `POST /tenant/calls/legs/:id/reject-reason`.
-- [ ] Webphone: "Recusar" abre o modal de motivo (lista + "Outro") e só depois envia 603.
+### Fase 2 — Motivos de recusa ✅
+- [x] `/tenant/reject-reasons` (lista; criar/editar/desactivar só OWNER/ADMIN; não se apagam).
+- [x] `POST /tenant/call-legs/:id/reject-reason` (só enquanto a perna toca).
+- [x] CRM: aba Telefonia → Motivos de recusa.
+- [x] Webphone: "Recusar" abre o modal de motivo (lista + "Outro") e só depois envia 603.
 
 ### Fase 3 — KPIs no backend
 - [ ] Serviço de KPIs (TMA, TME, tempo de resposta, perdidas, recusadas, motivos).
