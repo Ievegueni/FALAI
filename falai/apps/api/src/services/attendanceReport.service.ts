@@ -237,6 +237,28 @@ export interface AttendanceFilter {
   categoryId?: string | undefined; // tipificação (categoria ou subcategoria)
 }
 
+export interface DayRow {
+  date: string; // AAAA-MM-DD
+  tmaSecs: number | null;
+  tmeSecs: number | null;
+  responseSecs: number | null;
+  wrapUpSecs: number | null;
+}
+
+/** TMA/TME por dia da chamada e resposta/pós-chamada por dia da perna. */
+export function dailyRows(calls: CallRow[], legs: LegRow[], now = new Date()): DayRow[] {
+  // Dia local (como os intervalos dos relatórios) — ver localDay em reportsOverview.
+  const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const callsBy = groupByKey(calls.filter((c) => c.queuedAt), (c) => day(c.queuedAt!));
+  const legsBy = groupByKey(legs, (l) => day(l.ringStartedAt));
+  const days = [...new Set([...callsBy.keys(), ...legsBy.keys()])].sort();
+  return days.map((date) => {
+    const c = callKpis(callsBy.get(date) ?? [], new Set());
+    const a = agentKpis(legsBy.get(date) ?? [], now);
+    return { date, tmaSecs: c.tmaSecs, tmeSecs: c.tmeSecs, responseSecs: a.responseSecs, wrapUpSecs: a.wrapUpSecs };
+  });
+}
+
 export interface AgentRow extends AgentKpis {
   extensionId: string | null;
   number: string;
@@ -261,6 +283,8 @@ export interface AttendanceReport {
   selection: { calls: CallKpis; agents: AgentKpis };
   reasons: ReasonRow[];
   typing: TypingRow[];
+  /** Por dia (selecção): para as mini-tendências dos cartões do Resumo. */
+  byDay: DayRow[];
   byAgent: AgentRow[];
   byGroup: GroupRow[];
 }
@@ -364,6 +388,7 @@ export async function buildAttendanceReport(
     selection: { calls: callKpis(selCalls, abandoned), agents: agentKpis(selLegs) },
     reasons: reasonBreakdown(selLegs),
     typing: typingBreakdown(selLegs),
+    byDay: dailyRows(selCalls, selLegs),
     byAgent: agentRows(selLegs, tenant.agents),
     byGroup: groupRows(selCalls, selLegs, groupNames, abandoned, tenant.calls),
   };
@@ -457,6 +482,7 @@ async function byoReport(tenantId: string, f: AttendanceFilter): Promise<Attenda
     selection: { calls, agents },
     reasons: [],
     typing: [],
+    byDay: [],
     byAgent: [],
     byGroup: [],
   };

@@ -910,6 +910,21 @@ export const reportsApi = {
     return { blob, filename: match?.[1] ?? 'chamadas.csv' };
   },
 
+  // ── Resumo (cartões com comparação, anéis, por dia) ──
+  overview: (params: { from?: string; to?: string }) =>
+    get<ReportsOverview>(`/tenant/reports/overview${qs({ from: params.from, to: params.to })}`),
+  /** PDF do resumo, gerado no servidor (não é uma impressão da página). */
+  downloadOverviewPdf: async (params: { from?: string; to?: string }) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/reports/overview.pdf${qs({ from: params.from, to: params.to })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao gerar o PDF');
+    const blob = await res.blob();
+    const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+    return { blob, filename: match?.[1] ?? 'relatorio.pdf' };
+  },
+
   // ── Atendimento (KPIs por agente/grupo) ──
   attendance: (f: AttendanceFilters) => get<AttendanceReport>(`/tenant/reports/attendance${qs({ ...f })}`),
   attendanceCalls: (f: AttendanceFilters & { page: number; pageSize?: number }) =>
@@ -927,6 +942,25 @@ export const reportsApi = {
     return { blob, filename: match?.[1] ?? `atendimento.${f.format}` };
   },
 };
+
+export interface ReportsOverview {
+  from: string;
+  to: string;
+  previousFrom: string;
+  previousTo: string;
+  limited: boolean;
+  tiles: {
+    key: string;
+    value: number | null;
+    previous: number | null;
+    deltaPct: number | null;
+    good: 'up' | 'down' | 'neutral';
+    unit: 'count' | 'secs';
+    series: (number | null)[];
+  }[];
+  donuts: Record<'byGroup' | 'byState' | 'byTyping', { label: string; value: number }[]>;
+  daily: { date: string; total: number; answered: number }[];
+}
 
 export interface AttendanceFilters {
   from?: string;

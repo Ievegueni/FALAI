@@ -2,7 +2,7 @@
  * Dados de demonstração das melhorias 1–4 (relatórios, tipificação, screen pop,
  * supervisão) no tenant de demo — SÓ PARA DESENVOLVIMENTO.
  *
- * Cria ~30 dias de chamadas de entrada com pernas (atendidas, recusadas com
+ * Cria ~120 dias de chamadas de entrada com pernas (atendidas, recusadas com
  * motivo, não atendidas, abandonadas), tipificação, contactos com notas e
  * números extra, chamadas de hoje (fila, pós-chamada) e supervisões no registo.
  * Tudo com o prefixo "mock_", para se poder apagar.
@@ -229,11 +229,14 @@ async function main(): Promise<void> {
     });
   };
 
-  for (let day = 30; day >= 0; day--) {
+  // 120 dias, a crescer (~+35% do mais antigo ao mais recente): os períodos
+  // de 7/30/90 dias têm sempre um anterior com que comparar.
+  for (let day = 120; day >= 0; day--) {
     const date = new Date(now);
     date.setDate(date.getDate() - day);
     const weekend = date.getDay() === 0 || date.getDay() === 6;
-    const perDay = weekend ? between(4, 10) : between(18, 40);
+    const growth = 1 - day / 400;
+    const perDay = Math.round((weekend ? between(4, 10) : between(18, 40)) * growth);
     for (let i = 0; i < perDay; i++) {
       const t = new Date(date);
       // Mais chamadas de manhã (pico 9–11h) e depois do almoço.

@@ -827,9 +827,9 @@
     "all": "All",
     "periods": {
       "today": "Today",
-      "week": "This week",
-      "month": "This month",
-      "30d": "Last 30 days",
+      "7d": "7 days",
+      "30d": "30 days",
+      "90d": "90 days",
       "custom": "Custom"
     },
     "att": {
@@ -877,6 +877,30 @@
       "untyped": "Untyped",
       "typingTitle": "Calls by category",
       "category": "Call type"
+    },
+    "exportPdf": "Export PDF",
+    "vsPrevious": "vs. previous period",
+    "noCompare": "no data for the previous period",
+    "tiles": {
+      "total": "Total calls",
+      "inbound": "Inbound",
+      "outbound": "Outbound",
+      "newContacts": "New contacts",
+      "tma": "AHT",
+      "tme": "AWT",
+      "response": "Response time",
+      "wrapUp": "Wrap-up"
+    },
+    "tilesSub": {
+      "tma": "Average handling time",
+      "tme": "Average waiting time",
+      "response": "From ring to answer",
+      "wrapUp": "From call end to typing"
+    },
+    "donut": {
+      "byGroup": "By group",
+      "byState": "By status",
+      "byTyping": "By call type"
     }
   },
   "sms": {

@@ -827,9 +827,9 @@
     "all": "全部",
     "periods": {
       "today": "今天",
-      "week": "本周",
-      "month": "本月",
-      "30d": "最近30天",
+      "7d": "7 天",
+      "30d": "30 天",
+      "90d": "90 天",
       "custom": "自定义"
     },
     "att": {
@@ -877,6 +877,30 @@
       "untyped": "未分类",
       "typingTitle": "按类别统计通话",
       "category": "通话分类"
+    },
+    "exportPdf": "导出 PDF",
+    "vsPrevious": "与上一时段相比",
+    "noCompare": "上一时段无数据",
+    "tiles": {
+      "total": "通话总数",
+      "inbound": "呼入",
+      "outbound": "呼出",
+      "newContacts": "新联系人",
+      "tma": "平均处理时长",
+      "tme": "平均等待时长",
+      "response": "响应时间",
+      "wrapUp": "话后处理"
+    },
+    "tilesSub": {
+      "tma": "平均通话处理时间",
+      "tme": "平均等待时间",
+      "response": "从振铃到接听",
+      "wrapUp": "从通话结束到分类"
+    },
+    "donut": {
+      "byGroup": "按组",
+      "byState": "按状态",
+      "byTyping": "按分类"
     }
   },
   "sms": {

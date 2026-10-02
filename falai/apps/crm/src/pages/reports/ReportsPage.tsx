@@ -1,26 +1,16 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Phone, PhoneIncoming, PhoneOutgoing, CheckCircle, PhoneMissed, Clock, MessageSquare, Download, Printer, FileSpreadsheet } from 'lucide-react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from 'recharts';
+import { Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { reportsApi, telephonyApi, callTypingApi, type AttendanceFilters } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
-import { Card, StatCard } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Tabs } from '@/components/ui/Tabs';
 import { AttendanceTab, type AttendanceView } from './AttendanceTabs';
-import { PageSpinner } from '@/components/ui/Spinner';
+import { SummaryTab } from './SummaryTab';
 import { useToast } from '@/contexts/ToastContext';
-import { formatDuration, formatAOA } from '@/lib/utils';
+import { clsx } from '@/lib/utils';
 
 function isoDaysAgo(days: number): string {
   const d = new Date();
@@ -28,20 +18,18 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-type Period = 'today' | 'week' | 'month' | '30d' | 'custom';
+type Period = 'today' | '7d' | '30d' | '90d' | 'custom';
+const PRESETS: { key: Exclude<Period, 'custom'>; days: number }[] = [
+  { key: 'today', days: 0 },
+  { key: '7d', days: 6 },
+  { key: '30d', days: 29 },
+  { key: '90d', days: 89 },
+];
 
-/** Intervalo de um atalho de período (semana começa à segunda). */
+/** Últimos N dias, a contar com hoje. */
 function periodRange(p: Exclude<Period, 'custom'>): { from: string; to: string } {
-  const today = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  if (p === 'today') return { from: iso(today), to: iso(today) };
-  if (p === 'week') {
-    const d = new Date(today);
-    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    return { from: iso(d), to: iso(today) };
-  }
-  if (p === 'month') return { from: iso(new Date(today.getFullYear(), today.getMonth(), 1, 12)), to: iso(today) };
-  return { from: isoDaysAgo(30), to: iso(today) };
+  const days = PRESETS.find((x) => x.key === p)!.days;
+  return { from: isoDaysAgo(days), to: new Date().toISOString().slice(0, 10) };
 }
 
 type ReportTab = 'summary' | AttendanceView;
@@ -66,7 +54,7 @@ export function ReportsPage() {
   const toast = useToast();
   const [tab, setTab] = useState<ReportTab>('summary');
   const [period, setPeriod] = useState<Period>('30d');
-  const [from, setFrom] = useState(isoDaysAgo(30));
+  const [from, setFrom] = useState(isoDaysAgo(29));
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
   const [extensionId, setExtensionId] = useState('');
   const [groupId, setGroupId] = useState('');
@@ -110,11 +98,16 @@ export function ReportsPage() {
     }
   };
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['reports', from, to],
-    queryFn: () => reportsApi.summary({ from, to }),
-    enabled: tab === 'summary',
-  });
+  const exportPdf = async () => {
+    setDownloading(true);
+    try {
+      saveBlob(await reportsApi.downloadOverviewPdf({ from, to }));
+    } catch {
+      toast.error(t('reports.exportError'));
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const exportCsv = async () => {
     setDownloading(true);
@@ -127,27 +120,21 @@ export function ReportsPage() {
     }
   };
 
-  const totals = data?.totals;
-  const chartData =
-    data?.byDay.map((d) => ({
-      date: d.date.slice(5), // MM-DD
-      [t('reports.answered')]: d.answered,
-      [t('reports.total')]: d.total,
-    })) ?? [];
-
   return (
     <div>
       <Header
         title={t('nav.reports')}
         actions={
           <>
-            <Button variant="outline" size="sm" icon={<Printer className="h-4 w-4" />} onClick={() => window.print()}>
-              {t('reports.pdf')}
-            </Button>
             {tab === 'summary' && (
-              <Button size="sm" icon={<Download className="h-4 w-4" />} onClick={exportCsv} disabled={downloading}>
-                {t('reports.exportCsv')}
-              </Button>
+              <>
+                <Button variant="outline" size="sm" icon={<Download className="h-4 w-4" />} onClick={exportCsv} disabled={downloading}>
+                  {t('reports.exportCsv')}
+                </Button>
+                <Button size="sm" icon={<FileText className="h-4 w-4" />} onClick={() => void exportPdf()} loading={downloading}>
+                  {t('reports.exportPdf')}
+                </Button>
+              </>
             )}
             {EXPORTABLE[tab] && (
               <>
@@ -182,15 +169,21 @@ export function ReportsPage() {
         <Card className="flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">{t('reports.period')}</label>
-            <select
-              value={period}
-              onChange={(e) => choosePeriod(e.target.value as Period)}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            >
-              {(['today', 'week', 'month', '30d', 'custom'] as const).map((p) => (
-                <option key={p} value={p}>{t(`reports.periods.${p}`)}</option>
+            <div className="inline-flex rounded-lg border border-gray-300 p-0.5">
+              {PRESETS.map(({ key }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => choosePeriod(key)}
+                  className={clsx(
+                    'rounded-md px-3 py-1.5 text-sm transition-colors',
+                    period === key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100',
+                  )}
+                >
+                  {t(`reports.periods.${key}`)}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">{t('reports.from')}</label>
@@ -248,79 +241,7 @@ export function ReportsPage() {
           )}
         </Card>
 
-        {tab !== 'summary' ? (
-          <AttendanceTab view={tab} filters={filters} />
-        ) : isLoading || !totals ? (
-          <PageSpinner />
-        ) : (
-          <>
-            {/* Cartões de resumo */}
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
-              <StatCard label={t('reports.total')} value={totals.total} icon={<Phone className="h-5 w-5" />} />
-              <StatCard label={t('reports.inbound')} value={totals.inbound} icon={<PhoneIncoming className="h-5 w-5" />} />
-              <StatCard label={t('reports.outbound')} value={totals.outbound} icon={<PhoneOutgoing className="h-5 w-5" />} />
-              <StatCard label={t('reports.answered')} value={totals.answered} icon={<CheckCircle className="h-5 w-5" />} />
-              <StatCard label={t('reports.missed')} value={totals.missed} icon={<PhoneMissed className="h-5 w-5" />} />
-              <StatCard
-                label={t('reports.avgDuration')}
-                value={formatDuration(totals.avgDurationSecs)}
-                icon={<Clock className="h-5 w-5" />}
-              />
-            </div>
-
-            {/* Consumo de SMS */}
-            {data.sms.total > 0 && (
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                <StatCard label={t('reports.smsSent')} value={data.sms.sent} icon={<MessageSquare className="h-5 w-5" />} />
-                <StatCard label={t('reports.smsFailed')} value={data.sms.failed} icon={<MessageSquare className="h-5 w-5" />} />
-                <StatCard label={t('reports.smsCost')} value={formatAOA(data.sms.costCents)} icon={<MessageSquare className="h-5 w-5" />} />
-              </div>
-            )}
-
-            {/* Gráfico por dia */}
-            <Card>
-              <h2 className="mb-4 text-sm font-semibold text-gray-900">{t('reports.byDay')}</h2>
-              {chartData.length === 0 ? (
-                <p className="py-8 text-center text-sm text-gray-400">{t('reports.noData')}</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="date" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey={t('reports.total')} fill="#93c5fd" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey={t('reports.answered')} fill="#34d399" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </Card>
-
-            {/* Repartição por resultado */}
-            <Card>
-              <h2 className="mb-4 text-sm font-semibold text-gray-900">{t('reports.byOutcome')}</h2>
-              {data.byOutcome.length === 0 ? (
-                <p className="py-4 text-center text-sm text-gray-400">{t('reports.noData')}</p>
-              ) : (
-                <div className="space-y-2">
-                  {data.byOutcome.map((o) => {
-                    const pct = totals.total > 0 ? (o.count / totals.total) * 100 : 0;
-                    return (
-                      <div key={o.outcome} className="flex items-center gap-3">
-                        <span className="w-40 shrink-0 truncate text-sm text-gray-600">{o.outcome}</span>
-                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
-                          <div className="h-full rounded-full bg-blue-400" style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="w-10 shrink-0 text-right text-sm font-medium text-gray-700">{o.count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Card>
-          </>
-        )}
+        {tab === 'summary' ? <SummaryTab from={from} to={to} /> : <AttendanceTab view={tab} filters={filters} />}
       </div>
     </div>
   );

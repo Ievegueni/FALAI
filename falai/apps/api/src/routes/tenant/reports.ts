@@ -10,6 +10,9 @@ import {
   type AttendanceFilter,
 } from "../../services/attendanceReport.service.js";
 import { ensureCdrSynced } from "../../services/pbxCdr.service.js";
+import { buildOverview } from "../../services/reportsOverview.service.js";
+import { renderOverviewPdf } from "../../services/reportsPdf.service.js";
+import { prisma } from "@falai/db";
 
 const rangeSchema = z.object({
   from: z.string().optional(),
@@ -114,5 +117,30 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
       .header("Content-Type", "text/csv; charset=utf-8")
       .header("Content-Disposition", `attachment; filename="${name}.csv"`)
       .send(tableToCsv(table));
+  });
+
+  // ── Resumo (painel com comparação ao período anterior) ─────────────────────
+
+  // GET /tenant/reports/overview — cartões, anéis e chamadas por dia
+  fastify.get("/tenant/reports/overview", { preHandler }, async (request) => {
+    const { tenantId } = request.tenantUser!;
+    const { attendance: _a, calls: _c, ...overview } = await buildOverview(fastify, tenantId, resolveRange(rangeSchema.parse(request.query)));
+    return overview;
+  });
+
+  // GET /tenant/reports/overview.pdf — o mesmo resumo num PDF a sério
+  fastify.get("/tenant/reports/overview.pdf", { preHandler }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    const range = resolveRange(rangeSchema.parse(request.query));
+    const [overview, tenant] = await Promise.all([
+      buildOverview(fastify, tenantId, range),
+      prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
+    ]);
+    const pdf = await renderOverviewPdf(overview, tenant.name);
+    const name = `relatorio_${range.from.toISOString().slice(0, 10)}_${range.to.toISOString().slice(0, 10)}.pdf`;
+    return reply
+      .header("Content-Type", "application/pdf")
+      .header("Content-Disposition", `attachment; filename="${name}"`)
+      .send(pdf);
   });
 };

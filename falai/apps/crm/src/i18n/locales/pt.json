@@ -827,9 +827,9 @@
     "all": "Todos",
     "periods": {
       "today": "Hoje",
-      "week": "Esta semana",
-      "month": "Este mês",
-      "30d": "Últimos 30 dias",
+      "7d": "7 dias",
+      "30d": "30 dias",
+      "90d": "90 dias",
       "custom": "Personalizado"
     },
     "att": {
@@ -877,6 +877,30 @@
       "untyped": "Não tipificadas",
       "typingTitle": "Chamadas por categoria",
       "category": "Tipificação"
+    },
+    "exportPdf": "Exportar PDF",
+    "vsPrevious": "vs. período anterior",
+    "noCompare": "sem dados do período anterior",
+    "tiles": {
+      "total": "Total de chamadas",
+      "inbound": "Recebidas",
+      "outbound": "Efectuadas",
+      "newContacts": "Novos contactos",
+      "tma": "TMA",
+      "tme": "TME",
+      "response": "Tempo de resposta",
+      "wrapUp": "Pós-chamada"
+    },
+    "tilesSub": {
+      "tma": "Tempo médio de atendimento",
+      "tme": "Tempo médio de espera",
+      "response": "Do toque ao atendimento",
+      "wrapUp": "Do fim da chamada até tipificar"
+    },
+    "donut": {
+      "byGroup": "Por grupo",
+      "byState": "Por estado",
+      "byTyping": "Por tipificação"
     }
   },
   "sms": {
