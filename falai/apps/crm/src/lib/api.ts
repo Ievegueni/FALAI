@@ -913,6 +913,17 @@ export const reportsApi = {
   // ── Resumo (cartões com comparação, anéis, por dia) ──
   overview: (params: { from?: string; to?: string }) =>
     get<ReportsOverview>(`/tenant/reports/overview${qs({ from: params.from, to: params.to })}`),
+  /** O Resumo em Excel já formatado (várias folhas), gerado no servidor. */
+  downloadOverviewXlsx: async (params: { from?: string; to?: string }) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/reports/overview.xlsx${qs({ from: params.from, to: params.to })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao gerar o Excel');
+    const blob = await res.blob();
+    const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+    return { blob, filename: match?.[1] ?? 'relatorio.xlsx' };
+  },
   /** PDF do resumo, gerado no servidor (não é uma impressão da página). */
   downloadOverviewPdf: async (params: { from?: string; to?: string }) => {
     const token = localStorage.getItem('falai_token');

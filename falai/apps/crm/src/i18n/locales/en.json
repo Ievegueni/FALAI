@@ -901,7 +901,8 @@
       "byGroup": "By group",
       "byState": "By status",
       "byTyping": "By call type"
-    }
+    },
+    "exportExcel": "Export Excel"
   },
   "sms": {
     "notEnabled": "Your plan does not include SMS. Contact support.",

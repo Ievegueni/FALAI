@@ -1,6 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import * as XLSX from "xlsx";
 import { buildCallReport, reportToCsv } from "../../services/reports.service.js";
 import {
   buildAttendanceReport,
@@ -12,6 +11,7 @@ import {
 import { ensureCdrSynced } from "../../services/pbxCdr.service.js";
 import { buildOverview } from "../../services/reportsOverview.service.js";
 import { renderOverviewPdf } from "../../services/reportsPdf.service.js";
+import { attendanceWorkbook, overviewWorkbook } from "../../services/excelExport.service.js";
 import { prisma } from "@falai/db";
 
 const rangeSchema = z.object({
@@ -20,6 +20,7 @@ const rangeSchema = z.object({
 });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 // Relatórios de atendimento: período + agente (extensão) + grupo.
 const attendanceSchema = rangeSchema.extend({
@@ -103,16 +104,17 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
     const q = exportSchema.parse(request.query);
     const f = attendanceFilter(q);
     const { isCrmPbx } = await ensureCdrSynced(fastify, tenantId);
-    const table = exportTable(await buildAttendanceReport(tenantId, f, { limited: isCrmPbx }), q.view);
     const name = `atendimento_${q.view}_${f.from.toISOString().slice(0, 10)}_${f.to.toISOString().slice(0, 10)}`;
     if (q.format === "xlsx") {
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(table), q.view);
+      // Excel já formatado (exceljs) — ver services/excelExport.service.ts.
+      const report = await buildAttendanceReport(tenantId, f, { limited: isCrmPbx });
+      const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } });
       return reply
-        .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        .header("Content-Type", XLSX_TYPE)
         .header("Content-Disposition", `attachment; filename="${name}.xlsx"`)
-        .send(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer);
+        .send(await attendanceWorkbook(report, q.view, tenant.name));
     }
+    const table = exportTable(await buildAttendanceReport(tenantId, f, { limited: isCrmPbx }), q.view);
     return reply
       .header("Content-Type", "text/csv; charset=utf-8")
       .header("Content-Disposition", `attachment; filename="${name}.csv"`)
@@ -126,6 +128,21 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
     const { tenantId } = request.tenantUser!;
     const { attendance: _a, calls: _c, ...overview } = await buildOverview(fastify, tenantId, resolveRange(rangeSchema.parse(request.query)));
     return overview;
+  });
+
+  // GET /tenant/reports/overview.xlsx — o Resumo em Excel formatado, com várias folhas
+  fastify.get("/tenant/reports/overview.xlsx", { preHandler }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    const range = resolveRange(rangeSchema.parse(request.query));
+    const [overview, tenant] = await Promise.all([
+      buildOverview(fastify, tenantId, range),
+      prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
+    ]);
+    const name = `relatorio_${range.from.toISOString().slice(0, 10)}_${range.to.toISOString().slice(0, 10)}.xlsx`;
+    return reply
+      .header("Content-Type", XLSX_TYPE)
+      .header("Content-Disposition", `attachment; filename="${name}"`)
+      .send(await overviewWorkbook(overview, overview.calls.rows, tenant.name));
   });
 
   // GET /tenant/reports/overview.pdf — o mesmo resumo num PDF a sério

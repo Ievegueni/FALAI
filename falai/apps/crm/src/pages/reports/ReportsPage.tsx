@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { FileSpreadsheet, FileText } from 'lucide-react';
 import { reportsApi, telephonyApi, callTypingApi, type AttendanceFilters } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Card } from '@/components/ui/Card';
@@ -85,7 +85,7 @@ export function ReportsPage() {
   const { data: categories } = useQuery({ queryKey: ['call-categories'], queryFn: callTypingApi.categories, retry: false });
   const catName = (id: string | null) => categories?.find((c) => c.id === id)?.name;
 
-  const exportAttendance = async (format: 'csv' | 'xlsx') => {
+  const exportAttendance = async (format: 'xlsx') => {
     const view = EXPORTABLE[tab];
     if (!view) return;
     setDownloading(true);
@@ -109,10 +109,10 @@ export function ReportsPage() {
     }
   };
 
-  const exportCsv = async () => {
+  const exportXlsx = async () => {
     setDownloading(true);
     try {
-      saveBlob(await reportsApi.downloadCsv({ from, to }));
+      saveBlob(await reportsApi.downloadOverviewXlsx({ from, to }));
     } catch {
       toast.error(t('reports.exportError'));
     } finally {
@@ -128,8 +128,8 @@ export function ReportsPage() {
           <>
             {tab === 'summary' && (
               <>
-                <Button variant="outline" size="sm" icon={<Download className="h-4 w-4" />} onClick={exportCsv} disabled={downloading}>
-                  {t('reports.exportCsv')}
+                <Button variant="outline" size="sm" icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => void exportXlsx()} disabled={downloading}>
+                  {t('reports.exportExcel')}
                 </Button>
                 <Button size="sm" icon={<FileText className="h-4 w-4" />} onClick={() => void exportPdf()} loading={downloading}>
                   {t('reports.exportPdf')}
@@ -137,14 +137,9 @@ export function ReportsPage() {
               </>
             )}
             {EXPORTABLE[tab] && (
-              <>
-                <Button variant="outline" size="sm" icon={<Download className="h-4 w-4" />} onClick={() => void exportAttendance('csv')} disabled={downloading}>
-                  CSV
-                </Button>
-                <Button size="sm" icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => void exportAttendance('xlsx')} disabled={downloading}>
-                  Excel
-                </Button>
-              </>
+              <Button size="sm" icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => void exportAttendance('xlsx')} loading={downloading}>
+                {t('reports.exportExcel')}
+              </Button>
             )}
           </>
         }

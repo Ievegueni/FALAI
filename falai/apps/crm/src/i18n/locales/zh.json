@@ -901,7 +901,8 @@
       "byGroup": "按组",
       "byState": "按状态",
       "byTyping": "按分类"
-    }
+    },
+    "exportExcel": "导出 Excel"
   },
   "sms": {
     "notEnabled": "您的套餐不包含短信。请联系支持。",

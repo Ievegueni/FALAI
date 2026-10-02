@@ -901,7 +901,8 @@
       "byGroup": "Por grupo",
       "byState": "Por estado",
       "byTyping": "Por tipificação"
-    }
+    },
+    "exportExcel": "Exportar Excel"
   },
   "sms": {
     "notEnabled": "O seu plano não inclui SMS. Contacte o suporte.",
