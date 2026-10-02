@@ -1136,5 +1136,39 @@
     "shortcut": "Atalho",
     "cannedText": "Texto",
     "add": "Adicionar"
+  },
+  "callerPanel": {
+    "loading": "A procurar o cliente…",
+    "hidden": "Número oculto",
+    "unknown": "Cliente não identificado",
+    "quickCreate": "Criar contacto",
+    "created": "Contacto criado",
+    "phone": "Número",
+    "noName": "(sem nome)",
+    "openContact": "Abrir ficha",
+    "optedOut": "Pediu para não ser contactado",
+    "last7Days": "Chamadas nos últimos 7 dias",
+    "lastTyping": "Última tipificação",
+    "phones": "Números",
+    "addPhone": "Adicionar número",
+    "attributes": "Dados do cliente",
+    "history": "Últimas chamadas",
+    "noHistory": "Sem chamadas anteriores",
+    "seeMore": "Ver mais",
+    "outbound": "saída",
+    "conversations": "Conversas",
+    "notes": "Notas",
+    "notePlaceholder": "Nota sobre o cliente…",
+    "addNote": "Guardar nota",
+    "state": {
+      "ANSWERED": "atendida",
+      "MISSED": "perdida",
+      "REJECTED": "recusada",
+      "IN_PROGRESS": "em curso",
+      "COMPLETED": "concluída",
+      "NO_ANSWER": "não atendida",
+      "FAILED": "falhou",
+      "BUSY": "ocupado"
+    }
   }
 }

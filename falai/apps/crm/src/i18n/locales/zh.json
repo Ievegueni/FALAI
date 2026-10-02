@@ -1064,5 +1064,39 @@
     "typingEmpty": "暂无类别。例如创建\"投诉\"及子类别\"账单\"。",
     "typingGroups": "组",
     "typingGroupsHint": "不勾选任何组时，所有坐席都可见此类别。"
+  },
+  "callerPanel": {
+    "loading": "正在查找来电者…",
+    "hidden": "隐藏号码",
+    "unknown": "未识别的客户",
+    "quickCreate": "创建联系人",
+    "created": "联系人已创建",
+    "phone": "号码",
+    "noName": "（无名称）",
+    "openContact": "打开资料",
+    "optedOut": "要求不再联系",
+    "last7Days": "最近 7 天通话",
+    "lastTyping": "最近分类",
+    "phones": "号码",
+    "addPhone": "添加号码",
+    "attributes": "客户资料",
+    "history": "最近通话",
+    "noHistory": "没有以往通话",
+    "seeMore": "查看更多",
+    "outbound": "呼出",
+    "conversations": "会话",
+    "notes": "备注",
+    "notePlaceholder": "关于客户的备注…",
+    "addNote": "保存备注",
+    "state": {
+      "ANSWERED": "已接",
+      "MISSED": "未接",
+      "REJECTED": "已拒接",
+      "IN_PROGRESS": "进行中",
+      "COMPLETED": "已完成",
+      "NO_ANSWER": "未接听",
+      "FAILED": "失败",
+      "BUSY": "忙"
+    }
   }
 }

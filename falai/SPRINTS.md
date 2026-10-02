@@ -114,7 +114,12 @@ Decisões da Fase 0:
 - [x] Scripts `pnpm -F api contactos:normalizar` (corrigido p/ canais de texto) e `contactos:associar-chamadas`. Dev: 330 contactos normalizados.
 - [x] Testes: normalização, cliente existente, não identificado, oculto, auditoria, contacto rápido.
 
-### Fase 2 — Frontend
-- [ ] Painel do cliente no webphone (toque → atendimento → fecha ao recusar/não atender).
-- [ ] Contacto rápido, edição, números extra e notas durante a chamada.
-- [ ] Banner do PBX próprio usa a pesquisa no servidor.
+### Fase 2 — Frontend ✅
+- [x] Painel do cliente no webphone (`components/calls/CallerPanel.tsx`): abre no toque, fica durante a chamada, fecha ao recusar/não atender/desligar.
+- [x] Contacto rápido, edição (nome/email), números extra e notas durante a chamada.
+- [x] Banner do PBX próprio (BYO) usa a pesquisa no servidor.
+- [x] Pesquisa medida em dev: 10–27 ms.
+
+### Pendente / a validar
+- [ ] Chamada real: confirmar o formato do caller ID que a ANGOVOIP entrega e que o painel abre no toque.
+- [ ] Produção: correr `contactos:normalizar` (dry-run, depois `--apply` com backup) e `contactos:associar-chamadas`.

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Select, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { TypingModal, UntypedList } from './TypingPanel';
+import { CallerPanel } from '@/components/calls/CallerPanel';
 import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { clsx } from '@/lib/utils';
@@ -169,7 +170,8 @@ export function WebphonePage() {
     <>
       <Header title={t('webphone.title')} />
 
-      <div className="p-6 max-w-md space-y-6">
+      <div className="p-6 flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div className="w-full max-w-md space-y-6">
         <Card>
           <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('webphone.selectExtension')}</h2>
           {(extensions?.length ?? 0) === 0 ? (
@@ -268,6 +270,10 @@ export function WebphonePage() {
             </>
           )}
         </Card>
+      </div>
+      {/* Painel do cliente (melhoria 3): no toque e durante a chamada; ao
+          recusar, não atender ou desligar, a sessão acaba e o painel fecha. */}
+      {incomingLegId && (incoming || callState === 'in-call') && <CallerPanel key={incomingLegId} legId={incomingLegId} />}
       </div>
       <div className="px-6 pb-6">
         <UntypedList extensionId={extensionId} onPick={setTypingLegId} />

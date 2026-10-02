@@ -344,6 +344,65 @@ export interface RejectReason {
   sortOrder: number;
 }
 
+// ─── Painel do cliente na entrada (melhoria 3) ───────────────────────────────
+
+export type CallerInfo =
+  | { kind: 'HIDDEN' }
+  | { kind: 'NUMBER'; raw: string; national: string | null; display: string };
+
+export interface CallerHistoryItem {
+  id: string;
+  kind: string;
+  at: string;
+  agent: string | null;
+  group: string | null;
+  durationSecs: number;
+  state: string; // ANSWERED | MISSED | REJECTED | IN_PROGRESS (entrada) ou o status (saída)
+  typing: string | null;
+  note: string | null;
+}
+
+export interface CallerNote {
+  id: string;
+  body: string;
+  createdAt: string;
+  author?: string | null;
+  callId: string | null;
+}
+
+export interface CallerPanelData {
+  caller: CallerInfo;
+  callId: string | null;
+  contact: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    email: string | null;
+    attributes: Record<string, unknown> | null;
+    optedOutAt: string | null;
+    phones: { id: string; phone: string; label: string | null }[];
+  } | null;
+  history?: { data: CallerHistoryItem[]; hasMore: boolean };
+  highlights?: { callsLast7Days: number; lastTyping: { label: string; at: string; note: string | null } | null };
+  conversations?: { id: string; status: string; lastMessageAt: string | null; inbox: { channel: string; name: string } }[];
+  notes?: CallerNote[];
+}
+
+export const callersApi = {
+  lookup: (q: { legId: string } | { number: string }) =>
+    get<CallerPanelData>(`/tenant/callers/lookup${qs(q)}`),
+  history: (contactId: string, before: string) =>
+    get<{ data: CallerHistoryItem[]; hasMore: boolean }>(`/tenant/callers/${contactId}/history${qs({ before, limit: 10 })}`),
+  quickCreate: (data: { name: string; phone: string; legId?: string }) => post<{ id: string }>('/tenant/callers/contacts', data),
+  update: (contactId: string, data: { name?: string; email?: string | null }) =>
+    patch<{ ok: true }>(`/tenant/callers/${contactId}`, data),
+  addPhone: (contactId: string, data: { phone: string; label?: string }) =>
+    post<{ id: string; phone: string; label: string | null }>(`/tenant/callers/${contactId}/phones`, data),
+  removePhone: (contactId: string, phoneId: string) => del<void>(`/tenant/callers/${contactId}/phones/${phoneId}`),
+  addNote: (contactId: string, data: { body: string; legId?: string }) =>
+    post<CallerNote>(`/tenant/callers/${contactId}/notes`, data),
+};
+
 // ─── Tipificação de chamadas (melhoria 2) ────────────────────────────────────
 
 export interface CallCategory {

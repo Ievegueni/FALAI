@@ -1136,5 +1136,39 @@
     "shortcut": "Shortcut",
     "cannedText": "Text",
     "add": "Add"
+  },
+  "callerPanel": {
+    "loading": "Looking up the caller…",
+    "hidden": "Hidden number",
+    "unknown": "Unidentified caller",
+    "quickCreate": "Create contact",
+    "created": "Contact created",
+    "phone": "Number",
+    "noName": "(no name)",
+    "openContact": "Open contact",
+    "optedOut": "Asked not to be contacted",
+    "last7Days": "Calls in the last 7 days",
+    "lastTyping": "Last call type",
+    "phones": "Numbers",
+    "addPhone": "Add number",
+    "attributes": "Customer data",
+    "history": "Recent calls",
+    "noHistory": "No previous calls",
+    "seeMore": "See more",
+    "outbound": "outbound",
+    "conversations": "Conversations",
+    "notes": "Notes",
+    "notePlaceholder": "Note about the customer…",
+    "addNote": "Save note",
+    "state": {
+      "ANSWERED": "answered",
+      "MISSED": "missed",
+      "REJECTED": "declined",
+      "IN_PROGRESS": "in progress",
+      "COMPLETED": "completed",
+      "NO_ANSWER": "no answer",
+      "FAILED": "failed",
+      "BUSY": "busy"
+    }
   }
 }
