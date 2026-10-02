@@ -154,13 +154,17 @@ export const tenantTeamRoutes: FastifyPluginAsync = async (fastify) => {
 
   // PATCH /tenant/team/:userId — papel, extensão e grupos supervisionados
   fastify.patch<{ Params: { userId: string } }>("/:userId", { preHandler }, async (request, reply) => {
-    const { tenantId, role } = request.tenantUser!;
+    const { tenantId, role, sub } = request.tenantUser!;
     if (!requireManager(role, reply)) return;
 
     const body = updateSchema.parse(request.body);
     const target = await prisma.tenantUser.findFirst({ where: { id: request.params.userId, tenantId } });
     if (!target) return reply.status(404).send({ error: "Membro não encontrado" });
     if (body.role && target.role === "OWNER") return reply.status(400).send({ error: "Não é possível alterar o papel do OWNER" });
+    // Senão um ADMIN redefinia a password do OWNER e ficava com a conta dele.
+    if (body.password && target.role === "OWNER" && target.id !== sub) {
+      return reply.status(403).send({ error: "Só o próprio OWNER pode alterar a sua password" });
+    }
 
     const checked = await checkExtensionAndGroups(tenantId, target.id, body);
     if ("error" in checked) return reply.status(checked.status).send({ error: checked.error });
