@@ -8,6 +8,7 @@
  * Usa exceljs: a biblioteca xlsx (SheetJS) gratuita não escreve estilos.
  */
 import ExcelJS from "exceljs";
+import { analysisSections, type AnalysisResult } from "./reportAnalysis.service.js";
 import type { Overview } from "./reportsOverview.service.js";
 import type { AttendanceReport, ExportView } from "./attendanceReport.service.js";
 import type { ReportRow } from "./reports.service.js";
@@ -246,11 +247,39 @@ const VIEW_SHEET: Record<ExportView, (wb: ExcelJS.Workbook, a: AttendanceReport,
 };
 
 /** Um separador do atendimento (por agente, por grupo, motivos, tipificação). */
-export async function attendanceWorkbook(report: AttendanceReport, view: ExportView, tenant: string): Promise<Buffer> {
+/** Folha "Análise IA" (melhoria 6): a última análise dos mesmos filtros, se houver. */
+export function addAnalysisSheet(wb: ExcelJS.Workbook, a: ExportAnalysis): void {
+  const ws = wb.addWorksheet("Análise IA", { pageSetup: { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 } });
+  ws.columns = [{ width: 110 }];
+  ws.getCell(1, 1).value = "Análise com IA";
+  ws.getCell(1, 1).font = { bold: true, size: 14 };
+  ws.getCell(2, 1).value = `Gerada em ${a.createdAt.toLocaleString("pt-PT")} · baseada no resumo agregado destes filtros · interpretação automática, confirme antes de decidir`;
+  ws.getCell(2, 1).font = { size: 10, color: { argb: INK_2 } };
+  let row = 4;
+  for (const s of analysisSections(a.result)) {
+    const h = ws.getCell(row++, 1);
+    h.value = s.title;
+    h.font = { bold: true, size: 12, color: { argb: BLUE } };
+    for (const line of s.lines) {
+      const c = ws.getCell(row++, 1);
+      c.value = line;
+      c.alignment = { wrapText: true, vertical: "top" };
+    }
+    row++;
+  }
+}
+
+export interface ExportAnalysis {
+  result: AnalysisResult;
+  createdAt: Date;
+}
+
+export async function attendanceWorkbook(report: AttendanceReport, view: ExportView, tenant: string, analysis?: ExportAnalysis | null): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Falaí";
   const charts: ChartSpec[] = [];
   VIEW_SHEET[view](wb, report, subtitleOf(tenant, report.from, report.to), charts);
+  if (analysis) addAnalysisSheet(wb, analysis);
   return addCharts(Buffer.from(await wb.xlsx.writeBuffer()), wb.worksheets.map((w) => w.name), charts);
 }
 
@@ -258,7 +287,7 @@ export async function attendanceWorkbook(report: AttendanceReport, view: ExportV
  * O Resumo completo: indicadores com o período anterior e a variação, por dia,
  * repartições, as folhas do atendimento e a lista das chamadas.
  */
-export async function overviewWorkbook(o: Overview, rows: ReportRow[], tenant: string): Promise<Buffer> {
+export async function overviewWorkbook(o: Overview, rows: ReportRow[], tenant: string, analysis?: ExportAnalysis | null): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Falaí";
   const sub = subtitleOf(tenant, o.from, o.to);
@@ -381,6 +410,7 @@ export async function overviewWorkbook(o: Overview, rows: ReportRow[], tenant: s
     { header: "Duração", width: 10, fmt: "secs" },
     { header: "Custo", width: 12, fmt: "money" },
   ], rows.map((r) => [r.date, DIR[r.direction] ?? r.direction, r.party, r.contactName, STATUS[r.status] ?? r.status, r.outcome && r.outcome !== r.status ? r.outcome : null, r.durationSecs, r.costCents]));
+  if (analysis) addAnalysisSheet(wb, analysis);
 
   return addCharts(Buffer.from(await wb.xlsx.writeBuffer()), wb.worksheets.map((w) => w.name), charts);
 }

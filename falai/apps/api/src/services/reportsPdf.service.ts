@@ -5,6 +5,7 @@
  * estado / tipificação, chamadas por dia e as tabelas do atendimento.
  */
 import PDFDocument from "pdfkit";
+import { analysisSections, type AnalysisResult } from "./reportAnalysis.service.js";
 import type { Overview, Slice, Tile } from "./reportsOverview.service.js";
 
 // Paleta categórica validada (dataviz, modo claro) — ordem fixa, nunca ciclada.
@@ -55,7 +56,7 @@ function deltaColor(t: Tile): string {
   return (t.good === "up") === up ? GOOD : BAD;
 }
 
-export function renderOverviewPdf(o: Overview, tenantName: string): Promise<Buffer> {
+export function renderOverviewPdf(o: Overview, tenantName: string, analysis?: { result: AnalysisResult; createdAt: Date } | null): Promise<Buffer> {
   // bufferPages: a numeração "página X de N" só se escreve no fim.
   const doc = new PDFDocument({ size: "A4", margin: 40, bufferPages: true, info: { Title: `Relatório — ${tenantName}`, Author: "Falaí" } });
   const chunks: Buffer[] = [];
@@ -119,6 +120,22 @@ export function renderOverviewPdf(o: Overview, tenantName: string): Promise<Buff
       o.attendance.reasons.map((r) => [r.reason, fmtInt(r.count), fmtPct(r.pct)]), ty + 8);
     table(doc, "Tipificação", ["Categoria", "Subcategoria", "Chamadas", "%"], [170, 170, 80, 80],
       o.attendance.typing.slice(0, 15).map((r) => [r.category, r.subcategory ?? "", fmtInt(r.count), fmtPct(r.pct)]), ty + 8, 2);
+  }
+
+  // ── Análise com IA (melhoria 6): a última dos mesmos filtros, se houver ──
+  if (analysis) {
+    doc.addPage();
+    doc.fillColor(INK).font("Helvetica-Bold").fontSize(16).text("Análise com IA", L, 40);
+    doc.font("Helvetica").fontSize(8).fillColor(MUTED)
+      .text(`Gerada em ${analysis.createdAt.toLocaleString("pt-PT")} · interpretação automática do resumo agregado — confirme antes de decidir`, L, 62, { width: W });
+    doc.moveDown(1.2);
+    for (const s of analysisSections(analysis.result)) {
+      if (doc.y > doc.page.height - 110) doc.addPage();
+      doc.fillColor(SERIES[0]!).font("Helvetica-Bold").fontSize(11).text(s.title, L, doc.y, { width: W });
+      doc.moveDown(0.25);
+      for (const line of s.lines) doc.fillColor(INK).font("Helvetica").fontSize(9.5).text(line, L, doc.y, { width: W, lineGap: 2 }).moveDown(0.3);
+      doc.moveDown(0.6);
+    }
   }
 
   // Rodapé com numeração.

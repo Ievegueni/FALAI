@@ -113,6 +113,44 @@ export class ClaudeAdapter implements LlmProvider {
     };
   }
 
+  /**
+   * Resposta estruturada (JSON) por uma ferramenta forçada — usado fora das
+   * chamadas (ex.: análise dos relatórios). Em stub devolve null: quem chama
+   * decide o que mostrar sem gastar tokens.
+   */
+  async structured(params: {
+    system: string;
+    user: string;
+    tool: { name: string; description: string; input_schema: Anthropic.Tool["input_schema"] };
+    model?: string;
+    maxTokens?: number;
+    timeoutMs?: number;
+  }): Promise<{ input: unknown; inputTokens: number; outputTokens: number; durationMs: number; model: string } | null> {
+    if (this.config.stubMode) return null;
+    const startedAt = Date.now();
+    const model = params.model ?? this.config.model ?? "claude-sonnet-4-6";
+    const response = await this.client.messages.create(
+      {
+        model,
+        max_tokens: params.maxTokens ?? 2048,
+        system: params.system,
+        tools: [params.tool],
+        tool_choice: { type: "tool", name: params.tool.name },
+        messages: [{ role: "user", content: params.user }],
+      },
+      { timeout: params.timeoutMs ?? 60_000, maxRetries: 1 },
+    );
+    const block = response.content.find((b) => b.type === "tool_use") as Anthropic.ToolUseBlock | undefined;
+    if (!block) throw new Error("Claude não devolveu a resposta estruturada");
+    return {
+      input: block.input,
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+      durationMs: Date.now() - startedAt,
+      model,
+    };
+  }
+
   private parseAction(raw: {
     type: string;
     to?: string;

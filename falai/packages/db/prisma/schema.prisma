@@ -219,6 +219,10 @@ model Tenant {
   apiKeys              ApiKey[]
   users                TenantUser[]
   accessProfiles       AccessProfile[]
+  // Análise dos relatórios com IA (melhoria 6)
+  aiReportDailyLimit   Int              @default(20) // análises novas por dia (definido no backoffice)
+  aiReportAgentNames   Boolean          @default(false) // enviar à IA o nome dos agentes (senão, só a extensão)
+  reportAnalyses       ReportAnalysis[]
   agents               Agent[]
   models               TenantModel[]
   calls                Call[]
@@ -1258,4 +1262,30 @@ model CannedResponse {
   createdAt DateTime @default(now())
 
   @@unique([tenantId, shortcut])
+}
+
+// ============ ANÁLISE DOS RELATÓRIOS COM IA (melhoria 6) ============
+
+// Uma análise por pedido. Cache: mesmos filtros (filtersKey) e mesmos dados
+// agregados (dataHash) devolvem a análise já feita, sem nova chamada à IA.
+model ReportAnalysis {
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  filters       Json // período + agente/grupo/tipificação, como pedidos
+  filtersKey    String
+  dataHash      String // hash do resumo agregado enviado à IA
+  promptVersion String
+  model         String
+  result        Json? // análise validada (null se falhou)
+  error         String?
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  costMicroUsd  Int      @default(0) // 1 USD = 1 000 000
+  durationMs    Int?
+  requestedById String? // TenantUser
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId, filtersKey, createdAt])
+  @@index([tenantId, createdAt])
 }

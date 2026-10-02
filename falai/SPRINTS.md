@@ -212,3 +212,35 @@ duplicado (snapshot na auditoria); o Leitor só consulta; exportação em Excel.
 
 ### Pendente / a validar
 - [ ] Produção: `migrate deploy` (com backup) — confirmar que o Postgres de produção tem `pg_trgm` (contrib).
+
+## Melhoria 6/6 — Análise dos relatórios com IA (iniciada a 02/10/2026)
+
+Fase 0 — o que já existe:
+- Claude: `packages/providers/src/llm/ClaudeAdapter.ts` (@anthropic-ai/sdk 0.30,
+  `claude-sonnet-4-6`, tool_use forçado), chave em `SystemSetting`/`.env` via
+  `resolveProviderConfig` (decorado em `fastify.providerConfig`), stub com
+  `AI_STUB_MODE` ou sem chave. Só é usado nas chamadas de voz. **Tokens e custo
+  não são gravados em lado nenhum** (só `llmMs` por turno).
+- Relatórios (melhoria 1): Resumo (`buildOverview`: tiles com valor/anterior/
+  variação, donuts por grupo/estado/tipificação, série diária) e Atendimento
+  (`AttendanceReport`: KPIs do tenant e da selecção, por agente/grupo com
+  `vsTenant`, motivos de recusa, tipificações, por dia). Filtros: período,
+  extensão, grupo, tipificação. O Atendimento não calcula período anterior.
+- Exportação: `overview.xlsx`, `overview.pdf` (pdfkit), `attendance/export` (xlsx).
+- Permissões dos relatórios: só a feature `reports`; o supervisor hoje vê tudo.
+- Notificações: não há in-app (o sino do cabeçalho é decorativo) nem email da
+  plataforma — o nodemailer só serve o canal de email de cada inbox (SMTP do
+  cliente). SMS via Futurix por tenant. BullMQ: workers só em `apps/worker`,
+  que não tem os serviços de relatórios (vivem na API).
+
+Decisões validadas: botão "Analisar com IA" abre o separador "Análise IA" nos
+Relatórios e a análise entra nas exportações (Excel: folha "Análise IA"; PDF:
+página própria). Sem email nem relatórios agendados (não pedidos).
+
+### Fase 1 — Backend ✅
+- [x] Migração `20261004120000_report_analysis`: `ReportAnalysis` (filtros, hash dos dados, prompt, modelo, resultado, tokens, custo) + `Tenant.aiReportDailyLimit` (20) e `aiReportAgentNames` (não).
+- [x] `ClaudeAdapter.structured()` (mesma chave/config; timeout 60 s); modelo `AI_REPORT_MODEL` (por omissão `claude-sonnet-4-6`).
+- [x] `services/reportAnalysis.service.ts`: resumo agregado sem dados pessoais (agentes pela extensão salvo permissão), comparações e sinais pré-calculados, prompt versionado `report-analysis/v1`, JSON validado (zod), cache filtros+dados, limite diário, custo em micro-USD, modo de teste sem chave.
+- [x] Rotas `GET/POST /tenant/reports/analysis`, `PUT /tenant/reports/analysis/settings`; owner/admin tudo, supervisor só os seus grupos/agentes.
+- [x] Exportações (`overview.xlsx`, `overview.pdf`, `attendance/export`) juntam a última análise dos mesmos filtros (nunca chamam a IA).
+- [x] Testes (17): resumo, JSON, cache, limite, erros/timeout, exportação.
