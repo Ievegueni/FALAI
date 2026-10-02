@@ -32,6 +32,36 @@ let seq = 0;
 
 const byUid = (uid: string) => rows.find((r) => r.yeastarCallId === uid);
 
+interface LegRow {
+  id: string;
+  callId: string;
+  extensionId: string;
+  groupId: string | null;
+  outcome: string | null;
+  answeredAt?: Date | null;
+  endedAt?: Date | null;
+  hangupCause?: number | null;
+}
+const legs: LegRow[] = [];
+const callLeg = {
+  create: vi.fn(async ({ data }: any) => {
+    const row: LegRow = { id: `leg_${legs.length + 1}`, outcome: null, ...data };
+    legs.push(row);
+    return row;
+  }),
+  updateMany: vi.fn(async ({ where, data }: any) => {
+    const matched = legs.filter(
+      (l) =>
+        (!where.id || l.id === where.id) &&
+        (!where.callId || l.callId === where.callId) &&
+        (where.outcome === undefined || l.outcome === where.outcome) &&
+        (where.endedAt === undefined || (l.endedAt ?? null) === where.endedAt)
+    );
+    for (const l of matched) Object.assign(l, data);
+    return { count: matched.length };
+  }),
+};
+
 const tenantRow = { holdAudio: false };
 const prisma = {
   call: {
@@ -68,11 +98,17 @@ const prisma = {
       return row;
     }),
   },
+  callLeg,
+  // Pernas e fecho: a ordem das escritas é a do array — chega para o teste.
+  $transaction: vi.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
   extension: {
-    findFirst: vi.fn(async () => ({ sipAuthUser: "Ab12" })),
+    findFirst: vi.fn(async () => ({ id: "ext_201", number: "201", sipAuthUser: "Ab12" })),
   },
   extensionGroupMember: {
-    findMany: vi.fn(async () => [{ extension: { sipAuthUser: "G1" } }, { extension: { sipAuthUser: "G2" } }]),
+    findMany: vi.fn(async () => [
+      { extension: { id: "ext_g1", number: "301", sipAuthUser: "G1" } },
+      { extension: { id: "ext_g2", number: "302", sipAuthUser: "G2" } },
+    ]),
   },
   ivrMenu: {
     findFirst: vi.fn(async () => ({
@@ -139,15 +175,19 @@ function setup() {
   let handler!: (e: CallEvent) => Promise<void>;
   const answered: ((id: string) => void)[] = [];
   const noAnswer: (() => void)[] = [];
+  const legEnded: ((id: string, cause: number | null) => void)[] = [];
   const asterisk = {
     createBridge: vi.fn(async () => ({ id: "br1" })),
     answerChannel: vi.fn(async () => {}),
     addChannelToBridge: vi.fn(async () => {}),
     originateToPjsipEndpoint: vi.fn(async (endpointId: string) => ({ id: `chan_${endpointId}` })),
-    registerRingGroup: vi.fn((_ids: string[], onAnswer: (id: string) => void, onAllFailed: () => void) => {
-      answered.push(onAnswer);
-      noAnswer.push(onAllFailed);
-    }),
+    registerRingGroup: vi.fn(
+      (_ids: string[], onAnswer: (id: string) => void, onAllFailed: () => void, onLeg: (id: string, c: number | null) => void) => {
+        answered.push(onAnswer);
+        noAnswer.push(onAllFailed);
+        legEnded.push(onLeg);
+      }
+    ),
     noRouteFallback: vi.fn(async () => {}),
     destroyBridge: vi.fn(async () => {}),
     hangup: vi.fn(async () => {}),
@@ -163,6 +203,8 @@ function setup() {
     emit: (e: CallEvent) => handler(e),
     answer: () => answered[0]!("chan_ext_Ab12"),
     nobodyAnswers: () => noAnswer[0]!(),
+    answerChannel: (id: string) => answered[0]!(id),
+    legEnded: (id: string, cause: number | null) => legEnded[0]!(id, cause),
   };
 }
 
@@ -176,6 +218,7 @@ const START: CallEvent = {
 
 beforeEach(() => {
   rows.length = 0;
+  legs.length = 0;
   wallet.length = 0;
   balanceCents = 10_000;
   seq = 0;
@@ -441,5 +484,57 @@ describe("chamada de entrada — alguém desliga", () => {
     s.asterisk.hangup.mockClear();
     await s.emit(END("chan_ext_Ab12"));
     expect(s.asterisk.hangup).toHaveBeenCalledWith("chan-trunk-1");
+  });
+});
+
+describe("chamada de entrada — pernas (relatórios de atendimento)", () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it("abre uma perna por extensão e manda o id no INVITE", async () => {
+    const s = setup();
+    await s.emit(START);
+    expect(legs).toHaveLength(1);
+    expect(legs[0]).toMatchObject({ extensionId: "ext_201", groupId: null, outcome: null });
+    expect(s.asterisk.originateToPjsipEndpoint).toHaveBeenCalledWith(
+      "ext_Ab12", "ring:br1", "+244923111222", 25,
+      { "PJSIP_HEADER(add,X-Falai-Leg-Id)": "leg_1" }
+    );
+    expect(rows[0]!).toHaveProperty("queuedAt");
+  });
+
+  it("recusa no webphone fecha a perna como REJECTED e cala o hardphone", async () => {
+    const s = setup();
+    await s.emit(START);
+    s.legEnded("chan_extweb_Ab12", 21);
+    await flush();
+    expect(legs[0]!.outcome).toBe("REJECTED");
+    expect(legs[0]!.hangupCause).toBe(21);
+    expect(s.asterisk.hangup).toHaveBeenCalledWith("chan_ext_Ab12");
+  });
+
+  it("no grupo, quem atende fica ANSWERED e os outros CANCELLED; o fim da chamada fecha a perna", async () => {
+    resolveInboundForTenant.mockResolvedValue({ tenantId: "tnt_1", destType: "GROUP", destValue: "grp1" });
+    const s = setup();
+    await s.emit(START);
+    expect(rows[0]).toMatchObject({ groupId: "grp1" });
+    expect(legs.map((l) => l.groupId)).toEqual(["grp1", "grp1"]);
+
+    s.answerChannel("chan_extweb_G2");
+    await flush();
+    expect(legs.find((l) => l.extensionId === "ext_g2")!.outcome).toBe("ANSWERED");
+    expect(legs.find((l) => l.extensionId === "ext_g1")!.outcome).toBe("CANCELLED");
+
+    await s.emit({ type: "CALL_ENDED", providerCallId: "chan-trunk-1", endedAt: new Date(), durationSecs: 30, hangupCause: "NORMAL" });
+    expect(legs.find((l) => l.extensionId === "ext_g2")!.endedAt).toBeInstanceOf(Date);
+  });
+
+  it("quem ligou desliga a tocar: a perna é CANCELLED, não recusa nem não atendida", async () => {
+    const s = setup();
+    await s.emit(START);
+    await s.emit({ type: "CALL_FAILED", providerCallId: "chan-trunk-1", reason: "hangup" });
+    s.legEnded("chan_ext_Ab12", 16);
+    s.legEnded("chan_extweb_Ab12", 16);
+    await flush();
+    expect(legs[0]!.outcome).toBe("CANCELLED");
   });
 });

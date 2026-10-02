@@ -60,12 +60,15 @@ export class AsteriskError extends Error {
  * + webphone da mesma extensão) a tocar em simultâneo. A primeira a atender
  * (ChannelStateChange → Up) dispara onAnswer; quem chama trata de desligar as
  * restantes. Se todas caírem sem ninguém atender, dispara onAllFailed.
+ * onLegEnded recebe cada perna que cai antes do atendimento, com a causa Q.850
+ * (21 = recusada, 17 = ocupado, 19 = sem resposta) — base dos relatórios.
  */
 interface RingGroup {
   remaining: Set<string>;
   settled: boolean;
   onAnswer: (answeredChannelId: string) => void;
   onAllFailed: () => void;
+  onLegEnded: ((channelId: string, cause: number | null) => void) | undefined;
 }
 
 export class AsteriskAdapter implements TelephonyProvider {
@@ -166,7 +169,9 @@ export class AsteriskAdapter implements TelephonyProvider {
     endpointId: string,
     appArgs: string,
     callerId: string | undefined,
-    timeoutSecs: number
+    timeoutSecs: number,
+    /** Variáveis do canal, ex. { "PJSIP_HEADER(add,X-Falai-Leg-Id)": id }. */
+    variables?: Record<string, string>
   ): Promise<{ id: string }> {
     const q = new URLSearchParams({
       endpoint: `PJSIP/${endpointId}`,
@@ -175,7 +180,10 @@ export class AsteriskAdapter implements TelephonyProvider {
       timeout: String(timeoutSecs),
       ...(callerId ? { callerId } : {}),
     });
-    return this.api<{ id: string }>(`/channels?${q}`, { method: "POST" });
+    return this.api<{ id: string }>(`/channels?${q}`, {
+      method: "POST",
+      ...(variables ? { body: JSON.stringify({ variables }) } : {}),
+    });
   }
 
   async answerChannel(providerCallId: string): Promise<void> {
@@ -210,9 +218,10 @@ export class AsteriskAdapter implements TelephonyProvider {
   registerRingGroup(
     memberChannelIds: string[],
     onAnswer: (answeredChannelId: string) => void,
-    onAllFailed: () => void
+    onAllFailed: () => void,
+    onLegEnded?: (channelId: string, cause: number | null) => void
   ): void {
-    const group: RingGroup = { remaining: new Set(memberChannelIds), settled: false, onAnswer, onAllFailed };
+    const group: RingGroup = { remaining: new Set(memberChannelIds), settled: false, onAnswer, onAllFailed, onLegEnded };
     for (const id of memberChannelIds) this.ringGroups.set(id, group);
   }
 
@@ -588,6 +597,8 @@ export class AsteriskAdapter implements TelephonyProvider {
         if (ring) {
           this.ringGroups.delete(id);
           ring.remaining.delete(id);
+          const rawCause = e["cause"];
+          ring.onLegEnded?.(id, typeof rawCause === "number" ? rawCause : null);
           if (!ring.settled && ring.remaining.size === 0) {
             ring.settled = true;
             ring.onAllFailed();

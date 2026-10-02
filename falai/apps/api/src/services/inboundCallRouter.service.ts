@@ -31,6 +31,16 @@ import {
 } from "./callRecording.service.js";
 import { notifyMissedCall } from "./missedCallSms.service.js";
 import {
+  answerLeg,
+  classifyLegCause,
+  closeLegs,
+  endLeg,
+  mergeOutcomes,
+  openLegs,
+  type LegTarget,
+} from "./callLegs.service.js";
+import type { CallLegOutcome } from "@falai/db";
+import {
   computeCallCost,
   effectivePrice,
   reserveBalance,
@@ -183,8 +193,8 @@ async function routeTo(
     return;
   }
 
-  const sipUsers = await resolveSipUsers(tenantId, dest);
-  if (sipUsers.length === 0) {
+  const targets = await resolveTargets(tenantId, dest);
+  if (targets.length === 0) {
     log.warn({ did: event.did, dest }, "inbound_call_router.no_target");
     await asterisk.noRouteFallback(event.providerCallId);
     return;
@@ -196,38 +206,47 @@ async function routeTo(
   // fora, de propósito, tudo o que caiu no noRouteFallback acima: uma chamada
   // que não tocou em ninguém não se regista nem se cobra.
   const callId = await openInboundCall(event, tenantId, log);
-  await ringTargets(
-    event,
-    sipUsers.flatMap((u) => [extensionEndpointId(u), extensionWebEndpointId(u)]),
-    callId,
-    tenantId,
-    asterisk,
-    log
-  );
+  const groupId = dest.destType === "GROUP" ? dest.destValue : null;
+  if (callId) await markInboundQueued(callId, groupId, log);
+  await ringTargets(event, targets, groupId, callId, tenantId, asterisk, log);
 }
 
-/** Utilizadores SIP a tocar: a extensão, ou os membros activos do grupo. */
-async function resolveSipUsers(tenantId: string, dest: Dest): Promise<string[]> {
+interface RingTarget extends LegTarget {
+  sipAuthUser: string;
+}
+
+/** Extensões a tocar: a extensão, ou os membros activos do grupo. */
+async function resolveTargets(tenantId: string, dest: Dest): Promise<RingTarget[]> {
+  const select = { id: true, number: true, sipAuthUser: true } as const;
+  let exts: { id: string; number: string; sipAuthUser: string }[] = [];
   if (dest.destType === "EXTENSION") {
     const ext = await prisma.extension.findFirst({
       where: { tenantId, number: dest.destValue, isActive: true },
-      select: { sipAuthUser: true },
+      select,
     });
-    return ext ? [ext.sipAuthUser] : [];
-  }
-  if (dest.destType === "GROUP") {
+    exts = ext ? [ext] : [];
+  } else if (dest.destType === "GROUP") {
     const members = await prisma.extensionGroupMember.findMany({
       where: { groupId: dest.destValue, group: { tenantId }, extension: { isActive: true } },
-      select: { extension: { select: { sipAuthUser: true } } },
+      select: { extension: { select } },
     });
-    return members.map((m) => m.extension.sipAuthUser);
+    exts = members.map((m) => m.extension);
   }
-  return [];
+  return exts.map((e) => ({ extensionId: e.id, number: e.number, sipAuthUser: e.sipAuthUser }));
+}
+
+/** Estado da perna de uma extensão enquanto os seus canais tocam. */
+interface ExtLeg {
+  legId: string | undefined;
+  pending: Set<string>; // canais ainda a tocar
+  outcomes: CallLegOutcome[];
+  done: boolean;
 }
 
 async function ringTargets(
   event: InboundEvent,
-  targets: string[],
+  targets: RingTarget[],
+  groupId: string | null,
   callId: string | null,
   tenantId: string,
   asterisk: AsteriskAdapter,
@@ -237,18 +256,41 @@ async function ringTargets(
   await asterisk.answerChannel(event.providerCallId);
   await asterisk.addChannelToBridge(bridge.id, event.providerCallId);
 
+  // Uma perna por extensão, aberta ANTES de tocar: o id segue no INVITE
+  // (X-Falai-Leg-Id) para o webphone poder gravar o motivo de uma recusa.
+  const legIds = callId ? await openLegs({ tenantId, callId, groupId, targets }, log) : new Map<string, string>();
+
+  const extLegs = new Map<string, ExtLeg>(); // extensionId → estado
+  const extByChannel = new Map<string, ExtLeg>();
   const originated = await Promise.all(
-    targets.map((endpointId) =>
-      asterisk
-        .originateToPjsipEndpoint(endpointId, `ring:${bridge.id}`, event.callerIdNum, RING_TIMEOUT_SECS)
-        .then((ch) => ch.id)
-        .catch((err) => {
-          log.warn({ err, endpointId }, "inbound_call_router.originate_failed");
-          return null;
-        })
-    )
+    targets.flatMap((t) => {
+      const legId = legIds.get(t.extensionId);
+      const ext: ExtLeg = { legId, pending: new Set(), outcomes: [], done: false };
+      extLegs.set(t.extensionId, ext);
+      const variables = legId ? { "PJSIP_HEADER(add,X-Falai-Leg-Id)": legId } : undefined;
+      return [extensionEndpointId(t.sipAuthUser), extensionWebEndpointId(t.sipAuthUser)].map((endpointId) =>
+        asterisk
+          .originateToPjsipEndpoint(endpointId, `ring:${bridge.id}`, event.callerIdNum, RING_TIMEOUT_SECS, variables)
+          .then((ch) => {
+            ext.pending.add(ch.id);
+            extByChannel.set(ch.id, ext);
+            return ch.id;
+          })
+          .catch((err) => {
+            log.warn({ err, endpointId }, "inbound_call_router.originate_failed");
+            return null;
+          })
+      );
+    })
   );
   const channelIds = originated.filter((id): id is string => id !== null);
+  // Extensão sem nenhum canal a tocar (hardphone e webphone offline).
+  for (const ext of extLegs.values()) {
+    if (ext.pending.size === 0 && ext.legId) {
+      ext.done = true;
+      void endLeg(ext.legId, "FAILED", null, log);
+    }
+  }
 
   // A partir daqui a chamada tocou mesmo em alguém — é o que distingue "não
   // atenderam" de "desligou no menu".
@@ -306,6 +348,13 @@ async function ringTargets(
       }
       legs.ringing = [];
       legs.answered = answeredId;
+      // Relatórios: esta extensão atendeu; as outras deixam de tocar.
+      const winner = extByChannel.get(answeredId);
+      for (const ext of extLegs.values()) {
+        if (ext.done || !ext.legId) continue;
+        ext.done = true;
+        void (ext === winner ? answerLeg(ext.legId, log) : endLeg(ext.legId, "CANCELLED", null, log));
+      }
       callerByAgent.set(answeredId, event.providerCallId);
       // Instante em que ALGUÉM atendeu — é a partir daqui que há conversa e,
       // portanto, tempo a cobrar.
@@ -331,6 +380,22 @@ async function ringTargets(
       log.info({ did: event.did }, "inbound_call_router.nobody_answered");
       void stopRingback().then(() => asterisk.noRouteFallback(event.providerCallId).catch(() => {}));
       asterisk.destroyBridge(bridge.id).catch(() => {});
+    },
+    (channelId, cause) => {
+      const ext = extByChannel.get(channelId);
+      if (!ext || ext.done) return;
+      ext.pending.delete(channelId);
+      const outcome = classifyLegCause(cause, legsByCaller.get(event.providerCallId) !== legs);
+      // Recusar num aparelho é uma decisão do agente: o outro aparelho da
+      // mesma extensão deixa de tocar.
+      if (outcome === "REJECTED") {
+        for (const id of ext.pending) asterisk.hangup(id).catch(() => {});
+        ext.pending.clear();
+      }
+      ext.outcomes.push(outcome);
+      if (ext.pending.size > 0) return;
+      ext.done = true;
+      if (ext.legId) void endLeg(ext.legId, mergeOutcomes(ext.outcomes), cause, log);
     }
   );
 }
@@ -492,6 +557,21 @@ async function openInboundCall(
   }
 }
 
+/**
+ * A chamada começou a tocar em extensões (fim do IVR). Só o primeiro conta: um
+ * submenu que volta a encaminhar não reinicia a espera.
+ */
+async function markInboundQueued(callId: string, groupId: string | null, log: FastifyBaseLogger): Promise<void> {
+  try {
+    await prisma.call.updateMany({
+      where: { id: callId, queuedAt: null },
+      data: { queuedAt: new Date(), groupId },
+    });
+  } catch (err) {
+    log.error({ err, callId }, "inbound_call_router.queue_mark_failed");
+  }
+}
+
 /** Passa o registo a IN_PROGRESS quando uma das pernas do ring group atende. */
 async function markInboundAnswered(providerCallId: string, log: FastifyBaseLogger): Promise<void> {
   try {
@@ -554,6 +634,7 @@ async function closeInboundCall(
       data: { status, outcome: status, endedAt, durationSecs: billedSecs, billedSecs },
     });
     if (claimed.count === 0) return; // já fechada (e já cobrada) por outro evento
+    await closeLegs(call.id, endedAt, log);
 
     if (billedSecs <= 0) {
       // Ninguém atendeu: não há nada a cobrar, mas há a quem responder. Só se

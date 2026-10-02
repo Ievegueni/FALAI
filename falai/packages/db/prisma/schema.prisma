@@ -233,6 +233,9 @@ model Tenant {
   inboxes              Inbox[]
   conversations        Conversation[]
   cannedResponses      CannedResponse[]
+  // Relatórios de atendimento — ver CallLeg
+  callLegs             CallLeg[]
+  rejectReasons        RejectReason[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -337,6 +340,7 @@ model Extension {
   phoneNumber    String? // DID público associado
   groups         ExtensionGroupMember[]
   outboundRoutes OutboundRoutePermission[]
+  callLegs       CallLeg[]
   createdAt      DateTime                  @default(now())
   updatedAt      DateTime                  @updatedAt
 
@@ -352,6 +356,8 @@ model ExtensionGroup {
   isDefault   Boolean                @default(false)
   permissions Json? // painel de operações (redirecionar, transferir, monitorizar, ...)
   members     ExtensionGroupMember[]
+  calls       Call[]
+  callLegs    CallLeg[]
 
   @@unique([tenantId, name])
 }
@@ -716,9 +722,70 @@ model Call {
   recordingUrl      String?
   failReason        String?
   webhookDelivered  Boolean    @default(false)
+  // Chamadas de entrada: quando começou a tocar em extensões (fim do IVR) e
+  // por que grupo. Base do tempo de espera nos relatórios de atendimento.
+  queuedAt          DateTime?
+  groupId           String?
+  group             ExtensionGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
   turns             CallTurn[]
+  legs              CallLeg[]
+
+  @@index([tenantId, kind, startedAt])
+}
+
+enum CallLegOutcome {
+  ANSWERED
+  NO_ANSWER // tocou até ao timeout
+  REJECTED // o agente recusou (SIP 603 / causa 21)
+  BUSY // 486: em chamada ou "não incomodar"
+  CANCELLED // outra perna atendeu, ou quem ligou desligou primeiro
+  FAILED // não chegou a tocar (extensão offline)
+}
+
+// Uma tentativa de entregar uma chamada de entrada a uma extensão (agente).
+// Uma por extensão, mesmo tocando em hardphone e webphone ao mesmo tempo.
+// É a base dos KPIs por agente e por grupo (relatórios de atendimento).
+model CallLeg {
+  id              String          @id @default(cuid())
+  tenantId        String
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  callId          String
+  call            Call            @relation(fields: [callId], references: [id], onDelete: Cascade)
+  extensionId     String?
+  extension       Extension?      @relation(fields: [extensionId], references: [id], onDelete: SetNull)
+  extensionNumber String // cópia: o relatório sobrevive a uma extensão apagada
+  groupId         String? // grupo pelo qual tocou (null = destino directo)
+  group           ExtensionGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  ringStartedAt   DateTime
+  answeredAt      DateTime?
+  endedAt         DateTime?
+  outcome         CallLegOutcome?
+  hangupCause     Int?
+  rejectReasonId  String?
+  rejectReason    RejectReason?   @relation(fields: [rejectReasonId], references: [id], onDelete: SetNull)
+  rejectNote      String? // texto livre da opção "Outro"
+
+  @@index([tenantId, ringStartedAt])
+  @@index([tenantId, extensionId, ringStartedAt])
+  @@index([tenantId, groupId, ringStartedAt])
+  @@index([callId])
+}
+
+// Motivos de recusa de chamadas, configuráveis por tenant. A opção "Outro"
+// (texto livre) é fixa na UI e grava em CallLeg.rejectNote.
+model RejectReason {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  label     String
+  isActive  Boolean   @default(true)
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  legs      CallLeg[]
+
+  @@unique([tenantId, label])
 }
 
 model CallTurn {
