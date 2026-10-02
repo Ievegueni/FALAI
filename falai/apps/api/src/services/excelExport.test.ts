@@ -25,3 +25,20 @@ describe("Excel formatado", () => {
     expect(ws.autoFilter).toBeTruthy();
   });
 });
+
+describe("gráficos nativos no Excel", () => {
+  it("cada folha com gráfico leva um desenho e um gráfico ligado às células", async () => {
+    const JSZip = (await import("jszip")).default;
+    const report = {
+      from: "2026-09-03T00:00:00Z",
+      to: "2026-10-02T23:59:59Z",
+      reasons: [{ reason: "Em reunião", count: 3, pct: 60 }, { reason: "Outro", count: 2, pct: 40 }],
+    } as never;
+    const zip = await JSZip.loadAsync(await attendanceWorkbook(report, "reasons", "Demo Company"));
+    const chart = await zip.file("xl/charts/chart1.xml")!.async("string");
+    expect(chart).toContain("<c:barChart>");
+    expect(chart).toContain("<c:f>'Motivos de recusa'!$B$5:$B$6</c:f>");
+    expect(await zip.file("xl/worksheets/sheet1.xml")!.async("string")).toContain('<drawing r:id="rIdFalaiDrawing"/>');
+    expect(await zip.file("[Content_Types].xml")!.async("string")).toContain("/xl/charts/chart1.xml");
+  });
+});
