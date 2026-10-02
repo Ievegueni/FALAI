@@ -979,7 +979,10 @@
     "noCampaignsDesc": "创建活动以批量发送短信。",
     "recipients": "{{count}} 位收件人",
     "sentCount": "已发送 {{count}}",
-    "failedCount": "失败 {{count}}"
+    "failedCount": "失败 {{count}}",
+    "audience": "收件人",
+    "audienceAll": "所有联系人",
+    "audienceFile": "号码文件"
   },
   "webphone": {
     "title": "网络电话",
@@ -1237,5 +1240,20 @@
     "monitoringNoticeHint": "安哥拉第 22/11 号个人数据保护法：通话开始时向双方播放。",
     "uploadNotice": "上传提示音",
     "noticeUploaded": "提示音已上传"
+  },
+  "contactFile": {
+    "upload": "上传号码文件",
+    "hint": "包含号码列（可选姓名列）的 CSV 或 Excel。联系人中已存在的号码不会重复保存。",
+    "error": "无法读取文件",
+    "done": "{{file}}：{{count}} 个号码可用",
+    "existing": "{{count}} 个已存在",
+    "created": "{{count}} 个新保存",
+    "duplicates": "{{count}} 个在文件中重复",
+    "invalid": "{{count}} 个无效",
+    "seeInvalid": "查看无效行",
+    "line": "第 {{row}} 行",
+    "nameMatches": "{{count}} 个姓名已存在但号码不同",
+    "nameMatchesHint": "已作为新联系人保存，因为活动使用号码。如果是同一人，请将号码添加到现有联系人。",
+    "alreadyWith": "已存在，号码 {{phone}}"
   }
 }

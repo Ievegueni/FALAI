@@ -979,7 +979,10 @@
     "noCampaignsDesc": "Crie uma campanha para enviar SMS em massa.",
     "recipients": "{{count}} destinatário(s)",
     "sentCount": "{{count}} enviado(s)",
-    "failedCount": "{{count}} falhado(s)"
+    "failedCount": "{{count}} falhado(s)",
+    "audience": "Destinatários",
+    "audienceAll": "Todos os contactos",
+    "audienceFile": "Ficheiro de números"
   },
   "webphone": {
     "title": "Webphone",
@@ -1309,5 +1312,20 @@
     "monitoringNoticeHint": "Lei 22/11 (Protecção de Dados Pessoais): o áudio toca a ambos quando a conversa começa.",
     "uploadNotice": "Carregar áudio do aviso",
     "noticeUploaded": "Áudio do aviso carregado"
+  },
+  "contactFile": {
+    "upload": "Carregar ficheiro de números",
+    "hint": "CSV ou Excel com uma coluna de números (e opcionalmente o nome). Os números que já existem nos contactos não são gravados de novo.",
+    "error": "Não foi possível ler o ficheiro",
+    "done": "{{file}}: {{count}} números prontos para usar",
+    "existing": "{{count}} já existiam",
+    "created": "{{count}} novos gravados",
+    "duplicates": "{{count}} repetidos no ficheiro",
+    "invalid": "{{count}} inválidos",
+    "seeInvalid": "Ver linhas inválidas",
+    "line": "Linha {{row}}",
+    "nameMatches": "{{count}} nomes já existem com outro número",
+    "nameMatchesHint": "Foram gravados como contactos novos, porque a campanha usa o número. Se for a mesma pessoa, junte o número ao contacto existente.",
+    "alreadyWith": "já existe com {{phone}}"
   }
 }

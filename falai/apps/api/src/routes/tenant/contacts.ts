@@ -1,3 +1,4 @@
+import { readTable, extractRows, resolveContactsFromFile } from "../../services/contactFile.service.js";
 import type { FastifyPluginAsync } from "fastify";
 import { Queue } from "bullmq";
 import { randomUUID } from "crypto";
@@ -253,6 +254,28 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return { ok: true };
+  });
+
+  // POST /tenant/contacts/from-file — números de um ficheiro para uma campanha
+  // (voz ou SMS). Reutiliza os contactos que já existem (pelo número), cria só
+  // os que faltam e devolve os ids — ver services/contactFile.service.ts.
+  fastify.post("/from-file", { preHandler }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    if (!request.isMultipart()) return reply.status(400).send({ error: "Envie o ficheiro num campo 'file' (multipart)" });
+    const file = await request.file();
+    if (!file) return reply.status(400).send({ error: "Nenhum ficheiro enviado" });
+    let rows;
+    try {
+      rows = extractRows(readTable(await file.toBuffer(), file.filename));
+    } catch (err) {
+      return reply.status(400).send({ error: err instanceof Error ? err.message : "Não foi possível ler o ficheiro" });
+    }
+    if (rows.length === 0) return reply.status(400).send({ error: "Não encontrei números no ficheiro" });
+    try {
+      return await resolveContactsFromFile(tenantId, rows);
+    } catch (err) {
+      return reply.status(400).send({ error: err instanceof Error ? err.message : "Erro ao processar o ficheiro" });
+    }
   });
 
   // POST /tenant/contacts/import — CSV or XLSX upload

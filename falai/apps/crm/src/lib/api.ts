@@ -232,6 +232,13 @@ export const agentsApi = {
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
 
+export interface ContactFileResult {
+  contacts: { id: string; name: string | null; phone: string; status: 'existing' | 'created' }[];
+  summary: { rows: number; valid: number; existing: number; created: number; duplicatesInFile: number; invalid: number };
+  invalid: { row: number; raw: string; reason: string }[];
+  nameMatches: { row: number; name: string; phone: string; existingPhone: string | null }[];
+}
+
 export const contactsApi = {
   list: async (params?: { page?: number; search?: string; optedOut?: boolean }) => {
     const page = params?.page ?? 1;
@@ -242,6 +249,13 @@ export const contactsApi = {
   },
 
   get: async (id: string) => (await get<{ contact: Contact }>(`/tenant/contacts/${id}`)).contact,
+
+  /** Ficheiro de números para uma campanha: reutiliza os existentes, cria os que faltam. */
+  fromFile: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    return post<ContactFileResult>('/tenant/contacts/from-file', fd);
+  },
 
   create: async (data: Partial<Contact>) =>
     (await post<{ contact: Contact }>('/tenant/contacts', data)).contact,
@@ -1105,7 +1119,7 @@ export const smsApi = {
 
   campaign: (id: string) => get<{ campaign: SmsCampaign }>(`/tenant/sms/campaigns/${id}`).then((r) => r.campaign),
 
-  createCampaign: (data: { name: string; body: string; contactIds?: string[]; throttlePerMinute?: number }) =>
+  createCampaign: (data: { name: string; body: string; contactIds?: string[]; allContacts?: boolean; throttlePerMinute?: number }) =>
     post<{ id: string }>('/tenant/sms/campaigns', data),
 
   addCampaignContacts: (id: string, contactIds: string[]) =>

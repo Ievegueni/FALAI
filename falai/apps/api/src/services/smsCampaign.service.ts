@@ -25,7 +25,7 @@ export function interpolate(template: string, contact: { name: string | null; ph
 export async function prepareRecipients(
   tenantId: string,
   campaignId: string,
-  contactIds: string[]
+  contactIds: string[] | "all" // "all" = todos os contactos elegíveis do tenant
 ): Promise<{ added: number }> {
   const campaign = await prisma.smsCampaign.findFirst({
     where: { id: campaignId, tenantId },
@@ -35,7 +35,7 @@ export async function prepareRecipients(
 
   const cfg = await getTenantSmsConfig(tenantId);
   const contacts = await prisma.contact.findMany({
-    where: { tenantId, id: { in: contactIds }, optedOutAt: null, phone: { not: null } },
+    where: { tenantId, ...(contactIds !== "all" && { id: { in: contactIds } }), optedOutAt: null, phone: { not: null } },
     select: { id: true, name: true, phone: true, attributes: true },
   });
 

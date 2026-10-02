@@ -21,6 +21,7 @@ const campaignSchema = z.object({
   name: z.string().min(1),
   body: z.string().min(1).max(1000),
   contactIds: z.array(z.string()).optional(),
+  allContacts: z.boolean().optional(),
   throttlePerMinute: z.number().int().min(1).max(600).optional(),
 });
 
@@ -150,7 +151,9 @@ export const tenantSmsRoutes: FastifyPluginAsync = async (fastify) => {
       },
       select: { id: true },
     });
-    if (body.contactIds && body.contactIds.length > 0) {
+    if (body.allContacts) {
+      await prepareRecipients(tenantId, campaign.id, "all");
+    } else if (body.contactIds && body.contactIds.length > 0) {
       await prepareRecipients(tenantId, campaign.id, body.contactIds);
     }
     return reply.status(201).send({ id: campaign.id });

@@ -979,7 +979,10 @@
     "noCampaignsDesc": "Create a campaign to send bulk SMS.",
     "recipients": "{{count}} recipient(s)",
     "sentCount": "{{count}} sent",
-    "failedCount": "{{count}} failed"
+    "failedCount": "{{count}} failed",
+    "audience": "Recipients",
+    "audienceAll": "All contacts",
+    "audienceFile": "Numbers file"
   },
   "webphone": {
     "title": "Webphone",
@@ -1309,5 +1312,20 @@
     "monitoringNoticeHint": "Data protection (Angolan Law 22/11): the audio plays to both when the conversation starts.",
     "uploadNotice": "Upload notice audio",
     "noticeUploaded": "Notice audio uploaded"
+  },
+  "contactFile": {
+    "upload": "Upload numbers file",
+    "hint": "CSV or Excel with a column of numbers (and optionally the name). Numbers that already exist in contacts are not saved again.",
+    "error": "Could not read the file",
+    "done": "{{file}}: {{count}} numbers ready to use",
+    "existing": "{{count}} already existed",
+    "created": "{{count}} new saved",
+    "duplicates": "{{count}} repeated in the file",
+    "invalid": "{{count}} invalid",
+    "seeInvalid": "See invalid rows",
+    "line": "Row {{row}}",
+    "nameMatches": "{{count}} names already exist with another number",
+    "nameMatchesHint": "They were saved as new contacts, because the campaign uses the number. If it is the same person, add the number to the existing contact.",
+    "alreadyWith": "already exists with {{phone}}"
   }
 }
