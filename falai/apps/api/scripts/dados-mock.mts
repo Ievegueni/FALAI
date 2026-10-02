@@ -126,6 +126,9 @@ async function main(): Promise<void> {
   const contacts = await prisma.contact.findMany({ where: { tenantId: TENANT, phone: { not: null } }, select: { id: true, phone: true }, take: 60 });
   const regulars = contacts.slice(0, 12); // clientes que ligam muitas vezes
 
+  // Quem tipifica nos dados de demonstração (o utilizador dono do tenant).
+  const typist = await prisma.tenantUser.findFirstOrThrow({ where: { tenantId: TENANT, role: "OWNER" }, select: { id: true } });
+
   // ── Chamadas dos últimos 30 dias ──
   const calls: Parameters<typeof prisma.call.createMany>[0]["data"] = [];
   const legs: Parameters<typeof prisma.callLeg.createMany>[0]["data"] = [];
@@ -223,6 +226,7 @@ async function main(): Promise<void> {
           subcategoryId: t.sub,
           typingNote: pick(notes),
           typedAt: add(endedAt!, between(5, 50)),
+          typedById: typist.id,
         }),
         wrapUpEndsAt: isWinner && endedAt ? add(endedAt, opts.live === "wrapup" ? 240 : 60) : null,
       });

@@ -250,6 +250,30 @@ export interface Call {
   /** Chamadas de entrada: a extensão que atendeu e a tipificação (melhorias 1–2). */
   handledBy?: { number: string; name: string | null } | null;
   typing?: string | null;
+  /** Só no detalhe de uma chamada de entrada: percurso, tipificação e notas. */
+  attendance?: {
+    group: string | null;
+    waitSecs: number | null;
+    legs: {
+      id: string;
+      extension: string;
+      agent: string | null;
+      outcome: 'ANSWERED' | 'NO_ANSWER' | 'REJECTED' | 'BUSY' | 'CANCELLED' | 'FAILED' | null;
+      ringStartedAt: string;
+      responseSecs: number | null;
+      reason: string | null;
+    }[];
+    typing: {
+      legId: string;
+      category: string | null;
+      subcategory: string | null;
+      note: string | null;
+      typedAt: string | null;
+      typedBy: string | null;
+      pendingUntil: string | null;
+    } | null;
+    notes: { id: string; body: string; createdAt: string; author: string | null }[];
+  };
   recordingUrl: string | null;
   turns?: CallTurn[];
   variables?: Record<string, string>;

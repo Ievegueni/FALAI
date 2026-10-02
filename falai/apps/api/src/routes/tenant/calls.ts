@@ -261,7 +261,72 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     });
-    if (call) return { call: mapCall(call) };
+    if (call) {
+      if (call.kind !== "INBOUND") return { call: mapCall(call) };
+      // Chamada de entrada: percurso (pernas), tipificação com a observação e
+      // as notas feitas durante a chamada (melhorias 1–3).
+      const [extra, legs, notes] = await Promise.all([
+        prisma.call.findUnique({
+          where: { id: call.id },
+          select: { queuedAt: true, answeredAt: true, group: { select: { name: true } } },
+        }),
+        prisma.callLeg.findMany({
+          where: { callId: call.id, tenantId },
+          orderBy: { ringStartedAt: "asc" },
+          select: {
+            id: true, extensionNumber: true, outcome: true, ringStartedAt: true, answeredAt: true, endedAt: true,
+            rejectNote: true, typingNote: true, typedAt: true, typedById: true, wrapUpEndsAt: true,
+            extension: { select: { displayName: true } },
+            rejectReason: { select: { label: true } },
+            category: { select: { name: true } },
+            subcategory: { select: { name: true } },
+          },
+        }),
+        prisma.contactNote.findMany({
+          where: { callId: call.id, tenantId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, body: true, createdAt: true, authorId: true },
+        }),
+      ]);
+      const userIds = [...new Set([...legs.map((l) => l.typedById), ...notes.map((n) => n.authorId)].filter((x): x is string => !!x))];
+      const users = new Map(
+        (await prisma.tenantUser.findMany({ where: { id: { in: userIds }, tenantId }, select: { id: true, name: true } })).map((u) => [u.id, u.name])
+      );
+      const secs = (a: Date | null | undefined, b: Date | null | undefined) =>
+        a && b ? Math.max(0, Math.round((b.getTime() - a.getTime()) / 1000)) : null;
+      const answered = legs.find((l) => l.outcome === "ANSWERED");
+      return {
+        call: {
+          ...mapCall(call),
+          attendance: {
+            group: extra?.group?.name ?? null,
+            waitSecs: secs(extra?.queuedAt, extra?.answeredAt),
+            legs: legs.map((l) => ({
+              id: l.id,
+              extension: l.extensionNumber,
+              agent: l.extension?.displayName ?? null,
+              outcome: l.outcome,
+              ringStartedAt: l.ringStartedAt,
+              responseSecs: secs(l.ringStartedAt, l.answeredAt),
+              reason: l.rejectReason?.label ?? l.rejectNote ?? null,
+            })),
+            typing: answered
+              ? {
+                  legId: answered.id,
+                  category: answered.category?.name ?? null,
+                  subcategory: answered.subcategory?.name ?? null,
+                  note: answered.typingNote,
+                  typedAt: answered.typedAt,
+                  typedBy: answered.typedById ? (users.get(answered.typedById) ?? null) : null,
+                  // Por tipificar dentro do prazo (tipificação obrigatória).
+                  pendingUntil: !answered.typedAt && answered.wrapUpEndsAt && answered.wrapUpEndsAt > new Date() ? answered.wrapUpEndsAt : null,
+                }
+              : null,
+            notes: notes.map((n) => ({ id: n.id, body: n.body, createdAt: n.createdAt, author: users.get(n.authorId) ?? null })),
+          },
+        },
+      };
+    }
 
     // Fallback: chamada do PBX (produto CRM BYO-PBX) — sem turnos de IA
     const pbxCall = await prisma.pbxCall.findFirst({

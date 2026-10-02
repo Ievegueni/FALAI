@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Phone, Clock, DollarSign, XCircle, Play } from 'lucide-react';
+import { ArrowLeft, Phone, PhoneIncoming, Clock, DollarSign, XCircle, Play, Tag, Route, StickyNote, Pencil } from 'lucide-react';
 import { callsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
+import { TypingModal } from './TypingPanel';
 import {
   callStatusLabel,
   callStatusColor,
@@ -29,6 +30,7 @@ export function CallDetailPage() {
   // A gravação vem por uma rota autenticada, por isso chega como blob e
   // transforma-se num object URL — que tem de ser libertado ao sair.
   const [recordingSrc, setRecordingSrc] = useState<string | null>(null);
+  const [typingLegId, setTypingLegId] = useState<string | null>(null);
 
   const { data: call, isLoading } = useQuery({
     queryKey: ['calls', id],
@@ -70,6 +72,9 @@ export function CallDetailPage() {
   if (!call) return <><Header title={t('calls.detail.callTitle')} /><div className="p-6 text-sm text-gray-500">{t('calls.detail.notFound')}</div></>;
 
   const canCancel = ['QUEUED', 'DIALING', 'RINGING'].includes(call.status);
+  const inbound = call.direction === 'inbound';
+  const att = call.attendance;
+  const answeredLeg = att?.legs.find((l) => l.outcome === 'ANSWERED');
   const isLive = ['DIALING', 'RINGING', 'IN_PROGRESS'].includes(call.status);
 
   return (
@@ -89,20 +94,31 @@ export function CallDetailPage() {
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${isLive ? 'bg-green-100' : 'bg-gray-100'}`}>
-                <Phone className={`h-6 w-6 ${isLive ? 'text-green-600' : 'text-gray-500'}`} />
+                {inbound ? (
+                  <PhoneIncoming className={`h-6 w-6 ${isLive ? 'text-green-600' : 'text-emerald-600'}`} />
+                ) : (
+                  <Phone className={`h-6 w-6 ${isLive ? 'text-green-600' : 'text-gray-500'}`} />
+                )}
               </div>
               <div>
+                {/* Entrada: o número de quem ligou (o "to" é o DID da empresa). */}
                 <p className="text-lg font-semibold text-gray-900">
-                  {call.contact?.name ?? formatPhone(call.to)}
+                  {call.contact?.name ?? formatPhone(call.party ?? call.to)}
                 </p>
                 <p className="text-sm text-gray-500">
-                  {formatPhone(call.to)}
+                  {formatPhone(call.party ?? call.to)}
                   {' · '}
-                  {call.kind === 'OTP'
-                    ? t('calls.detail.otpVerification')
-                    : call.kind === 'DIRECT'
-                      ? t('calls.detail.directCall')
-                      : call.agent?.name || '—'}
+                  {inbound
+                    ? [
+                        t('calls.inbound'),
+                        answeredLeg ? `${answeredLeg.agent ?? answeredLeg.extension} (${answeredLeg.extension})` : null,
+                        att?.group,
+                      ].filter(Boolean).join(' · ')
+                    : call.kind === 'OTP'
+                      ? t('calls.detail.otpVerification')
+                      : call.kind === 'DIRECT'
+                        ? t('calls.detail.directCall')
+                        : call.agent?.name || '—'}
                 </p>
               </div>
             </div>
@@ -136,7 +152,8 @@ export function CallDetailPage() {
             </div>
           </div>
 
-          {call.outcome && (
+          {/* O resultado só diz algo quando não repete o estado (ex. resumo da IA). */}
+          {call.outcome && call.outcome !== call.status && (
             <div className="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 p-3">
               <p className="text-xs font-medium text-emerald-700 mb-1">{t('calls.detail.outcome')}</p>
               <p className="text-sm text-emerald-900">{call.outcome}</p>
@@ -166,6 +183,89 @@ export function CallDetailPage() {
             </div>
           )}
         </Card>
+
+        {/* Tipificação (melhoria 2) — com a observação do agente */}
+        {inbound && answeredLeg && att && (
+          <Card>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                <Tag className="h-4 w-4" /> {t('calls.detail.typingTitle')}
+              </h2>
+              <Button size="sm" variant="outline" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setTypingLegId(answeredLeg.id)}>
+                {att.typing?.typedAt ? t('calls.detail.editTyping') : t('calls.detail.typeNow')}
+              </Button>
+            </div>
+            {att.typing?.typedAt ? (
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-gray-900">
+                  {att.typing.category}
+                  {att.typing.subcategory && <span className="text-gray-500"> › {att.typing.subcategory}</span>}
+                </p>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <p className="mb-1 text-xs font-medium text-gray-500">{t('calls.detail.typingNote')}</p>
+                  <p className="whitespace-pre-wrap text-sm text-gray-900">{att.typing.note || <span className="text-gray-400">{t('calls.detail.noNote')}</span>}</p>
+                </div>
+                <p className="text-xs text-gray-400">
+                  {att.typing.typedBy
+                    ? t('calls.detail.typedBy', { who: att.typing.typedBy, when: formatDate(att.typing.typedAt) })
+                    : t('calls.detail.typedAt', { when: formatDate(att.typing.typedAt) })}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-amber-700">
+                {att.typing?.pendingUntil ? t('calls.detail.typingPending') : t('calls.detail.notTyped')}
+              </p>
+            )}
+          </Card>
+        )}
+
+        {/* Percurso: que extensões tocaram, quem atendeu, quem recusou e porquê */}
+        {inbound && att && att.legs.length > 0 && (
+          <Card>
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <Route className="h-4 w-4" /> {t('calls.detail.routeTitle')}
+              {att.waitSecs !== null && (
+                <span className="font-normal text-gray-500">· {t('calls.detail.wait', { secs: formatDuration(att.waitSecs) })}</span>
+              )}
+            </h2>
+            <div className="divide-y divide-gray-50">
+              {att.legs.map((l) => (
+                <div key={l.id} className="flex items-center gap-3 py-2 text-sm">
+                  <span className="w-48 truncate text-gray-900">{l.agent ?? l.extension} <span className="text-gray-400">{l.extension}</span></span>
+                  <Badge className={l.outcome === 'ANSWERED' ? 'bg-emerald-50 text-emerald-700' : l.outcome === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600'}>
+                    {t(`reports.att.outcome.${l.outcome ?? 'RINGING'}`)}
+                  </Badge>
+                  <span className="flex-1 truncate text-gray-500">{l.reason ?? ''}</span>
+                  <span className="text-xs text-gray-400 tabular-nums">
+                    {l.responseSecs !== null ? t('calls.detail.responseIn', { secs: formatDuration(l.responseSecs) }) : new Date(l.ringStartedAt).toLocaleTimeString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Notas escritas durante a chamada (painel do cliente, melhoria 3) */}
+        {att && att.notes.length > 0 && (
+          <Card>
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <StickyNote className="h-4 w-4" /> {t('calls.detail.notesTitle')}
+            </h2>
+            <div className="space-y-2">
+              {att.notes.map((n) => (
+                <div key={n.id} className="rounded-lg bg-yellow-50 px-3 py-2 text-sm text-gray-800">
+                  <p className="whitespace-pre-wrap">{n.body}</p>
+                  <p className="mt-1 text-xs text-gray-400">{[n.author, formatDate(n.createdAt)].filter(Boolean).join(' · ')}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        <TypingModal
+          legId={typingLegId}
+          onClose={() => { setTypingLegId(null); void qc.invalidateQueries({ queryKey: ['calls', id] }); }}
+        />
 
         {/* Recording */}
         {call.recordingUrl && recordingSrc && (
