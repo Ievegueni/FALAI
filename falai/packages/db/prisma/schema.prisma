@@ -1,10 +1,13 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // pg_trgm: pesquisa de clientes por parte do nome/número com índice (melhoria 5)
+  extensions = [pg_trgm]
 }
 
 // ============ ENUMS ============
@@ -973,6 +976,9 @@ model Contact {
   @@unique([tenantId, phone])
   @@unique([tenantId, email])
   @@unique([tenantId, telegramId])
+  // Pesquisa por parte do nome/número (perfil do cliente, melhoria 5)
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_name_trgm_idx")
+  @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_phone_trgm_idx")
 }
 
 // Números extra de um contacto (o principal continua em Contact.phone), no

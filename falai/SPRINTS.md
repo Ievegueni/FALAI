@@ -167,3 +167,43 @@ Decisões da Fase 0:
 - [ ] Escuta/Sussurro/Intervenção numa chamada real: direcção do áudio do snoop (`whisper=out` → só o agente ouve) e latência.
 - [ ] Aviso ao cliente: carregar o áudio e confirmar que toca no início da conversa.
 - [ ] Reinício da API a meio de uma supervisão → a bridge `supervise-*` é varrida no arranque.
+
+## Melhoria 5/6 — Perfil do cliente (iniciada a 02/10/2026)
+
+Fase 0 — o que já existe:
+- `Contact`: name, phone (9 dígitos, único por tenant), email, telegramId,
+  attributes, optedOutAt/optOutReason, createdAt/updatedAt. Números extra em
+  `ContactPhone` e notas em `ContactNote` (melhoria 3). Ligado a Call,
+  CampaignContact (único por campanha), SmsMessage, Conversation e SupervisionEvent.
+- Reutilizável da melhoria 3: `callerLookup.service.ts` (`classifyCaller`,
+  `phoneVariants`, `findContactIdByNational`, `historyState`, `mapHistory`) e
+  as rotas `/tenant/callers/*` (editar, números extra, notas, auditoria
+  `contact.history_viewed`). Da página Chamadas: `callsFilter.service.ts` e a
+  exportação Excel (`excelExport.service.ts`).
+- Frontend: já há lista `/contacts` com pesquisa e `/contacts/:id` (ficha
+  simples: edição, ficha clínica, últimas 10 chamadas). O screen pop já liga a
+  `/contacts/:id`. A pesquisa actual é `contains` (sem índice) e não normaliza
+  o número.
+
+Proposta:
+- O perfil substitui `/contacts/:id` (mesma rota, mantém edição e ficha clínica).
+- Schema (aditivo): extensão `pg_trgm` + índice GIN trigram em `Contact.name`
+  (e em `phone`, para números parciais). Número completo → pesquisa exacta pelos
+  índices únicos já existentes, depois de normalizar.
+- Merge sem tabela nova: o duplicado é absorvido (chamadas, SMS, conversas,
+  notas, campanhas, supervisões; o número dele passa a extra) e apagado; quem/
+  quando/snapshot do apagado ficam no AuditLog `contact.merged`.
+
+Decisões validadas: o perfil substitui `/contacts/:id`; merge apaga o
+duplicado (snapshot na auditoria); o Leitor só consulta; exportação em Excel.
+
+### Fase 1 — Backend ✅
+- [x] Migração `20261004090000_contact_search_trgm` (pg_trgm + 2 índices GIN); pesquisa normalizada (número completo exacto, inclui extra; parte do nome/número por trigram).
+- [x] Corrigido: a lista de contactos ignorava a pesquisa do CRM (`search` vs `q`) e o total não era filtrado.
+- [x] `services/contactProfile.service.ts` + `routes/tenant/contactProfile.ts`: `GET /:id/profile` (cabeçalho, resumo, tipificações, notas), `GET /:id/calls` (filtros + paginação), `/:id/calls/export.xlsx`, números extra, `POST /:id/merge`.
+- [x] Auditoria: `contact.history_viewed` (perfil/exportação) e `contact.merged` (quem, quando, snapshot).
+- [x] Testes (14): estados, agregados, filtros, pesquisa, merge. Dev: perfil com 133 chamadas em 33 ms.
+
+### Fase 2 — Frontend
+- [ ] Página de perfil (cabeçalho, resumo, histórico, tipificações, notas, edição de números, unir duplicados).
+- [ ] "Ver perfil completo" no screen pop; nome do contacto clicável nas Chamadas e nos Relatórios.

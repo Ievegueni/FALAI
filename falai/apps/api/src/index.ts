@@ -37,6 +37,7 @@ import { tenantAuthRoutes } from "./routes/tenant/auth.js";
 import { tenantAgentsRoutes } from "./routes/tenant/agents.js";
 import { tenantDashboardRoutes } from "./routes/tenant/dashboard.js";
 import { tenantContactsRoutes } from "./routes/tenant/contacts.js";
+import { tenantContactProfileRoutes } from "./routes/tenant/contactProfile.js";
 import { tenantCallsRoutes } from "./routes/tenant/calls.js";
 import { tenantTeamRoutes } from "./routes/tenant/team.js";
 import { tenantCampaignsRoutes } from "./routes/tenant/campaigns.js";
@@ -353,6 +354,7 @@ async function buildApp() {
   await gated(fastify, "agents", tenantAgentsRoutes, { prefix: "/tenant/agents" });
   await fastify.register(tenantDashboardRoutes, { prefix: "/tenant/dashboard" });
   await gated(fastify, "contacts", tenantContactsRoutes, { prefix: "/tenant/contacts" });
+  await gated(fastify, "contacts", tenantContactProfileRoutes, { prefix: "/tenant/contacts" });
   await gated(fastify, "calls", tenantCallsRoutes, { prefix: "/tenant/calls" });
   await gated(fastify, "campaigns", tenantCampaignsRoutes, { prefix: "/tenant/campaigns" });
   await gated(fastify, "wallet", tenantWalletRoutes, { prefix: "/tenant/wallet" });

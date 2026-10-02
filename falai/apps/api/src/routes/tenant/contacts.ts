@@ -1,4 +1,5 @@
 import { readTable, extractRows, resolveContactsFromFile } from "../../services/contactFile.service.js";
+import { contactSearchWhere } from "../../services/contactProfile.service.js";
 import type { FastifyPluginAsync } from "fastify";
 import { Queue } from "bullmq";
 import { randomUUID } from "crypto";
@@ -72,23 +73,21 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /tenant/contacts
   fastify.get<{
-    Querystring: { q?: string; limit?: string; offset?: string; optedOut?: string };
+    Querystring: { q?: string; search?: string; limit?: string; offset?: string; optedOut?: string };
   }>("/", { preHandler }, async (request) => {
     const { tenantId } = request.tenantUser!;
-    const { q, limit = "100", offset = "0", optedOut } = request.query;
+    const { limit = "100", offset = "0", optedOut } = request.query;
+    // O CRM envia `search`; a API pública documentou `q`.
+    const q = (request.query.search ?? request.query.q ?? "").trim();
 
+    // Pesquisa normalizada e indexada (nome/número, incluindo números extra).
+    const where = {
+      ...(q ? contactSearchWhere(tenantId, q) : { tenantId }),
+      ...(optedOut === "true" && { optedOutAt: { not: null } }),
+      ...(optedOut === "false" && { optedOutAt: null }),
+    };
     const contacts = await prisma.contact.findMany({
-      where: {
-        tenantId,
-        ...(q && {
-          OR: [
-            { phone: { contains: q } },
-            { name: { contains: q, mode: "insensitive" } },
-          ],
-        }),
-        ...(optedOut === "true" && { optedOutAt: { not: null } }),
-        ...(optedOut === "false" && { optedOutAt: null }),
-      },
+      where,
       orderBy: { createdAt: "desc" },
       take: parseInt(limit, 10),
       skip: parseInt(offset, 10),
@@ -103,7 +102,7 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
       },
     });
 
-    const total = await prisma.contact.count({ where: { tenantId } });
+    const total = await prisma.contact.count({ where });
     return { contacts, total };
   });
 
