@@ -13,6 +13,11 @@ export ARI_PASSWORD="${ARI_PASSWORD:?ARI_PASSWORD em falta — ver .env.example}
 export RTP_START="${RTP_START:-10000}"
 export RTP_END="${RTP_END:-10100}"
 export WS_PORT="${WS_PORT:-8089}"
+# 127.0.0.1 = só loopback (produção, network_mode: host). Em macOS com Docker
+# em bridge, o loopback do contentor não é alcançável pelo mapeamento de
+# portas — aí pôr BIND_ADDR=0.0.0.0 (as portas continuam publicadas só em
+# 127.0.0.1 do host, ver docker-compose.yml).
+export BIND_ADDR="${BIND_ADDR:-127.0.0.1}"
 
 # NAT: quando o Asterisk está atrás de router/Docker, precisa de anunciar o
 # endereço público no SDP. Se EXTERNAL_IP estiver vazio, as linhas ficam
@@ -36,7 +41,7 @@ if [ -z "${FALAI_CDR_URL}" ]; then
   echo '[entrypoint] AVISO: FALAI_CDR_URL vazio — as chamadas marcadas no telefone NAO sao contabilizadas'
 fi
 
-SUBST_VARS='${NAT_LINES} ${AMI_USER} ${AMI_PASSWORD} ${ARI_USER} ${ARI_PASSWORD} ${WS_PORT} ${FALAI_CDR_URL} ${FALAI_CDR_SECRET}'
+SUBST_VARS='${BIND_ADDR} ${NAT_LINES} ${AMI_USER} ${AMI_PASSWORD} ${ARI_USER} ${ARI_PASSWORD} ${WS_PORT} ${FALAI_CDR_URL} ${FALAI_CDR_SECRET}'
 
 mkdir -p /etc/asterisk /etc/asterisk/generated
 # Os dois ficheiros que a API gera. Criados vazios para o Asterisk arrancar
