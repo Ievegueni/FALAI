@@ -123,3 +123,42 @@ Decisões da Fase 0:
 ### Pendente / a validar
 - [ ] Chamada real: confirmar o formato do caller ID que a ANGOVOIP entrega e que o painel abre no toque.
 - [ ] Produção: correr `contactos:normalizar` (dry-run, depois `--apply` com backup) e `contactos:associar-chamadas`.
+
+## Melhoria 4/4 — Supervisão de chamadas em tempo real (iniciada a 03/10/2026)
+
+Decisões da Fase 0:
+- Só ARI (motor da plataforma). O Yeastar só existe nos clientes BYO, que usam
+  a supervisão nativa do PBX deles.
+- Modos: Escuta = snoop no canal do agente (spy=both, whisper=none) numa bridge
+  "supervise-<sessão>"; Sussurro = idem com whisper=out; Intervenção = o canal do
+  supervisor entra na bridge da conversa. Trocar de modo não desliga o
+  supervisor; terminar nunca toca na conversa; fim do cliente/agente/supervisor
+  termina a sessão; bridges órfãs varridas no arranque.
+- Âmbito: chamadas de entrada atendidas (as que têm agente e grupo).
+- O supervisor ouve na **sua extensão** (webphone atende sozinho com
+  `X-Falai-Supervise`; o telefone físico também serve).
+- Papel `SUPERVISOR` (TenantRole) com grupos atribuídos (`SupervisorGroup`);
+  OWNER/ADMIN vêem tudo. `TenantUser.extensionId` liga utilizador ↔ extensão
+  (regra "não supervisionar a própria chamada").
+- Estados: em chamada / a tocar / pós-chamada / pausa / disponível / offline
+  (registo do endpoint via ARI, cache de 5 s). Pausa nova: `Extension.pausedAt`,
+  o router salta a extensão.
+- Painel por polling (2 s) com as permissões de quem pede (o SSE é por tenant).
+- Avisos: Sussurro/Intervenção avisam sempre o agente; Escuta só com
+  `Tenant.supervisionNotifyListen`. Aviso ao cliente (Lei 22/11):
+  `Tenant.monitoringNotice` + áudio `monitor_<tenant>`, tocado ao começar a conversa.
+- Registo imutável `SupervisionEvent` (START/MODE/END) com trigger que recusa
+  UPDATE/DELETE.
+
+### Fase 1 — Backend ✅
+- [x] Migração aditiva (+ trigger de imutabilidade).
+- [x] `AsteriskAdapter`: snoop, removeChannelFromBridge, bridges com nome, listBridges, endpointState.
+- [x] Router: `activeInboundCalls()`, pausa, aviso de monitorização.
+- [x] `supervision.service.ts` (sessões, modos, limpeza) + `/tenant/supervision/*` (live, iniciar, modo, terminar, registo, definições, áudio, pausa).
+- [x] Equipa: papel SUPERVISOR, extensão e grupos supervisionados.
+- [x] Testes: cada modo, troca de modo, fim durante a supervisão, órfãos, própria chamada, 1 por chamada, âmbito, estados.
+
+### Fase 2 — Frontend
+- [ ] Página Supervisão (painel ao vivo, acções, registo, definições).
+- [ ] Webphone: atende a supervisão sozinho, aviso ao agente, botão Pausa.
+- [ ] Equipa: editar papel, extensão e grupos.

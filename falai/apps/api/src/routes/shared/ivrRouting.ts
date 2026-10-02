@@ -46,6 +46,16 @@ const defined = <T extends object>(o: T) =>
 
 // Valida que o trunk é utilizável pelo tenant (partilhado ou próprio)
 /** Rotas só podem usar trunks associados ao tenant — os mesmos que ele vê no CRM. */
+/**
+ * O Asterisk toca .wav só em PCM 16-bit 8 kHz mono; o browser converte o
+ * ficheiro do cliente (mp3, m4a, wav…) para isto antes de enviar. Cabeçalho
+ * canónico de 44 bytes, que é o que o conversor do CRM/backoffice escreve.
+ */
+export function isTelephonyWav(b: Buffer): boolean {
+  return b.length > 44 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WAVE"
+    && b.readUInt16LE(20) === 1 && b.readUInt16LE(22) === 1 && b.readUInt32LE(24) === 8000 && b.readUInt16LE(34) === 16;
+}
+
 export async function assertTrunk(tenantId: string, trunkId: string): Promise<boolean> {
   const trunk = await prisma.trunk.findFirst({ where: { id: trunkId, tenantId } });
   return !!trunk;
@@ -181,16 +191,6 @@ export function registerIvrRouting(
       if (!found) return `Destino inválido na opção ${o.digit}`;
     }
     return null;
-  }
-
-  /**
-   * O Asterisk toca .wav só em PCM 16-bit 8 kHz mono; o browser converte o
-   * ficheiro do cliente (mp3, m4a, wav…) para isto antes de enviar. Cabeçalho
-   * canónico de 44 bytes, que é o que o conversor do CRM/backoffice escreve.
-   */
-  function isTelephonyWav(b: Buffer): boolean {
-    return b.length > 44 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WAVE"
-      && b.readUInt16LE(20) === 1 && b.readUInt16LE(22) === 1 && b.readUInt32LE(24) === 8000 && b.readUInt16LE(34) === 16;
   }
 
   /**

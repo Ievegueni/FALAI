@@ -593,7 +593,8 @@
     "legendMember": "<0>MEMBRO</0> — operar campanhas, chamadas e contactos; sem carteira.",
     "legendViewer": "<0>LEITOR</0> — apenas dashboards, histórico e relatórios.",
     "you": "(você)",
-    "removeConfirm": "Remover {{name}} da equipa?"
+    "removeConfirm": "Remover {{name}} da equipa?",
+    "roleSupervisor": "Supervisor"
   },
   "settings": {
     "title": "Definições",

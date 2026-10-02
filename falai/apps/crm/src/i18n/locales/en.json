@@ -593,7 +593,8 @@
     "legendMember": "<0>MEMBER</0> — operate campaigns, calls and contacts; no wallet.",
     "legendViewer": "<0>VIEWER</0> — dashboards, history and reports only.",
     "you": "(you)",
-    "removeConfirm": "Remove {{name}} from the team?"
+    "removeConfirm": "Remove {{name}} from the team?",
+    "roleSupervisor": "Supervisor"
   },
   "settings": {
     "title": "Settings",

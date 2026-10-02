@@ -1,6 +1,6 @@
 // ─── Auth / Tenant ───────────────────────────────────────────────────────────
 
-export type TenantRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+export type TenantRole = 'OWNER' | 'ADMIN' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
 export type TenantStatus = 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
 
 export interface TenantUser {

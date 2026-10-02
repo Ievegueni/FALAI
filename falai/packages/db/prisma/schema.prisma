@@ -56,6 +56,7 @@ enum TenantStatus {
 enum TenantRole {
   OWNER
   ADMIN
+  SUPERVISOR // supervisão em tempo real dos grupos que lhe são atribuídos (melhoria 4)
   MEMBER
   VIEWER
 }
@@ -241,6 +242,12 @@ model Tenant {
   callCategories       CallCategory[]
   typingRequired       Boolean             @default(false)
   typingMaxSecs        Int                 @default(60)
+  // Supervisão (melhoria 4): avisar o agente em modo Escuta (Sussurro e
+  // Intervenção avisam sempre) e aviso ao cliente de que a chamada pode ser
+  // monitorizada (Lei 22/11) — áudio custom/monitor_<tenantId>.
+  supervisionNotifyListen Boolean          @default(false)
+  monitoringNotice     Boolean             @default(false)
+  supervisionEvents    SupervisionEvent[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -346,6 +353,9 @@ model Extension {
   groups         ExtensionGroupMember[]
   outboundRoutes OutboundRoutePermission[]
   callLegs       CallLeg[]
+  // Pausa do agente (melhoria 4): em pausa não recebe chamadas de entrada.
+  pausedAt       DateTime?
+  users          TenantUser[]
   createdAt      DateTime                  @default(now())
   updatedAt      DateTime                  @updatedAt
 
@@ -364,6 +374,7 @@ model ExtensionGroup {
   calls       Call[]
   callLegs    CallLeg[]
   categories  CallCategoryGroup[]
+  supervisors SupervisorGroup[]
 
   @@unique([tenantId, name])
 }
@@ -515,6 +526,11 @@ model TenantUser {
   accessProfileId String?
   accessProfile   AccessProfile? @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
   twoFaSecret     String?
+  // Extensão do utilizador (agente ou supervisor). É por ela que o supervisor
+  // ouve e que se impede supervisionar a própria chamada.
+  extensionId     String?        @unique
+  extension       Extension?     @relation(fields: [extensionId], references: [id], onDelete: SetNull)
+  supervisedGroups SupervisorGroup[]
   lastLoginAt     DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -811,6 +827,49 @@ model CallCategory {
   createdAt DateTime            @default(now())
 
   @@index([tenantId])
+}
+
+// Grupos que um supervisor supervisiona. OWNER/ADMIN supervisionam todos.
+model SupervisorGroup {
+  tenantUserId String
+  groupId      String
+  user         TenantUser     @relation(fields: [tenantUserId], references: [id], onDelete: Cascade)
+  group        ExtensionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([tenantUserId, groupId])
+}
+
+enum SupervisionEventType {
+  START
+  MODE
+  END
+}
+
+enum SupervisionMode {
+  LISTEN // supervisor ouve
+  WHISPER // supervisor ouve e fala só para o agente
+  BARGE // supervisor entra na conversa
+}
+
+// Registo de supervisões — IMUTÁVEL: um trigger na BD recusa UPDATE e DELETE
+// (ver a migração). Uma supervisão = eventos com o mesmo sessionId.
+model SupervisionEvent {
+  id               String               @id @default(cuid())
+  tenantId         String
+  tenant           Tenant               @relation(fields: [tenantId], references: [id])
+  sessionId        String
+  type             SupervisionEventType
+  mode             SupervisionMode?
+  supervisorId     String // TenantUser
+  agentExtensionId String?
+  agentExtension   String? // número, cópia para o registo sobreviver
+  callId           String
+  contactId        String?
+  endReason        String? // SUPERVISOR | CALL_ENDED | SUPERVISOR_HUNGUP | ERROR
+  at               DateTime             @default(now())
+
+  @@index([tenantId, at])
+  @@index([sessionId])
 }
 
 model CallCategoryGroup {

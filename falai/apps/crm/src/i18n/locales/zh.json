@@ -593,7 +593,8 @@
     "legendMember": "<0>MEMBER</0> — 操作活动、通话与联系人；无钱包权限。",
     "legendViewer": "<0>VIEWER</0> — 仅限仪表板、历史记录与报表。",
     "you": "（您）",
-    "removeConfirm": "将 {{name}} 从团队中移除？"
+    "removeConfirm": "将 {{name}} 从团队中移除？",
+    "roleSupervisor": "主管"
   },
   "settings": {
     "title": "设置",

@@ -18,6 +18,7 @@ import type { TenantRole } from '@/types';
 const ROLE_LABEL_KEYS: Record<TenantRole, string> = {
   OWNER: 'team.roleOwner',
   ADMIN: 'team.roleAdmin',
+  SUPERVISOR: 'team.roleSupervisor',
   MEMBER: 'team.roleMember',
   VIEWER: 'team.roleViewer',
 };
@@ -25,6 +26,7 @@ const ROLE_LABEL_KEYS: Record<TenantRole, string> = {
 const ROLE_COLORS: Record<TenantRole, string> = {
   OWNER: 'bg-purple-100 text-purple-700',
   ADMIN: 'bg-blue-100 text-blue-700',
+  SUPERVISOR: 'bg-amber-100 text-amber-700',
   MEMBER: 'bg-gray-100 text-gray-700',
   VIEWER: 'bg-slate-100 text-slate-600',
 };

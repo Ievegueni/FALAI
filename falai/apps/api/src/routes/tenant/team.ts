@@ -7,11 +7,14 @@ import { hashPassword } from "../../services/auth.service.js";
 const inviteSchema = z.object({
   email: z.string().email(),
   name: z.string().min(2).max(100),
-  role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
+  role: z.enum(["ADMIN", "SUPERVISOR", "MEMBER", "VIEWER"]),
 });
 
-const updateRoleSchema = z.object({
-  role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
+// Papel, extensão do utilizador e — para SUPERVISOR — os grupos que supervisiona.
+const updateSchema = z.object({
+  role: z.enum(["ADMIN", "SUPERVISOR", "MEMBER", "VIEWER"]).optional(),
+  extensionId: z.string().nullable().optional(),
+  supervisedGroupIds: z.array(z.string()).max(200).optional(),
 });
 
 const userSelect = {
@@ -21,9 +24,20 @@ const userSelect = {
   role: true,
   twoFaSecret: true,
   createdAt: true,
+  extensionId: true,
+  supervisedGroups: { select: { groupId: true } },
 } as const;
 
-function toTeamUser(u: { id: string; name: string; email: string; role: string; twoFaSecret: string | null; createdAt: Date }) {
+function toTeamUser(u: {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  twoFaSecret: string | null;
+  createdAt: Date;
+  extensionId: string | null;
+  supervisedGroups: { groupId: string }[];
+}) {
   return {
     id: u.id,
     name: u.name,
@@ -31,6 +45,8 @@ function toTeamUser(u: { id: string; name: string; email: string; role: string; 
     role: u.role,
     twoFaEnabled: !!u.twoFaSecret,
     createdAt: u.createdAt,
+    extensionId: u.extensionId,
+    supervisedGroupIds: u.supervisedGroups.map((g) => g.groupId),
   };
 }
 
@@ -91,19 +107,37 @@ export const tenantTeamRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.status(201).send(toTeamUser(user));
   });
 
-  // PATCH /tenant/team/:userId — change role
+  // PATCH /tenant/team/:userId — papel, extensão e grupos supervisionados
   fastify.patch<{ Params: { userId: string } }>("/:userId", { preHandler }, async (request, reply) => {
     const { tenantId, role } = request.tenantUser!;
     if (!requireManager(role, reply)) return;
 
-    const body = updateRoleSchema.parse(request.body);
+    const body = updateSchema.parse(request.body);
     const target = await prisma.tenantUser.findFirst({ where: { id: request.params.userId, tenantId } });
     if (!target) return reply.status(404).send({ error: "Membro não encontrado" });
-    if (target.role === "OWNER") return reply.status(400).send({ error: "Não é possível alterar o papel do OWNER" });
+    if (body.role && target.role === "OWNER") return reply.status(400).send({ error: "Não é possível alterar o papel do OWNER" });
+
+    if (body.extensionId) {
+      const ext = await prisma.extension.findFirst({ where: { id: body.extensionId, tenantId }, select: { id: true } });
+      if (!ext) return reply.status(400).send({ error: "Extensão inválida" });
+      const taken = await prisma.tenantUser.findFirst({
+        where: { extensionId: body.extensionId, id: { not: target.id } },
+        select: { name: true },
+      });
+      if (taken) return reply.status(409).send({ error: `A extensão já está associada a ${taken.name}` });
+    }
+    // Só grupos do próprio tenant.
+    const groupIds = body.supervisedGroupIds
+      ? (await prisma.extensionGroup.findMany({ where: { tenantId, id: { in: body.supervisedGroupIds } }, select: { id: true } })).map((g) => g.id)
+      : null;
 
     const user = await prisma.tenantUser.update({
       where: { id: target.id },
-      data: { role: body.role },
+      data: {
+        ...(body.role && { role: body.role }),
+        ...(body.extensionId !== undefined && { extensionId: body.extensionId }),
+        ...(groupIds && { supervisedGroups: { deleteMany: {}, create: groupIds.map((groupId) => ({ groupId })) } }),
+      },
       select: userSelect,
     });
     return toTeamUser(user);

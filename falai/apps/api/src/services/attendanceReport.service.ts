@@ -222,7 +222,7 @@ export function delta(value: number | null, base: number | null): number | null 
   return value === null || base === null ? null : Math.round((value - base) * 10) / 10;
 }
 
-export function abandonedIds(legs: LegRow[]): Set<string> {
+export function abandonedIds(legs: Pick<LegRow, "callId" | "outcome">[]): Set<string> {
   const answered = new Set(legs.filter((l) => l.outcome === "ANSWERED").map((l) => l.callId));
   return new Set(legs.filter((l) => l.outcome === "CANCELLED" && !answered.has(l.callId)).map((l) => l.callId));
 }

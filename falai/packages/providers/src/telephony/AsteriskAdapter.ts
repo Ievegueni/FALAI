@@ -190,8 +190,50 @@ export class AsteriskAdapter implements TelephonyProvider {
     await this.api(`/channels/${encodeURIComponent(providerCallId)}/answer`, { method: "POST" });
   }
 
-  async createBridge(): Promise<{ id: string }> {
-    return this.api<{ id: string }>(`/bridges?type=mixing`, { method: "POST" });
+  /** `name` permite reconhecer a bridge depois (ex.: "supervise-…" na limpeza do arranque). */
+  async createBridge(name?: string): Promise<{ id: string }> {
+    const q = new URLSearchParams({ type: "mixing", ...(name ? { name } : {}) });
+    return this.api<{ id: string }>(`/bridges?${q}`, { method: "POST" });
+  }
+
+  async listBridges(): Promise<{ id: string; name: string; channels: string[] }[]> {
+    return this.api<{ id: string; name: string; channels: string[] }[]>(`/bridges`);
+  }
+
+  async removeChannelFromBridge(bridgeId: string, channelId: string): Promise<void> {
+    try {
+      await this.api(
+        `/bridges/${encodeURIComponent(bridgeId)}/removeChannel?channel=${encodeURIComponent(channelId)}`,
+        { method: "POST" }
+      );
+    } catch (err) {
+      // 404/422 = a bridge ou o canal já não existem / já não estão juntos.
+      if (!(err instanceof AsteriskError && (err.status === 404 || err.status === 422))) throw err;
+    }
+  }
+
+  /**
+   * Canal "espião" de outro canal (supervisão). `spy` = que áudio do canal se
+   * ouve; `whisper` = para onde vai o áudio injectado: "out" chega ao aparelho
+   * do canal espiado (o agente ouve), "none" = só escuta. O snoop entra na
+   * aplicação Stasis com `appArgs`, pronto a juntar a uma bridge.
+   */
+  async snoopChannel(
+    channelId: string,
+    opts: { spy: "none" | "in" | "out" | "both"; whisper: "none" | "in" | "out" | "both"; appArgs: string }
+  ): Promise<{ id: string }> {
+    const q = new URLSearchParams({ spy: opts.spy, whisper: opts.whisper, app: this.app, appArgs: opts.appArgs });
+    return this.api<{ id: string }>(`/channels/${encodeURIComponent(channelId)}/snoop?${q}`, { method: "POST" });
+  }
+
+  /** "online" se o endpoint PJSIP tem algum registo activo. */
+  async endpointState(endpointId: string): Promise<"online" | "offline" | "unknown"> {
+    try {
+      const r = await this.api<{ state?: string }>(`/endpoints/PJSIP/${encodeURIComponent(endpointId)}`);
+      return r.state === "online" ? "online" : r.state === "offline" ? "offline" : "unknown";
+    } catch {
+      return "unknown";
+    }
   }
 
   /**

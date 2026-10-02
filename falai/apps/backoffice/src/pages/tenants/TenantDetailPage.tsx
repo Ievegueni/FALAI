@@ -22,6 +22,7 @@ import type { TenantStatus, CallStatus, CampaignStatus, TransactionType, TenantL
 const ROLE_LABELS: Record<TenantRole, string> = {
   OWNER: 'Proprietário',
   ADMIN: 'Administrador',
+  SUPERVISOR: 'Supervisor',
   MEMBER: 'Membro',
   VIEWER: 'Leitura',
 };

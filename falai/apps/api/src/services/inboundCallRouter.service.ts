@@ -74,8 +74,50 @@ interface InboundLegs {
   ringing: string[];
   answered?: string;
   stopHold: () => Promise<unknown>;
+  // Para a supervisão (melhoria 4) — ver activeInboundCalls().
+  tenantId: string;
+  callId: string | null;
+  groupId: string | null;
+  answeredExtensionId?: string;
+  answeredAt?: Date;
 }
 const legsByCaller = new Map<string, InboundLegs>();
+
+/** Chamada de entrada em conversa, vista pela supervisão. */
+export interface ActiveInboundCall {
+  tenantId: string;
+  callId: string;
+  callerChannelId: string;
+  agentChannelId: string;
+  bridgeId: string;
+  groupId: string | null;
+  agentExtensionId: string;
+  answeredAt: Date;
+}
+
+/**
+ * Chamadas de entrada já atendidas e ainda em curso (só leitura). É daqui que a
+ * supervisão tira o canal do agente e a bridge da conversa.
+ * ponytail: estado em memória — uma só instância da API; com várias, passar para Redis.
+ */
+export function activeInboundCalls(tenantId?: string): ActiveInboundCall[] {
+  const out: ActiveInboundCall[] = [];
+  for (const [callerChannelId, l] of legsByCaller) {
+    if (!l.answered || !l.callId || !l.answeredExtensionId || !l.answeredAt) continue;
+    if (tenantId && l.tenantId !== tenantId) continue;
+    out.push({
+      tenantId: l.tenantId,
+      callId: l.callId,
+      callerChannelId,
+      agentChannelId: l.answered,
+      bridgeId: l.bridgeId,
+      groupId: l.groupId,
+      agentExtensionId: l.answeredExtensionId,
+      answeredAt: l.answeredAt,
+    });
+  }
+  return out;
+}
 /** Extensão que atendeu → canal do trunk: se o agente desliga, cai quem liga. */
 const callerByAgent = new Map<string, string>();
 
@@ -223,13 +265,14 @@ async function resolveTargets(tenantId: string, dest: Dest): Promise<RingTarget[
   let exts: { id: string; number: string; sipAuthUser: string }[] = [];
   if (dest.destType === "EXTENSION") {
     const ext = await prisma.extension.findFirst({
-      where: { tenantId, number: dest.destValue, isActive: true },
+      // Em pausa (melhoria 4) não recebe chamadas.
+      where: { tenantId, number: dest.destValue, isActive: true, pausedAt: null },
       select,
     });
     exts = ext ? [ext] : [];
   } else if (dest.destType === "GROUP") {
     const members = await prisma.extensionGroupMember.findMany({
-      where: { groupId: dest.destValue, group: { tenantId }, extension: { isActive: true } },
+      where: { groupId: dest.destValue, group: { tenantId }, extension: { isActive: true, pausedAt: null } },
       select: { extension: { select } },
     });
     exts = members.map((m) => m.extension);
@@ -244,6 +287,7 @@ async function resolveTargets(tenantId: string, dest: Dest): Promise<RingTarget[
 
 /** Estado da perna de uma extensão enquanto os seus canais tocam. */
 interface ExtLeg {
+  extensionId: string;
   legId: string | undefined;
   pending: Set<string>; // canais ainda a tocar
   outcomes: CallLegOutcome[];
@@ -272,7 +316,7 @@ async function ringTargets(
   const originated = await Promise.all(
     targets.flatMap((t) => {
       const legId = legIds.get(t.extensionId);
-      const ext: ExtLeg = { legId, pending: new Set(), outcomes: [], done: false };
+      const ext: ExtLeg = { extensionId: t.extensionId, legId, pending: new Set(), outcomes: [], done: false };
       extLegs.set(t.extensionId, ext);
       const variables = legId ? { "PJSIP_HEADER(add,X-Falai-Leg-Id)": legId } : undefined;
       return [extensionEndpointId(t.sipAuthUser), extensionWebEndpointId(t.sipAuthUser)].map((endpointId) =>
@@ -333,7 +377,7 @@ async function ringTargets(
       : ringbackId
         ? asterisk.stopPlayback(ringbackId).catch(() => {})
         : Promise.resolve();
-  const legs: InboundLegs = { bridgeId: bridge.id, ringing: channelIds, stopHold: stopRingback };
+  const legs: InboundLegs = { bridgeId: bridge.id, ringing: channelIds, stopHold: stopRingback, tenantId, callId, groupId };
   legsByCaller.set(event.providerCallId, legs);
 
   if (channelIds.length === 0) {
@@ -357,6 +401,10 @@ async function ringTargets(
       legs.answered = answeredId;
       // Relatórios: esta extensão atendeu; as outras deixam de tocar.
       const winner = extByChannel.get(answeredId);
+      if (winner) {
+        legs.answeredExtensionId = winner.extensionId;
+        legs.answeredAt = new Date();
+      }
       for (const ext of extLegs.values()) {
         if (ext.done || !ext.legId) continue;
         ext.done = true;
@@ -374,6 +422,7 @@ async function ringTargets(
           if (callId) {
             void startCallRecording({ callId, tenantId, bridgeId: bridge.id, asterisk, log });
           }
+          void playMonitoringNotice(tenantId, bridge.id, asterisk, log);
         })
         .catch((err) => log.error({ err }, "inbound_call_router.bridge_join_failed"));
       for (const id of channelIds) {
@@ -582,6 +631,28 @@ async function markInboundQueued(callId: string, groupId: string | null, log: Fa
     log.error({ err, callId }, "inbound_call_router.queue_mark_failed");
   }
 }
+
+/**
+ * Aviso ao cliente de que a chamada pode ser monitorizada (Lei 22/11), quando
+ * o tenant o liga. Toca na bridge assim que a conversa começa, para os dois
+ * ouvirem — o mesmo sítio do aviso de gravação.
+ */
+async function playMonitoringNotice(
+  tenantId: string,
+  bridgeId: string,
+  asterisk: AsteriskAdapter,
+  log: FastifyBaseLogger
+): Promise<void> {
+  try {
+    const t = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { monitoringNotice: true } });
+    if (t?.monitoringNotice) await asterisk.playMediaOnBridge(bridgeId, monitoringNoticePrompt(tenantId));
+  } catch (err) {
+    log.warn({ err, tenantId }, "inbound_call_router.monitoring_notice_failed");
+  }
+}
+
+/** Nome do áudio do aviso de monitorização do tenant (carregado no CRM). */
+export const monitoringNoticePrompt = (tenantId: string) => `monitor_${tenantId}`;
 
 /** Passa o registo a IN_PROGRESS quando uma das pernas do ring group atende. */
 async function markInboundAnswered(providerCallId: string, log: FastifyBaseLogger): Promise<void> {

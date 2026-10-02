@@ -55,6 +55,8 @@ import { tenantSettingsRoutes } from "./routes/tenant/settings.js";
 import { tenantRejectReasonsRoutes } from "./routes/tenant/rejectReasons.js";
 import { tenantCallTypingRoutes } from "./routes/tenant/callTyping.js";
 import { tenantCallersRoutes } from "./routes/tenant/callers.js";
+import { tenantSupervisionRoutes } from "./routes/tenant/supervision.js";
+import { SupervisionManager } from "./services/supervision.service.js";
 import { tenantEventsRoutes } from "./routes/tenant/events.js";
 import { tenantReportsRoutes } from "./routes/tenant/reports.js";
 import { tenantSmsRoutes } from "./routes/tenant/sms.js";
@@ -120,6 +122,8 @@ declare module "fastify" {
      * CRM_BYO_PBX, por tenant (ver tenantTelephony.service.ts).
      */
     asterisk: AsteriskAdapter;
+    /** Supervisão de chamadas em tempo real (melhoria 4) — ver supervision.service.ts. */
+    supervision: SupervisionManager;
     providerConfig: ResolvedProviderConfig;
   }
 }
@@ -277,6 +281,44 @@ async function buildApp() {
   // o botão do CRM a fechava e o registo ficava "Em curso" para sempre.
   registerDirectCallEvents(fastify.onCallEvent, asteriskAdapter, fastify.log);
 
+  // Supervisão (melhoria 4): registo imutável de cada sessão e aviso ao agente.
+  const supervision = new SupervisionManager({
+    asterisk: asteriskAdapter,
+    audit: async (e) => {
+      const [ext, call] = await Promise.all([
+        prisma.extension.findUnique({ where: { id: e.agentExtensionId }, select: { number: true } }),
+        prisma.call.findUnique({ where: { id: e.callId }, select: { contactId: true } }),
+      ]);
+      await prisma.supervisionEvent.create({
+        data: {
+          tenantId: e.tenantId,
+          sessionId: e.sessionId,
+          type: e.type,
+          mode: e.mode ?? null,
+          supervisorId: e.supervisorId,
+          agentExtensionId: e.agentExtensionId,
+          agentExtension: ext?.number ?? null,
+          callId: e.callId,
+          contactId: call?.contactId ?? null,
+          endReason: e.endReason ?? null,
+        },
+      });
+    },
+    // Sussurro e Intervenção avisam sempre; Escuta só se o tenant o quiser.
+    notifyAgent: (tenantId, extensionId, mode) => {
+      void (async () => {
+        if (mode === "LISTEN") {
+          const t = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { supervisionNotifyListen: true } });
+          if (!t?.supervisionNotifyListen) return;
+        }
+        fastify.incomingCalls.broadcast(tenantId, "supervision.agent", { extensionId, mode });
+      })().catch((err) => fastify.log.warn({ err }, "supervision.notify_failed"));
+    },
+    log: fastify.log,
+  });
+  fastify.decorate("supervision", supervision);
+  fastify.onCallEvent((e) => supervision.onCallEvent(e));
+
   // Call engine wires STT/LLM/TTS e regista no eventBus
   await fastify.register(callEnginePlugin);
 
@@ -328,6 +370,7 @@ async function buildApp() {
   await gated(fastify, "webphone", tenantRejectReasonsRoutes);
   await gated(fastify, "webphone", tenantCallTypingRoutes);
   await gated(fastify, "webphone", tenantCallersRoutes);
+  await gated(fastify, "webphone", tenantSupervisionRoutes);
   await fastify.register(tenantEventsRoutes);
   await gated(fastify, "reports", tenantReportsRoutes);
   await gated(fastify, "sms", tenantSmsRoutes);
@@ -402,6 +445,11 @@ async function main() {
     // Projecta a configuração PBX para o motor próprio. Fire-and-forget: se o
     // motor estiver em baixo, a API arranca na mesma e volta a sincronizar na
     // próxima alteração de extensões/trunks.
+    // Bridges de supervisão que sobraram de um reinício (canais órfãos).
+    void app.supervision
+      .sweepOrphans()
+      .then((n) => n > 0 && app.log.info({ n }, "supervision.orphans_swept"))
+      .catch((err) => app.log.warn({ err }, "supervision.sweep_failed"));
     void syncAllPbx()
       .then(() => app.log.info("pbx_sync.boot_complete"))
       .catch((err) => app.log.warn({ err }, "pbx_sync.boot_failed"));
