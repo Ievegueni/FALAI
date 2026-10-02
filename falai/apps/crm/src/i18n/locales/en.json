@@ -160,7 +160,10 @@
     "colStatus": "Status",
     "colDuration": "Duration",
     "colCost": "Cost",
-    "colDate": "Date"
+    "colDate": "Date",
+    "inboundToday": "Inbound calls",
+    "outboundToday": "Outbound calls",
+    "today": "today"
   },
   "agents": {
     "title": "AI Agents",

@@ -160,7 +160,10 @@
     "colStatus": "Estado",
     "colDuration": "Duração",
     "colCost": "Custo",
-    "colDate": "Data"
+    "colDate": "Data",
+    "inboundToday": "Chamadas recebidas",
+    "outboundToday": "Chamadas efectuadas",
+    "today": "hoje"
   },
   "agents": {
     "title": "Agentes de IA",

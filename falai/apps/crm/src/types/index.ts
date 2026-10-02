@@ -389,6 +389,8 @@ export interface ApiKey {
 export interface DashboardMetrics {
   balanceCents: number;
   callsToday: number;
+  inboundToday: number;
+  outboundToday: number;
   callsThisMonth: number;
   answerRatePct: number;
   avgDurationSecs: number;

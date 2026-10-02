@@ -160,7 +160,10 @@
     "colStatus": "状态",
     "colDuration": "时长",
     "colCost": "费用",
-    "colDate": "日期"
+    "colDate": "日期",
+    "inboundToday": "呼入通话",
+    "outboundToday": "呼出通话",
+    "today": "今天"
   },
   "agents": {
     "title": "AI 座席",

@@ -245,6 +245,41 @@ async function main(): Promise<void> {
       makeCall(t);
     }
   }
+  // Chamadas de saída (directas, feitas pelos agentes): o dashboard separa
+  // recebidas de efectuadas e os relatórios mostram as duas direcções.
+  for (let day = 120; day >= 0; day--) {
+    const date = new Date(now);
+    date.setDate(date.getDate() - day);
+    if (date.getDay() === 0 || date.getDay() === 6) continue;
+    for (let i = 0, k = between(3, 9); i < k; i++) {
+      const t = new Date(date);
+      t.setHours(between(9, 17), between(0, 59), between(0, 59), 0);
+      if (t > add(now, -120)) continue;
+      const contact = pick(contacts);
+      const answered = chance(0.7);
+      const talk = answered ? between(40, 420) : 0;
+      const id = `${P}c_${++n}`;
+      calls.push({
+        id,
+        tenantId: TENANT,
+        kind: "DIRECT",
+        status: answered ? "COMPLETED" : "NO_ANSWER",
+        outcome: answered ? "COMPLETED" : "NO_ANSWER",
+        toNumber: contact.phone!,
+        fromNumber: pick(Object.keys(AGENT_NAMES)),
+        contactId: contact.id,
+        yeastarCallId: id,
+        startedAt: t,
+        createdAt: t,
+        answeredAt: answered ? add(t, between(4, 20)) : null,
+        endedAt: add(t, answered ? talk + 10 : 30),
+        durationSecs: talk,
+        billedSecs: talk,
+        costCents: answered ? Math.ceil(talk / 60) * 30 : 0,
+      });
+    }
+  }
+
   // Agora: 2 em fila e 1 agente em pós-chamada (para o painel de supervisão).
   makeCall(add(now, -40), { live: "queued" });
   makeCall(add(now, -15), { live: "queued" });
@@ -294,7 +329,8 @@ async function main(): Promise<void> {
       update: {},
     });
   }
-  const answered = calls.filter((c) => c.answeredAt && c.endedAt && (c.startedAt as Date) < add(now, -86400));
+  // Só se supervisionam chamadas de entrada (as que têm agente/perna).
+  const answered = calls.filter((c) => c.kind === "INBOUND" && c.answeredAt && c.endedAt && (c.startedAt as Date) < add(now, -86400));
   const events: Parameters<typeof prisma.supervisionEvent.createMany>[0]["data"] = [];
   for (let i = 0; i < 14; i++) {
     const c = pick(answered);
@@ -312,8 +348,9 @@ async function main(): Promise<void> {
   }
   await prisma.supervisionEvent.createMany({ data: events });
 
-  const answeredCount = calls.filter((c) => c.answeredAt).length;
-  console.log(`chamadas: ${calls.length} (atendidas ${answeredCount}, perdidas ${calls.length - answeredCount - 2}, em fila 2)`);
+  const inbound = calls.filter((c) => c.kind === "INBOUND");
+  const answeredCount = inbound.filter((c) => c.answeredAt).length;
+  console.log(`chamadas: ${calls.length} — entrada ${inbound.length} (atendidas ${answeredCount}, perdidas ${inbound.length - answeredCount - 2}, em fila 2), saída ${calls.length - inbound.length}`);
   console.log(`pernas: ${legs.length}; recusas: ${legs.filter((l) => l.outcome === "REJECTED").length}`);
   console.log(`tipificadas: ${legs.filter((l) => l.typedAt).length}; supervisões no registo: 14`);
   console.log(`supervisor: ${supEmail} / Supervisor123! (VENDAS + FACTURACAO)`);
