@@ -22,18 +22,19 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const attendanceSchema = rangeSchema.extend({
   extensionId: z.string().optional(),
   groupId: z.string().optional(),
+  categoryId: z.string().optional(),
 });
 const callsListSchema = attendanceSchema.extend({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 const exportSchema = attendanceSchema.extend({
-  view: z.enum(["agents", "groups", "reasons"]).default("agents"),
+  view: z.enum(["agents", "groups", "reasons", "typing"]).default("agents"),
   format: z.enum(["csv", "xlsx"]).default("csv"),
 });
 
 function attendanceFilter(q: z.infer<typeof attendanceSchema>): AttendanceFilter {
-  return { ...resolveRange(q), extensionId: q.extensionId, groupId: q.groupId };
+  return { ...resolveRange(q), extensionId: q.extensionId, groupId: q.groupId, categoryId: q.categoryId };
 }
 
 /** Resolve o intervalo pedido; por omissão, os últimos 30 dias. */

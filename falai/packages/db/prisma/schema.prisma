@@ -236,6 +236,11 @@ model Tenant {
   // Relatórios de atendimento — ver CallLeg
   callLegs             CallLeg[]
   rejectReasons        RejectReason[]
+  // Tipificação de chamadas (melhoria 2): obrigatória ou não, e quanto tempo o
+  // agente fica indisponível à espera de tipificar antes de contar como "não tipificada".
+  callCategories       CallCategory[]
+  typingRequired       Boolean             @default(false)
+  typingMaxSecs        Int                 @default(60)
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -358,6 +363,7 @@ model ExtensionGroup {
   members     ExtensionGroupMember[]
   calls       Call[]
   callLegs    CallLeg[]
+  categories  CallCategoryGroup[]
 
   @@unique([tenantId, name])
 }
@@ -766,11 +772,52 @@ model CallLeg {
   rejectReasonId  String?
   rejectReason    RejectReason?   @relation(fields: [rejectReasonId], references: [id], onDelete: SetNull)
   rejectNote      String? // texto livre da opção "Outro"
+  // Tipificação (só na perna que atendeu). wrapUpEndsAt = até quando o agente
+  // fica indisponível à espera de tipificar (null = tipificação opcional).
+  categoryId      String?
+  category        CallCategory?   @relation("LegCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId   String?
+  subcategory     CallCategory?   @relation("LegSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  typingNote      String?
+  typedAt         DateTime?
+  typedById       String? // TenantUser que tipificou por último (histórico em AuditLog)
+  wrapUpEndsAt    DateTime?
 
   @@index([tenantId, ringStartedAt])
   @@index([tenantId, extensionId, ringStartedAt])
   @@index([tenantId, groupId, ringStartedAt])
   @@index([callId])
+  @@index([extensionId, wrapUpEndsAt])
+}
+
+// Tipificação de chamadas em 2 níveis: categoria (parentId null) → subcategoria.
+// Desactiva-se em vez de apagar, para o histórico continuar a ter o nome.
+model CallCategory {
+  id        String              @id @default(cuid())
+  tenantId  String
+  tenant    Tenant              @relation(fields: [tenantId], references: [id])
+  parentId  String?
+  parent    CallCategory?       @relation("CallCategoryTree", fields: [parentId], references: [id])
+  children  CallCategory[]      @relation("CallCategoryTree")
+  name      String
+  isActive  Boolean             @default(true)
+  sortOrder Int                 @default(0)
+  // Só nas categorias: grupos que a podem usar. Vazio = todos.
+  groups    CallCategoryGroup[]
+  legs      CallLeg[]           @relation("LegCategory")
+  subLegs   CallLeg[]           @relation("LegSubcategory")
+  createdAt DateTime            @default(now())
+
+  @@index([tenantId])
+}
+
+model CallCategoryGroup {
+  categoryId String
+  groupId    String
+  category   CallCategory   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  group      ExtensionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([categoryId, groupId])
 }
 
 // Motivos de recusa de chamadas, configuráveis por tenant. A opção "Outro"

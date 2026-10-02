@@ -43,7 +43,10 @@ interface LegRow {
   hangupCause?: number | null;
 }
 const legs: LegRow[] = [];
+// Extensões ainda a tipificar a chamada anterior (tipificação obrigatória).
+let busyExtensions: string[] = [];
 const callLeg = {
+  findMany: vi.fn(async () => busyExtensions.map((extensionId) => ({ extensionId }))),
   create: vi.fn(async ({ data }: any) => {
     const row: LegRow = { id: `leg_${legs.length + 1}`, outcome: null, ...data };
     legs.push(row);
@@ -219,6 +222,7 @@ const START: CallEvent = {
 beforeEach(() => {
   rows.length = 0;
   legs.length = 0;
+  busyExtensions = [];
   wallet.length = 0;
   balanceCents = 10_000;
   seq = 0;
@@ -536,5 +540,17 @@ describe("chamada de entrada — pernas (relatórios de atendimento)", () => {
     s.legEnded("chan_extweb_Ab12", 16);
     await flush();
     expect(legs[0]!.outcome).toBe("CANCELLED");
+  });
+});
+
+describe("chamada de entrada — tipificação obrigatória", () => {
+  it("extensão a tipificar a chamada anterior não toca; as outras do grupo sim", async () => {
+    resolveInboundForTenant.mockResolvedValue({ tenantId: "tnt_1", destType: "GROUP", destValue: "grp1" });
+    busyExtensions = ["ext_g1"];
+    const s = setup();
+    await s.emit(START);
+    const endpoints = s.asterisk.originateToPjsipEndpoint.mock.calls.map((c) => c[0]);
+    expect(endpoints).toEqual(["ext_G2", "extweb_G2"]);
+    expect(legs.map((l) => l.extensionId)).toEqual(["ext_g2"]);
   });
 });

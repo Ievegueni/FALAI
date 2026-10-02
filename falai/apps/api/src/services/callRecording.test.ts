@@ -24,6 +24,8 @@ let settings: Record<string, string | null> = {
 const calls: { id: string; recordingUrl: string | null; kind: string; tenantId: string; answeredAt: Date | null; status: string }[] = [];
 
 const prisma = {
+  // Pernas dos relatórios: ninguém a tipificar, nada a gravar aqui.
+  callLeg: { findMany: vi.fn(async () => []) },
   call: {
     upsert: vi.fn(async () => ({ id: CALL_ID })),
     findUnique: vi.fn(async () => calls[0] ?? null),

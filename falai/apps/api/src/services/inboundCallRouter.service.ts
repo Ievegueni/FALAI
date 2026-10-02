@@ -40,6 +40,7 @@ import {
   type LegTarget,
 } from "./callLegs.service.js";
 import type { CallLegOutcome } from "@falai/db";
+import { busyExtensionIds } from "./callTyping.service.js";
 import {
   computeCallCost,
   effectivePrice,
@@ -232,7 +233,12 @@ async function resolveTargets(tenantId: string, dest: Dest): Promise<RingTarget[
     });
     exts = members.map((m) => m.extension);
   }
-  return exts.map((e) => ({ extensionId: e.id, number: e.number, sipAuthUser: e.sipAuthUser }));
+  // Tipificação obrigatória: quem ainda está a tipificar a chamada anterior
+  // não recebe outra (ver callTyping.service.ts).
+  const busy = await busyExtensionIds(exts.map((e) => e.id));
+  return exts
+    .filter((e) => !busy.has(e.id))
+    .map((e) => ({ extensionId: e.id, number: e.number, sipAuthUser: e.sipAuthUser }));
 }
 
 /** Estado da perna de uma extensão enquanto os seus canais tocam. */
@@ -634,7 +640,7 @@ async function closeInboundCall(
       data: { status, outcome: status, endedAt, durationSecs: billedSecs, billedSecs },
     });
     if (claimed.count === 0) return; // já fechada (e já cobrada) por outro evento
-    await closeLegs(call.id, endedAt, log);
+    await closeLegs(call.id, call.tenantId, endedAt, log);
 
     if (billedSecs <= 0) {
       // Ninguém atendeu: não há nada a cobrar, mas há a quem responder. Só se

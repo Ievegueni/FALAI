@@ -53,6 +53,7 @@ import { tenantApiKeysRoutes } from "./routes/tenant/api-keys.js";
 import { tenantWebhookEventsRoutes } from "./routes/tenant/webhook-events.js";
 import { tenantSettingsRoutes } from "./routes/tenant/settings.js";
 import { tenantRejectReasonsRoutes } from "./routes/tenant/rejectReasons.js";
+import { tenantCallTypingRoutes } from "./routes/tenant/callTyping.js";
 import { tenantEventsRoutes } from "./routes/tenant/events.js";
 import { tenantReportsRoutes } from "./routes/tenant/reports.js";
 import { tenantSmsRoutes } from "./routes/tenant/sms.js";
@@ -324,6 +325,7 @@ async function buildApp() {
   await gated(fastify, "developers", tenantWebhookEventsRoutes);
   await fastify.register(tenantSettingsRoutes);
   await gated(fastify, "webphone", tenantRejectReasonsRoutes);
+  await gated(fastify, "webphone", tenantCallTypingRoutes);
   await fastify.register(tenantEventsRoutes);
   await gated(fastify, "reports", tenantReportsRoutes);
   await gated(fastify, "sms", tenantSmsRoutes);

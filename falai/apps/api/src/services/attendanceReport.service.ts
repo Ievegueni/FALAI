@@ -23,6 +23,7 @@
  * mesmas funções/endpoints.
  */
 import { prisma, type CallLegOutcome } from "@falai/db";
+import { typingStatus, wrapUpSecs } from "./callTyping.service.js";
 
 // ─── Linhas ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,13 @@ export interface LegRow {
   rejectReason: string | null;
   rejectNote: string | null;
   callQueuedAt: Date | null;
+  // Tipificação (melhoria 2)
+  categoryId?: string | null;
+  subcategoryId?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
+  typedAt?: Date | null;
+  wrapUpEndsAt?: Date | null;
 }
 
 // ─── Cálculos ────────────────────────────────────────────────────────────────
@@ -103,9 +111,17 @@ export interface AgentKpis {
   tmaSecs: number | null;
   tmeSecs: number | null;
   responseSecs: number | null;
+  // Tipificação: só conta o que já não está dentro do prazo (PENDING fica de fora).
+  typed: number;
+  untyped: number;
+  untypedRate: number | null;
+  wrapUpSecs: number | null; // pós-chamada — separado do TMA
 }
 
-export function agentKpis(legs: LegRow[]): AgentKpis {
+const typingOf = (l: LegRow, now: Date) =>
+  typingStatus({ outcome: l.outcome, endedAt: l.endedAt, typedAt: l.typedAt ?? null, wrapUpEndsAt: l.wrapUpEndsAt ?? null }, now);
+
+export function agentKpis(legs: LegRow[], now = new Date()): AgentKpis {
   const by = (o: CallLegOutcome) => legs.filter((l) => l.outcome === o);
   const answered = by("ANSWERED");
   const rejected = by("REJECTED").length;
@@ -126,7 +142,57 @@ export function agentKpis(legs: LegRow[]): AgentKpis {
     tmaSecs: avg(answered.filter((l) => l.answeredAt && l.endedAt).map((l) => secs(l.answeredAt!, l.endedAt!))),
     tmeSecs: avg(answered.filter((l) => l.answeredAt && l.callQueuedAt).map((l) => secs(l.callQueuedAt!, l.answeredAt!))),
     responseSecs: avg(answered.filter((l) => l.answeredAt).map((l) => secs(l.ringStartedAt, l.answeredAt!))),
+    ...typingKpis(answered, now),
   };
+}
+
+function typingKpis(answered: LegRow[], now: Date) {
+  const statuses = answered.map((l) => typingOf(l, now));
+  const typed = statuses.filter((s) => s === "TYPED").length;
+  const untyped = statuses.filter((s) => s === "NOT_TYPED").length;
+  return {
+    typed,
+    untyped,
+    untypedRate: rate(untyped, typed + untyped),
+    wrapUpSecs: avg(
+      answered
+        .map((l) => wrapUpSecs({ outcome: l.outcome, endedAt: l.endedAt, typedAt: l.typedAt ?? null, wrapUpEndsAt: l.wrapUpEndsAt ?? null }, now))
+        .filter((x): x is number => x !== null)
+    ),
+  };
+}
+
+export const UNTYPED = "Não tipificada";
+
+export interface TypingRow {
+  category: string;
+  subcategory: string | null;
+  count: number;
+  pct: number;
+}
+
+/**
+ * Volume por categoria/subcategoria das chamadas atendidas. As que ficaram
+ * por tipificar (prazo expirado ou opcional) entram como "Não tipificada";
+ * as que ainda estão dentro do prazo não entram.
+ */
+export function typingBreakdown(legs: LegRow[], now = new Date()): TypingRow[] {
+  const counted = legs.filter((l) => {
+    const st = typingOf(l, now);
+    return st === "TYPED" || st === "NOT_TYPED";
+  });
+  const counts = new Map<string, TypingRow>();
+  for (const l of counted) {
+    const cat = l.typedAt ? (l.category ?? "—") : UNTYPED;
+    const sub = l.typedAt ? (l.subcategory ?? null) : null;
+    const key = `${cat}\u0000${sub ?? ""}`;
+    const row = counts.get(key) ?? { category: cat, subcategory: sub, count: 0, pct: 0 };
+    row.count++;
+    counts.set(key, row);
+  }
+  return [...counts.values()]
+    .map((r) => ({ ...r, pct: rate(r.count, counted.length) ?? 0 }))
+    .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
 }
 
 export const OTHER_REASON = "Outro";
@@ -168,6 +234,7 @@ export interface AttendanceFilter {
   to: Date;
   extensionId?: string | undefined;
   groupId?: string | undefined;
+  categoryId?: string | undefined; // tipificação (categoria ou subcategoria)
 }
 
 export interface AgentRow extends AgentKpis {
@@ -193,6 +260,7 @@ export interface AttendanceReport {
   /** Igual a `tenant` sem filtro; com agente/grupo, os números desse agente/grupo. */
   selection: { calls: CallKpis; agents: AgentKpis };
   reasons: ReasonRow[];
+  typing: TypingRow[];
   byAgent: AgentRow[];
   byGroup: GroupRow[];
 }
@@ -218,6 +286,12 @@ async function loadRows(tenantId: string, from: Date, to: Date): Promise<{ calls
         extension: { select: { displayName: true } },
         rejectReason: { select: { label: true } },
         call: { select: { queuedAt: true } },
+        categoryId: true,
+        subcategoryId: true,
+        typedAt: true,
+        wrapUpEndsAt: true,
+        category: { select: { name: true } },
+        subcategory: { select: { name: true } },
       },
     }),
   ]);
@@ -236,6 +310,12 @@ async function loadRows(tenantId: string, from: Date, to: Date): Promise<{ calls
       rejectReason: l.rejectReason?.label ?? null,
       rejectNote: l.rejectNote,
       callQueuedAt: l.call.queuedAt,
+      categoryId: l.categoryId,
+      subcategoryId: l.subcategoryId,
+      category: l.category?.name ?? null,
+      subcategory: l.subcategory?.name ?? null,
+      typedAt: l.typedAt,
+      wrapUpEndsAt: l.wrapUpEndsAt,
     })),
   };
 }
@@ -265,6 +345,12 @@ export async function buildAttendanceReport(
     const ids = new Set(selLegs.map((l) => l.callId));
     selCalls = selCalls.filter((c) => ids.has(c.id));
   }
+  // Tipificação: só as chamadas atendidas com esta categoria (ou subcategoria).
+  if (f.categoryId) {
+    selLegs = selLegs.filter((l) => l.categoryId === f.categoryId || l.subcategoryId === f.categoryId);
+    const ids = new Set(selLegs.map((l) => l.callId));
+    selCalls = selCalls.filter((c) => ids.has(c.id));
+  }
 
   const groupNames = new Map(
     (await prisma.extensionGroup.findMany({ where: { tenantId }, select: { id: true, name: true } })).map((g) => [g.id, g.name])
@@ -277,6 +363,7 @@ export async function buildAttendanceReport(
     tenant,
     selection: { calls: callKpis(selCalls, abandoned), agents: agentKpis(selLegs) },
     reasons: reasonBreakdown(selLegs),
+    typing: typingBreakdown(selLegs),
     byAgent: agentRows(selLegs, tenant.agents),
     byGroup: groupRows(selCalls, selLegs, groupNames, abandoned, tenant.calls),
   };
@@ -369,6 +456,7 @@ async function byoReport(tenantId: string, f: AttendanceFilter): Promise<Attenda
     tenant: { calls, agents },
     selection: { calls, agents },
     reasons: [],
+    typing: [],
     byAgent: [],
     byGroup: [],
   };
@@ -388,7 +476,14 @@ export async function listAttendanceCalls(
     startedAt: { gte: f.from, lte: f.to },
     queuedAt: { not: null },
     ...(f.groupId && { groupId: f.groupId }),
-    ...(f.extensionId && { legs: { some: { extensionId: f.extensionId } } }),
+    ...((f.extensionId || f.categoryId) && {
+      legs: {
+        some: {
+          ...(f.extensionId && { extensionId: f.extensionId }),
+          ...(f.categoryId && { OR: [{ categoryId: f.categoryId }, { subcategoryId: f.categoryId }] }),
+        },
+      },
+    }),
   };
   const [total, rows] = await Promise.all([
     prisma.call.count({ where }),
@@ -415,6 +510,9 @@ export async function listAttendanceCalls(
             answeredAt: true,
             rejectNote: true,
             rejectReason: { select: { label: true } },
+            category: { select: { name: true } },
+            subcategory: { select: { name: true } },
+            typingNote: true,
           },
         },
       },
@@ -438,6 +536,8 @@ export async function listAttendanceCalls(
         outcome: l.outcome,
         responseSecs: l.answeredAt ? Math.round(secs(l.ringStartedAt, l.answeredAt)) : null,
         reason: l.rejectReason?.label ?? l.rejectNote ?? null,
+        typing: l.category ? [l.category.name, l.subcategory?.name].filter(Boolean).join(" › ") : null,
+        typingNote: l.typingNote,
       })),
     })),
   };
@@ -445,16 +545,17 @@ export async function listAttendanceCalls(
 
 // ─── Exportação ──────────────────────────────────────────────────────────────
 
-export type ExportView = "agents" | "groups" | "reasons";
+export type ExportView = "agents" | "groups" | "reasons" | "typing";
 
 /** Tabela (cabeçalho + linhas) de uma vista — serve o CSV e o Excel. */
 export function exportTable(report: AttendanceReport, view: ExportView): (string | number | null)[][] {
   if (view === "agents") {
     return [
-      ["Extensão", "Nome", "Tocou", "Atendeu", "Recusou", "Não atendeu", "Ocupado", "% atendimento", "% recusa", "TMA (s)", "TME (s)", "Resposta (s)", "Δ TMA vs média", "Δ resposta vs média"],
+      ["Extensão", "Nome", "Tocou", "Atendeu", "Recusou", "Não atendeu", "Ocupado", "% atendimento", "% recusa", "TMA (s)", "TME (s)", "Resposta (s)", "Δ TMA vs média", "Δ resposta vs média", "Tipificadas", "Não tipificadas", "% não tipificadas", "Pós-chamada (s)"],
       ...report.byAgent.map((r) => [
         r.number, r.name, r.offered, r.answered, r.rejected, r.noAnswer, r.busy, r.answerRate, r.rejectRate,
         r.tmaSecs, r.tmeSecs, r.responseSecs, r.vsTenant.tmaSecs, r.vsTenant.responseSecs,
+        r.typed, r.untyped, r.untypedRate, r.wrapUpSecs,
       ]),
     ];
   }
@@ -465,6 +566,9 @@ export function exportTable(report: AttendanceReport, view: ExportView): (string
         r.name, r.total, r.answered, r.missed, r.abandoned, r.rejected, r.answerRate, r.tmaSecs, r.tmeSecs, r.vsTenant.tmaSecs, r.vsTenant.tmeSecs,
       ]),
     ];
+  }
+  if (view === "typing") {
+    return [["Categoria", "Subcategoria", "Chamadas", "%"], ...report.typing.map((r) => [r.category, r.subcategory, r.count, r.pct])];
   }
   return [["Motivo", "Recusas", "%"], ...report.reasons.map((r) => [r.reason, r.count, r.pct])];
 }

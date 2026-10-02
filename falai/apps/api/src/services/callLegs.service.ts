@@ -11,6 +11,7 @@
  */
 import { prisma, type CallLegOutcome } from "@falai/db";
 import type { FastifyBaseLogger } from "fastify";
+import { wrapUpDeadline } from "./callTyping.service.js";
 
 /**
  * Resultado de um canal que caiu antes de alguém atender, pela causa Q.850 do
@@ -108,15 +109,21 @@ export async function answerLeg(legId: string, log: FastifyBaseLogger): Promise<
 }
 
 /**
- * Fim da chamada: a perna que atendeu ganha o instante do fim; qualquer perna
- * ainda aberta (evento perdido, reinício) fecha como CANCELLED.
+ * Fim da chamada: a perna que atendeu ganha o instante do fim (e, com
+ * tipificação obrigatória, o prazo para tipificar); qualquer perna ainda
+ * aberta (evento perdido, reinício) fecha como CANCELLED.
  */
-export async function closeLegs(callId: string, endedAt: Date, log: FastifyBaseLogger): Promise<void> {
+export async function closeLegs(callId: string, tenantId: string, endedAt: Date, log: FastifyBaseLogger): Promise<void> {
   try {
+    const cfg = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { typingRequired: true, typingMaxSecs: true },
+    });
+    const wrapUpEndsAt = cfg?.typingRequired ? wrapUpDeadline(endedAt, cfg) : null;
     await prisma.$transaction([
       prisma.callLeg.updateMany({
         where: { callId, outcome: "ANSWERED", endedAt: null },
-        data: { endedAt },
+        data: { endedAt, wrapUpEndsAt },
       }),
       prisma.callLeg.updateMany({
         where: { callId, outcome: null },

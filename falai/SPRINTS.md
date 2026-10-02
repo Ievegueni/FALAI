@@ -51,3 +51,36 @@ Decisões da Fase 0:
 - [ ] Teste real: recusa no webphone com motivo → perna REJECTED com o motivo
       (precisa de uma chamada de entrada real pelo trunk).
 - [ ] Confirmar que o PJSIP_HEADER do originate chega ao INVITE do webphone.
+
+## Melhoria 2/4 — Tipificação de chamadas (iniciada a 02/10/2026)
+
+Decisões da Fase 0:
+- Não havia classificação humana: `Call.outcome` é o resultado técnico/da IA e
+  `Call.summary` o resumo da IA. A tipificação fica na **perna que atendeu**
+  (`CallLeg`: categoria, subcategoria, nota, `typedAt`, `typedById`), que já diz
+  que agente e que grupo atenderam — serve os relatórios e o histórico (melhoria 3).
+- Categorias em 2 níveis (`CallCategory.parentId`); desactivar em vez de apagar;
+  associação opcional a grupos só nas categorias (vazio = todos). O agente vê as
+  dos grupos da sua extensão + o grupo por onde a chamada tocou.
+- Obrigatória (`Tenant.typingRequired`): no fim da chamada a perna ganha
+  `wrapUpEndsAt = fim + typingMaxSecs`; até lá a extensão **não recebe chamadas
+  novas** (o router de entrada salta-a). Ao expirar conta como "não tipificada"
+  (estado calculado, sem job) — pode ser tipificada mais tarde.
+- Pós-chamada (wrap-up) = fim → tipificação, limitado ao prazo; separado do TMA.
+- Edições ficam no `AuditLog` (`call_leg.typing_changed`, antes/depois, quem).
+- Fim de chamada no frontend: só o webphone o detecta. O formulário abre aí; a
+  lista "Por tipificar" da extensão cobre as chamadas atendidas no telefone físico.
+- Só chamadas de entrada (são as que têm pernas); chamadas directas ficam de fora.
+
+### Fase 1 — Backend ✅
+- [x] Migração aditiva: `CallCategory`, `CallCategoryGroup`, campos na `CallLeg`, `Tenant.typingRequired/typingMaxSecs`.
+- [x] `/tenant/call-categories` (CRUD admin), `/tenant/call-typing/settings`.
+- [x] `/tenant/call-legs/untyped?extensionId=`, `GET|PUT /tenant/call-legs/:id/typing`.
+- [x] Router de entrada salta extensões dentro do prazo de tipificação.
+- [x] Relatórios: filtro `categoryId`, volume por categoria/subcategoria, % não tipificadas e pós-chamada por agente, export `view=typing`.
+- [x] Testes: obrigatoriedade, expiração, edição (auditoria), visibilidade, bloqueio no router, relatórios.
+
+### Fase 2 — Frontend
+- [ ] Telefonia → Tipificação: obrigatória/prazo + árvore de categorias com grupos.
+- [ ] Webphone: formulário pós-chamada + lista "Por tipificar" (com contagem do prazo).
+- [ ] Relatórios: separador Tipificação, filtro por categoria, colunas no "Por agente", export.

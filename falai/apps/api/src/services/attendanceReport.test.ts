@@ -12,6 +12,7 @@ const {
   delta,
   exportTable,
   tableToCsv,
+  typingBreakdown,
 } = await import("./attendanceReport.service.js");
 type CallRow = import("./attendanceReport.service.js").CallRow;
 type LegRow = import("./attendanceReport.service.js").LegRow;
@@ -178,5 +179,40 @@ describe("Exportação", () => {
   it("a tabela de motivos sai do relatório", () => {
     const report = { reasons: [{ reason: "Em reunião", count: 3, pct: 100 }] } as never;
     expect(exportTable(report, "reasons")).toEqual([["Motivo", "Recusas", "%"], ["Em reunião", 3, 100]]);
+  });
+});
+
+describe("Tipificação nos relatórios", () => {
+  const NOW = at(10_000);
+  const typed = (callId: string, ext: string, cat: string, sub: string | null) =>
+    leg(callId, ext, { outcome: "ANSWERED", answeredAt: at(2), endedAt: at(60), typedAt: at(70), category: cat, subcategory: sub });
+
+  it("volume por categoria/subcategoria; não tipificadas à parte; dentro do prazo não conta", () => {
+    const rows = typingBreakdown(
+      [
+        typed("a", "ext_1", "Reclamação", "Facturação"),
+        typed("b", "ext_1", "Reclamação", "Facturação"),
+        typed("c", "ext_2", "Informação", null),
+        leg("d", "ext_2", { outcome: "ANSWERED", answeredAt: at(2), endedAt: at(60), wrapUpEndsAt: at(120) }), // expirou
+        leg("e", "ext_2", { outcome: "ANSWERED", answeredAt: at(2), endedAt: at(9_990), wrapUpEndsAt: at(10_050) }), // ainda no prazo
+      ],
+      NOW
+    );
+    expect(rows).toEqual([
+      { category: "Reclamação", subcategory: "Facturação", count: 2, pct: 50 },
+      { category: "Informação", subcategory: null, count: 1, pct: 25 },
+      { category: "Não tipificada", subcategory: null, count: 1, pct: 25 },
+    ]);
+  });
+
+  it("% não tipificadas por agente e pós-chamada sem mexer no TMA", () => {
+    const k = agentKpis(
+      [
+        typed("a", "ext_1", "Informação", null), // pós-chamada 10 s
+        leg("b", "ext_1", { outcome: "ANSWERED", answeredAt: at(2), endedAt: at(62), wrapUpEndsAt: at(122) }), // expirou: 60 s
+      ],
+      NOW
+    );
+    expect(k).toMatchObject({ typed: 1, untyped: 1, untypedRate: 50, wrapUpSecs: 35, tmaSecs: 59 });
   });
 });
