@@ -80,7 +80,10 @@ Decisões da Fase 0:
 - [x] Relatórios: filtro `categoryId`, volume por categoria/subcategoria, % não tipificadas e pós-chamada por agente, export `view=typing`.
 - [x] Testes: obrigatoriedade, expiração, edição (auditoria), visibilidade, bloqueio no router, relatórios.
 
-### Fase 2 — Frontend
-- [ ] Telefonia → Tipificação: obrigatória/prazo + árvore de categorias com grupos.
-- [ ] Webphone: formulário pós-chamada + lista "Por tipificar" (com contagem do prazo).
-- [ ] Relatórios: separador Tipificação, filtro por categoria, colunas no "Por agente", export.
+### Fase 2 — Frontend ✅
+- [x] Telefonia → Tipificação: obrigatória/prazo + árvore de categorias com grupos.
+- [x] Webphone: formulário pós-chamada (abre no fim de uma chamada de entrada atendida) + lista "Por tipificar" com contagem do prazo.
+- [x] Relatórios: separador Tipificação, filtro por categoria, colunas "% não tipif." e "Pós-chamada" no "Por agente", tipificação na lista de chamadas, export CSV/Excel.
+
+### Pendente / a validar
+- [ ] Teste real: chamada atendida no webphone → formulário abre; com obrigatória, a extensão não toca até tipificar/expirar.

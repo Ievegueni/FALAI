@@ -813,7 +813,8 @@
       "agents": "按坐席",
       "groups": "按组",
       "reasons": "拒接",
-      "calls": "通话"
+      "calls": "通话",
+      "typing": "通话分类"
     },
     "period": "时间段",
     "all": "全部",
@@ -861,7 +862,14 @@
         "CANCELLED": "已取消",
         "FAILED": "离线",
         "RINGING": "振铃中"
-      }
+      },
+      "untypedRate": "未分类 %",
+      "wrapUp": "话后处理",
+      "wrapUpHint": "从通话结束到完成分类（不计入平均处理时长）",
+      "typed": "已分类",
+      "untyped": "未分类",
+      "typingTitle": "按类别统计通话",
+      "category": "通话分类"
     }
   },
   "sms": {
@@ -930,7 +938,18 @@
     },
     "rejectReasonTitle": "为什么拒接此来电？",
     "rejectOther": "其他",
-    "rejectOtherPlaceholder": "请输入原因"
+    "rejectOtherPlaceholder": "请输入原因",
+    "typingTitle": "通话分类",
+    "typingCategory": "类别",
+    "typingSubcategory": "子类别",
+    "typingNote": "备注（可选）",
+    "typingSaved": "已分类",
+    "typingNoCategories": "暂无类别，请管理员在 电话 → 通话分类 中创建。",
+    "typingDeadline": "必须分类：在保存前或 {{secs}} 秒内不会收到新来电。",
+    "untypedTitle": "待分类（{{count}}）",
+    "typingLeft": "剩余 {{secs}} 秒",
+    "typingNotTyped": "未分类",
+    "typingAction": "分类"
   },
   "telephony": {
     "title": "电话",
@@ -1035,6 +1054,15 @@
     "rejectReasonPlaceholder": "例如：开会中",
     "noRejectReasons": "未配置原因 — 坐席只能使用\"其他\"。",
     "deactivate": "停用",
-    "activate": "启用"
+    "activate": "启用",
+    "tabTyping": "通话分类",
+    "typingRequired": "必须分类",
+    "typingMaxSecs": "最长时间（秒）",
+    "typingRequiredHint": "必须：接听后，坐席在完成分类或超过最长时间前不会收到新来电（超时计为\"未分类\"）。",
+    "typingNewCategory": "新类别",
+    "typingAddSub": "子类别",
+    "typingEmpty": "暂无类别。例如创建\"投诉\"及子类别\"账单\"。",
+    "typingGroups": "组",
+    "typingGroupsHint": "不勾选任何组时，所有坐席都可见此类别。"
   }
 }

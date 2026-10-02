@@ -813,7 +813,8 @@
       "agents": "Por agente",
       "groups": "Por grupo",
       "reasons": "Recusas",
-      "calls": "Chamadas"
+      "calls": "Chamadas",
+      "typing": "Tipificação"
     },
     "period": "Período",
     "all": "Todos",
@@ -861,7 +862,14 @@
         "CANCELLED": "cancelada",
         "FAILED": "offline",
         "RINGING": "a tocar"
-      }
+      },
+      "untypedRate": "% não tipif.",
+      "wrapUp": "Pós-chamada",
+      "wrapUpHint": "Do fim da chamada até tipificar (não entra no TMA)",
+      "typed": "Tipificadas",
+      "untyped": "Não tipificadas",
+      "typingTitle": "Chamadas por categoria",
+      "category": "Tipificação"
     }
   },
   "sms": {
@@ -930,7 +938,18 @@
     },
     "rejectReasonTitle": "Porque recusa esta chamada?",
     "rejectOther": "Outro",
-    "rejectOtherPlaceholder": "Escreva o motivo"
+    "rejectOtherPlaceholder": "Escreva o motivo",
+    "typingTitle": "Tipificar chamada",
+    "typingCategory": "Categoria",
+    "typingSubcategory": "Subcategoria",
+    "typingNote": "Nota (opcional)",
+    "typingSaved": "Chamada tipificada",
+    "typingNoCategories": "Ainda não há categorias. Peça ao administrador para as criar em Telefonia → Tipificação.",
+    "typingDeadline": "Tipificação obrigatória: não recebe novas chamadas durante mais {{secs}}s ou até guardar.",
+    "untypedTitle": "Por tipificar ({{count}})",
+    "typingLeft": "faltam {{secs}}s",
+    "typingNotTyped": "não tipificada",
+    "typingAction": "Tipificar"
   },
   "telephony": {
     "title": "Telefonia",
@@ -1035,7 +1054,16 @@
     "rejectReasonPlaceholder": "Ex.: Em reunião",
     "noRejectReasons": "Sem motivos configurados — o agente só poderá usar \"Outro\".",
     "deactivate": "Desactivar",
-    "activate": "Activar"
+    "activate": "Activar",
+    "tabTyping": "Tipificação",
+    "typingRequired": "Tipificação obrigatória",
+    "typingMaxSecs": "Tempo máximo (segundos)",
+    "typingRequiredHint": "Obrigatória: depois de uma chamada atendida o agente não recebe novas chamadas até tipificar ou até passar o tempo máximo (aí conta como \"não tipificada\").",
+    "typingNewCategory": "Nova categoria",
+    "typingAddSub": "Subcategoria",
+    "typingEmpty": "Sem categorias. Crie, por exemplo, \"Reclamação\" com a subcategoria \"Facturação\".",
+    "typingGroups": "Grupos",
+    "typingGroupsHint": "Sem nenhum marcado, todos os agentes vêem esta categoria."
   },
   "inbox": {
     "waPool": "Pool WhatsApp (Active/Standby)",

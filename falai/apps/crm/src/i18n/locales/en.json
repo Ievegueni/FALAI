@@ -813,7 +813,8 @@
       "agents": "By agent",
       "groups": "By group",
       "reasons": "Declines",
-      "calls": "Calls"
+      "calls": "Calls",
+      "typing": "Call types"
     },
     "period": "Period",
     "all": "All",
@@ -861,7 +862,14 @@
         "CANCELLED": "cancelled",
         "FAILED": "offline",
         "RINGING": "ringing"
-      }
+      },
+      "untypedRate": "% untyped",
+      "wrapUp": "Wrap-up",
+      "wrapUpHint": "From call end to typing (not part of AHT)",
+      "typed": "Typed",
+      "untyped": "Untyped",
+      "typingTitle": "Calls by category",
+      "category": "Call type"
     }
   },
   "sms": {
@@ -930,7 +938,18 @@
     },
     "rejectReasonTitle": "Why are you declining this call?",
     "rejectOther": "Other",
-    "rejectOtherPlaceholder": "Type the reason"
+    "rejectOtherPlaceholder": "Type the reason",
+    "typingTitle": "Type the call",
+    "typingCategory": "Category",
+    "typingSubcategory": "Subcategory",
+    "typingNote": "Note (optional)",
+    "typingSaved": "Call typed",
+    "typingNoCategories": "No categories yet. Ask your administrator to create them under Telephony → Call types.",
+    "typingDeadline": "Typing required: you won't get new calls for {{secs}}s more or until you save.",
+    "untypedTitle": "To type ({{count}})",
+    "typingLeft": "{{secs}}s left",
+    "typingNotTyped": "untyped",
+    "typingAction": "Type"
   },
   "telephony": {
     "title": "Telephony",
@@ -1035,7 +1054,16 @@
     "rejectReasonPlaceholder": "E.g.: In a meeting",
     "noRejectReasons": "No reasons configured — agents can only use \"Other\".",
     "deactivate": "Deactivate",
-    "activate": "Activate"
+    "activate": "Activate",
+    "tabTyping": "Call types",
+    "typingRequired": "Typing required",
+    "typingMaxSecs": "Maximum time (seconds)",
+    "typingRequiredHint": "Required: after an answered call the agent gets no new calls until they type it or the maximum time passes (then it counts as \"untyped\").",
+    "typingNewCategory": "New category",
+    "typingAddSub": "Subcategory",
+    "typingEmpty": "No categories. Create, for example, \"Complaint\" with the subcategory \"Billing\".",
+    "typingGroups": "Groups",
+    "typingGroupsHint": "With none ticked, every agent sees this category."
   },
   "inbox": {
     "waPool": "WhatsApp pool (Active/Standby)",

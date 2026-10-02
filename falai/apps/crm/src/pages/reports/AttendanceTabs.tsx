@@ -14,7 +14,7 @@ import { clsx, formatDuration, formatPhone } from '@/lib/utils';
  * backend (GET /tenant/reports/attendance) — aqui só se mostram.
  */
 
-export type AttendanceView = 'attendance' | 'agents' | 'groups' | 'reasons' | 'calls';
+export type AttendanceView = 'attendance' | 'agents' | 'groups' | 'reasons' | 'typing' | 'calls';
 
 const dur = (s: number | null) => (s === null ? '—' : formatDuration(s));
 const pct = (v: number | null) => (v === null ? '—' : `${v}%`);
@@ -114,6 +114,8 @@ function AgentsTable({ r }: { r: AttendanceReport }) {
             <Th right>{t('reports.att.answerRate')}</Th>
             <Th right>{t('reports.att.tma')}</Th>
             <Th right>{t('reports.att.response')}</Th>
+            <Th right>{t('reports.att.untypedRate')}</Th>
+            <Th right>{t('reports.att.wrapUp')}</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-50">
@@ -130,6 +132,8 @@ function AgentsTable({ r }: { r: AttendanceReport }) {
               <Td right>{pct(a.answerRate)} <Delta value={a.vsTenant.answerRate} unit="%" /></Td>
               <Td right>{dur(a.tmaSecs)} <Delta value={a.vsTenant.tmaSecs} unit="s" lowerIsBetter /></Td>
               <Td right>{dur(a.responseSecs)} <Delta value={a.vsTenant.responseSecs} unit="s" lowerIsBetter /></Td>
+              <Td right>{pct(a.untypedRate)}</Td>
+              <Td right>{dur(a.wrapUpSecs)}</Td>
             </tr>
           ))}
         </tbody>
@@ -203,6 +207,44 @@ function Reasons({ r }: { r: AttendanceReport }) {
   );
 }
 
+/** Volume por categoria/subcategoria (melhoria 2). */
+function Typing({ r }: { r: AttendanceReport }) {
+  const { t } = useTranslation();
+  const a = r.selection.agents;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard label={t('reports.att.typed')} value={a.typed} icon={<CheckCircle className="h-5 w-5" />} />
+        <StatCard label={t('reports.att.untyped')} value={a.untyped} sub={pct(a.untypedRate)} icon={<PhoneMissed className="h-5 w-5" />} />
+        <StatCard label={t('reports.att.wrapUp')} value={dur(a.wrapUpSecs)} sub={t('reports.att.wrapUpHint')} icon={<Timer className="h-5 w-5" />} />
+      </div>
+      <Card>
+        <h2 className="mb-4 text-sm font-semibold text-gray-900">{t('reports.att.typingTitle')}</h2>
+        {r.typing.length === 0 ? (
+          <Empty />
+        ) : (
+          <div className="space-y-2">
+            {r.typing.map((x) => (
+              <div key={`${x.category}|${x.subcategory ?? ''}`} className="flex items-center gap-3">
+                <span className="w-64 shrink-0 truncate text-sm text-gray-600">
+                  {x.category}
+                  {x.subcategory && <span className="text-gray-400"> › {x.subcategory}</span>}
+                </span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-full rounded-full bg-blue-400" style={{ width: `${x.pct}%` }} />
+                </div>
+                <span className="w-24 shrink-0 text-right text-sm font-medium text-gray-700 tabular-nums">
+                  {x.count} · {x.pct}%
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 const GREY = 'bg-gray-100 text-gray-600';
 const OUTCOME_CLASS: Record<CallLegOutcome, string> = {
   ANSWERED: 'bg-emerald-50 text-emerald-700',
@@ -250,6 +292,7 @@ function CallsList({ filters }: { filters: AttendanceFilters }) {
                     <Badge key={i} className={l.outcome ? OUTCOME_CLASS[l.outcome] : GREY}>
                       {l.extension} · {t(`reports.att.outcome.${l.outcome ?? 'RINGING'}`)}
                       {l.reason ? ` (${l.reason})` : ''}
+                      {l.typing ? ` · ${l.typing}` : ''}
                     </Badge>
                   ))}
                 </div>
@@ -266,7 +309,7 @@ function CallsList({ filters }: { filters: AttendanceFilters }) {
 }
 
 export function AttendanceTab({ view, filters }: { view: AttendanceView; filters: AttendanceFilters }) {
-  const filtered = Boolean(filters.extensionId || filters.groupId);
+  const filtered = Boolean(filters.extensionId || filters.groupId || filters.categoryId);
   const { data, isLoading } = useQuery({
     queryKey: ['reports', 'attendance', filters],
     queryFn: () => reportsApi.attendance(filters),
@@ -277,5 +320,6 @@ export function AttendanceTab({ view, filters }: { view: AttendanceView; filters
   if (view === 'agents') return data.limited ? <Overview r={data} filtered={filtered} /> : <AgentsTable r={data} />;
   if (view === 'groups') return data.limited ? <Overview r={data} filtered={filtered} /> : <GroupsTable r={data} />;
   if (view === 'reasons') return data.limited ? <Overview r={data} filtered={filtered} /> : <Reasons r={data} />;
+  if (view === 'typing') return data.limited ? <Overview r={data} filtered={filtered} /> : <Typing r={data} />;
   return <Overview r={data} filtered={filtered} />;
 }

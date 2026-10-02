@@ -344,6 +344,48 @@ export interface RejectReason {
   sortOrder: number;
 }
 
+// ─── Tipificação de chamadas (melhoria 2) ────────────────────────────────────
+
+export interface CallCategory {
+  id: string;
+  parentId: string | null;
+  name: string;
+  isActive: boolean;
+  sortOrder: number;
+  groupIds: string[];
+}
+
+export type TypingStatus = 'NONE' | 'TYPED' | 'PENDING' | 'NOT_TYPED';
+
+export interface LegTyping {
+  id: string;
+  from: string | null;
+  status: TypingStatus;
+  wrapUpEndsAt: string | null;
+  categoryId: string | null;
+  subcategoryId: string | null;
+  note: string | null;
+  categories: { id: string; parentId: string | null; name: string }[];
+}
+
+export const callTypingApi = {
+  categories: () => get<{ data: CallCategory[] }>('/tenant/call-categories').then((r) => r.data),
+  createCategory: (data: { name: string; parentId?: string | null; groupIds?: string[]; sortOrder?: number }) =>
+    post<CallCategory>('/tenant/call-categories', data),
+  updateCategory: (id: string, data: Partial<Pick<CallCategory, 'name' | 'isActive' | 'sortOrder' | 'groupIds'>>) =>
+    patch<{ ok: true }>(`/tenant/call-categories/${id}`, data),
+  settings: () => get<{ typingRequired: boolean; typingMaxSecs: number }>('/tenant/call-typing/settings'),
+  updateSettings: (data: { typingRequired?: boolean; typingMaxSecs?: number }) =>
+    patch<{ typingRequired: boolean; typingMaxSecs: number }>('/tenant/call-typing/settings', data),
+  untyped: (extensionId: string) =>
+    get<{ data: { id: string; from: string | null; at: string; status: TypingStatus; wrapUpEndsAt: string | null }[] }>(
+      `/tenant/call-legs/untyped?extensionId=${encodeURIComponent(extensionId)}`,
+    ).then((r) => r.data),
+  legTyping: (legId: string) => get<LegTyping>(`/tenant/call-legs/${encodeURIComponent(legId)}/typing`),
+  saveTyping: (legId: string, data: { categoryId: string; subcategoryId?: string | null; note?: string | null }) =>
+    put<{ ok: true; edited: boolean }>(`/tenant/call-legs/${encodeURIComponent(legId)}/typing`, data),
+};
+
 export const rejectReasonsApi = {
   list: (all = false) =>
     get<{ data: RejectReason[] }>(`/tenant/reject-reasons${all ? '?all=1' : ''}`).then((r) => r.data),
@@ -753,7 +795,7 @@ export const reportsApi = {
     get<AttendanceCallsPage>(
       `/tenant/reports/attendance/calls${qs({ ...f, pageSize: f.pageSize ?? 25 })}`,
     ),
-  downloadAttendance: async (f: AttendanceFilters & { view: 'agents' | 'groups' | 'reasons'; format: 'csv' | 'xlsx' }) => {
+  downloadAttendance: async (f: AttendanceFilters & { view: 'agents' | 'groups' | 'reasons' | 'typing'; format: 'csv' | 'xlsx' }) => {
     const token = localStorage.getItem('falai_token');
     const res = await fetch(`${API_BASE}/tenant/reports/attendance/export${qs({ ...f })}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -770,6 +812,7 @@ export interface AttendanceFilters {
   to?: string;
   extensionId?: string;
   groupId?: string;
+  categoryId?: string;
 }
 
 export interface AttendanceCallKpis {
@@ -795,6 +838,10 @@ export interface AttendanceAgentKpis {
   tmaSecs: number | null;
   tmeSecs: number | null;
   responseSecs: number | null;
+  typed: number;
+  untyped: number;
+  untypedRate: number | null;
+  wrapUpSecs: number | null;
 }
 
 export interface AttendanceReport {
@@ -804,6 +851,7 @@ export interface AttendanceReport {
   tenant: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
   selection: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
   reasons: { reason: string; count: number; pct: number }[];
+  typing: { category: string; subcategory: string | null; count: number; pct: number }[];
   byAgent: (AttendanceAgentKpis & {
     extensionId: string | null;
     number: string;
@@ -833,7 +881,14 @@ export interface AttendanceCallsPage {
     answered: boolean;
     waitSecs: number | null;
     talkSecs: number | null;
-    legs: { extension: string; outcome: CallLegOutcome | null; responseSecs: number | null; reason: string | null }[];
+    legs: {
+      extension: string;
+      outcome: CallLegOutcome | null;
+      responseSecs: number | null;
+      reason: string | null;
+      typing: string | null;
+      typingNote: string | null;
+    }[];
   }[];
 }
 

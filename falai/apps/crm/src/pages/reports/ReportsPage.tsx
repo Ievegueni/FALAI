@@ -12,7 +12,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { reportsApi, telephonyApi, type AttendanceFilters } from '@/lib/api';
+import { reportsApi, telephonyApi, callTypingApi, type AttendanceFilters } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Card, StatCard } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -45,10 +45,11 @@ function periodRange(p: Exclude<Period, 'custom'>): { from: string; to: string }
 }
 
 type ReportTab = 'summary' | AttendanceView;
-const EXPORTABLE: Partial<Record<ReportTab, 'agents' | 'groups' | 'reasons'>> = {
+const EXPORTABLE: Partial<Record<ReportTab, 'agents' | 'groups' | 'reasons' | 'typing'>> = {
   agents: 'agents',
   groups: 'groups',
   reasons: 'reasons',
+  typing: 'typing',
 };
 
 function saveBlob({ blob, filename }: { blob: Blob; filename: string }) {
@@ -69,6 +70,7 @@ export function ReportsPage() {
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
   const [extensionId, setExtensionId] = useState('');
   const [groupId, setGroupId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
   const [downloading, setDownloading] = useState(false);
 
   const choosePeriod = (p: Period) => {
@@ -85,12 +87,15 @@ export function ReportsPage() {
     to,
     ...(extensionId && { extensionId }),
     ...(groupId && { groupId }),
+    ...(categoryId && { categoryId }),
   };
 
   // Opções dos filtros. Sem a funcionalidade de telefonia estas listas falham
   // — os filtros ficam só com "Todos" em vez de partir a página.
   const { data: extensions } = useQuery({ queryKey: ['telephony', 'extensions'], queryFn: telephonyApi.listExtensions, retry: false });
   const { data: groups } = useQuery({ queryKey: ['telephony', 'groups'], queryFn: telephonyApi.listGroups, retry: false });
+  const { data: categories } = useQuery({ queryKey: ['call-categories'], queryFn: callTypingApi.categories, retry: false });
+  const catName = (id: string | null) => categories?.find((c) => c.id === id)?.name;
 
   const exportAttendance = async (format: 'csv' | 'xlsx') => {
     const view = EXPORTABLE[tab];
@@ -168,6 +173,7 @@ export function ReportsPage() {
             { key: 'agents', label: t('reports.tabs.agents') },
             { key: 'groups', label: t('reports.tabs.groups') },
             { key: 'reasons', label: t('reports.tabs.reasons') },
+            { key: 'typing', label: t('reports.tabs.typing') },
             { key: 'calls', label: t('reports.tabs.calls') },
           ]}
         />
@@ -227,6 +233,17 @@ export function ReportsPage() {
                   ))}
                 </select>
               </div>
+              {(categories?.length ?? 0) > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{t('reports.att.category')}</label>
+                  <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                    <option value="">{t('reports.all')}</option>
+                    {categories!.map((c) => (
+                      <option key={c.id} value={c.id}>{c.parentId ? `${catName(c.parentId)} › ${c.name}` : c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </>
           )}
         </Card>

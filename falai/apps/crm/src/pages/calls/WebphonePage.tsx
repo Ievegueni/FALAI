@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { PhoneCall, PhoneOff, Mic, MicOff, Delete } from 'lucide-react';
@@ -8,6 +8,7 @@ import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
 import { Select, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { TypingModal, UntypedList } from './TypingPanel';
 import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { clsx } from '@/lib/utils';
@@ -126,6 +127,9 @@ export function WebphonePage() {
   const [target, setTarget] = useState('');
   const [muted, setMuted] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [typingLegId, setTypingLegId] = useState<string | null>(null);
+  // Chamada de entrada atendida aqui: quando acabar, abre a tipificação.
+  const answeredLegRef = useRef<string | null>(null);
 
   const { data: extensions, isLoading: loadingExt } = useQuery({
     queryKey: ['telephony', 'extensions'],
@@ -144,6 +148,14 @@ export function WebphonePage() {
   useEffect(() => {
     if (!incoming) setRejecting(false);
   }, [incoming]);
+
+  useEffect(() => {
+    if (callState === 'in-call' && incomingLegId) answeredLegRef.current = incomingLegId;
+    if (callState === 'ended' && answeredLegRef.current) {
+      setTypingLegId(answeredLegRef.current);
+      answeredLegRef.current = null;
+    }
+  }, [callState, incomingLegId]);
 
   function toggleMute() {
     if (muted) unmute();
@@ -257,6 +269,10 @@ export function WebphonePage() {
           )}
         </Card>
       </div>
+      <div className="px-6 pb-6">
+        <UntypedList extensionId={extensionId} onPick={setTypingLegId} />
+      </div>
+      <TypingModal legId={typingLegId} onClose={() => setTypingLegId(null)} />
       <RejectReasonModal
         open={rejecting}
         legId={incomingLegId}
