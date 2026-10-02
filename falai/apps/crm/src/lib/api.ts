@@ -284,13 +284,35 @@ export const contactsApi = {
 
 // ─── Calls ───────────────────────────────────────────────────────────────────
 
+/** Filtros da página Chamadas (ver API: callsFilter.service.ts). */
+export interface CallsFilters {
+  from?: string;
+  to?: string;
+  direction?: 'inbound' | 'outbound';
+  kind?: 'AI_AGENT' | 'DIRECT' | 'OTP' | 'INBOUND' | 'FIXED_SCRIPT';
+  extensionId?: string;
+  groupId?: string;
+  categoryId?: string;
+  q?: string;
+}
+
 export const callsApi = {
-  list: async (params?: { page?: number; agentId?: string; status?: CallStatus; campaignId?: string }) => {
-    const page = params?.page ?? 1;
-    const raw = await get<{ calls: Call[]; total: number }>(
-      `/tenant/calls${qs({ ...pageRange(page), agentId: params?.agentId, status: params?.status, campaignId: params?.campaignId })}`,
-    );
+  list: async (params?: { page?: number; agentId?: string; status?: CallStatus; campaignId?: string } & CallsFilters) => {
+    const { page = 1, ...filters } = params ?? {};
+    const raw = await get<{ calls: Call[]; total: number }>(`/tenant/calls${qs({ ...pageRange(page), ...filters })}`);
     return toPaginated(raw.calls, raw.total, page);
+  },
+
+  /** A lista filtrada em Excel formatado (gerado no servidor). */
+  exportXlsx: async (filters: CallsFilters & { status?: CallStatus }) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/calls/export.xlsx${qs({ ...filters })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao exportar');
+    const blob = await res.blob();
+    const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+    return { blob, filename: match?.[1] ?? 'chamadas.xlsx' };
   },
 
   get: async (id: string) => (await get<{ call: Call }>(`/tenant/calls/${id}`)).call,

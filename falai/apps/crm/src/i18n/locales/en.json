@@ -532,7 +532,31 @@
       "directCall": "Direct call",
       "failReason": "Failure reason"
     },
-    "inbound": "Inbound"
+    "inbound": "Inbound",
+    "searchPlaceholder": "Search number or contact",
+    "periods": {
+      "all": "All",
+      "today": "Today",
+      "7d": "7 days",
+      "30d": "30 days",
+      "90d": "90 days"
+    },
+    "allDirections": "Inbound and outbound",
+    "outbound": "Outbound",
+    "allKinds": "All types",
+    "kinds": {
+      "INBOUND": "Inbound",
+      "AI_AGENT": "AI agent",
+      "DIRECT": "Direct",
+      "FIXED_SCRIPT": "Fixed script",
+      "OTP": "OTP"
+    },
+    "allAgents": "All agents",
+    "allGroups": "All groups",
+    "allTypings": "All call types",
+    "clearFilters": "Clear filters",
+    "exportExcel": "Export Excel",
+    "exportError": "Could not export"
   },
   "wallet": {
     "title": "Wallet",

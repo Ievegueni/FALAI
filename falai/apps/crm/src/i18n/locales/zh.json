@@ -532,7 +532,31 @@
       "directCall": "直接呼叫",
       "failReason": "失败原因"
     },
-    "inbound": "来电"
+    "inbound": "来电",
+    "searchPlaceholder": "搜索号码或联系人",
+    "periods": {
+      "all": "全部",
+      "today": "今天",
+      "7d": "7 天",
+      "30d": "30 天",
+      "90d": "90 天"
+    },
+    "allDirections": "呼入和呼出",
+    "outbound": "呼出",
+    "allKinds": "所有类型",
+    "kinds": {
+      "INBOUND": "呼入",
+      "AI_AGENT": "AI 坐席",
+      "DIRECT": "直拨",
+      "FIXED_SCRIPT": "固定脚本",
+      "OTP": "OTP"
+    },
+    "allAgents": "所有坐席",
+    "allGroups": "所有组",
+    "allTypings": "所有分类",
+    "clearFilters": "清除筛选",
+    "exportExcel": "导出 Excel",
+    "exportError": "无法导出"
   },
   "wallet": {
     "title": "钱包",

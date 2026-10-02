@@ -16,6 +16,9 @@ import {
 } from "../../services/directCall.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
 import { ensureCdrSynced, mapPbxCall, PBX_CALL_SELECT, activeInboundCalls } from "../../services/pbxCdr.service.js";
+import { callsFilterSchema, callsWhere, pbxCallsWhere } from "../../services/callsFilter.service.js";
+import ExcelJS from "exceljs";
+import { addTableSheet } from "../../services/excelExport.service.js";
 
 const createSchema = z.object({
   agentId: z.string().min(1),
@@ -54,6 +57,13 @@ type CallRow = {
   variables?: unknown;
   agent?: { name: string } | null;
   contact?: { name: string | null } | null;
+  // Chamadas de entrada: a perna que atendeu (quem atendeu e a tipificação).
+  legs?: {
+    extensionNumber: string;
+    extension: { displayName: string | null } | null;
+    category: { name: string } | null;
+    subcategory: { name: string } | null;
+  }[];
   turns?: {
     id: string;
     seq: number;
@@ -103,6 +113,14 @@ function mapCall(c: CallRow) {
     recordingUrl: c.recordingUrl ? `/tenant/calls/${c.id}/recording` : null,
     agent: c.agent ?? { name: "" },
     contact: c.contact ? { name: c.contact.name ?? "" } : null,
+    ...(c.legs && {
+      handledBy: c.legs[0]
+        ? { number: c.legs[0].extensionNumber, name: c.legs[0].extension?.displayName ?? null }
+        : null,
+      typing: c.legs[0]?.category
+        ? [c.legs[0].category.name, c.legs[0].subcategory?.name].filter(Boolean).join(" › ")
+        : null,
+    }),
     ...(c.variables !== undefined && { variables: c.variables }),
     ...(c.turns && {
       turns: c.turns.map((t) => ({
@@ -122,13 +140,33 @@ function mapCall(c: CallRow) {
 export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
 
-  // GET /tenant/calls — paginated list
-  fastify.get<{ Querystring: { status?: string; agentId?: string; campaignId?: string; limit?: string; offset?: string } }>(
+  const listSelect = {
+    id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
+    outcome: true, failReason: true, durationSecs: true, costCents: true,
+    startedAt: true, endedAt: true, createdAt: true,
+    agent: { select: { name: true } },
+    contact: { select: { name: true } },
+    legs: {
+      where: { outcome: "ANSWERED" as const },
+      take: 1,
+      select: {
+        extensionNumber: true,
+        extension: { select: { displayName: true } },
+        category: { select: { name: true } },
+        subcategory: { select: { name: true } },
+      },
+    },
+  } satisfies Prisma.CallSelect;
+
+  // GET /tenant/calls — lista paginada, com filtros (ver callsFilter.service.ts)
+  fastify.get<{ Querystring: { limit?: string; offset?: string } }>(
     "/",
     { preHandler },
     async (request) => {
       const { tenantId } = request.tenantUser!;
-      const { status, agentId, campaignId, limit = "50", offset = "0" } = request.query;
+      const { limit = "50", offset = "0" } = request.query;
+      const filter = callsFilterSchema.parse(request.query);
+      const { status } = filter;
 
       // Tenants CRM (BYO-PBX): a lista vem do CDR do PBX do cliente, não da tabela Call
       const { isCrmPbx } = await ensureCdrSynced(fastify, tenantId);
@@ -137,38 +175,28 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
         const skip = parseInt(offset, 10);
         const [rows, total, liveRows] = await Promise.all([
           prisma.pbxCall.findMany({
-            where: { tenantId },
+            where: pbxCallsWhere(tenantId, filter),
             orderBy: { startedAt: "desc" },
             take,
             skip,
             select: PBX_CALL_SELECT,
           }),
-          prisma.pbxCall.count({ where: { tenantId } }),
-          // Chamadas de entrada em curso ainda sem CDR — só na 1ª página e sem filtro de estado
-          skip === 0 && !status ? activeInboundCalls(tenantId) : Promise.resolve([]),
+          prisma.pbxCall.count({ where: pbxCallsWhere(tenantId, filter) }),
+          // Chamadas de entrada em curso ainda sem CDR — só na 1ª página e sem filtros
+          skip === 0 && !status && !filter.q && !filter.from && !filter.to ? activeInboundCalls(tenantId) : Promise.resolve([]),
         ]);
         const live = liveRows.map(mapCall);
         return { calls: [...live, ...rows.map(mapPbxCall)], total: total + live.length };
       }
 
-      const where: Prisma.CallWhereInput = { tenantId };
-      if (status) where.status = status as import("@falai/db").CallStatus;
-      if (agentId) where.agentId = agentId;
-      if (campaignId) where.campaignId = campaignId;
-
+      const where = callsWhere(tenantId, filter);
       const [calls, total] = await Promise.all([
         prisma.call.findMany({
           where,
           orderBy: { createdAt: "desc" },
           take: parseInt(limit, 10),
           skip: parseInt(offset, 10),
-          select: {
-            id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-            outcome: true, failReason: true, durationSecs: true, costCents: true,
-            startedAt: true, endedAt: true, createdAt: true,
-            agent: { select: { name: true } },
-            contact: { select: { name: true } },
-          },
+          select: listSelect,
         }),
         prisma.call.count({ where }),
       ]);
@@ -176,6 +204,45 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       return { calls: calls.map(mapCall), total };
     },
   );
+
+  // GET /tenant/calls/export.xlsx — a lista filtrada em Excel formatado
+  fastify.get("/export.xlsx", { preHandler }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    const filter = callsFilterSchema.parse(request.query);
+    const MAX = 20_000; // ponytail: limite de linhas por exportação; acima disso, filtrar o período
+    const [rows, tenant] = await Promise.all([
+      prisma.call.findMany({ where: callsWhere(tenantId, filter), orderBy: { createdAt: "desc" }, take: MAX, select: listSelect }),
+      prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
+    ]);
+    const KIND: Record<string, string> = { INBOUND: "Entrada", DIRECT: "Directa", OTP: "OTP", AI_AGENT: "Agente IA", FIXED_SCRIPT: "Script fixo" };
+    const STATUS: Record<string, string> = {
+      COMPLETED: "Concluída", ESCALATED: "Escalada", NO_ANSWER: "Não atendida", BUSY: "Ocupado", FAILED: "Falhou",
+      CANCELLED: "Cancelada", IN_PROGRESS: "Em curso", RINGING: "A tocar", DIALING: "A marcar", QUEUED: "Em fila",
+    };
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "Falaí";
+    const period = filter.from || filter.to ? `${filter.from ?? "…"} – ${filter.to ?? "…"}` : "todo o histórico";
+    addTableSheet(wb, "Chamadas", "Chamadas", `${tenant.name} · ${period} · ${rows.length} chamadas · gerado em ${new Date().toLocaleString("pt-PT")}`, [
+      { header: "Data", width: 17, fmt: "datetime" },
+      { header: "Tipo", width: 11, fmt: "text" },
+      { header: "Número", width: 16, fmt: "text" },
+      { header: "Contacto", width: 22, fmt: "text" },
+      { header: "Atendida por / agente", width: 22, fmt: "text" },
+      { header: "Estado", width: 13, fmt: "text" },
+      { header: "Tipificação", width: 28, fmt: "text" },
+      { header: "Resultado", width: 14, fmt: "text" },
+      { header: "Duração", width: 10, fmt: "secs" },
+      { header: "Custo", width: 12, fmt: "money" },
+    ], rows.map((r) => {
+      const c = mapCall(r);
+      const by = c.handledBy ? [c.handledBy.number, c.handledBy.name].filter(Boolean).join(" ") : c.agent?.name || null;
+      return [c.createdAt, KIND[c.kind] ?? c.kind, c.party, c.contact?.name ?? null, by, STATUS[c.status] ?? c.status, c.typing ?? null, c.outcome && c.outcome !== c.status ? c.outcome : null, c.durationSecs, c.costCents];
+    }));
+    return reply
+      .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .header("Content-Disposition", `attachment; filename="chamadas_${new Date().toISOString().slice(0, 10)}.xlsx"`)
+      .send(Buffer.from(await wb.xlsx.writeBuffer()));
+  });
 
   // GET /tenant/calls/:id — detail with transcript turns
   fastify.get<{ Params: { id: string } }>("/:id", { preHandler }, async (request, reply) => {

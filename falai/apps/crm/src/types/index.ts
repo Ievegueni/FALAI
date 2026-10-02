@@ -247,6 +247,9 @@ export interface Call {
   createdAt: string;
   agent: { name: string };
   contact: { name: string } | null;
+  /** Chamadas de entrada: a extensão que atendeu e a tipificação (melhorias 1–2). */
+  handledBy?: { number: string; name: string | null } | null;
+  typing?: string | null;
   recordingUrl: string | null;
   turns?: CallTurn[];
   variables?: Record<string, string>;

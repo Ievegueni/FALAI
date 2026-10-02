@@ -532,7 +532,31 @@
       "directCall": "Chamada directa",
       "failReason": "Motivo da falha"
     },
-    "inbound": "Entrada"
+    "inbound": "Entrada",
+    "searchPlaceholder": "Pesquisar número ou contacto",
+    "periods": {
+      "all": "Tudo",
+      "today": "Hoje",
+      "7d": "7 dias",
+      "30d": "30 dias",
+      "90d": "90 dias"
+    },
+    "allDirections": "Entradas e saídas",
+    "outbound": "Saída",
+    "allKinds": "Todos os tipos",
+    "kinds": {
+      "INBOUND": "Entrada",
+      "AI_AGENT": "Agente de IA",
+      "DIRECT": "Directa",
+      "FIXED_SCRIPT": "Script fixo",
+      "OTP": "OTP"
+    },
+    "allAgents": "Todos os agentes",
+    "allGroups": "Todos os grupos",
+    "allTypings": "Todas as tipificações",
+    "clearFilters": "Limpar filtros",
+    "exportExcel": "Exportar Excel",
+    "exportError": "Não foi possível exportar"
   },
   "wallet": {
     "title": "Carteira",
