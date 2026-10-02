@@ -239,6 +239,61 @@ export interface ContactFileResult {
   nameMatches: { row: number; name: string; phone: string; existingPhone: string | null }[];
 }
 
+export type ContactCallState = 'ANSWERED' | 'MISSED' | 'REJECTED' | 'IN_PROGRESS';
+export interface ContactHistoryFilters {
+  from?: string;
+  to?: string;
+  state?: Exclude<ContactCallState, 'IN_PROGRESS'>;
+  categoryId?: string;
+  extensionId?: string;
+  page?: number;
+  pageSize?: number;
+}
+export interface ContactHistoryRow {
+  id: string;
+  at: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  kind: string;
+  agent: string | null;
+  group: string | null;
+  durationSecs: number | null;
+  state: ContactCallState;
+  status: string;
+  typing: string | null;
+  note: string | null;
+}
+export interface ContactProfile {
+  contact: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    email: string | null;
+    attributes: Record<string, string> | null;
+    optedOutAt: string | null;
+    optOutReason: string | null;
+    createdAt: string;
+    phones: { id: string; phone: string; label: string | null }[];
+  };
+  summary: {
+    total: number;
+    answered: number;
+    missed: number;
+    rejected: number;
+    firstContactAt: string | null;
+    lastContactAt: string | null;
+    topTyping: { label: string; count: number } | null;
+    lastTyping: { label: string; at: string; note: string | null } | null;
+    topAgent: { extensionId: string | null; name: string; count: number } | null;
+  };
+  typings: {
+    total: number;
+    distribution: { id: string; name: string; count: number; pct: number; subs: { id: string; name: string; count: number; pct: number }[] }[];
+    timeline: { at: string; label: string; note: string | null; agent: string; callId: string }[];
+  };
+  filters: { agents: { extensionId: string; name: string }[]; categories: { id: string; name: string }[] };
+  notes: { id: string; source: 'NOTE' | 'TYPING'; body: string; at: string; author: string | null; callId: string | null }[];
+}
+
 export const contactsApi = {
   list: async (params?: { page?: number; search?: string; optedOut?: boolean }) => {
     const page = params?.page ?? 1;
@@ -249,6 +304,26 @@ export const contactsApi = {
   },
 
   get: async (id: string) => (await get<{ contact: Contact }>(`/tenant/contacts/${id}`)).contact,
+
+  // ─── Perfil completo do cliente (melhoria 5) ───
+  profile: (id: string) => get<ContactProfile>(`/tenant/contacts/${id}/profile`),
+  history: (id: string, f: ContactHistoryFilters) =>
+    get<{ data: ContactHistoryRow[]; total: number; page: number; pageSize: number }>(`/tenant/contacts/${id}/calls${qs({ ...f })}`),
+  exportHistory: async (id: string, f: ContactHistoryFilters) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/contacts/${id}/calls/export.xlsx${qs({ ...f, page: undefined, pageSize: undefined })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao exportar');
+    const blob = await res.blob();
+    const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+    return { blob, filename: match?.[1] ?? 'historico.xlsx' };
+  },
+  addPhone: (id: string, phone: string, label?: string) =>
+    post<{ id: string; phone: string; label: string | null }>(`/tenant/contacts/${id}/phones`, { phone, ...(label && { label }) }),
+  removePhone: (id: string, phoneId: string) => del<void>(`/tenant/contacts/${id}/phones/${phoneId}`),
+  /** O outro contacto é absorvido por este (histórico junto; o outro é apagado). */
+  merge: (id: string, otherId: string) => post<{ ok: true; moved: Record<string, number> }>(`/tenant/contacts/${id}/merge`, { otherId }),
 
   /** Ficheiro de números para uma campanha: reutiliza os existentes, cria os que faltam. */
   fromFile: (file: File) => {
@@ -1084,6 +1159,8 @@ export interface AttendanceCallsPage {
   data: {
     id: string;
     from: string | null;
+    contactId: string | null;
+    contactName: string | null;
     to: string;
     startedAt: string;
     group: string | null;

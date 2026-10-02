@@ -204,6 +204,11 @@ duplicado (snapshot na auditoria); o Leitor só consulta; exportação em Excel.
 - [x] Auditoria: `contact.history_viewed` (perfil/exportação) e `contact.merged` (quem, quando, snapshot).
 - [x] Testes (14): estados, agregados, filtros, pesquisa, merge. Dev: perfil com 133 chamadas em 33 ms.
 
-### Fase 2 — Frontend
-- [ ] Página de perfil (cabeçalho, resumo, histórico, tipificações, notas, edição de números, unir duplicados).
-- [ ] "Ver perfil completo" no screen pop; nome do contacto clicável nas Chamadas e nos Relatórios.
+### Fase 2 — Frontend ✅
+- [x] `/contacts/:id` passa a ser o perfil: cabeçalho (todos os números, 1.º/último contacto), resumo, separadores Histórico (filtros, paginação, Excel) / Tipificações (donut, tabela com %, linha temporal) / Notas / Ficha clínica (se licenciada).
+- [x] Edição de nome e número principal, números extra (adicionar/remover) e "Unir duplicado" (supervisor/admin/owner; Leitor só consulta).
+- [x] "Ver perfil completo" no screen pop; nome do contacto leva ao perfil nas Chamadas, no detalhe da chamada e na lista de chamadas dos Relatórios.
+- [x] Testado em dev: merge real (chamada + nota movidas, número do duplicado como extra, auditoria), pesquisa pelo número antigo, ecrã de telemóvel.
+
+### Pendente / a validar
+- [ ] Produção: `migrate deploy` (com backup) — confirmar que o Postgres de produção tem `pg_trgm` (contrib).

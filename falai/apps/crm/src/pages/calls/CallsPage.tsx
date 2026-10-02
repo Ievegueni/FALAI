@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Phone, PhoneCall, PhoneIncoming, Plus, Search, FileSpreadsheet, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { callsApi, telephonyApi, callTypingApi, type CallsFilters } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -62,7 +62,18 @@ function CallRow({ call }: { call: Call }) {
           )}
           <div>
             <p className="text-sm font-medium text-gray-900">
-              {call.contact?.name ?? formatPhone(call.party ?? call.to)}
+              {call.contactId ? (
+                <Link
+                  to={`/contacts/${call.contactId}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="hover:text-blue-600 hover:underline"
+                  title={t('profile.open')}
+                >
+                  {call.contact?.name || formatPhone(call.party ?? call.to)}
+                </Link>
+              ) : (
+                call.contact?.name ?? formatPhone(call.party ?? call.to)
+              )}
             </p>
             {call.contact && <p className="text-xs text-gray-400">{formatPhone(call.party ?? call.to)}</p>}
           </div>

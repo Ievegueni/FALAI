@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Phone, PhoneIncoming, Clock, DollarSign, XCircle, Play, Tag, Route, StickyNote, Pencil } from 'lucide-react';
@@ -103,7 +103,13 @@ export function CallDetailPage() {
               <div>
                 {/* Entrada: o número de quem ligou (o "to" é o DID da empresa). */}
                 <p className="text-lg font-semibold text-gray-900">
-                  {call.contact?.name ?? formatPhone(call.party ?? call.to)}
+                  {call.contactId ? (
+                    <Link to={`/contacts/${call.contactId}`} className="hover:text-blue-600 hover:underline" title={t('profile.open')}>
+                      {call.contact?.name || formatPhone(call.party ?? call.to)}
+                    </Link>
+                  ) : (
+                    call.contact?.name ?? formatPhone(call.party ?? call.to)
+                  )}
                 </p>
                 <p className="text-sm text-gray-500">
                   {formatPhone(call.party ?? call.to)}

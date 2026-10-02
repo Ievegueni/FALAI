@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -282,7 +283,14 @@ function CallsList({ filters }: { filters: AttendanceFilters }) {
           {data.data.map((c) => (
             <tr key={c.id}>
               <Td>{new Date(c.startedAt).toLocaleString()}</Td>
-              <Td>{formatPhone(c.from)}</Td>
+              <Td>
+                {c.contactId ? (
+                  <Link to={`/contacts/${c.contactId}`} className="text-blue-600 hover:underline" title={t('profile.open')}>
+                    {c.contactName || formatPhone(c.from)}
+                  </Link>
+                ) : formatPhone(c.from)}
+                {c.contactId && c.contactName && <span className="block text-xs text-gray-400">{formatPhone(c.from)}</span>}
+              </Td>
               <Td>{c.group ?? '—'}</Td>
               <Td right>{dur(c.waitSecs)}</Td>
               <Td right>{c.answered ? dur(c.talkSecs) : <Badge className="bg-red-50 text-red-700">{t('reports.att.missedShort')}</Badge>}</Td>
