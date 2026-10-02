@@ -496,7 +496,7 @@ export interface Paginated<T> {
 }
 
 // ─── Estado do motor SIP próprio (Asterisk) ──────────────────────────────────
-// Ver docs/PLANO-INDEPENDENCIA-PBX.txt — substitui o Yeastar no transporte da voz.
+// Motor de telefonia da plataforma, trunk directo à operadora.
 
 export type TrunkRegistrationStatus = 'REGISTERED' | 'NOT_REGISTERED' | 'UNKNOWN';
 

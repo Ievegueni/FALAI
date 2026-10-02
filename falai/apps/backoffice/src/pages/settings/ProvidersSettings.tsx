@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Phone, Mic, Bot, Volume2, CreditCard, MessageSquare, Disc, Save } from 'lucide-react';
+import { Mic, Bot, Volume2, CreditCard, MessageSquare, Disc, Save } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { settingsApi } from '@/lib/api';
 import { Card, Button, Input } from '@/components/ui';
@@ -24,17 +24,6 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
-  {
-    title: 'Telefonia — Yeastar PBX',
-    subtitle: 'Ligação à OpenAPI do PBX (faz e recebe as chamadas)',
-    icon: <Phone className="h-5 w-5" />,
-    fields: [
-      { key: 'YEASTAR_BASE_URL', label: 'Base URL', type: 'text', placeholder: 'https://a-tua-empresa.yeastar.cloud' },
-      { key: 'YEASTAR_CLIENT_ID', label: 'Client ID', type: 'text' },
-      { key: 'YEASTAR_CLIENT_SECRET', label: 'Client Secret', type: 'secret' },
-      { key: 'YEASTAR_STUB_MODE', label: 'Modo stub (sem chamadas reais)', type: 'bool', hint: 'Deixa "Ligado" enquanto testas sem PBX. Muda para "Desligado" para chamadas reais.' },
-    ],
-  },
   {
     title: 'Reconhecimento de voz — Deepgram',
     subtitle: 'Transcrição de fala (STT)',

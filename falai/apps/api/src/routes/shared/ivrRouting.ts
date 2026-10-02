@@ -327,7 +327,6 @@ export function registerIvrRouting(
     const c = await ctx(request, reply, true);
     if (!c) return;
     const { tenantId } = c;
-    if (!fastify.asterisk) return reply.status(503).send({ error: "Motor de telefonia próprio não configurado" });
     const file = request.isMultipart() ? await request.file() : undefined;
     if (!file) return reply.status(400).send({ error: "Envie o áudio num campo 'file' (multipart)" });
     const wav = await file.toBuffer();

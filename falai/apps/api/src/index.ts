@@ -9,7 +9,7 @@ import { ZodError } from "zod";
 
 import { config } from "./config.js";
 import { resolveProviderConfig, type ResolvedProviderConfig } from "./services/providerConfig.service.js";
-import { YeastarAdapter, AsteriskAdapter, trunkEndpointId, parseDialFormat, type TelephonyProvider } from "@falai/providers";
+import { AsteriskAdapter, trunkEndpointId, parseDialFormat, type TelephonyProvider } from "@falai/providers";
 import { registerInboundCallRouter } from "./services/inboundCallRouter.service.js";
 import { startDirectCallSweeper, registerDirectCallEvents } from "./services/directCall.service.js";
 import { prisma } from "@falai/db";
@@ -69,7 +69,6 @@ import { v1OtpRoutes } from "./routes/v1/otp.js";
 import { v1SmsRoutes } from "./routes/v1/sms.js";
 import { v1ModelsRoutes } from "./routes/v1/models.js";
 import { v1UsageRoutes } from "./routes/v1/usage.js";
-import { yeastarWebhookRoutes } from "./routes/webhooks/yeastar.js";
 import { pbxWebhookRoutes } from "./routes/webhooks/pbx.js";
 import { asteriskWebhookRoutes } from "./routes/webhooks/asterisk.js";
 import { smsWebhookRoutes } from "./routes/webhooks/sms.js";
@@ -99,7 +98,6 @@ async function gated(
     await scope.register(plugin as FastifyPluginAsync, opts ?? {});
   });
 }
-import { registerYeastarWebSocket } from "./websocket/yeastar.js";
 import { syncAllPbx } from "./services/pbxSync.service.js";
 
 declare module "fastify" {
@@ -112,19 +110,13 @@ declare module "fastify" {
      */
     telephony: TelephonyProvider;
     /**
-     * @deprecated Referência ao adaptador Yeastar concreto. Só para o código que
-     * usa funções fora da interface (webhooks, WebSocket de eventos, CDR e o
-     * produto BYO-PBX). Esse código é removido no fim da migração (§13.4).
+     * O motor Asterisk nativo — o único motor da plataforma. Necessário para as
+     * funções que vivem fora da interface TelephonyProvider — bridges, ring
+     * groups e originate para um endpoint PJSIP concreto — usadas pelas chamadas
+     * directas e pelo router de entrada. O Yeastar só existe no produto
+     * CRM_BYO_PBX, por tenant (ver tenantTelephony.service.ts).
      */
-    yeastar: YeastarAdapter;
-    /**
-     * O motor Asterisk nativo, ou null se estiver desligado
-     * (TELEPHONY_ENGINE != asterisk). Necessário para as funções que vivem
-     * fora da interface TelephonyProvider — bridges, ring groups e originate
-     * para um endpoint PJSIP concreto — usadas pelas chamadas directas e pelo
-     * router de entrada.
-     */
-    asterisk: AsteriskAdapter | null;
+    asterisk: AsteriskAdapter;
     providerConfig: ResolvedProviderConfig;
   }
 }
@@ -215,7 +207,7 @@ async function buildApp() {
     redis: new Redis(config.REDIS_URL),
   });
 
-  // ── App plugins (order matters: redis → auth → audit → tenantAuth → yeastar → callEngine) ──
+  // ── App plugins (order matters: redis → auth → audit → tenantAuth → telefonia → callEngine) ──
   await fastify.register(redisPlugin);
   await fastify.register(authPlugin);
   await fastify.register(auditPlugin);
@@ -234,74 +226,53 @@ async function buildApp() {
   const providerConfig = await resolveProviderConfig();
   fastify.decorate("providerConfig", providerConfig);
 
-  // Yeastar adapter (decorated before callEngine plugin needs it)
-  const yeastar = new YeastarAdapter(
-    {
-      baseUrl: providerConfig.yeastar.baseUrl,
-      clientId: providerConfig.yeastar.clientId,
-      clientSecret: providerConfig.yeastar.clientSecret,
-      stubMode: providerConfig.yeastar.stubMode,
+  // Motor de telefonia: o Asterisk próprio, trunk directo à operadora. É o
+  // único motor — sem ele não há chamadas, por isso a API não arranca sem ARI.
+  if (!process.env["ASTERISK_ARI_URL"]) throw new Error("ASTERISK_ARI_URL em falta — ver DEPLOY.md");
+  const asteriskAdapter = new AsteriskAdapter({
+    baseUrl: process.env["ASTERISK_ARI_URL"]!,
+    username: process.env["ASTERISK_ARI_USER"] ?? "falai",
+    password: process.env["ASTERISK_ARI_PASSWORD"] ?? "",
+    soundsDir: process.env["ASTERISK_SOUNDS_DIR"] ?? "",
+    dialFormat: parseDialFormat(process.env["ASTERISK_DIAL_FORMAT"]),
+    // Por onde sai uma chamada para a rede: o trunk activo na base de
+    // dados. Lido a pedido (com cache curta no adaptador) para mudar o
+    // trunk no backoffice não obrigar a reiniciar a API.
+    // O trunk do PRÓPRIO cliente tem precedência; na falta dele usa-se um
+    // partilhado (tenantId nulo). Nunca o de outro cliente — antes isto era
+    // "o primeiro trunk activo", e um cliente saía pelo trunk e com o
+    // Caller ID de outro. Sem tenant conhecido só se aceitam partilhados.
+    resolveTrunk: async (tenantId?: string) => {
+      const trunk = await prisma.trunk.findFirst({
+        where: tenantId
+          ? { enabled: true, OR: [{ tenantId }, { tenantId: null }] }
+          : { enabled: true, tenantId: null },
+        orderBy: [{ tenantId: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }],
+        select: { name: true, authUser: true },
+      });
+      if (!trunk) return null;
+      return {
+        endpoint: trunkEndpointId(trunk.name),
+        callerId: process.env["ASTERISK_CALLER_ID"] || trunk.authUser,
+      };
     },
-    fastify.redis
-  );
-  fastify.decorate("yeastar", yeastar);
-
-  // Motor de telefonia activo. TELEPHONY_ENGINE=asterisk liga o motor próprio;
-  // qualquer outro valor (ou ausência) mantém o PBX externo. É o interruptor
-  // que permite migrar e reverter sem redeploy — ver plano §15.2.
-  const useAsterisk =
-    process.env["TELEPHONY_ENGINE"] === "asterisk" && Boolean(process.env["ASTERISK_ARI_URL"]);
-  const asteriskAdapter = useAsterisk
-    ? new AsteriskAdapter({
-        baseUrl: process.env["ASTERISK_ARI_URL"]!,
-        username: process.env["ASTERISK_ARI_USER"] ?? "falai",
-        password: process.env["ASTERISK_ARI_PASSWORD"] ?? "",
-        soundsDir: process.env["ASTERISK_SOUNDS_DIR"] ?? "",
-        dialFormat: parseDialFormat(process.env["ASTERISK_DIAL_FORMAT"]),
-        // Por onde sai uma chamada para a rede: o trunk activo na base de
-        // dados. Lido a pedido (com cache curta no adaptador) para mudar o
-        // trunk no backoffice não obrigar a reiniciar a API.
-        // O trunk do PRÓPRIO cliente tem precedência; na falta dele usa-se um
-        // partilhado (tenantId nulo). Nunca o de outro cliente — antes isto era
-        // "o primeiro trunk activo", e um cliente saía pelo trunk e com o
-        // Caller ID de outro. Sem tenant conhecido só se aceitam partilhados.
-        resolveTrunk: async (tenantId?: string) => {
-          const trunk = await prisma.trunk.findFirst({
-            where: tenantId
-              ? { enabled: true, OR: [{ tenantId }, { tenantId: null }] }
-              : { enabled: true, tenantId: null },
-            orderBy: [{ tenantId: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }],
-            select: { name: true, authUser: true },
-          });
-          if (!trunk) return null;
-          return {
-            endpoint: trunkEndpointId(trunk.name),
-            callerId: process.env["ASTERISK_CALLER_ID"] || trunk.authUser,
-          };
-        },
-      })
-    : null;
-  const telephony: TelephonyProvider = asteriskAdapter ?? (yeastar as TelephonyProvider);
-  fastify.decorate("telephony", telephony);
+  });
+  fastify.decorate("telephony", asteriskAdapter as TelephonyProvider);
   fastify.decorate("asterisk", asteriskAdapter);
-  fastify.log.info({ engine: useAsterisk ? "asterisk" : "yeastar" }, "telephony.engine_selected");
   // Expira sessões esquecidas em memória e fecha registos DIRECT pendurados
   // (por exemplo os de antes de um reinício, que perde o mapa de sessões).
-  if (asteriskAdapter) startDirectCallSweeper(asteriskAdapter, fastify.log);
+  startDirectCallSweeper(asteriskAdapter, fastify.log);
 
-  // eventBus: multiplexor de eventos Yeastar (deve ser registado antes de callEngine e otpCallService)
+  // eventBus: multiplexor de eventos do motor (deve ser registado antes de callEngine e otpCallService)
   const { default: eventBusPlugin } = await import("./plugins/eventBus.js");
   await fastify.register(eventBusPlugin);
 
-  // Router de chamadas de entrada (ARI/Stasis) — só faz sentido com o motor
-  // Asterisk nativo; o Yeastar tem o seu próprio fluxo de entrada. Ver
+  // Router de chamadas de entrada (ARI/Stasis). Ver
   // services/inboundCallRouter.service.ts.
-  if (asteriskAdapter) {
-    registerInboundCallRouter(fastify.onCallEvent, asteriskAdapter, fastify, fastify.log);
-    // Fecha a chamada directa quando quem desliga é o outro lado — sem isto só
-    // o botão do CRM a fechava e o registo ficava "Em curso" para sempre.
-    registerDirectCallEvents(fastify.onCallEvent, asteriskAdapter, fastify.log);
-  }
+  registerInboundCallRouter(fastify.onCallEvent, asteriskAdapter, fastify, fastify.log);
+  // Fecha a chamada directa quando quem desliga é o outro lado — sem isto só
+  // o botão do CRM a fechava e o registo ficava "Em curso" para sempre.
+  registerDirectCallEvents(fastify.onCallEvent, asteriskAdapter, fastify.log);
 
   // Call engine wires STT/LLM/TTS e regista no eventBus
   await fastify.register(callEnginePlugin);
@@ -389,7 +360,6 @@ async function buildApp() {
   });
 
   // ── Webhooks ────────────────────────────────────────────────────────────
-  await fastify.register(yeastarWebhookRoutes, { prefix: "/webhooks/yeastar" });
   await fastify.register(pbxWebhookRoutes, { prefix: "/webhooks/pbx" });
   // CDR das chamadas marcadas no telefone — chamado pelo dialplan do Asterisk
   await fastify.register(asteriskWebhookRoutes, { prefix: "/webhooks/asterisk" });
@@ -405,16 +375,13 @@ async function buildApp() {
   const stopWaHealthCheck = startWaHealthCheck(fastify);
   fastify.addHook("onClose", async () => stopWaHealthCheck());
 
-  // ── WebSocket ──────────────────────────────────────────────────────────
-  registerYeastarWebSocket(fastify);
-
   // ── Health ─────────────────────────────────────────────────────────────
   fastify.get("/health", async () => {
-    const yeastarHealth = await yeastar.healthCheck();
+    const asteriskHealth = await asteriskAdapter.healthCheck();
     return {
       status: "ok",
       activeCalls: fastify.callEngine.activeCallCount,
-      providers: { yeastar: yeastarHealth },
+      providers: { asterisk: asteriskHealth },
     };
   });
 
@@ -427,8 +394,8 @@ async function main() {
     await app.listen({ port: config.PORT, host: config.HOST });
 
     // Projecta a configuração PBX para o motor próprio. Fire-and-forget: se o
-    // motor estiver em baixo, a API arranca na mesma e as chamadas continuam a
-    // sair pelo PBX externo.
+    // motor estiver em baixo, a API arranca na mesma e volta a sincronizar na
+    // próxima alteração de extensões/trunks.
     void syncAllPbx()
       .then(() => app.log.info("pbx_sync.boot_complete"))
       .catch((err) => app.log.warn({ err }, "pbx_sync.boot_failed"));

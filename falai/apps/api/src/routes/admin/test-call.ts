@@ -66,7 +66,7 @@ export const adminTestCallRoutes: FastifyPluginAsync = async (fastify) => {
     const body = testCallSchema.parse(request.body);
     const admin = request.adminUser!;
 
-    const fromExtension = process.env["YEASTAR_TEST_EXTENSION"] ?? "1000";
+    const fromExtension = process.env["TEST_CALL_EXTENSION"] ?? "1000";
     const message = body.message ?? DEFAULT_TEST_MESSAGE;
 
     fastify.log.info({ action: "test_call.initiated", toNumber: body.toNumber, adminId: admin.sub });

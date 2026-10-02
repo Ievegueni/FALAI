@@ -4,7 +4,7 @@
  * PORQUÊ ESTE FICHEIRO EXISTE
  * A rota POST /tenant/calls/direct pedia a chamada a `getTenantTelephony()`,
  * que devolve SEMPRE um YeastarAdapter — o PBX global da plataforma ou o do
- * tenant. Com TELEPHONY_ENGINE=asterisk isso significa que a chamada nunca
+ * tenant. Com o motor Asterisk isso significava que a chamada nunca
  * chegava ao nosso Asterisk nem ao trunk do operador: era originada no PBX
  * Yeastar remoto (angovoipdemo...), numa extensão que não é a do cliente, e o
  * telemóvel nunca tocava. A API devolvia 202 na mesma, com o call_id do outro

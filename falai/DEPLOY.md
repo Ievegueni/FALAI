@@ -117,11 +117,12 @@ ALLOWED_ORIGINS=https://crm.teu-dominio.com,https://admin.teu-dominio.com
 # X-Forwarded-For e contornar a allowlist com uma chave roubada.
 TRUSTED_PROXIES=127.0.0.1
 
-# Telefonia Yeastar (podes deixar vazio e configurar depois no backoffice → Configurações)
-YEASTAR_BASE_URL=
-YEASTAR_CLIENT_ID=
-YEASTAR_CLIENT_SECRET=
-YEASTAR_STUB_MODE=false      # false = chamadas reais
+# Motor de telefonia (Asterisk, ver infra/asterisk/README.md). OBRIGATÓRIO:
+# a API não arranca sem ASTERISK_ARI_URL. Ver .env.example para o resto.
+ASTERISK_ARI_URL=http://127.0.0.1:8088
+ASTERISK_ARI_USER=falai
+ASTERISK_ARI_PASSWORD=
+ASTERISK_SOUNDS_DIR=/caminho/para/falai/infra/asterisk/sounds
 
 # Provedores (opcionais — também configuráveis no backoffice)
 DEEPGRAM_API_KEY=
@@ -369,7 +370,7 @@ Faz também backup seguro do `.env` (em especial `ENCRYPTION_KEY` e `JWT_SECRET`
 
 - [ ] Node 20 + pnpm 9 + Docker + nginx + certbot instalados
 - [ ] Postgres + Redis a correr (`docker compose ... up -d`), portas em `127.0.0.1`
-- [ ] `.env` com `JWT_SECRET`, `ENCRYPTION_KEY`, `DATABASE_URL`, `ALLOWED_ORIGINS`, `TRUSTED_PROXIES`, `YEASTAR_STUB_MODE=false`
+- [ ] `.env` com `JWT_SECRET`, `ENCRYPTION_KEY`, `DATABASE_URL`, `ALLOWED_ORIGINS`, `TRUSTED_PROXIES`, `ASTERISK_ARI_*`
 - [ ] `pnpm install && db:generate && db:migrate:prod && build`
 - [ ] Serviços `falai-api` e `falai-worker` activos (systemd)
 - [ ] nginx a servir CRM + Backoffice com TLS

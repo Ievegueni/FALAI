@@ -142,7 +142,7 @@ integração pronto a entregar: `docs/API-BYOM.md`.
 - ✅ Portas RTP `10000-10100/udp` e `5060` mapeadas no Docker.
 - ✅ `EXTERNAL_IP=102.130.202.155` preenchido em `infra/asterisk/.env` (resolve
   a causa nº1 de "áudio só num sentido").
-- ✅ API ligada ao motor por **ARI** (`TELEPHONY_ENGINE=asterisk`); a aplicação
+- ✅ API ligada ao motor por **ARI** (único motor; o Yeastar global foi removido a 02/10/2026 — só resta no produto CRM_BYO_PBX); a aplicação
   `falai` aparece registada no Asterisk.
 - ✅ `asteriskRuntime.service` gera a config PJSIP **global** a partir da BD e
   sincroniza por AMI; `asteriskStatus.service` lê estado.
@@ -311,7 +311,7 @@ docker compose -f infra/asterisk/docker-compose.yml restart
 ```
 
 Config importante: `infra/asterisk/.env` (EXTERNAL_IP) e `.env` da raiz
-(`TELEPHONY_ENGINE`, `ASTERISK_ARI_*`, `ASTERISK_AMI_*`,
+(`ASTERISK_ARI_*` — obrigatório, `ASTERISK_AMI_*`,
 `ASTERISK_DIAL_FORMAT`, `ASTERISK_CALLER_ID`).
 
 **Regra de trabalho:** reiniciar sempre API/CRM/backoffice afectados depois de

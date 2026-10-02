@@ -26,7 +26,7 @@ declare module "fastify" {
 
 export default fp(async (fastify) => {
   const providers = fastify.providerConfig;
-  const stubMode = providers.yeastar.stubMode;
+  const stubMode = config.AI_STUB_MODE;
 
   const stt = new DeepgramAdapter({
     apiKey: providers.deepgram.apiKey,

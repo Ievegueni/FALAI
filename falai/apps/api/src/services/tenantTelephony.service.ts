@@ -6,9 +6,9 @@ import { decryptSecret } from "./crypto.service.js";
 /**
  * Resolve o adaptador de telefonia correcto para um tenant.
  *
- * - Plano VOICE_AI (operador): usa o PBX global da plataforma (`fastify.yeastar`).
  * - Plano CRM_BYO_PBX com credenciais próprias: cria/cacheia um YeastarAdapter
  *   dedicado, com token isolado no Redis (`yeastar:token:tenant:{id}`).
+ * - Todos os outros: motor Asterisk da plataforma (`getTenantAsterisk`).
  *
  * Os adaptadores por tenant são cacheados e invalidados quando as credenciais mudam
  * (via fingerprint) ou explicitamente (`invalidateTenantTelephony`).
@@ -52,8 +52,7 @@ export function hasOwnPbx(tenant: {
 export async function getTenantAsterisk(
   fastify: FastifyInstance,
   tenantId: string,
-): Promise<FastifyInstance["asterisk"]> {
-  if (!fastify.asterisk) return null;
+): Promise<FastifyInstance["asterisk"] | null> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: {
@@ -67,6 +66,7 @@ export async function getTenantAsterisk(
   return hasOwnPbx(tenant) ? null : fastify.asterisk;
 }
 
+/** Adaptador do PBX próprio do cliente. Só existe para tenants com hasOwnPbx(). */
 export async function getTenantTelephony(fastify: FastifyInstance, tenantId: string): Promise<YeastarAdapter> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
@@ -79,8 +79,7 @@ export async function getTenantTelephony(fastify: FastifyInstance, tenantId: str
   });
   if (!tenant) throw new Error("Tenant não encontrado");
 
-  // Plano operador ou sem credenciais próprias → PBX global da plataforma
-  if (!hasOwnPbx(tenant)) return fastify.yeastar;
+  if (!hasOwnPbx(tenant)) throw new Error("Tenant sem PBX próprio — usa o motor da plataforma");
 
   const fingerprint = `${tenant.pbxBaseUrl}|${tenant.pbxClientId}|${tenant.pbxClientSecret}`;
   const cached = cache.get(tenantId);
