@@ -9,7 +9,9 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "otp:prompts": "tsx --env-file=../../.env scripts/setup-otp-prompts.mts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "contactos:normalizar": "tsx --env-file=../../.env scripts/normalizar-telefones-legado.mts",
+    "contactos:associar-chamadas": "tsx --env-file=../../.env scripts/associar-contactos-chamadas.mts"
   },
   "dependencies": {
     "@falai/db": "workspace:*",

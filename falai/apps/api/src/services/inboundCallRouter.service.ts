@@ -41,6 +41,7 @@ import {
 } from "./callLegs.service.js";
 import type { CallLegOutcome } from "@falai/db";
 import { busyExtensionIds } from "./callTyping.service.js";
+import { findContactIdForCaller } from "./callerLookup.service.js";
 import {
   computeCallCost,
   effectivePrice,
@@ -539,6 +540,9 @@ async function openInboundCall(
   log: FastifyBaseLogger
 ): Promise<string | null> {
   try {
+    // Cliente pelo número de origem (melhoria 3): a tipificação e as notas da
+    // chamada ficam ligadas a ele. Uma falha aqui não pode travar a chamada.
+    const contactId = await findContactIdForCaller(tenantId, event.callerIdNum).catch(() => null);
     const call = await prisma.call.upsert({
       where: { yeastarCallId: event.providerCallId },
       create: {
@@ -548,6 +552,7 @@ async function openInboundCall(
         // O DID é o número que o chamador marcou: do nosso lado é o destino.
         toNumber: event.did,
         ...(event.callerIdNum ? { fromNumber: event.callerIdNum } : {}),
+        ...(contactId && { contactId }),
         yeastarCallId: event.providerCallId,
         startedAt: new Date(),
       },

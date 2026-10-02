@@ -18,11 +18,14 @@ import { normalizeAoPhone } from "@falai/shared";
 const apply = process.argv.includes("--apply");
 
 const legacy = await prisma.contact.findMany({
-  where: { NOT: { phone: { startsWith: "9" } } },
+  // Contactos sem telefone (canais de texto) ficam de fora.
+  where: { phone: { not: null }, NOT: { phone: { startsWith: "9" } } },
   select: { id: true, tenantId: true, phone: true, name: true, createdAt: true },
   orderBy: { createdAt: "asc" },
 });
-const suspects = legacy.filter((c) => !/^[0-9]{9}$/.test(c.phone));
+const suspects = legacy
+  .map((c) => ({ ...c, phone: c.phone! }))
+  .filter((c) => !/^[0-9]{9}$/.test(c.phone));
 
 const renomear: Array<{ id: string; de: string; para: string }> = [];
 const fundir: Array<{ manter: string; absorver: string; phone: string; hist: number }> = [];
@@ -66,6 +69,10 @@ await prisma.$transaction(async (tx) => {
     await tx.campaignContact.updateMany({ where: { contactId: f.absorver }, data: { contactId: f.manter } });
     await tx.call.updateMany({ where: { contactId: f.absorver }, data: { contactId: f.manter } });
     await tx.smsMessage.updateMany({ where: { contactId: f.absorver }, data: { contactId: f.manter } });
+    // Relações que vieram depois deste script (canais de texto, melhoria 3).
+    await tx.conversation.updateMany({ where: { contactId: f.absorver }, data: { contactId: f.manter } });
+    await tx.contactPhone.updateMany({ where: { contactId: f.absorver }, data: { contactId: f.manter } });
+    await tx.contactNote.updateMany({ where: { contactId: f.absorver }, data: { contactId: f.manter } });
     await tx.contact.delete({ where: { id: f.absorver } });
   }
   for (const r of renomear) await tx.contact.update({ where: { id: r.id }, data: { phone: r.para } });
@@ -75,6 +82,8 @@ await prisma.$transaction(async (tx) => {
   }
 }, { timeout: 120_000 });
 
-const resto = (await prisma.contact.findMany({ select: { phone: true } })).filter((c) => !/^[0-9]{9}$/.test(c.phone));
+const resto = (await prisma.contact.findMany({ where: { phone: { not: null } }, select: { phone: true } })).filter(
+  (c) => !/^[0-9]{9}$/.test(c.phone!)
+);
 console.log(`\naplicado. contactos ainda em formato antigo: ${resto.length}`);
 await prisma.$disconnect();

@@ -737,8 +737,10 @@ model Call {
   updatedAt         DateTime   @updatedAt
   turns             CallTurn[]
   legs              CallLeg[]
+  notes             ContactNote[]
 
   @@index([tenantId, kind, startedAt])
+  @@index([tenantId, contactId, startedAt]) // histórico do cliente (screen pop)
 }
 
 enum CallLegOutcome {
@@ -905,10 +907,44 @@ model Contact {
   campaignContacts CampaignContact[]
   smsMessages      SmsMessage[]
   conversations    Conversation[]
+  // Histórico do cliente na entrada (melhoria 3)
+  phones           ContactPhone[]
+  notes            ContactNote[]
 
   @@unique([tenantId, phone])
   @@unique([tenantId, email])
   @@unique([tenantId, telegramId])
+}
+
+// Números extra de um contacto (o principal continua em Contact.phone), no
+// mesmo formato nacional de 9 dígitos. Um número só pode pertencer a um
+// contacto do tenant — verificado no código, porque são duas tabelas.
+model ContactPhone {
+  id        String   @id @default(cuid())
+  tenantId  String
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  phone     String
+  label     String?
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, phone])
+  @@index([contactId])
+}
+
+// Notas do agente sobre o cliente, opcionalmente ligadas à chamada em curso.
+model ContactNote {
+  id        String   @id @default(cuid())
+  tenantId  String
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  callId    String?
+  call      Call?    @relation(fields: [callId], references: [id], onDelete: SetNull)
+  authorId  String // TenantUser
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, contactId, createdAt])
 }
 
 // ============ SMS ============

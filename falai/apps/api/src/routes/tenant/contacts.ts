@@ -113,6 +113,9 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const phone = normalizeAoPhone(body.phone);
     if (!phone) return reply.status(400).send({ error: "Formato de telefone inválido. Use o número nacional de 9 dígitos (ex: 9XX XXX XXX)." });
+    // Número extra de outro contacto (ver ContactPhone): não cria um duplicado.
+    const extra = await prisma.contactPhone.findUnique({ where: { tenantId_phone: { tenantId, phone } }, select: { contactId: true } });
+    if (extra) return reply.status(409).send({ error: "Já existe um contacto com este número.", contactId: extra.contactId });
 
     const contact = await prisma.contact.upsert({
       where: { tenantId_phone: { tenantId, phone } },
@@ -200,7 +203,9 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
       const normalized = normalizeAoPhone(body.phone);
       if (!normalized) return reply.status(400).send({ error: "Formato de telefone inválido. Use o número nacional de 9 dígitos (ex: 9XX XXX XXX)." });
       if (normalized !== existing.phone) {
-        const clash = await prisma.contact.findFirst({ where: { tenantId, phone: normalized, id: { not: existing.id } } });
+        const clash =
+          (await prisma.contact.findFirst({ where: { tenantId, phone: normalized, id: { not: existing.id } } })) ??
+          (await prisma.contactPhone.findFirst({ where: { tenantId, phone: normalized, contactId: { not: existing.id } } }));
         if (clash) return reply.status(409).send({ error: "Já existe um contacto com este número." });
       }
       normalizedPhone = normalized;

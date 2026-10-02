@@ -87,3 +87,34 @@ Decisões da Fase 0:
 
 ### Pendente / a validar
 - [ ] Teste real: chamada atendida no webphone → formulário abre; com obrigatória, a extensão não toca até tipificar/expirar.
+
+## Melhoria 3/4 — Histórico do cliente na entrada (screen pop) (iniciada a 03/10/2026)
+
+Decisões da Fase 0:
+- Números: mantém-se o formato de gravação do projecto (**9 dígitos nacionais**,
+  `normalizeAoPhone`, decisão anterior contra duplicados); no ecrã mostra-se
+  `+244 9XX XXX XXX`. A pesquisa aceita +244/244/00244/9 dígitos e ainda o
+  legado `+244…` gravado. Internacionais mostram-se em bruto, sem identificação.
+- Número oculto: vazio, só zeros/pontuação, `anonymous/unknown/restricted/private/…`.
+- Vários números: `ContactPhone` (extra); unicidade entre as duas tabelas no código.
+- Disparo do painel: o INVITE do webphone já traz `X-Falai-Leg-Id` → o painel
+  pede `/tenant/callers/lookup?legId=` no toque e fecha com os eventos da sessão.
+  Chega ao agente certo sem infra nova. Agentes só com telefone físico não têm
+  painel; o banner do PBX próprio (BYO) usa `?number=`.
+- O router de entrada passa a preencher `Call.contactId` → tipificação e notas
+  da chamada ficam ligadas ao cliente.
+- Histórico: todas as chamadas do contacto (entrada e saída), 10 + "ver mais".
+- Cada consulta fica no AuditLog (`contact.history_viewed`).
+
+### Fase 1 — Backend ✅
+- [x] Migração aditiva: `ContactPhone`, `ContactNote`, índice `Call(tenantId, contactId, startedAt)`.
+- [x] `callerLookup.service.ts` (classificação do número, pesquisa indexada, histórico, destaques, conversas, notas).
+- [x] `/tenant/callers/lookup`, `/:contactId/history`, contacto rápido, editar, números extra, notas.
+- [x] `/tenant/contacts` não cria duplicados de um número extra.
+- [x] Scripts `pnpm -F api contactos:normalizar` (corrigido p/ canais de texto) e `contactos:associar-chamadas`. Dev: 330 contactos normalizados.
+- [x] Testes: normalização, cliente existente, não identificado, oculto, auditoria, contacto rápido.
+
+### Fase 2 — Frontend
+- [ ] Painel do cliente no webphone (toque → atendimento → fecha ao recusar/não atender).
+- [ ] Contacto rápido, edição, números extra e notas durante a chamada.
+- [ ] Banner do PBX próprio usa a pesquisa no servidor.
