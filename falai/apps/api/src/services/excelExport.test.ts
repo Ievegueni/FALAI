@@ -37,6 +37,7 @@ describe("gráficos nativos no Excel", () => {
     const zip = await JSZip.loadAsync(await attendanceWorkbook(report, "reasons", "Demo Company"));
     const chart = await zip.file("xl/charts/chart1.xml")!.async("string");
     expect(chart).toContain("<c:barChart>");
+    expect(chart).toContain('<c:showVal val="1"/>'); // números nas barras
     expect(chart).toContain("<c:f>'Motivos de recusa'!$B$5:$B$6</c:f>");
     expect(await zip.file("xl/worksheets/sheet1.xml")!.async("string")).toContain('<drawing r:id="rIdFalaiDrawing"/>');
     expect(await zip.file("[Content_Types].xml")!.async("string")).toContain("/xl/charts/chart1.xml");

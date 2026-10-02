@@ -72,7 +72,8 @@ export function addTableSheet(
     // Folhas curtas numa só página; listas longas (chamadas) ocupam as que precisarem.
     pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: rows.length > 60 ? 0 : 1, paperSize: 9 },
   });
-  ws.columns = columns.map((c) => ({ width: c.width }));
+  // +3: o botão do filtro ocupa espaço no cabeçalho e cortava o título da coluna.
+  ws.columns = columns.map((c) => ({ width: Math.max(c.width, c.header.length + 1) + 3 }));
 
   ws.mergeCells(1, 1, 1, columns.length);
   ws.getCell(1, 1).value = title;

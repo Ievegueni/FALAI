@@ -105,6 +105,24 @@ function axes(spec: ChartSpec, horizontal: boolean): string {
   );
 }
 
+/**
+ * Números nos gráficos: valor na ponta de cada barra / ponto, no formato do
+ * eixo. `pos`: "outEnd" (barras) ou "t" (linha, por cima do ponto).
+ */
+function valueLabels(spec: ChartSpec, pos: "outEnd" | "t"): string {
+  const fmt = esc(spec.numFmt ?? "#,##0");
+  return (
+    `<c:dLbls><c:numFmt formatCode="${fmt}" sourceLinked="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>${text(800, false, "0B0B0B")}` +
+    `<c:dLblPos val="${pos}"/><c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="0"/><c:showBubbleSize val="0"/></c:dLbls>`
+  );
+}
+
+/**
+ * Na linha, números só na 1.ª série (com duas sobrepunham-se) e só enquanto
+ * cabem (até ~1 mês); com 90 dias ficava ilegível.
+ */
+const LINE_LABEL_MAX_POINTS = 31;
+
 const legend = (show: boolean, pos = "b") => (show ? `<c:legend><c:legendPos val="${pos}"/><c:overlay val="0"/>${text(900)}</c:legend>` : "");
 
 export function chartXml(spec: ChartSpec): string {
@@ -115,21 +133,23 @@ export function chartXml(spec: ChartSpec): string {
     const dpts = spec.categories
       .map((_, i) => `<c:dPt><c:idx val="${i}"/><c:bubble3D val="0"/><c:spPr>${fill(SERIES[i % SERIES.length]!)}<a:ln w="19050">${fill("FFFFFF")}</a:ln></c:spPr></c:dPt>`)
       .join("");
-    // Percentagem em cada fatia + legenda com o nome: nunca só cor.
-    const lbls = `<c:dLbls><c:numFmt formatCode="0%" sourceLinked="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>${text(900, true, "FFFFFF")}<c:showLegendKey val="0"/><c:showVal val="0"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="1"/><c:showBubbleSize val="0"/><c:showLeaderLines val="0"/></c:dLbls>`;
+    // Valor e percentagem em cada fatia + legenda com o nome: nunca só cor.
+    // Sem numFmt: o valor segue a célula e a percentagem o formato % do Excel
+    // (um numFmt aqui aplicava-se aos dois e a % saía "0").
+    const lbls = `<c:dLbls><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln></c:spPr>${text(900, true, "FFFFFF")}<c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/><c:showPercent val="1"/><c:showBubbleSize val="0"/><c:separator>&#10;</c:separator><c:showLeaderLines val="0"/></c:dLbls>`;
     plot = `<c:doughnutChart><c:varyColors val="1"/><c:ser>${serCommon(s, 0, spec)}${dpts}${lbls}${catVal(s, spec)}</c:ser><c:firstSliceAng val="0"/><c:holeSize val="58"/></c:doughnutChart>`;
     return wrap(spec, plot, legend(true, "r"));
   }
   if (spec.type === "line") {
     const sers = spec.series
-      .map((s, i) => `<c:ser>${serCommon(s, i, spec)}<c:spPr><a:ln w="22225" cap="rnd">${fill(SERIES[i]!)}<a:round/></a:ln></c:spPr><c:marker><c:symbol val="none"/></c:marker>${catVal(s, spec)}<c:smooth val="0"/></c:ser>`)
+      .map((s, i) => `<c:ser>${serCommon(s, i, spec)}<c:spPr><a:ln w="22225" cap="rnd">${fill(SERIES[i]!)}<a:round/></a:ln></c:spPr><c:marker><c:symbol val="none"/></c:marker>${i === 0 && spec.categories.length <= LINE_LABEL_MAX_POINTS ? valueLabels(spec, "t") : ""}${catVal(s, spec)}<c:smooth val="0"/></c:ser>`)
       .join("");
     plot = `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${sers}<c:marker val="1"/><c:axId val="5001"/><c:axId val="5002"/></c:lineChart>${axes(spec, false)}`;
     return wrap(spec, plot, legend(many));
   }
   const horizontal = spec.type === "bar";
   const sers = spec.series
-    .map((s, i) => `<c:ser>${serCommon(s, i, spec)}<c:spPr>${fill(SERIES[i]!)}</c:spPr><c:invertIfNegative val="0"/>${catVal(s, spec)}</c:ser>`)
+    .map((s, i) => `<c:ser>${serCommon(s, i, spec)}<c:spPr>${fill(SERIES[i]!)}</c:spPr><c:invertIfNegative val="0"/>${valueLabels(spec, "outEnd")}${catVal(s, spec)}</c:ser>`)
     .join("");
   plot = `<c:barChart><c:barDir val="${horizontal ? "bar" : "col"}"/><c:grouping val="clustered"/><c:varyColors val="0"/>${sers}<c:gapWidth val="${many ? 60 : 80}"/><c:overlap val="${many ? -5 : 0}"/><c:axId val="5001"/><c:axId val="5002"/></c:barChart>${axes(spec, horizontal)}`;
   return wrap(spec, plot, legend(many));
