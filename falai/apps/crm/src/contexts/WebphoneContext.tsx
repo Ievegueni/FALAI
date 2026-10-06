@@ -69,14 +69,34 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
   const [supervisedMode, setSupervisedMode] = useState<SupervisionMode | null>(null);
 
   // <audio> escondido para tocar o stream remoto — não há UI própria disso.
+  // O Safari do iOS só o toca se estiver na página, com playsinline, e se o
+  // play() tiver sido autorizado por um gesto (ver unlockRemoteAudio): sem
+  // isto o agente no iPhone fala mas não ouve o cliente.
   useEffect(() => {
-    const audio = new Audio();
+    const audio = document.createElement('audio');
     audio.autoplay = true;
+    audio.setAttribute('playsinline', '');
+    audio.style.display = 'none';
+    document.body.appendChild(audio);
     remoteAudioRef.current = audio;
     return () => {
       audio.pause();
       audio.srcObject = null;
+      audio.remove();
     };
+  }, []);
+
+  // Chamado dentro de um clique (escolher a linha, marcar, atender): o iOS
+  // passa a deixar este elemento tocar mais tarde, quando o áudio chegar.
+  const unlockRemoteAudio = useCallback(() => {
+    void remoteAudioRef.current?.play().catch(() => {});
+  }, []);
+
+  const playRemoteStream = useCallback((stream: MediaStream) => {
+    const audio = remoteAudioRef.current;
+    if (!audio) return;
+    if (audio.srcObject !== stream) audio.srcObject = stream;
+    void audio.play().catch(() => {});
   }, []);
 
   const teardownUa = useCallback(() => {
@@ -95,6 +115,13 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
       setRemoteIdentity(session.remote_identity?.uri?.user ?? null);
       setIncomingLegId(null);
 
+      // O áudio remoto liga-se assim que a faixa chega (evento 'track'), e não
+      // só no 'confirmed': no Safari a faixa pode chegar antes ou depois.
+      const watchTracks = (pc: RTCPeerConnection) =>
+        pc.addEventListener('track', (ev) => playRemoteStream(ev.streams[0] ?? new MediaStream([ev.track])));
+      if (session.connection) watchTracks(session.connection);
+      else session.on('peerconnection', ({ peerconnection }) => watchTracks(peerconnection));
+
       session.on('progress', () => setCallState((s) => (s === 'incoming' ? s : 'ringing')));
       session.on('accepted', () => setCallState('in-call'));
       session.on('confirmed', () => {
@@ -102,7 +129,9 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
         const remoteStream = new MediaStream();
         const pc = session.connection;
         pc?.getReceivers().forEach((r) => r.track && remoteStream.addTrack(r.track));
-        if (remoteAudioRef.current) remoteAudioRef.current.srcObject = remoteStream;
+        const current = remoteAudioRef.current?.srcObject;
+        if (!(current instanceof MediaStream) || current.getAudioTracks().length === 0) playRemoteStream(remoteStream);
+        else void remoteAudioRef.current?.play().catch(() => {});
       });
       session.on('ended', () => {
         setCallState('ended');
@@ -116,12 +145,13 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
         setTimeout(() => setCallState((s) => (s === 'ended' ? 'idle' : s)), 1500);
       });
     },
-    [],
+    [playRemoteStream],
   );
 
   const selectExtension = useCallback(
     async (id: string) => {
       unlockRingtone(); // gesto do utilizador: autoriza o toque para depois
+      unlockRemoteAudio();
       teardownUa();
       setError(null);
       setExtensionId(id);
@@ -179,7 +209,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
         setError(err instanceof Error ? err.message : 'Não foi possível obter as credenciais do webphone');
       }
     },
-    [attachSession, info, teardownUa],
+    [attachSession, info, teardownUa, unlockRemoteAudio],
   );
 
   const unregister = useCallback(() => {
@@ -195,15 +225,17 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
         return;
       }
       setError(null);
+      unlockRemoteAudio();
       const session = ua.call(number);
       attachSession(session, 'calling');
     },
-    [attachSession, registration, toastError],
+    [attachSession, registration, toastError, unlockRemoteAudio],
   );
 
   const answer = useCallback(() => {
+    unlockRemoteAudio();
     sessionRef.current?.answer({ mediaConstraints: { audio: true, video: false } });
-  }, []);
+  }, [unlockRemoteAudio]);
 
   const hangup = useCallback(() => {
     sessionRef.current?.terminate();
