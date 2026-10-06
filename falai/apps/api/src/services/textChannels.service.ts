@@ -9,6 +9,8 @@ import { chargeTextMessage } from "./billing.service.js";
 import { emitWebhookAsync } from "./webhookEmitter.service.js";
 import { classifyError, checkNumber } from "./waPool.service.js";
 import { tryTextCsatAnswer } from "./csat.service.js";
+import { knowledgeContext } from "./knowledge.service.js";
+import { tenantHasFeature } from "./features.js";
 
 /**
  * Canais de texto (Telegram, widget web, email) — ver docs/PLANO-CANAIS-TEXTO.md.
@@ -343,10 +345,17 @@ async function replyWithAi(fastify: FastifyInstance, inbox: Inbox, conversationI
   const history: TurnMessage[] = older.reverse().map((m) => ({ role: m.role === "AGENT" ? "agent" : "human", text: m.text }));
   const current = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { contactId: true } });
   const previous = await previousContext(conversationId, current?.contactId ?? null);
+  // Base de conhecimento (fase 10): os artigos relevantes para a pergunta.
+  const knowledge = (await tenantHasFeature(inbox.tenantId, "knowledge"))
+    ? await knowledgeContext(inbox.tenantId, last.text).catch((err) => {
+        fastify.log.warn({ err, conversationId }, "text.knowledge_failed");
+        return "";
+      })
+    : "";
 
   const { response, llmMs, guard } = await processTextTurn({
     llm: model.llm ?? fastify.llm,
-    systemPrompt: agent.systemPrompt + "\n" + channelNote(inbox.channel) + previous,
+    systemPrompt: agent.systemPrompt + "\n" + channelNote(inbox.channel) + knowledge + previous,
     history,
     userText: last.text,
     variables: {},

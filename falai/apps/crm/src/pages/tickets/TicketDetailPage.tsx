@@ -24,6 +24,7 @@ import {
   useTicketMeta,
 } from '@/components/tickets/TicketBits';
 import type { TicketDetail, TicketMeta, TicketStatus } from '@/types';
+import { KbQuickSearch } from '@/components/knowledge/KbBits';
 
 export function TicketDetailPage() {
   const { t } = useTranslation();
@@ -194,6 +195,8 @@ export function TicketDetailPage() {
               </Field>
             </div>
           </Card>
+
+          <Card><KbQuickSearch initial={ticket.subject} /></Card>
 
           <Card>
             <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-gray-900"><User className="h-4 w-4 text-gray-400" /> {t('tickets.contact')}</h2>

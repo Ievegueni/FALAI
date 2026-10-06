@@ -277,6 +277,7 @@ model Tenant {
   // services/csat.service.ts. Null = sem inquéritos.
   csatConfig           Json?
   csatResponses        CsatResponse[]
+  kbArticles           KbArticle[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -1605,4 +1606,26 @@ model CsatResponse {
   @@index([tenantId, createdAt])
   @@index([conversationId])
   @@index([callId])
+}
+
+// ============ BASE DE CONHECIMENTO (centro de atendimento, fase 10) ============
+// Ver services/knowledge.service.ts. aiEnabled: a IA dos canais de texto pode
+// usar o artigo como contexto quando é relevante para a pergunta.
+
+model KbArticle {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  title       String
+  body        String   @db.Text
+  category    String?
+  isPublished Boolean  @default(true)
+  aiEnabled   Boolean  @default(true)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, isPublished])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "KbArticle_title_trgm_idx")
 }

@@ -48,7 +48,8 @@
     "pin": "Fixar menu",
     "unpin": "Soltar menu",
     "tickets": "Tickets",
-    "quality": "Qualidade"
+    "quality": "Qualidade",
+    "knowledge": "Conhecimento"
   },
   "login": {
     "subtitle": "Inicie sessão na sua conta",
@@ -1750,5 +1751,22 @@
       "criticalFails": "Eliminatórios",
       "disputed": "Contestadas"
     }
+  },
+  "kb": {
+    "title": "Base de conhecimento",
+    "new": "Novo artigo",
+    "edit": "Editar artigo",
+    "articleTitle": "Título",
+    "category": "Categoria",
+    "body": "Texto",
+    "published": "Publicado (visível para os agentes)",
+    "aiEnabled": "A IA pode usar este artigo nas respostas",
+    "searchPlaceholder": "Pesquisar artigos…",
+    "allCategories": "Todas as categorias",
+    "noResults": "Nenhum artigo encontrado.",
+    "emptyTitle": "Ainda não há artigos",
+    "emptyDescription": "A supervisão escreve aqui respostas, procedimentos e políticas — os agentes consultam-nos durante o atendimento.",
+    "draft": "Rascunho",
+    "deleteConfirm": "Apagar este artigo?"
   }
 }

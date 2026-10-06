@@ -91,6 +91,7 @@ import { tenantAlertsRoutes } from "./routes/tenant/alerts.js";
 import { tenantAgentTimeRoutes } from "./routes/tenant/agentTime.js";
 import { tenantQualityRoutes } from "./routes/tenant/quality.js";
 import { tenantCsatRoutes, publicCsatRoutes } from "./routes/tenant/csat.js";
+import { tenantKnowledgeRoutes } from "./routes/tenant/knowledge.js";
 import { publicChatRoutes } from "./routes/public/chat.js";
 import { publicWaRoutes } from "./routes/public/wa.js";
 import { startEmailPolling } from "./services/email.service.js";
@@ -388,6 +389,7 @@ async function buildApp() {
   await gated(fastify, "webphone", tenantAgentTimeRoutes);
   await gated(fastify, "quality", tenantQualityRoutes);
   await gated(fastify, "reports", tenantCsatRoutes);
+  await gated(fastify, "knowledge", tenantKnowledgeRoutes);
   await fastify.register(tenantEventsRoutes);
   await gated(fastify, "reports", tenantReportsRoutes);
   await gated(fastify, "sms", tenantSmsRoutes);

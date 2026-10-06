@@ -5,7 +5,7 @@
 > como projecto à medida: tudo o que entra aqui serve qualquer tenant e liga-se
 > por funcionalidade no backoffice.
 >
-> Criado em 06/10/2026. Estado: **fases 1, 2, 4, 5, 7, 8 e 9 feitas em 06/10, branch
+> Criado em 06/10/2026. Estado: **fases 1, 2, 4, 5, 7, 8, 9 e 10 feitas, branch
 > `feat/tickets`** — migrações `20261006090000_tickets`, `…120000_manager_role`,
 > `…150000_service_alerts`, `…180000_agent_time`, `…200000_quality` e
 > `…220000_csat` aplicadas só na BD local. Fase 3 (Freshdesk) à espera de conta de
@@ -308,7 +308,20 @@ Plano original:
   registo), com chave de API com scope `reports:read`. O Power BI liga-se pelo
   conector Web. Sem OData nem conector próprio até alguém pedir.
 
-### Fase 10 — Base de conhecimento (P)
+### Fase 10 — Base de conhecimento (P) · ✅ feita 07/10
+
+Feito: `KbArticle` (migração `20261007090000_knowledge`), feature `knowledge`;
+`services/knowledge.service.ts` (relevância por palavras, sem acentos, título
+vale o triplo) + testes; página Conhecimento (pesquisa, categorias,
+rascunhos, editor); pesquisa rápida no screen pop e no ticket; a IA dos canais
+de texto recebe os 3 artigos mais relevantes para a pergunta. Ler: todos;
+escrever: supervisão; apagar: gestor/admin.
+
+Ficou de fora: a IA de voz (o turno de voz monta o prompt noutro sítio —
+acrescentar quando a voz real estiver provada); pesquisa por significado
+(embeddings) — a de palavras chega para centenas de artigos.
+
+Plano original:
 
 `KbArticle` (título, corpo, categoria, publicado). Pesquisa no CRM ao lado do
 screen pop e do ticket. Extra barato: a IA dos canais de texto pode usá-la

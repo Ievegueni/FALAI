@@ -1490,3 +1490,17 @@ export interface ConsolidatedReport {
 export const consolidatedApi = {
   get: (q: { from?: string; to?: string; bucket: ConsolidatedBucket }) => get<ConsolidatedReport>(`/tenant/reports/consolidated${qs(q)}`),
 };
+
+// ─── Base de conhecimento (fase 10) ─────────────────────────────────────────
+
+export interface KbSummary { id: string; title: string; category: string | null; isPublished: boolean; aiEnabled: boolean; updatedAt: string; excerpt: string }
+export interface KbArticle { id: string; title: string; body: string; category: string | null; isPublished: boolean; aiEnabled: boolean; updatedAt: string; canEdit: boolean }
+export type KbInput = { title: string; body: string; category: string | null; isPublished: boolean; aiEnabled: boolean };
+
+export const kbApi = {
+  list: (q: { q?: string; category?: string; limit?: number }) => get<{ data: KbSummary[]; categories: string[] }>(`/tenant/kb${qs(q)}`),
+  get: (id: string) => get<KbArticle>(`/tenant/kb/${id}`),
+  create: (data: KbInput) => post<KbArticle>('/tenant/kb', data),
+  update: (id: string, data: KbInput) => put<KbArticle>(`/tenant/kb/${id}`, data),
+  remove: (id: string) => del<void>(`/tenant/kb/${id}`),
+};

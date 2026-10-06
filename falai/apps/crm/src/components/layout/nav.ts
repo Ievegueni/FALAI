@@ -18,6 +18,7 @@ import {
   Headphones,
   Ticket,
   ClipboardCheck,
+  BookOpen,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import type { FeatureKey, TenantUser } from '@/types';
@@ -47,6 +48,7 @@ export function useNavItems(): NavItem[] {
     [features?.inbox === true, item('/inbox', Inbox, 'inbox')],
     [features?.tickets === true, item('/tickets', Ticket, 'tickets')],
     [features?.quality === true, item('/quality', ClipboardCheck, 'quality')],
+    [features?.knowledge === true, item('/knowledge', BookOpen, 'knowledge')],
     [isOn('webphone') && !!user && SUPERVISION_ROLES.has(user.role), item('/supervision', Headphones, 'supervision')],
     [isOn('contacts'), item('/contacts', Users, 'contacts')],
     [isOn('campaigns'), item('/campaigns', Megaphone, 'campaigns')],

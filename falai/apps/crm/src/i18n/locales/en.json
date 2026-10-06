@@ -48,7 +48,8 @@
     "pin": "Pin menu",
     "unpin": "Unpin menu",
     "tickets": "Tickets",
-    "quality": "Quality"
+    "quality": "Quality",
+    "knowledge": "Knowledge"
   },
   "login": {
     "subtitle": "Sign in to your account",
@@ -1750,5 +1751,22 @@
       "criticalFails": "Critical fails",
       "disputed": "Disputed"
     }
+  },
+  "kb": {
+    "title": "Knowledge base",
+    "new": "New article",
+    "edit": "Edit article",
+    "articleTitle": "Title",
+    "category": "Category",
+    "body": "Text",
+    "published": "Published (visible to agents)",
+    "aiEnabled": "AI may use this article in replies",
+    "searchPlaceholder": "Search articles…",
+    "allCategories": "All categories",
+    "noResults": "No articles found.",
+    "emptyTitle": "No articles yet",
+    "emptyDescription": "Supervisors write answers, procedures and policies here — agents look them up while serving customers.",
+    "draft": "Draft",
+    "deleteConfirm": "Delete this article?"
   }
 }

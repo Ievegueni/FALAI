@@ -48,7 +48,8 @@
     "pin": "固定菜单",
     "unpin": "取消固定菜单",
     "tickets": "工单",
-    "quality": "质量"
+    "quality": "质量",
+    "knowledge": "知识库"
   },
   "login": {
     "subtitle": "登录您的账户",
@@ -1678,5 +1679,22 @@
       "criticalFails": "否决项",
       "disputed": "申诉"
     }
+  },
+  "kb": {
+    "title": "知识库",
+    "new": "新建文章",
+    "edit": "编辑文章",
+    "articleTitle": "标题",
+    "category": "分类",
+    "body": "正文",
+    "published": "已发布（坐席可见）",
+    "aiEnabled": "AI 可在回复中使用此文章",
+    "searchPlaceholder": "搜索文章…",
+    "allCategories": "所有分类",
+    "noResults": "未找到文章。",
+    "emptyTitle": "暂无文章",
+    "emptyDescription": "主管在此编写答案、流程和政策——坐席在服务时查阅。",
+    "draft": "草稿",
+    "deleteConfirm": "删除此文章？"
   }
 }

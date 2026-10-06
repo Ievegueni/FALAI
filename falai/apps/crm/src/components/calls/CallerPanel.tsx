@@ -11,6 +11,7 @@ import { Input, Textarea } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
 import { clsx, formatDuration } from '@/lib/utils';
 import { TicketLinkOrCreate, TicketRefList, useTicketsEnabled } from '@/components/tickets/TicketBits';
+import { KbQuickSearch } from '@/components/knowledge/KbBits';
 import { Ticket as TicketIcon } from 'lucide-react';
 
 /**
@@ -253,6 +254,9 @@ export function CallerPanel({ legId, number, onClose }: { legId?: string | null;
           <Button size="sm" variant="ghost" loading={loadMore.isPending} onClick={() => loadMore.mutate()}>{t('callerPanel.seeMore')}</Button>
         )}
       </div>
+
+      {/* Base de conhecimento (fase 10) */}
+      <KbQuickSearch />
 
       {/* Tickets em aberto do cliente + criar a partir desta chamada */}
       {ticketsEnabled && (

@@ -83,7 +83,8 @@ export type FeatureKey =
   | 'telephony'
   | 'inbox'
   | 'tickets'
-  | 'quality';
+  | 'quality'
+  | 'knowledge';
 
 export type TenantFeatures = Record<FeatureKey, boolean>;
 

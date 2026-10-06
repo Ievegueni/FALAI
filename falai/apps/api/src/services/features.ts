@@ -29,6 +29,7 @@ export const FEATURE_KEYS = [
   "inbox",
   "tickets",
   "quality",
+  "knowledge",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -52,6 +53,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   inbox: "Caixa de entrada (WhatsApp, chat, email, Telegram)",
   tickets: "Tickets",
   quality: "Qualidade (QA)",
+  knowledge: "Base de conhecimento",
 };
 
 export const FEATURE_HINTS: Record<FeatureKey, string> = {
@@ -71,6 +73,7 @@ export const FEATURE_HINTS: Record<FeatureKey, string> = {
   inbox: "WhatsApp Business, chat no site, email e Telegram, com IA e operadores",
   tickets: "Casos com estados, níveis de suporte e ligação a chamadas e conversas",
   quality: "Formulários de avaliação, QA score, feedback e contestação dos agentes",
+  knowledge: "Artigos para os agentes consultarem; a IA dos canais de texto usa-os como contexto",
 };
 
 export const DEFAULT_FEATURES: Features = {
@@ -92,6 +95,7 @@ export const DEFAULT_FEATURES: Features = {
   inbox: false,
   tickets: false,
   quality: false,
+  knowledge: false,
 };
 
 /**
