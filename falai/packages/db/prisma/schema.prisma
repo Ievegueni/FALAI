@@ -265,6 +265,11 @@ model Tenant {
   // Validado em services/alerts.service.ts. Null = sem alertas.
   serviceTargets       Json?
   alerts               Alert[]
+  // Agentes (fase 5): motivos de pausa, pausas, sessões e turnos
+  pauseReasons         PauseReason[]
+  agentPauses          AgentPause[]
+  agentSessions        AgentSession[]
+  shifts               Shift[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -372,6 +377,7 @@ model Extension {
   callLegs       CallLeg[]
   // Pausa do agente (melhoria 4): em pausa não recebe chamadas de entrada.
   pausedAt       DateTime?
+  pauses         AgentPause[]
   users          TenantUser[]
   createdAt      DateTime                  @default(now())
   updatedAt      DateTime                  @updatedAt
@@ -555,6 +561,9 @@ model TenantUser {
   conversations   Conversation[]
   assignedTickets Ticket[]       @relation("TicketAssignee")
   ticketEvents    TicketEvent[]
+  pauses          AgentPause[]
+  sessions        AgentSession[]
+  shifts          Shift[]
 }
 
 // Perfil de acesso ao CRM, gerido pela Comunica no backoffice. A matriz diz,
@@ -1436,4 +1445,71 @@ model Alert {
 
   @@index([tenantId, startedAt])
   @@index([tenantId, endedAt])
+}
+
+// ============ AGENTES: PAUSAS, SESSÕES, TURNOS (centro de atendimento, fase 5) ============
+// Ver services/agentTime.service.ts.
+
+// Motivos de pausa (almoço, formação, ...). Desactivam-se em vez de apagar.
+model PauseReason {
+  id        String       @id @default(cuid())
+  tenantId  String
+  tenant    Tenant       @relation(fields: [tenantId], references: [id])
+  label     String
+  isActive  Boolean      @default(true)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  pauses    AgentPause[]
+
+  @@unique([tenantId, label])
+}
+
+// Uma pausa da extensão (Extension.pausedAt diz se está em pausa agora).
+model AgentPause {
+  id          String       @id @default(cuid())
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  extensionId String
+  extension   Extension    @relation(fields: [extensionId], references: [id], onDelete: Cascade)
+  userId      String? // dono da extensão quando pausou
+  user        TenantUser?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  reasonId    String?
+  reason      PauseReason? @relation(fields: [reasonId], references: [id], onDelete: SetNull)
+  startedAt   DateTime     @default(now())
+  endedAt     DateTime?
+
+  @@index([tenantId, startedAt])
+  @@index([extensionId, endedAt])
+}
+
+// Tempo ligado ao CRM: abre quando o utilizador liga o canal em tempo real
+// (SSE) e fecha quando o fecha. lastSeenAt serve para fechar as que ficaram
+// abertas se a API cair.
+model AgentSession {
+  id         String     @id @default(cuid())
+  tenantId   String
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  userId     String
+  user       TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt  DateTime   @default(now())
+  lastSeenAt DateTime   @default(now())
+  endedAt    DateTime?
+
+  @@index([tenantId, startedAt])
+  @@index([userId, endedAt])
+}
+
+// Turno semanal: dia da semana (0 = domingo) e minutos desde a meia-noite.
+// ponytail: turnos não passam da meia-noite; partir em dois se for preciso.
+model Shift {
+  id        String     @id @default(cuid())
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  userId    String
+  user      TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekday   Int
+  startMin  Int
+  endMin    Int
+
+  @@index([tenantId, userId])
 }

@@ -656,7 +656,19 @@
     "groupsHint": "用户分机接听来电的组。",
     "groupsNeedExtension": "请先选择用户的分机。",
     "roleManager": "经理",
-    "roleManagerOpt": "经理 — 全部运营（报表、团队、监控），无技术配置"
+    "roleManagerOpt": "经理 — 全部运营（报表、团队、监控），无技术配置",
+    "shifts": "班次",
+    "shiftsTitle": "{{name}} 的班次",
+    "shiftsHint": "每周排班，用于计算遵守率（坐席时间报表）。不跨越午夜。",
+    "weekday": {
+      "0": "星期日",
+      "1": "星期一",
+      "2": "星期二",
+      "3": "星期三",
+      "4": "星期四",
+      "5": "星期五",
+      "6": "星期六"
+    }
   },
   "settings": {
     "title": "设置",
@@ -885,7 +897,8 @@
       "reasons": "拒接",
       "calls": "通话",
       "typing": "通话分类",
-      "analysis": "AI 分析"
+      "analysis": "AI 分析",
+      "agentTime": "坐席时间"
     },
     "period": "时间段",
     "all": "全部",
@@ -992,6 +1005,18 @@
       "typingTrends": "增长中的分类",
       "recommendations": "建议",
       "disclaimer": "对报告数字的自动解读——决策前请核实。也会包含在这些筛选条件的 Excel 和 PDF 导出中。"
+    },
+    "agentTime": {
+      "agent": "坐席",
+      "scheduled": "排班",
+      "logged": "在线",
+      "inShift": "班次内在线",
+      "adherence": "遵守率",
+      "paused": "暂停",
+      "pauses": "按原因的暂停",
+      "noReason": "无原因",
+      "empty": "没有用户。",
+      "hint": "在线 = 打开 CRM 的时间。遵守率 = 班次内在线时间占比。"
     }
   },
   "sms": {
@@ -1084,7 +1109,8 @@
       "LISTEN": "主管正在监听此通话。",
       "WHISPER": "主管正在与您说话（客户听不到）。",
       "BARGE": "主管已加入通话（客户能听到）。"
-    }
+    },
+    "pauseWithReason": "暂停…"
   },
   "telephony": {
     "title": "电话",
@@ -1198,7 +1224,11 @@
     "typingAddSub": "子类别",
     "typingEmpty": "暂无类别。例如创建\"投诉\"及子类别\"账单\"。",
     "typingGroups": "组",
-    "typingGroupsHint": "不勾选任何组时，所有坐席都可见此类别。"
+    "typingGroupsHint": "不勾选任何组时，所有坐席都可见此类别。",
+    "tabPauseReasons": "暂停原因",
+    "pauseReasonsHint": "坐席在网页电话中暂停时选择的原因（午餐、培训等），用于坐席时间报表。",
+    "pauseReasonPlaceholder": "新的暂停原因",
+    "noPauseReasons": "没有暂停原因——坐席暂停时无需选择。"
   },
   "callerPanel": {
     "loading": "正在查找来电者…",

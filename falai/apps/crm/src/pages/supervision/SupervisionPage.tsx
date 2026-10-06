@@ -174,7 +174,9 @@ function Live() {
                 <p className="truncate text-sm font-medium text-gray-900">{a.name ?? a.number}</p>
                 <p className="text-xs text-gray-400">{a.number}</p>
               </div>
-              <Badge className={STATE_CLASS[a.state]}>{t(`supervision.state.${a.state}`)}</Badge>
+              <Badge className={STATE_CLASS[a.state]}>
+                {t(`supervision.state.${a.state}`)}{a.pauseReason ? ` · ${a.pauseReason}` : ''}
+              </Badge>
               <span className="w-14 text-right text-xs tabular-nums text-gray-500">{elapsed(a.since, now)}</span>
             </div>
           ))}

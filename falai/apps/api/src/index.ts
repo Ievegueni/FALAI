@@ -87,11 +87,13 @@ import { v1ConversationsRoutes } from "./routes/v1/conversations.js";
 import { tenantTicketsRoutes } from "./routes/tenant/tickets.js";
 import { v1TicketsRoutes } from "./routes/v1/tickets.js";
 import { tenantAlertsRoutes } from "./routes/tenant/alerts.js";
+import { tenantAgentTimeRoutes } from "./routes/tenant/agentTime.js";
 import { publicChatRoutes } from "./routes/public/chat.js";
 import { publicWaRoutes } from "./routes/public/wa.js";
 import { startEmailPolling } from "./services/email.service.js";
 import { startWaHealthCheck } from "./services/waPool.service.js";
 import { startAlertEvaluator } from "./services/alerts.service.js";
+import { closeStaleSessions } from "./services/agentTime.service.js";
 import { gateFeature, type FeatureKey } from "./services/features.js";
 
 /**
@@ -380,6 +382,7 @@ async function buildApp() {
   await gated(fastify, "webphone", tenantCallersRoutes);
   await gated(fastify, "webphone", tenantSupervisionRoutes);
   await gated(fastify, "webphone", tenantAlertsRoutes);
+  await gated(fastify, "webphone", tenantAgentTimeRoutes);
   await fastify.register(tenantEventsRoutes);
   await gated(fastify, "reports", tenantReportsRoutes);
   await gated(fastify, "sms", tenantSmsRoutes);
@@ -437,6 +440,8 @@ async function buildApp() {
   // Alertas operacionais e metas (fase 4): avaliação a cada 15 s.
   const stopAlerts = startAlertEvaluator(fastify);
   fastify.addHook("onClose", async () => stopAlerts());
+  // Sessões de agentes que ficaram abertas se a API caiu (fase 5).
+  await closeStaleSessions().catch((err) => fastify.log.warn({ err }, "agent_session.close_stale_error"));
 
   // ── Health ─────────────────────────────────────────────────────────────
   fastify.get("/health", async () => {

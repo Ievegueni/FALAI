@@ -463,7 +463,7 @@ export type AgentLiveState = 'IN_CALL' | 'RINGING' | 'WRAP_UP' | 'PAUSED' | 'AVA
 
 export interface SupervisionLive {
   now: string;
-  agents: { extensionId: string; number: string; name: string | null; state: AgentLiveState; since: string | null }[];
+  agents: { extensionId: string; number: string; name: string | null; state: AgentLiveState; since: string | null; pauseReason?: string | null }[];
   calls: {
     callId: string;
     agent: string | null;
@@ -507,9 +507,10 @@ export const supervisionApi = {
     fd.append('file', wav, 'aviso.wav');
     return post<{ ok: true }>('/tenant/supervision/notice-audio', fd);
   },
-  pause: (extensionId: string) => get<{ paused: boolean; since: string | null }>(`/tenant/supervision/pause${qs({ extensionId })}`),
-  setPause: (extensionId: string, paused: boolean) =>
-    post<{ paused: boolean }>('/tenant/supervision/pause', { extensionId, paused }),
+  pause: (extensionId: string) =>
+    get<{ paused: boolean; since: string | null; reason: { id: string; label: string } | null }>(`/tenant/supervision/pause${qs({ extensionId })}`),
+  setPause: (extensionId: string, paused: boolean, reasonId?: string | null) =>
+    post<{ paused: boolean }>('/tenant/supervision/pause', { extensionId, paused, ...(reasonId && { reasonId }) }),
 };
 
 // ─── Painel do cliente na entrada (melhoria 3) ───────────────────────────────
@@ -1373,4 +1374,35 @@ export const alertsApi = {
   saveSettings: (data: ServiceTargets) => put<ServiceTargets>('/tenant/alerts/settings', data),
   list: (q: { open?: boolean; type?: AlertType; from?: string; to?: string; page?: number }) =>
     get<Paginated<OpsAlert> & { byType: Partial<Record<AlertType, number>> }>(`/tenant/alerts${qs({ ...q, open: q.open === undefined ? undefined : String(q.open) })}`),
+};
+
+// ─── Agentes: motivos de pausa, turnos, tempo (fase 5) ──────────────────────
+
+export const pauseReasonsApi = {
+  list: (all = false) => get<{ data: RejectReason[] }>(`/tenant/pause-reasons${all ? '?all=1' : ''}`).then((r) => r.data),
+  create: (data: { label: string; sortOrder?: number }) => post<RejectReason>('/tenant/pause-reasons', data),
+  update: (id: string, data: Partial<Pick<RejectReason, 'label' | 'isActive' | 'sortOrder'>>) =>
+    patch<{ ok: true }>(`/tenant/pause-reasons/${id}`, data),
+};
+
+export interface ShiftInput { weekday: number; start: string; end: string }
+
+export const shiftsApi = {
+  get: (userId: string) => get<{ data: ShiftInput[] }>(`/tenant/team/${userId}/shifts`).then((r) => r.data),
+  save: (userId: string, shifts: ShiftInput[]) => put<{ data: ShiftInput[] }>(`/tenant/team/${userId}/shifts`, shifts),
+};
+
+export interface AgentTimeRow {
+  userId: string;
+  name: string;
+  scheduledSecs: number;
+  loggedSecs: number;
+  loggedInShiftSecs: number;
+  adherencePct: number | null;
+  pausedSecs: number;
+  pauses: { reason: string | null; secs: number; count: number }[];
+}
+
+export const agentTimeApi = {
+  report: (q: { from?: string; to?: string }) => get<{ from: string; to: string; data: AgentTimeRow[] }>(`/tenant/reports/agent-time${qs(q)}`),
 };

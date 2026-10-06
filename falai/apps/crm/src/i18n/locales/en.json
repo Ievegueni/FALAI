@@ -656,7 +656,19 @@
     "groupsHint": "Groups where the user's extension receives calls.",
     "groupsNeedExtension": "Choose the user's extension first.",
     "roleManager": "Manager",
-    "roleManagerOpt": "Manager — all operations (reports, team, supervision), no technical settings"
+    "roleManagerOpt": "Manager — all operations (reports, team, supervision), no technical settings",
+    "shifts": "Shifts",
+    "shiftsTitle": "Shifts for {{name}}",
+    "shiftsHint": "Weekly schedule, used for adherence (agent time report). Does not cross midnight.",
+    "weekday": {
+      "0": "Sunday",
+      "1": "Monday",
+      "2": "Tuesday",
+      "3": "Wednesday",
+      "4": "Thursday",
+      "5": "Friday",
+      "6": "Saturday"
+    }
   },
   "settings": {
     "title": "Settings",
@@ -885,7 +897,8 @@
       "reasons": "Declines",
       "calls": "Calls",
       "typing": "Call types",
-      "analysis": "AI analysis"
+      "analysis": "AI analysis",
+      "agentTime": "Agent time"
     },
     "period": "Period",
     "all": "All",
@@ -992,6 +1005,18 @@
       "typingTrends": "Growing typings",
       "recommendations": "Recommendations",
       "disclaimer": "Automatic interpretation of the report numbers — check before deciding. Also included in the Excel and PDF exports for these filters."
+    },
+    "agentTime": {
+      "agent": "Agent",
+      "scheduled": "Scheduled",
+      "logged": "Logged in",
+      "inShift": "Logged in during shift",
+      "adherence": "Adherence",
+      "paused": "Paused",
+      "pauses": "Pauses by reason",
+      "noReason": "No reason",
+      "empty": "No users.",
+      "hint": "Logged in = time with the CRM open. Adherence = % of the shift spent logged in."
     }
   },
   "sms": {
@@ -1084,7 +1109,8 @@
       "LISTEN": "A supervisor is listening to this call.",
       "WHISPER": "A supervisor is talking to you (the customer can't hear).",
       "BARGE": "A supervisor joined the call (the customer hears them)."
-    }
+    },
+    "pauseWithReason": "Pause…"
   },
   "telephony": {
     "title": "Telephony",
@@ -1198,7 +1224,11 @@
     "typingAddSub": "Subcategory",
     "typingEmpty": "No categories. Create, for example, \"Complaint\" with the subcategory \"Billing\".",
     "typingGroups": "Groups",
-    "typingGroupsHint": "With none ticked, every agent sees this category."
+    "typingGroupsHint": "With none ticked, every agent sees this category.",
+    "tabPauseReasons": "Pause reasons",
+    "pauseReasonsHint": "Reasons the agent picks when pausing in the webphone (lunch, training, ...). They feed the agent time report.",
+    "pauseReasonPlaceholder": "New pause reason",
+    "noPauseReasons": "No pause reasons — agents pause without a reason."
   },
   "inbox": {
     "waPool": "WhatsApp pool (Active/Standby)",

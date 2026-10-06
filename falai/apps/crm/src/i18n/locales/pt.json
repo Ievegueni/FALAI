@@ -656,7 +656,19 @@
     "groupsHint": "Grupos onde a extensão do utilizador recebe chamadas.",
     "groupsNeedExtension": "Escolha primeiro a extensão do utilizador.",
     "roleManager": "Gestor",
-    "roleManagerOpt": "Gestor — toda a operação (relatórios, equipa, supervisão), sem configuração técnica"
+    "roleManagerOpt": "Gestor — toda a operação (relatórios, equipa, supervisão), sem configuração técnica",
+    "shifts": "Turnos",
+    "shiftsTitle": "Turnos de {{name}}",
+    "shiftsHint": "Horário semanal, usado na aderência (relatório de tempo dos agentes). Não passa da meia-noite.",
+    "weekday": {
+      "0": "Domingo",
+      "1": "Segunda",
+      "2": "Terça",
+      "3": "Quarta",
+      "4": "Quinta",
+      "5": "Sexta",
+      "6": "Sábado"
+    }
   },
   "settings": {
     "title": "Definições",
@@ -885,7 +897,8 @@
       "reasons": "Recusas",
       "calls": "Chamadas",
       "typing": "Tipificação",
-      "analysis": "Análise IA"
+      "analysis": "Análise IA",
+      "agentTime": "Tempo dos agentes"
     },
     "period": "Período",
     "all": "Todos",
@@ -992,6 +1005,18 @@
       "typingTrends": "Tipificações em crescimento",
       "recommendations": "Recomendações",
       "disclaimer": "Interpretação automática dos números do relatório — confirme antes de decidir. Vai também nas exportações Excel e PDF destes filtros."
+    },
+    "agentTime": {
+      "agent": "Agente",
+      "scheduled": "Escalado",
+      "logged": "Ligado",
+      "inShift": "Ligado no turno",
+      "adherence": "Aderência",
+      "paused": "Em pausa",
+      "pauses": "Pausas por motivo",
+      "noReason": "Sem motivo",
+      "empty": "Sem utilizadores.",
+      "hint": "Ligado = tempo com o CRM aberto. Aderência = % do turno em que esteve ligado."
     }
   },
   "sms": {
@@ -1084,7 +1109,8 @@
       "LISTEN": "Um supervisor está a ouvir esta chamada.",
       "WHISPER": "Um supervisor está a falar consigo (o cliente não ouve).",
       "BARGE": "Um supervisor entrou na chamada (o cliente ouve-o)."
-    }
+    },
+    "pauseWithReason": "Pausar…"
   },
   "telephony": {
     "title": "Telefonia",
@@ -1198,7 +1224,11 @@
     "typingAddSub": "Subcategoria",
     "typingEmpty": "Sem categorias. Crie, por exemplo, \"Reclamação\" com a subcategoria \"Facturação\".",
     "typingGroups": "Grupos",
-    "typingGroupsHint": "Sem nenhum marcado, todos os agentes vêem esta categoria."
+    "typingGroupsHint": "Sem nenhum marcado, todos os agentes vêem esta categoria.",
+    "tabPauseReasons": "Motivos de pausa",
+    "pauseReasonsHint": "Motivos que o agente escolhe ao pausar no webphone (almoço, formação, ...). Entram no relatório de tempo dos agentes.",
+    "pauseReasonPlaceholder": "Novo motivo de pausa",
+    "noPauseReasons": "Sem motivos de pausa — o agente pausa sem motivo."
   },
   "inbox": {
     "waPool": "Pool WhatsApp (Active/Standby)",

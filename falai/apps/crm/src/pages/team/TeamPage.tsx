@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation, Trans } from 'react-i18next';
-import { Plus, UserCheck, Trash2, Shield } from 'lucide-react';
+import { Plus, UserCheck, Trash2, Shield, CalendarClock } from 'lucide-react';
 import { teamApi, telephonyApi } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/layout/Header';
@@ -14,6 +14,7 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { formatDate } from '@/lib/utils';
 import { isConfigAdmin, isOpsManager } from '@/lib/roles';
+import { ShiftsModal } from './ShiftsModal';
 import type { TenantRole, TenantUser } from '@/types';
 
 const ROLE_LABEL_KEYS: Record<TenantRole, string> = {
@@ -200,6 +201,7 @@ export function TeamPage() {
   const { success, error } = useToast();
   // null = fechado; 'new' = criar; um membro = editar
   const [editing, setEditing] = useState<TenantUser | 'new' | null>(null);
+  const [shiftsFor, setShiftsFor] = useState<TenantUser | null>(null);
 
   const { data: team, isLoading } = useQuery({
     queryKey: ['team'],
@@ -265,6 +267,10 @@ export function TeamPage() {
                     {member.twoFaEnabled && (
                       <Badge className="bg-emerald-100 text-emerald-700">2FA</Badge>
                     )}
+                    {/* Turnos: gestor/admin de todos; supervisor da sua equipa (a API confirma) */}
+                    {(canManage || user?.role === 'SUPERVISOR') && !isConfigAdmin(member.role) && member.role !== 'MANAGER' && (
+                      <Button size="sm" variant="ghost" icon={<CalendarClock className="h-3.5 w-3.5" />} onClick={() => setShiftsFor(member)}>{t('team.shifts')}</Button>
+                    )}
                     {canTouch(member) && (
                       <Button size="sm" variant="ghost" onClick={() => setEditing(member)}>{t('common.edit')}</Button>
                     )}
@@ -288,6 +294,7 @@ export function TeamPage() {
       </div>
 
       <MemberModal open={editing !== null} member={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
+      <ShiftsModal user={shiftsFor} onClose={() => setShiftsFor(null)} />
     </>
   );
 }

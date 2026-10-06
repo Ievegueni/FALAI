@@ -5,9 +5,10 @@
 > como projecto à medida: tudo o que entra aqui serve qualquer tenant e liga-se
 > por funcionalidade no backoffice.
 >
-> Criado em 06/10/2026. Estado: **fases 1 (tickets), 2 (papéis) e 4 (alertas/SLA)
-> feitas em 06/10, branch `feat/tickets`** — migrações `20261006090000_tickets`,
-> `20261006120000_manager_role` e `20261006150000_service_alerts` aplicadas só na
+> Criado em 06/10/2026. Estado: **fases 1 (tickets), 2 (papéis), 4 (alertas/SLA)
+> e 5 (pausas/turnos/sessões) feitas em 06/10, branch `feat/tickets`** — migrações
+> `20261006090000_tickets`, `20261006120000_manager_role`,
+> `20261006150000_service_alerts` e `20261006180000_agent_time` aplicadas só na
 > BD local. Fase 3 (Freshdesk) à espera de conta de testes da MANO.
 
 ---
@@ -202,7 +203,21 @@ metas de TMA/abandono.
   histórico e relatório de desvios.
 - **Desvios face às metas**: comparação diária dos KPIs com as metas.
 
-### Fase 5 — Agentes: motivos de pausa, turnos, sessões (M)
+### Fase 5 — Agentes: motivos de pausa, turnos, sessões (M) · ✅ feita 06/10
+
+Feito: `PauseReason`, `AgentPause`, `AgentSession`, `Shift`;
+`services/agentTime.service.ts` (+ testes); motivos em Telefonia → Motivos de
+pausa (gestor/admin); webphone pede o motivo ao pausar; supervisão mostra o
+motivo; turnos na Equipa (gestor/admin, supervisor para a equipa); relatório
+"Tempo dos agentes" (escalado, ligado, aderência, pausas por motivo) com o
+âmbito do papel. Sessões = canal SSE do CRM aberto (sem pedidos extra).
+Corrigido: qualquer utilizador pausava a extensão de outro.
+
+Limites: turnos não passam da meia-noite e a UI tem um horário por dia;
+"ligado" é ter o CRM aberto (não o registo SIP); com várias instâncias da API
+o fecho de sessões órfãs no arranque tem de passar a ser por instância.
+
+Plano original:
 
 - `PauseReason` (igual a `RejectReason`) e `AgentPause` (início, fim, motivo)
   em vez de só `Extension.pausedAt`. Relatório de tempo em pausa por motivo.

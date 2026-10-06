@@ -7,7 +7,8 @@ import { activeInboundCalls, monitoringNoticePrompt } from "../../services/inbou
 import { SupervisionError } from "../../services/supervision.service.js";
 import { callKpis, abandonedIds } from "../../services/attendanceReport.service.js";
 import { isTelephonyWav } from "../shared/ivrRouting.js";
-import { isOpsManager } from "../../services/userScope.js";
+import { isOpsManager, userScope } from "../../services/userScope.js";
+import { setExtensionPause } from "../../services/agentTime.service.js";
 
 /**
  * Supervisão em tempo real (melhoria 4/4) — ver services/supervision.service.ts.
@@ -63,7 +64,7 @@ const logSchema = z.object({
   to: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
 });
-const pauseSchema = z.object({ extensionId: z.string(), paused: z.boolean() });
+const pauseSchema = z.object({ extensionId: z.string(), paused: z.boolean(), reasonId: z.string().nullable().optional() });
 
 // Estado de registo das extensões no Asterisk, com cache curta: o painel pede-o
 // de 2 em 2 s por cada supervisor.
@@ -101,7 +102,10 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
     const extensions = await prisma.extension.findMany({
       where: { tenantId, isActive: true, ...(!scope.all && { id: { in: [...scope.extensionIds] } }) },
       orderBy: { number: "asc" },
-      select: { id: true, number: true, displayName: true, sipAuthUser: true, pausedAt: true },
+      select: {
+        id: true, number: true, displayName: true, sipAuthUser: true, pausedAt: true,
+        pauses: { where: { endedAt: null }, take: 1, select: { reason: { select: { label: true } } } },
+      },
     });
     const extIds = extensions.map((e) => e.id);
     const calls = activeInboundCalls(tenantId).filter((c) => inScope(scope, c));
@@ -159,6 +163,7 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
           pausedAt: e.pausedAt,
           online: online[i]!,
         }),
+        pauseReason: e.pausedAt ? (e.pauses[0]?.reason?.label ?? null) : null,
       })),
       calls: calls.map((c) => {
         const row = rowBy.get(c.callId);
@@ -337,24 +342,32 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
 
   // ── Pausa do agente ─────────────────────────────────────────────────────────
 
-  // POST /tenant/supervision/pause — o agente pausa a extensão que usa no webphone
+  // POST /tenant/supervision/pause — o agente pausa a extensão que usa no
+  // webphone, com motivo (fase 5). Agente: só a sua; supervisor: as da equipa.
   fastify.post("/tenant/supervision/pause", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = pauseSchema.parse(request.body);
-    const res = await prisma.extension.updateMany({
-      where: { id: body.extensionId, tenantId },
-      data: { pausedAt: body.paused ? new Date() : null },
-    });
-    if (res.count === 0) return reply.status(404).send({ error: "Extensão não encontrada" });
-    return { paused: body.paused };
+    const scope = await userScope(request.tenantUser!);
+    if (scope.kind !== "ALL" && !scope.extensionIds.includes(body.extensionId)) {
+      return reply.status(403).send({ error: "Só pode pausar a sua extensão" });
+    }
+    if (body.reasonId && !(await prisma.pauseReason.count({ where: { id: body.reasonId, tenantId, isActive: true } }))) {
+      return reply.status(400).send({ error: "Motivo de pausa inválido" });
+    }
+    const res = await setExtensionPause(tenantId, body.extensionId, body.paused, body.paused ? (body.reasonId ?? null) : null);
+    if (!res) return reply.status(404).send({ error: "Extensão não encontrada" });
+    return res;
   });
 
   fastify.get<{ Querystring: { extensionId?: string } }>("/tenant/supervision/pause", { preHandler }, async (request, reply) => {
     const ext = request.query.extensionId
-      ? await prisma.extension.findFirst({ where: { id: request.query.extensionId, tenantId: request.tenantUser!.tenantId }, select: { pausedAt: true } })
+      ? await prisma.extension.findFirst({
+          where: { id: request.query.extensionId, tenantId: request.tenantUser!.tenantId },
+          select: { pausedAt: true, pauses: { where: { endedAt: null }, take: 1, select: { reason: { select: { id: true, label: true } } } } },
+        })
       : null;
     if (!ext) return reply.status(404).send({ error: "Extensão não encontrada" });
-    return { paused: ext.pausedAt !== null, since: ext.pausedAt };
+    return { paused: ext.pausedAt !== null, since: ext.pausedAt, reason: ext.pauses[0]?.reason ?? null };
   });
 };
 

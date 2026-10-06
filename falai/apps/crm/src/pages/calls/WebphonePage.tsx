@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { PhoneCall, PhoneOff, Mic, MicOff, Delete, Pause, Play, Headphones } from 'lucide-react';
-import { telephonyApi, rejectReasonsApi, supervisionApi } from '@/lib/api';
+import { telephonyApi, rejectReasonsApi, supervisionApi, pauseReasonsApi } from '@/lib/api';
 import { useWebphone, type RegistrationState } from '@/contexts/WebphoneContext';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -137,8 +137,10 @@ export function WebphonePage() {
     queryFn: () => supervisionApi.pause(extensionId!),
     enabled: extensionId !== null,
   });
+  // Motivos de pausa (fase 5): se o cliente os definiu, pausar pede o motivo.
+  const { data: pauseReasons = [] } = useQuery({ queryKey: ['pause-reasons'], queryFn: () => pauseReasonsApi.list(), retry: false });
   const togglePause = useMutation({
-    mutationFn: () => supervisionApi.setPause(extensionId!, !pause?.paused),
+    mutationFn: (reasonId?: string) => supervisionApi.setPause(extensionId!, !pause?.paused, reasonId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['agent-pause', extensionId] }),
   });
   const [typingLegId, setTypingLegId] = useState<string | null>(null);
@@ -211,16 +213,32 @@ export function WebphonePage() {
           {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
           {extensionId && (
             <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
-              <p className="text-xs text-gray-500">{pause?.paused ? t('webphone.pausedHint') : t('webphone.availableHint')}</p>
-              <Button
-                size="sm"
-                variant={pause?.paused ? 'primary' : 'outline'}
-                icon={pause?.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-                loading={togglePause.isPending}
-                onClick={() => togglePause.mutate()}
-              >
-                {pause?.paused ? t('webphone.resume') : t('webphone.pause')}
-              </Button>
+              <p className="text-xs text-gray-500">
+                {pause?.paused ? t('webphone.pausedHint') : t('webphone.availableHint')}
+                {pause?.reason && <span className="font-medium text-gray-700"> · {pause.reason.label}</span>}
+              </p>
+              {!pause?.paused && pauseReasons.length > 0 ? (
+                <select
+                  className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700"
+                  value=""
+                  disabled={togglePause.isPending}
+                  onChange={(e) => e.target.value && togglePause.mutate(e.target.value)}
+                  aria-label={t('webphone.pause')}
+                >
+                  <option value="">{t('webphone.pauseWithReason')}</option>
+                  {pauseReasons.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                </select>
+              ) : (
+                <Button
+                  size="sm"
+                  variant={pause?.paused ? 'primary' : 'outline'}
+                  icon={pause?.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                  loading={togglePause.isPending}
+                  onClick={() => togglePause.mutate(undefined)}
+                >
+                  {pause?.paused ? t('webphone.resume') : t('webphone.pause')}
+                </Button>
+              )}
             </div>
           )}
         </Card>
