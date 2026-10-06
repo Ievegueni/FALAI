@@ -26,6 +26,7 @@ const ALL_SCOPES = [
   { key: 'conversations:write', labelKey: 'developers.scopes.conversationsWrite' },
   { key: 'tickets:read', labelKey: 'developers.scopes.ticketsRead' },
   { key: 'tickets:write', labelKey: 'developers.scopes.ticketsWrite' },
+  { key: 'reports:read', labelKey: 'developers.scopes.reportsRead' },
   { key: 'contacts:write', labelKey: 'developers.scopes.contactsWrite' },
   { key: 'contacts:read', labelKey: 'developers.scopes.contactsRead' },
   { key: 'campaigns:write', labelKey: 'developers.scopes.campaignsWrite' },

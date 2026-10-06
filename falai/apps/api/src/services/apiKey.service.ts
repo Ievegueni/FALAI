@@ -19,6 +19,7 @@ export const VALID_SCOPES = [
   "conversations:write",
   "tickets:read",
   "tickets:write",
+  "reports:read",
 ] as const;
 
 export type ApiScope = (typeof VALID_SCOPES)[number];

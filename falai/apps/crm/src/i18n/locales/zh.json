@@ -792,7 +792,8 @@
       "conversationsRead": "读取会话",
       "conversationsWrite": "回复会话",
       "ticketsRead": "读取工单",
-      "ticketsWrite": "创建和更新工单"
+      "ticketsWrite": "创建和更新工单",
+      "reportsRead": "读取报表（Power BI / BI）"
     },
     "groups": {
       "calls": "通话",
@@ -900,7 +901,8 @@
       "typing": "通话分类",
       "analysis": "AI 分析",
       "agentTime": "坐席时间",
-      "csat": "满意度"
+      "csat": "满意度",
+      "consolidated": "综合"
     },
     "period": "时间段",
     "all": "全部",
@@ -1047,6 +1049,44 @@
         "responses": "回复",
         "avg": "平均",
         "satisfied": "满意率"
+      }
+    },
+    "cons": {
+      "contacts": "联络量",
+      "contactsHint": "呼入通话 + 会话",
+      "callsIn": "呼入通话",
+      "answeredPct": "接通率 {{pct}}",
+      "conversations": "会话",
+      "firstResponse": "首次回复 {{value}}",
+      "tickets": "新建工单",
+      "ticketsHint": "已解决 {{resolved}} · 解决时长 {{time}}",
+      "csatHint": "满意 {{pct}} · {{n}} 条回复",
+      "qa": "质检得分",
+      "qaHint": "{{n}} 次评估",
+      "byChannel": "按渠道的联络量",
+      "series": "按周期",
+      "bucket": {
+        "day": "按天",
+        "week": "按周",
+        "month": "按月"
+      },
+      "channel": {
+        "VOICE": "语音",
+        "WHATSAPP": "WhatsApp",
+        "WEBCHAT": "网站聊天",
+        "EMAIL": "邮件",
+        "TELEGRAM": "Telegram"
+      },
+      "col": {
+        "period": "周期",
+        "callsIn": "呼入",
+        "callsAnswered": "接通",
+        "callsMissed": "未接",
+        "callsOut": "呼出",
+        "conversations": "会话",
+        "conversationsResolved": "已解决",
+        "ticketsCreated": "工单",
+        "ticketsResolved": "已解决工单"
       }
     }
   },

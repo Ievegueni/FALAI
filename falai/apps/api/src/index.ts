@@ -86,6 +86,7 @@ import { tenantConversationsRoutes } from "./routes/tenant/conversations.js";
 import { v1ConversationsRoutes } from "./routes/v1/conversations.js";
 import { tenantTicketsRoutes } from "./routes/tenant/tickets.js";
 import { v1TicketsRoutes } from "./routes/v1/tickets.js";
+import { v1ReportsRoutes } from "./routes/v1/reports.js";
 import { tenantAlertsRoutes } from "./routes/tenant/alerts.js";
 import { tenantAgentTimeRoutes } from "./routes/tenant/agentTime.js";
 import { tenantQualityRoutes } from "./routes/tenant/quality.js";
@@ -425,6 +426,7 @@ async function buildApp() {
     await v1.register(v1UsageRoutes);
     await gated(v1, "inbox", v1ConversationsRoutes);
     await gated(v1, "tickets", v1TicketsRoutes);
+    await gated(v1, "reports", v1ReportsRoutes);
   });
 
   // ── Webhooks ────────────────────────────────────────────────────────────

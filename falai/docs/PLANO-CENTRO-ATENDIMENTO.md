@@ -5,7 +5,7 @@
 > como projecto à medida: tudo o que entra aqui serve qualquer tenant e liga-se
 > por funcionalidade no backoffice.
 >
-> Criado em 06/10/2026. Estado: **fases 1, 2, 4, 5, 7 e 8 feitas em 06/10, branch
+> Criado em 06/10/2026. Estado: **fases 1, 2, 4, 5, 7, 8 e 9 feitas em 06/10, branch
 > `feat/tickets`** — migrações `20261006090000_tickets`, `…120000_manager_role`,
 > `…150000_service_alerts`, `…180000_agent_time`, `…200000_quality` e
 > `…220000_csat` aplicadas só na BD local. Fase 3 (Freshdesk) à espera de conta de
@@ -287,7 +287,19 @@ Plano original:
 - `CsatResponse` ligada à chamada/conversa/ticket e ao agente. Entra nos
   relatórios por agente, grupo e canal.
 
-### Fase 9 — Reporting consolidado e Power BI (M)
+### Fase 9 — Reporting consolidado e Power BI (M) · ✅ feita 06/10
+
+Feito: `services/consolidated.service.ts` (+ testes) — Relatórios →
+Consolidado (só quem vê a conta inteira): contactos, SLA, TME/ASA, TMA,
+conversas e 1.ª resposta no texto, tickets e tempo de resolução, CSAT, QA,
+contactos por canal e série por dia/semana/mês. Power BI: `/v1/reports/{calls,
+conversations,tickets,csat,qa,consolidated}` com scope `reports:read`; guia
+para o cliente em `docs/POWER-BI.md`. Sem migração.
+
+Ficou de fora: gráficos no consolidado (só cartões, barras por canal e
+tabela); exportação Excel do consolidado (o Power BI cobre).
+
+Plano original:
 
 - Relatório **consolidado** chamadas + conversas + tickets por dia/semana/mês
   e por canal (as métricas de texto ainda não estão nos relatórios — entram aqui).

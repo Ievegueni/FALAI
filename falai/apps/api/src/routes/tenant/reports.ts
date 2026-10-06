@@ -24,6 +24,7 @@ import {
   type AnalysisFilters,
 } from "../../services/reportAnalysis.service.js";
 import { previousRange } from "../../services/reportsOverview.service.js";
+import { buildConsolidated } from "../../services/consolidated.service.js";
 import { OPS_ROLES, userScope } from "../../services/userScope.js";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 
@@ -265,6 +266,14 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
       .header("Content-Type", "text/csv; charset=utf-8")
       .header("Content-Disposition", `attachment; filename="${name}.csv"`)
       .send(tableToCsv(table));
+  });
+
+  // ── Consolidado / painel de direcção (fase 9) ─────────────────────────────
+  // Chamadas + conversas + tickets por período e canal, com SLA, CSAT e QA.
+  fastify.get("/tenant/reports/consolidated", { preHandler: [...preHandler, requireWholeTenant] }, async (request) => {
+    const q = rangeSchema.extend({ bucket: z.enum(["day", "week", "month"]).default("day") }).parse(request.query);
+    const range = resolveRange(q);
+    return buildConsolidated(request.tenantUser!.tenantId, range.from, range.to, q.bucket);
   });
 
   // ── Resumo (painel com comparação ao período anterior) ─────────────────────

@@ -792,7 +792,8 @@
       "conversationsRead": "Ler conversas (chat/email/Telegram)",
       "conversationsWrite": "Responder a conversas",
       "ticketsRead": "Ler tickets",
-      "ticketsWrite": "Criar e actualizar tickets"
+      "ticketsWrite": "Criar e actualizar tickets",
+      "reportsRead": "Ler relatórios (Power BI / BI)"
     },
     "groups": {
       "calls": "Chamadas",
@@ -900,7 +901,8 @@
       "typing": "Tipificação",
       "analysis": "Análise IA",
       "agentTime": "Tempo dos agentes",
-      "csat": "Satisfação"
+      "csat": "Satisfação",
+      "consolidated": "Consolidado"
     },
     "period": "Período",
     "all": "Todos",
@@ -1047,6 +1049,44 @@
         "responses": "Respostas",
         "avg": "Média",
         "satisfied": "% satisfeitos"
+      }
+    },
+    "cons": {
+      "contacts": "Contactos",
+      "contactsHint": "chamadas de entrada + conversas",
+      "callsIn": "Chamadas de entrada",
+      "answeredPct": "{{pct}} atendidas",
+      "conversations": "Conversas",
+      "firstResponse": "1.ª resposta em {{value}}",
+      "tickets": "Tickets criados",
+      "ticketsHint": "{{resolved}} resolvidos · resolução {{time}}",
+      "csatHint": "{{pct}} satisfeitos · {{n}} respostas",
+      "qa": "QA score",
+      "qaHint": "{{n}} avaliações",
+      "byChannel": "Contactos por canal",
+      "series": "Por período",
+      "bucket": {
+        "day": "Por dia",
+        "week": "Por semana",
+        "month": "Por mês"
+      },
+      "channel": {
+        "VOICE": "Voz",
+        "WHATSAPP": "WhatsApp",
+        "WEBCHAT": "Chat do site",
+        "EMAIL": "Email",
+        "TELEGRAM": "Telegram"
+      },
+      "col": {
+        "period": "Período",
+        "callsIn": "Entrada",
+        "callsAnswered": "Atendidas",
+        "callsMissed": "Perdidas",
+        "callsOut": "Saída",
+        "conversations": "Conversas",
+        "conversationsResolved": "Resolvidas",
+        "ticketsCreated": "Tickets",
+        "ticketsResolved": "Tickets resolvidos"
       }
     }
   },

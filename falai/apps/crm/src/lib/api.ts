@@ -1463,3 +1463,30 @@ export const csatApi = {
   save: (data: CsatConfig) => put<CsatConfig>('/tenant/csat/settings', data),
   report: (q: { from?: string; to?: string }) => get<CsatReport>(`/tenant/reports/csat${qs(q)}`),
 };
+
+// ─── Consolidado / painel de direcção (fase 9) ──────────────────────────────
+
+export type ConsolidatedBucket = 'day' | 'week' | 'month';
+export interface ConsolidatedReport {
+  bucket: ConsolidatedBucket;
+  kpis: {
+    contacts: number;
+    calls: AttendanceCallKpis;
+    slaSecs: number;
+    callsOut: number;
+    conversations: number;
+    conversationsResolved: number;
+    textFirstResponseSecs: number | null;
+    ticketsCreated: number;
+    ticketsResolved: number;
+    ticketResolutionSecs: number | null;
+    csat: CsatSummary;
+    qa: { evaluations: number; avgScore: number | null };
+  };
+  byChannel: { channel: string; contacts: number }[];
+  series: { period: string; callsIn: number; callsAnswered: number; callsMissed: number; callsOut: number; conversations: number; conversationsResolved: number; ticketsCreated: number; ticketsResolved: number }[];
+}
+
+export const consolidatedApi = {
+  get: (q: { from?: string; to?: string; bucket: ConsolidatedBucket }) => get<ConsolidatedReport>(`/tenant/reports/consolidated${qs(q)}`),
+};

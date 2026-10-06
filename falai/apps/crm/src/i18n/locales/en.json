@@ -792,7 +792,8 @@
       "conversationsRead": "Read conversations (chat/email/Telegram)",
       "conversationsWrite": "Reply to conversations",
       "ticketsRead": "Read tickets",
-      "ticketsWrite": "Create and update tickets"
+      "ticketsWrite": "Create and update tickets",
+      "reportsRead": "Read reports (Power BI / BI)"
     },
     "groups": {
       "calls": "Calls",
@@ -900,7 +901,8 @@
       "typing": "Call types",
       "analysis": "AI analysis",
       "agentTime": "Agent time",
-      "csat": "Satisfaction"
+      "csat": "Satisfaction",
+      "consolidated": "Consolidated"
     },
     "period": "Period",
     "all": "All",
@@ -1047,6 +1049,44 @@
         "responses": "Responses",
         "avg": "Average",
         "satisfied": "% satisfied"
+      }
+    },
+    "cons": {
+      "contacts": "Contacts",
+      "contactsHint": "inbound calls + conversations",
+      "callsIn": "Inbound calls",
+      "answeredPct": "{{pct}} answered",
+      "conversations": "Conversations",
+      "firstResponse": "first reply in {{value}}",
+      "tickets": "Tickets created",
+      "ticketsHint": "{{resolved}} resolved · resolution {{time}}",
+      "csatHint": "{{pct}} satisfied · {{n}} responses",
+      "qa": "QA score",
+      "qaHint": "{{n}} evaluations",
+      "byChannel": "Contacts by channel",
+      "series": "By period",
+      "bucket": {
+        "day": "By day",
+        "week": "By week",
+        "month": "By month"
+      },
+      "channel": {
+        "VOICE": "Voice",
+        "WHATSAPP": "WhatsApp",
+        "WEBCHAT": "Website chat",
+        "EMAIL": "Email",
+        "TELEGRAM": "Telegram"
+      },
+      "col": {
+        "period": "Period",
+        "callsIn": "Inbound",
+        "callsAnswered": "Answered",
+        "callsMissed": "Missed",
+        "callsOut": "Outbound",
+        "conversations": "Conversations",
+        "conversationsResolved": "Resolved",
+        "ticketsCreated": "Tickets",
+        "ticketsResolved": "Tickets resolved"
       }
     }
   },
