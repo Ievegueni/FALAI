@@ -262,6 +262,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
         role: tenantUser.role,
         twoFaEnabled: !!tenantUser.twoFaSecret,
         accessProfile,
+        extensionId: tenantUser.extensionId,
       },
       tenant: shapeTenant(tenantUser.tenant, accessProfile?.permissions ?? null),
     };

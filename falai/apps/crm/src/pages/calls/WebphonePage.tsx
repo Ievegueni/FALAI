@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { PhoneCall, PhoneOff, Mic, MicOff, Delete, Pause, Play, Headphones } from 'lucide-react';
 import { telephonyApi, rejectReasonsApi, supervisionApi, pauseReasonsApi } from '@/lib/api';
 import { useWebphone, type RegistrationState } from '@/contexts/WebphoneContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
 import { Select, Textarea } from '@/components/ui/Input';
@@ -108,6 +109,7 @@ function RejectReasonModal({ open, legId, onCancel, onRejected }: {
 
 export function WebphonePage() {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const {
     extensionId,
     registration,
@@ -152,10 +154,11 @@ export function WebphonePage() {
     queryFn: telephonyApi.listExtensions,
   });
 
+  // Abre na linha do utilizador (Equipa); sem linha associada, na primeira.
   useEffect(() => {
-    const first = extensions?.[0];
-    if (!extensionId && first) selectExtension(first.id);
-  }, [extensions, extensionId, selectExtension]);
+    const preferred = extensions?.find((e) => e.id === user?.extensionId) ?? extensions?.[0];
+    if (!extensionId && preferred) selectExtension(preferred.id);
+  }, [extensions, extensionId, selectExtension, user?.extensionId]);
 
   const inCall = callState === 'in-call' || callState === 'calling' || callState === 'ringing';
   const incoming = callState === 'incoming';

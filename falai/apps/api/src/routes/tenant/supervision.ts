@@ -385,7 +385,16 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
     const body = pauseSchema.parse(request.body);
     const scope = await userScope(request.tenantUser!);
     if (scope.kind !== "ALL" && !scope.extensionIds.includes(body.extensionId)) {
-      return reply.status(403).send({ error: "Só pode pausar a sua extensão" });
+      // O webphone deixa qualquer agente usar qualquer linha do cliente (ver
+      // webphone-credentials). Pode pausar a sua, ou uma linha livre; a de um
+      // colega não. Inclui a do próprio supervisor, que não está no âmbito TEAM.
+      const owner = await prisma.tenantUser.findFirst({
+        where: { tenantId, extensionId: body.extensionId },
+        select: { id: true },
+      });
+      if (owner && owner.id !== request.tenantUser!.sub) {
+        return reply.status(403).send({ error: "Esta linha é de outro utilizador" });
+      }
     }
     if (body.reasonId && !(await prisma.pauseReason.count({ where: { id: body.reasonId, tenantId, isActive: true } }))) {
       return reply.status(400).send({ error: "Motivo de pausa inválido" });
