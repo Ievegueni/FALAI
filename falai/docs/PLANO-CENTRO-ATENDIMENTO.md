@@ -5,8 +5,8 @@
 > como projecto à medida: tudo o que entra aqui serve qualquer tenant e liga-se
 > por funcionalidade no backoffice.
 >
-> Criado em 06/10/2026. Estado: **fases 1, 2, 3 (Freshdesk, sem Freshchat), 4, 5,
-> 7, 8, 9 e 10 feitas, branch `feat/tickets`** — migrações `20261006090000_tickets`, `…120000_manager_role`,
+> Criado em 06/10/2026. Estado: **todas as fases feitas excepto a 6 (à espera da voz
+> real) e o Freshchat da 3, branch `feat/tickets`** — migrações `20261006090000_tickets`, `…120000_manager_role`,
 > `…150000_service_alerts`, `…180000_agent_time`, `…200000_quality` e
 > `…220000_csat` aplicadas só na BD local. Fase 3 (Freshdesk) à espera de conta de
 > testes da MANO; fase 6 à espera da voz real.
@@ -342,7 +342,20 @@ Plano original:
 screen pop e do ticket. Extra barato: a IA dos canais de texto pode usá-la
 como contexto.
 
-### Fase 11 — Continuidade do serviço (P, sobretudo documento)
+### Fase 11 — Continuidade do serviço (P, sobretudo documento) · ✅ feita 07/10
+
+Feito: `services/platformHealth.service.ts` (+ testes) — BD, Redis, motor,
+registo SIP e peerings a cada minuto, 2 falhas seguidas para alarmar;
+SystemEvent no backoffice, faixa no CRM, webhook `platform.status`;
+`GET /status` público para monitor externo (testado parando o Asterisk:
+503 e evento crítico, recuperação ao voltar). `infra/backup/{backup,restore-test}.sh`
+(testados: dump + hash + restauro num Postgres temporário). Documento para o
+cliente: `docs/CONTINUIDADE-DO-SERVICO.md` (com campos `[a preencher]`).
+
+Ficou de fora: "chamadas que caíram aparecem para callback" — o callback é da
+fase 6.
+
+Plano original:
 
 - Documento entregável ao cliente: procedimentos em caso de indisponibilidade,
   backup (pg_dump diário + restauro testado), redundância disponível, plano de

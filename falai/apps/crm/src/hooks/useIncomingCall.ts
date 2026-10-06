@@ -54,6 +54,8 @@ export function useIncomingCall(): { call: IncomingCall | null; dismiss: () => v
 
     // Alertas operacionais (a API só os manda à supervisão): reenviados como
     // evento da janela para o AlertToaster e quem mostra a lista se actualizar.
+    // O estado da plataforma (fase 11) segue o mesmo caminho: a faixa de aviso escuta-o.
+    es.addEventListener('platform.status', () => window.dispatchEvent(new CustomEvent('falai:platform')));
     for (const name of ['alert.opened', 'alert.closed']) {
       es.addEventListener(name, (ev: MessageEvent<string>) => {
         try {

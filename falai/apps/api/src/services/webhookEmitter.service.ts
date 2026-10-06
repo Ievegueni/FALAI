@@ -24,7 +24,8 @@ export type WebhookEventName =
   | "ticket.created"
   | "ticket.updated"
   | "alert.opened"
-  | "alert.closed";
+  | "alert.closed"
+  | "platform.status";
 
 /** Todos os eventos que o cliente pode receber — exposto na documentação da API. */
 export const WEBHOOK_EVENTS: WebhookEventName[] = [
@@ -40,6 +41,7 @@ export const WEBHOOK_EVENTS: WebhookEventName[] = [
   "ticket.updated",
   "alert.opened",
   "alert.closed",
+  "platform.status",
 ];
 
 let queue: Queue | null = null;

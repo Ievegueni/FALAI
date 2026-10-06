@@ -1529,3 +1529,9 @@ export const helpdeskApi = {
   test: () => post<{ ok: true; agent: string | null; email: string | null }>('/tenant/helpdesk/test'),
   sync: () => post<{ ok: true; created: number; updated: number; skipped: number; unchanged: number }>('/tenant/helpdesk/sync'),
 };
+
+// ─── Estado da plataforma (fase 11) ─────────────────────────────────────────
+
+export const platformApi = {
+  status: () => get<{ ok: boolean; components: { key: string; up: boolean; since: string }[] }>('/tenant/platform-status'),
+};

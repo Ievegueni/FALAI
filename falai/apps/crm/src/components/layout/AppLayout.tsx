@@ -7,6 +7,7 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { IncomingCallBanner } from '@/components/calls/IncomingCallBanner';
 import { AlertToaster } from '@/components/alerts/AlertToaster';
+import { PlatformBanner } from './PlatformBanner';
 
 export function AppLayout() {
   const { user, loading, tenant } = useAuth();
@@ -53,6 +54,7 @@ export function AppLayout() {
             Falaí <span className="font-normal text-slate-400">· {tenant?.name ?? '…'}</span>
           </p>
         </div>
+        <PlatformBanner />
         <div className="min-w-0 flex-1 overflow-y-auto">
           <Outlet />
         </div>

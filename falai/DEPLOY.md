@@ -369,6 +369,11 @@ gunzip -c /opt/backups/falai_2026-01-01.sql.gz | docker exec -i falai_postgres p
 
 Faz também backup seguro do `.env` (em especial `ENCRYPTION_KEY` e `JWT_SECRET`).
 
+Em produção usar `infra/backup/backup.sh` (dump comprimido com hash, retenção,
+ficheiros e cópia externa) e testar o restauro todos os meses com
+`infra/backup/restore-test.sh` — ver `docs/CONTINUIDADE-DO-SERVICO.md`. Pôr um
+monitor externo a vigiar `GET /status` (200 = ok, 503 = algo em baixo).
+
 ---
 
 ## Checklist rápida

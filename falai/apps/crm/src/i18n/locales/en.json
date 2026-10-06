@@ -856,7 +856,8 @@
       "ticketCreated": "Ticket created (in the CRM or via the API)",
       "ticketUpdated": "Ticket changed — status, priority, level, assignee or category",
       "alertOpened": "Operational alert opened (wait, handling, agents, SLA, abandon, AHT)",
-      "alertClosed": "Operational alert closed, with the final value"
+      "alertClosed": "Operational alert closed, with the final value",
+      "platformStatus": "A platform component went down or recovered (telephony, carrier, database, queues, your peering)"
     },
     "err": {
       "e400": "Invalid payload or missing parameter. See the `error` field in the response.",
@@ -1798,5 +1799,16 @@
       "Action: \"Trigger webhook\", POST request to the URL below, JSON content with the body below.",
       "Save and enable the rule. Without it, changes made in Freshdesk still arrive in the 5-minute sync."
     ]
+  },
+  "platform": {
+    "down": {
+      "telephony": "The telephony engine is down — calls may fail.",
+      "sipTrunk": "The connection to the phone carrier is down — external calls may fail.",
+      "database": "The database has problems — saving data may fail.",
+      "redis": "The queue service has problems — sends and campaigns may be delayed.",
+      "peer": "The connection to your PBX (peering) is not responding.",
+      "other": "A platform component is down."
+    },
+    "notified": "The technical team has been notified."
   }
 }

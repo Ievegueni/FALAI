@@ -94,6 +94,7 @@ import { tenantCsatRoutes, publicCsatRoutes } from "./routes/tenant/csat.js";
 import { tenantKnowledgeRoutes } from "./routes/tenant/knowledge.js";
 import { tenantHelpdeskRoutes, helpdeskWebhookRoutes } from "./routes/tenant/helpdesk.js";
 import { startHelpdeskSync } from "./services/helpdesk/sync.js";
+import { platformStatus, startPlatformHealth } from "./services/platformHealth.service.js";
 import { publicChatRoutes } from "./routes/public/chat.js";
 import { publicWaRoutes } from "./routes/public/wa.js";
 import { startEmailPolling } from "./services/email.service.js";
@@ -453,11 +454,26 @@ async function buildApp() {
   // Alertas operacionais e metas (fase 4): avaliação a cada 15 s.
   const stopAlerts = startAlertEvaluator(fastify);
   fastify.addHook("onClose", async () => stopAlerts());
+  // Vigilância da plataforma (fase 11): BD, Redis, motor, registo SIP, peerings.
+  const stopHealth = startPlatformHealth(fastify);
+  fastify.addHook("onClose", async () => stopHealth());
   // Helpdesk externo (Freshdesk) por cliente: fila de envio + reconciliação a cada 5 min.
   const stopHelpdesk = startHelpdeskSync(fastify.log);
   fastify.addHook("onClose", async () => stopHelpdesk());
   // Sessões de agentes que ficaram abertas se a API caiu (fase 5).
   await closeStaleSessions().catch((err) => fastify.log.warn({ err }, "agent_session.close_stale_error"));
+
+  // ── Estado da plataforma (fase 11) ─────────────────────────────────────
+  // Público e sem detalhes, para um monitor externo (UptimeRobot, etc.): 200
+  // com tudo bem, 503 com algo em baixo. Os peerings de clientes não aparecem.
+  fastify.get("/status", async (_request, reply) => {
+    const s = platformStatus();
+    const components = s.components.filter((c) => !c.key.startsWith("peer:")).map(({ key, up }) => ({ key, up }));
+    const ok = components.every((c) => c.up);
+    return reply.status(ok ? 200 : 503).send({ status: ok ? "ok" : "degraded", components });
+  });
+  // O mesmo para o CRM: os componentes gerais e os peerings do próprio cliente.
+  fastify.get("/tenant/platform-status", { preHandler: [fastify.verifyTenant] }, async (request) => platformStatus(request.tenantUser!.tenantId));
 
   // ── Health ─────────────────────────────────────────────────────────────
   fastify.get("/health", async () => {

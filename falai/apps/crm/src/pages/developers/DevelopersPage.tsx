@@ -863,6 +863,19 @@ const WEBHOOK_EVENTS = [
   }
 }`,
   },
+  {
+    event: 'platform.status',
+    descKey: 'developers.wh.platformStatus',
+    payload: `{
+  "event": "platform.status",
+  "timestamp": "2026-10-07T09:12:00.000Z",
+  "data": {
+    "component": "telephony",
+    "up": false,
+    "at": "2026-10-07T09:12:00.000Z"
+  }
+}`,
+  },
 ];
 
 const ERROR_CODES = [

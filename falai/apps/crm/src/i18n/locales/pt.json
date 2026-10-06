@@ -856,7 +856,8 @@
       "ticketCreated": "Ticket criado (no CRM ou pela API)",
       "ticketUpdated": "Ticket alterado — estado, prioridade, nível, responsável ou categoria",
       "alertOpened": "Alerta operacional aberto (espera, atendimento, agentes, SLA, abandono, TMA)",
-      "alertClosed": "Alerta operacional fechado, com o valor final"
+      "alertClosed": "Alerta operacional fechado, com o valor final",
+      "platformStatus": "Um componente da plataforma caiu ou recuperou (telefonia, operadora, base de dados, filas, o vosso peering)"
     },
     "err": {
       "e400": "Payload inválido ou parâmetro em falta. Ver campo `error` na resposta.",
@@ -1798,5 +1799,16 @@
       "Acção: \"Trigger webhook\", pedido POST para o URL abaixo, conteúdo JSON com o corpo abaixo.",
       "Guardar e activar a regra. Sem a regra, as alterações feitas no Freshdesk chegam na mesma na sincronização dos 5 minutos."
     ]
+  },
+  "platform": {
+    "down": {
+      "telephony": "O motor de telefonia está em baixo — as chamadas podem falhar.",
+      "sipTrunk": "A ligação à operadora telefónica caiu — chamadas de e para fora podem falhar.",
+      "database": "A base de dados está com problemas — podem falhar gravações de dados.",
+      "redis": "O serviço de filas está com problemas — envios e campanhas podem atrasar.",
+      "peer": "A ligação à vossa central (peering) não responde.",
+      "other": "Há um componente da plataforma em baixo."
+    },
+    "notified": "A equipa técnica já foi avisada."
   }
 }
