@@ -620,7 +620,7 @@
     "title": "Equipa",
     "roleOwner": "Proprietário",
     "roleAdmin": "Admin",
-    "roleMember": "Membro",
+    "roleMember": "Agente",
     "roleViewer": "Leitor",
     "email": "Email",
     "name": "Nome",
@@ -628,7 +628,7 @@
     "emailPlaceholder": "colega@empresa.ao",
     "namePlaceholder": "Nome do colega",
     "roleAdminOpt": "Admin — tudo excepto conta e OWNER",
-    "roleMemberOpt": "Membro — operar campanhas/contactos",
+    "roleMemberOpt": "Agente — só os seus casos, chamadas e relatórios",
     "roleViewerOpt": "Leitor — só leitura",
     "memberRemoved": "Membro removido",
     "legendOwner": "<0>OWNER</0> — acesso total, incluindo facturação e API keys.",
@@ -638,7 +638,7 @@
     "you": "(você)",
     "removeConfirm": "Remover {{name}} da equipa?",
     "roleSupervisor": "Supervisor",
-    "roleSupervisorOpt": "Supervisor — supervisiona as chamadas dos seus grupos",
+    "roleSupervisorOpt": "Supervisor — vê e gere a sua equipa e os grupos que supervisiona",
     "legendSupervisor": "<0>Supervisor</0> — como Membro, e supervisiona em tempo real os grupos que lhe atribuir.",
     "extension": "Extensão do utilizador",
     "extensionHint": "A extensão com que o utilizador atende e liga. Um supervisor ouve as chamadas por ela.",
@@ -654,7 +654,9 @@
     "passwordShort": "Mínimo 8 caracteres",
     "groups": "Grupos",
     "groupsHint": "Grupos onde a extensão do utilizador recebe chamadas.",
-    "groupsNeedExtension": "Escolha primeiro a extensão do utilizador."
+    "groupsNeedExtension": "Escolha primeiro a extensão do utilizador.",
+    "roleManager": "Gestor",
+    "roleManagerOpt": "Gestor — toda a operação (relatórios, equipa, supervisão), sem configuração técnica"
   },
   "settings": {
     "title": "Definições",
@@ -684,7 +686,8 @@
     "saved": "Definições guardadas",
     "secretRotated": "Secret do webhook regenerado",
     "copySecretWarn": "Copie este secret agora. Não será mostrado novamente.",
-    "copySecret": "Copiar secret"
+    "copySecret": "Copiar secret",
+    "adminOnly": "Só administradores podem alterar estas definições."
   },
   "pbx": {
     "title": "Integração PBX",
@@ -1526,6 +1529,7 @@
       "subject": "Assunto: {{to}}",
       "linked": "Associada {{what}}",
       "unlinked": "Desassociada {{what}}"
-    }
+    },
+    "take": "Pegar"
   }
 }

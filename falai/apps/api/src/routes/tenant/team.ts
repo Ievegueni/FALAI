@@ -2,6 +2,9 @@ import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import { z } from "zod";
 import { hashPassword } from "../../services/auth.service.js";
+import { isConfigAdmin, isOpsManager } from "../../services/userScope.js";
+
+const MANAGER_ASSIGNABLE = new Set(["SUPERVISOR", "MEMBER", "VIEWER"]);
 
 const password = z.string().min(8, "A password deve ter pelo menos 8 caracteres").max(128);
 
@@ -9,7 +12,7 @@ const password = z.string().min(8, "A password deve ter pelo menos 8 caracteres"
 const updateSchema = z.object({
   name: z.string().trim().min(2).max(100).optional(),
   password: password.optional(),
-  role: z.enum(["ADMIN", "SUPERVISOR", "MEMBER", "VIEWER"]).optional(),
+  role: z.enum(["ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER"]).optional(),
   extensionId: z.string().nullable().optional(),
   groupIds: z.array(z.string()).max(200).optional(),
   supervisedGroupIds: z.array(z.string()).max(200).optional(),
@@ -20,7 +23,7 @@ const createSchema = updateSchema.extend({
   email: z.string().trim().toLowerCase().email(),
   name: z.string().trim().min(2).max(100),
   password,
-  role: z.enum(["ADMIN", "SUPERVISOR", "MEMBER", "VIEWER"]),
+  role: z.enum(["ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER"]),
 });
 
 const userSelect = {
@@ -63,12 +66,27 @@ export const tenantTeamRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
 
   function requireManager(role: string, reply: import("fastify").FastifyReply): boolean {
-    if (role !== "OWNER" && role !== "ADMIN") {
-      reply.status(403).send({ error: "Apenas OWNER ou ADMIN podem gerir a equipa" });
+    if (!isOpsManager(role)) {
+      reply.status(403).send({ error: "Apenas administradores ou gestores podem gerir a equipa" });
       return false;
     }
     return true;
   }
+
+  /**
+   * O gestor (MANAGER) gere a operação: supervisores, agentes e consultas.
+   * Administradores e outros gestores só um administrador os cria ou altera
+   * — senão um gestor promovia-se a si ou a outro a ADMIN.
+   */
+  function managerMayTouch(actorRole: string, actorId: string, target: { id: string; role: string } | null, newRole: string | undefined): boolean {
+    if (isConfigAdmin(actorRole)) return true;
+    if (newRole && !MANAGER_ASSIGNABLE.has(newRole)) return false;
+    if (!target) return true;
+    if (target.id === actorId) return !newRole; // o próprio: nome/password, não o papel
+    return MANAGER_ASSIGNABLE.has(target.role);
+  }
+  const managerDenied = (reply: import("fastify").FastifyReply) =>
+    reply.status(403).send({ error: "Um gestor só gere supervisores, agentes e utilizadores de consulta" });
 
   /** Valida a extensão (do tenant e livre) e filtra os grupos para os do tenant. */
   async function checkExtensionAndGroups(
@@ -115,6 +133,7 @@ export const tenantTeamRoutes: FastifyPluginAsync = async (fastify) => {
     if (!requireManager(role, reply)) return;
 
     const body = createSchema.parse(request.body);
+    if (!managerMayTouch(role, request.tenantUser!.sub, null, body.role)) return managerDenied(reply);
     const existing = await prisma.tenantUser.findUnique({ where: { email: body.email } });
     if (existing) return reply.status(409).send({ error: "Email já registado" });
     if (body.groupIds?.length && !body.extensionId) {
@@ -160,6 +179,7 @@ export const tenantTeamRoutes: FastifyPluginAsync = async (fastify) => {
     const body = updateSchema.parse(request.body);
     const target = await prisma.tenantUser.findFirst({ where: { id: request.params.userId, tenantId } });
     if (!target) return reply.status(404).send({ error: "Membro não encontrado" });
+    if (!managerMayTouch(role, sub, target, body.role)) return managerDenied(reply);
     if (body.role && target.role === "OWNER") return reply.status(400).send({ error: "Não é possível alterar o papel do OWNER" });
     // Senão um ADMIN redefinia a password do OWNER e ficava com a conta dele.
     if (body.password && target.role === "OWNER" && target.id !== sub) {
@@ -209,6 +229,7 @@ export const tenantTeamRoutes: FastifyPluginAsync = async (fastify) => {
     const target = await prisma.tenantUser.findFirst({ where: { id: request.params.userId, tenantId } });
     if (!target) return reply.status(404).send({ error: "Membro não encontrado" });
     if (target.role === "OWNER") return reply.status(400).send({ error: "Não é possível remover o OWNER" });
+    if (!managerMayTouch(role, sub, target, undefined)) return managerDenied(reply);
     if (target.id === sub) return reply.status(400).send({ error: "Não te podes remover a ti próprio" });
 
     await prisma.tenantUser.delete({ where: { id: target.id } });

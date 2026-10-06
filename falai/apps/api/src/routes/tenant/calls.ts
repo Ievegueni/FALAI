@@ -19,6 +19,7 @@ import { ensureCdrSynced, mapPbxCall, PBX_CALL_SELECT, activeInboundCalls } from
 import { callsFilterSchema, callsWhere, pbxCallsWhere } from "../../services/callsFilter.service.js";
 import ExcelJS from "exceljs";
 import { addTableSheet } from "../../services/excelExport.service.js";
+import { callScopeWhere, pbxCallScopeWhere, userScope } from "../../services/userScope.js";
 
 const createSchema = z.object({
   agentId: z.string().min(1),
@@ -169,6 +170,8 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       const { limit = "50", offset = "0" } = request.query;
       const filter = callsFilterSchema.parse(request.query);
       const { status } = filter;
+      // Agente: só as suas chamadas; supervisor: as da equipa (services/userScope.ts).
+      const scope = await userScope(request.tenantUser!);
 
       // Tenants CRM (BYO-PBX): a lista vem do CDR do PBX do cliente, não da tabela Call
       const { isCrmPbx } = await ensureCdrSynced(fastify, tenantId);
@@ -177,21 +180,21 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
         const skip = parseInt(offset, 10);
         const [rows, total, liveRows] = await Promise.all([
           prisma.pbxCall.findMany({
-            where: pbxCallsWhere(tenantId, filter),
+            where: { AND: [pbxCallsWhere(tenantId, filter), pbxCallScopeWhere(scope)] },
             orderBy: { startedAt: "desc" },
             take,
             skip,
             select: PBX_CALL_SELECT,
           }),
-          prisma.pbxCall.count({ where: pbxCallsWhere(tenantId, filter) }),
+          prisma.pbxCall.count({ where: { AND: [pbxCallsWhere(tenantId, filter), pbxCallScopeWhere(scope)] } }),
           // Chamadas de entrada em curso ainda sem CDR — só na 1ª página e sem filtros
-          skip === 0 && !status && !filter.q && !filter.from && !filter.to ? activeInboundCalls(tenantId) : Promise.resolve([]),
+          skip === 0 && scope.kind === "ALL" && !status && !filter.q && !filter.from && !filter.to ? activeInboundCalls(tenantId) : Promise.resolve([]),
         ]);
         const live = liveRows.map(mapCall);
         return { calls: [...live, ...rows.map(mapPbxCall)], total: total + live.length };
       }
 
-      const where = callsWhere(tenantId, filter);
+      const where = { AND: [callsWhere(tenantId, filter), callScopeWhere(scope)] };
       const [calls, total] = await Promise.all([
         prisma.call.findMany({
           where,
@@ -213,7 +216,12 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     const filter = callsFilterSchema.parse(request.query);
     const MAX = 20_000; // ponytail: limite de linhas por exportação; acima disso, filtrar o período
     const [rows, tenant] = await Promise.all([
-      prisma.call.findMany({ where: callsWhere(tenantId, filter), orderBy: { createdAt: "desc" }, take: MAX, select: listSelect }),
+      prisma.call.findMany({
+        where: { AND: [callsWhere(tenantId, filter), callScopeWhere(await userScope(request.tenantUser!))] },
+        orderBy: { createdAt: "desc" },
+        take: MAX,
+        select: listSelect,
+      }),
       prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
     ]);
     const KIND: Record<string, string> = { INBOUND: "Entrada", DIRECT: "Directa", OTP: "OTP", AI_AGENT: "Agente IA", FIXED_SCRIPT: "Script fixo" };
@@ -249,8 +257,9 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /tenant/calls/:id — detail with transcript turns
   fastify.get<{ Params: { id: string } }>("/:id", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
+    const scope = await userScope(request.tenantUser!);
     const call = await prisma.call.findFirst({
-      where: { id: request.params.id, tenantId },
+      where: { id: request.params.id, tenantId, ...callScopeWhere(scope) },
       select: {
         id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
         outcome: true, failReason: true, durationSecs: true, costCents: true, variables: true, recordingUrl: true,
@@ -333,7 +342,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Fallback: chamada do PBX (produto CRM BYO-PBX) — sem turnos de IA
     const pbxCall = await prisma.pbxCall.findFirst({
-      where: { id: request.params.id, tenantId },
+      where: { id: request.params.id, tenantId, ...pbxCallScopeWhere(scope) },
       select: PBX_CALL_SELECT,
     });
     if (pbxCall) return { call: mapPbxCall(pbxCall) };
@@ -351,7 +360,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get<{ Params: { id: string } }>("/:id/recording", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const call = await prisma.call.findFirst({
-      where: { id: request.params.id, tenantId },
+      where: { id: request.params.id, tenantId, ...callScopeWhere(await userScope(request.tenantUser!)) },
       select: { recordingUrl: true },
     });
     if (!call?.recordingUrl) return reply.status(404).send({ error: "Gravação não encontrada" });

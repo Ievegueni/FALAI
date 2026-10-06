@@ -1,4 +1,3 @@
-import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { buildCallReport, reportToCsv } from "../../services/reports.service.js";
 import {
@@ -25,6 +24,8 @@ import {
   type AnalysisFilters,
 } from "../../services/reportAnalysis.service.js";
 import { previousRange } from "../../services/reportsOverview.service.js";
+import { OPS_ROLES, userScope } from "../../services/userScope.js";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 
 const rangeSchema = z.object({
   from: z.string().optional(),
@@ -70,7 +71,29 @@ function analysisFilters(q: z.infer<typeof attendanceSchema>): AnalysisFilters {
   return { from: day(r.from), to: day(r.to), extensionId: q.extensionId || undefined, groupId: q.groupId || undefined, categoryId: q.categoryId || undefined };
 }
 
-const ANALYSIS_ADMINS = new Set(["OWNER", "ADMIN"]);
+const ANALYSIS_ADMINS = OPS_ROLES;
+
+/**
+ * Relatórios de atendimento com o âmbito de quem pede (services/userScope.ts):
+ * agente só as suas chamadas, supervisor os seus grupos e agentes. Pedir um
+ * agente ou grupo de fora do âmbito é 403.
+ */
+async function scopedAttendanceFilter(request: FastifyRequest, q: z.infer<typeof attendanceSchema>): Promise<AttendanceFilter | { error: string }> {
+  const f = attendanceFilter(q);
+  const scope = await userScope(request.tenantUser!);
+  if (scope.kind === "ALL") return f;
+  if (q.extensionId && !scope.extensionIds.includes(q.extensionId)) return { error: "Esse agente não pertence à sua equipa" };
+  if (q.groupId && scope.kind === "TEAM" && !scope.groupIds.includes(q.groupId)) return { error: "Esse grupo não lhe está atribuído" };
+  return { ...f, scope: { extensionIds: scope.extensionIds, groupIds: scope.kind === "TEAM" ? scope.groupIds : [] } };
+}
+
+/** preHandler: relatórios da conta inteira só para quem vê tudo (admin, gestor, consulta). */
+async function requireWholeTenant(request: FastifyRequest, reply: FastifyReply) {
+  if ((await userScope(request.tenantUser!)).kind !== "ALL") {
+    return reply.status(403).send({ error: "Este relatório é da conta inteira — use o separador de atendimento" });
+  }
+  return undefined;
+}
 
 export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
@@ -170,7 +193,7 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /tenant/reports — resumo agregado por intervalo (sem as linhas em bruto)
-  fastify.get<{ Querystring: { from?: string; to?: string } }>("/tenant/reports", { preHandler }, async (request) => {
+  fastify.get<{ Querystring: { from?: string; to?: string } }>("/tenant/reports", { preHandler: [...preHandler, requireWholeTenant] }, async (request) => {
     const { tenantId } = request.tenantUser!;
     const range = resolveRange(rangeSchema.parse(request.query));
     const report = await buildCallReport(fastify, tenantId, range);
@@ -181,7 +204,7 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /tenant/reports/calls.csv — exportação da lista de chamadas do intervalo
   fastify.get<{ Querystring: { from?: string; to?: string } }>(
     "/tenant/reports/calls.csv",
-    { preHandler },
+    { preHandler: [...preHandler, requireWholeTenant] },
     async (request, reply) => {
       const { tenantId } = request.tenantUser!;
       const range = resolveRange(rangeSchema.parse(request.query));
@@ -199,25 +222,29 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /tenant/reports/attendance — KPIs do tenant, da selecção (agente/grupo),
   // por agente, por grupo e motivos de recusa, com a diferença para a média.
-  fastify.get("/tenant/reports/attendance", { preHandler }, async (request) => {
+  fastify.get("/tenant/reports/attendance", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
-    const q = attendanceSchema.parse(request.query);
+    const f = await scopedAttendanceFilter(request, attendanceSchema.parse(request.query));
+    if ("error" in f) return reply.status(403).send(f);
     const { isCrmPbx } = await ensureCdrSynced(fastify, tenantId);
-    return buildAttendanceReport(tenantId, attendanceFilter(q), { limited: isCrmPbx });
+    return buildAttendanceReport(tenantId, f, { limited: isCrmPbx });
   });
 
   // GET /tenant/reports/attendance/calls — chamadas de entrada com as pernas (paginado)
-  fastify.get("/tenant/reports/attendance/calls", { preHandler }, async (request) => {
+  fastify.get("/tenant/reports/attendance/calls", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const q = callsListSchema.parse(request.query);
-    return listAttendanceCalls(tenantId, attendanceFilter(q), q.page, q.pageSize);
+    const f = await scopedAttendanceFilter(request, q);
+    if ("error" in f) return reply.status(403).send(f);
+    return listAttendanceCalls(tenantId, f, q.page, q.pageSize);
   });
 
   // GET /tenant/reports/attendance/export?view=agents|groups|reasons&format=csv|xlsx
   fastify.get("/tenant/reports/attendance/export", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const q = exportSchema.parse(request.query);
-    const f = attendanceFilter(q);
+    const f = await scopedAttendanceFilter(request, q);
+    if ("error" in f) return reply.status(403).send(f);
     const { isCrmPbx } = await ensureCdrSynced(fastify, tenantId);
     const name = `atendimento_${q.view}_${f.from.toISOString().slice(0, 10)}_${f.to.toISOString().slice(0, 10)}`;
     if (q.format === "xlsx") {
@@ -225,7 +252,8 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
       const [report, tenant, analysis] = await Promise.all([
         buildAttendanceReport(tenantId, f, { limited: isCrmPbx }),
         prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
-        latestAnalysis(tenantId, analysisFilters(q)),
+        // A análise guardada é dos filtros, não do âmbito: só vai para quem vê tudo.
+        f.scope ? null : latestAnalysis(tenantId, analysisFilters(q)),
       ]);
       return reply
         .header("Content-Type", XLSX_TYPE)
@@ -242,14 +270,14 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
   // ── Resumo (painel com comparação ao período anterior) ─────────────────────
 
   // GET /tenant/reports/overview — cartões, anéis e chamadas por dia
-  fastify.get("/tenant/reports/overview", { preHandler }, async (request) => {
+  fastify.get("/tenant/reports/overview", { preHandler: [...preHandler, requireWholeTenant] }, async (request) => {
     const { tenantId } = request.tenantUser!;
     const { attendance: _a, calls: _c, ...overview } = await buildOverview(fastify, tenantId, resolveRange(rangeSchema.parse(request.query)));
     return overview;
   });
 
   // GET /tenant/reports/overview.xlsx — o Resumo em Excel formatado, com várias folhas
-  fastify.get("/tenant/reports/overview.xlsx", { preHandler }, async (request, reply) => {
+  fastify.get("/tenant/reports/overview.xlsx", { preHandler: [...preHandler, requireWholeTenant] }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     // Os filtros de agente/grupo/tipificação só servem para juntar a análise IA desses filtros.
     const q = attendanceSchema.parse(request.query);
@@ -267,7 +295,7 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /tenant/reports/overview.pdf — o mesmo resumo num PDF a sério
-  fastify.get("/tenant/reports/overview.pdf", { preHandler }, async (request, reply) => {
+  fastify.get("/tenant/reports/overview.pdf", { preHandler: [...preHandler, requireWholeTenant] }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const q = attendanceSchema.parse(request.query);
     const range = resolveRange(q);

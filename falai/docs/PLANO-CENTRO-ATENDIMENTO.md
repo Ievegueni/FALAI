@@ -5,9 +5,9 @@
 > como projecto à medida: tudo o que entra aqui serve qualquer tenant e liga-se
 > por funcionalidade no backoffice.
 >
-> Criado em 06/10/2026. Estado: **fase 1 (tickets nativos) feita em 06/10, branch
-> `feat/tickets`, por commitar** — migração `20261006090000_tickets` aplicada só
-> na BD local. Restantes fases por fazer.
+> Criado em 06/10/2026. Estado: **fases 1 (tickets) e 2 (papéis) feitas em 06/10,
+> branch `feat/tickets`** — migrações `20261006090000_tickets` e
+> `20261006120000_manager_role` aplicadas só na BD local. Restantes fases por fazer.
 
 ---
 
@@ -107,16 +107,32 @@ CRM:
 Regras: reabrir só a partir de `RESOLVED` (configurável: até N dias);
 `CLOSED` é final. Escalar nível regista evento e pode mudar de grupo.
 
-### Fase 2 — Papéis e "só o que é meu" (P)
+### Fase 2 — Papéis e "só o que é meu" (P) · ✅ feita 06/10
 
-Mapear os quatro papéis do documento sem criar roles novos:
+**Mudança face ao plano:** criou-se o papel `MANAGER` em vez de simular o
+gestor com um perfil de acesso — um perfil não separa "usar a caixa de
+entrada" de "configurar canais", nem tapa as definições/webhooks. Com isso os
+perfis-modelo deixaram de ser precisos (não feitos).
 
 | Documento | Falaí |
 |---|---|
-| Administrador | `OWNER`/`ADMIN` |
-| Gestor Operacional | `ADMIN` + perfil de acesso com Telefonia/Developers = `none` |
-| Supervisor | `SUPERVISOR` (já limitado aos grupos que supervisiona) |
-| Agente | `MEMBER` |
+| Administrador | `OWNER`/`ADMIN` — tudo, incluindo configuração técnica |
+| Gestor Operacional | `MANAGER` — toda a operação (relatórios, equipa, supervisão, tipificações); gere supervisores/agentes/consultas, não administradores |
+| Supervisor | `SUPERVISOR` — a sua equipa (grupos supervisionados e os agentes deles) |
+| Agente | `MEMBER` — só o que é seu |
+
+Feito: `services/userScope.ts` (âmbito único para tickets, conversas,
+chamadas, relatórios) + testes; VIEWER só consulta em todas as rotas
+(`tenantAuth`); definições/webhooks/chaves API/PBX só OWNER/ADMIN (antes
+qualquer utilizador mudava o webhook); SSE manda ao agente só o id das
+conversas; CRM esconde o que daria 403; "Membro" passou a chamar-se "Agente".
+
+Limites conhecidos: o "tenant" nos relatórios de atendimento continua a ser a
+média da conta (referência das comparações); Dashboard e perfil do cliente
+não são filtrados (o histórico do cliente é para o agente ver); o papel vem no
+JWT — mudar o papel de alguém só vale depois de voltar a entrar.
+
+Plano original (para referência):
 
 O que falta construir:
 - Escopo por papel nas listas: `MEMBER` vê só tickets/conversas atribuídos a

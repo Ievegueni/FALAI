@@ -1,6 +1,6 @@
 // ─── Auth / Tenant ───────────────────────────────────────────────────────────
 
-export type TenantRole = 'OWNER' | 'ADMIN' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
+export type TenantRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
 export type TenantStatus = 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
 
 export interface TenantUser {
@@ -697,6 +697,8 @@ export type TicketEventType =
   | 'CATEGORY' | 'SUBJECT' | 'NOTE' | 'LINKED' | 'UNLINKED';
 
 export interface TicketDetail extends Ticket {
+  /** Calculado pela API com o papel de quem pede (o agente só altera os seus). */
+  canEdit: boolean;
   events: { id: string; type: TicketEventType; fromValue: string | null; toValue: string | null; body: string | null; createdAt: string; author: { id: string; name: string } | null }[];
   calls: { id: string; kind: CallKind; status: CallStatus; fromNumber: string | null; toNumber: string; startedAt: string | null; durationSecs: number; createdAt: string }[];
   conversations: { id: string; status: ConversationStatus; lastMessageAt: string; inbox: { name: string; channel: Channel } }[];

@@ -23,7 +23,7 @@ import type { FeatureKey, TenantUser } from '@/types';
 
 type NavItem = { to: string; icon: typeof Bot; labelKey: string };
 const item = (to: string, icon: typeof Bot, key: string): NavItem => ({ to, icon, labelKey: `nav.${key}` });
-const SUPERVISION_ROLES = new Set(['OWNER', 'ADMIN', 'SUPERVISOR']);
+const SUPERVISION_ROLES = new Set(['OWNER', 'ADMIN', 'MANAGER', 'SUPERVISOR']);
 
 /** Itens do menu que o utilizador pode ver (features do tenant + perfil de acesso), pela ordem do menu. */
 export function useNavItems(): NavItem[] {
@@ -55,7 +55,7 @@ export function useNavItems(): NavItem[] {
     [isOn('developers'), item('/developers', Code2, 'developers')],
     [isOn('telephony'), item('/telephony', Network, 'telephony')],
     [true, item('/settings', Settings, 'settings')],
-    [ownPbx, item('/settings/pbx', Server, 'pbx')],
+    [ownPbx && (user?.role === 'OWNER' || user?.role === 'ADMIN'), item('/settings/pbx', Server, 'pbx')],
   ];
   return all.filter(([show]) => show).map(([, i]) => i);
 }
@@ -68,6 +68,7 @@ export function canSeeDashboard(user: TenantUser | null | undefined): boolean {
 const ROLE_KEYS: Record<string, string> = {
   OWNER: 'team.roleOwner',
   ADMIN: 'team.roleAdmin',
+  MANAGER: 'team.roleManager',
   SUPERVISOR: 'team.roleSupervisor',
   MEMBER: 'team.roleMember',
   VIEWER: 'team.roleViewer',

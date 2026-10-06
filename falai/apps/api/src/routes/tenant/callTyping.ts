@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "@falai/db";
+import { isOpsManager } from "../../services/userScope.js";
 import {
   legGroupIds,
   loadCategories,
@@ -15,7 +16,8 @@ import {
  * Registo e edição: qualquer utilizador do tenant que use o webphone.
  */
 
-const isAdmin = (role: string) => role === "OWNER" || role === "ADMIN";
+// Tipificação é configuração da operação: também o gestor (MANAGER).
+const isAdmin = isOpsManager;
 
 const categorySchema = z.object({
   name: z.string().trim().min(1).max(80),
@@ -47,7 +49,7 @@ export const tenantCallTypingRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/tenant/call-categories", { preHandler }, async (request, reply) => {
     const { tenantId, role } = request.tenantUser!;
-    if (!isAdmin(role)) return reply.status(403).send({ error: "Apenas OWNER ou ADMIN" });
+    if (!isAdmin(role)) return reply.status(403).send({ error: "Apenas administradores ou gestores" });
     const body = categorySchema.parse(request.body);
     const parentId = body.parentId ?? null;
     if (parentId) {
@@ -71,7 +73,7 @@ export const tenantCallTypingRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.patch<{ Params: { id: string } }>("/tenant/call-categories/:id", { preHandler }, async (request, reply) => {
     const { tenantId, role } = request.tenantUser!;
-    if (!isAdmin(role)) return reply.status(403).send({ error: "Apenas OWNER ou ADMIN" });
+    if (!isAdmin(role)) return reply.status(403).send({ error: "Apenas administradores ou gestores" });
     const body = categoryUpdateSchema.parse(request.body);
     const cat = await prisma.callCategory.findFirst({ where: { id: request.params.id, tenantId } });
     if (!cat) return reply.status(404).send({ error: "Categoria não encontrada" });
@@ -103,7 +105,7 @@ export const tenantCallTypingRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.patch("/tenant/call-typing/settings", { preHandler }, async (request, reply) => {
     const { tenantId, role } = request.tenantUser!;
-    if (!isAdmin(role)) return reply.status(403).send({ error: "Apenas OWNER ou ADMIN" });
+    if (!isAdmin(role)) return reply.status(403).send({ error: "Apenas administradores ou gestores" });
     const body = settingsSchema.parse(request.body);
     return prisma.tenant.update({
       where: { id: tenantId },

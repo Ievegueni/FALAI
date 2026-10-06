@@ -620,7 +620,7 @@
     "title": "Team",
     "roleOwner": "Owner",
     "roleAdmin": "Admin",
-    "roleMember": "Member",
+    "roleMember": "Agent",
     "roleViewer": "Viewer",
     "email": "Email",
     "name": "Name",
@@ -628,7 +628,7 @@
     "emailPlaceholder": "colleague@company.ao",
     "namePlaceholder": "Colleague's name",
     "roleAdminOpt": "Admin — everything except account and OWNER",
-    "roleMemberOpt": "Member — operate campaigns/contacts",
+    "roleMemberOpt": "Agent — only their own cases, calls and reports",
     "roleViewerOpt": "Viewer — read only",
     "memberRemoved": "Member removed",
     "legendOwner": "<0>OWNER</0> — full access, including billing and API keys.",
@@ -638,7 +638,7 @@
     "you": "(you)",
     "removeConfirm": "Remove {{name}} from the team?",
     "roleSupervisor": "Supervisor",
-    "roleSupervisorOpt": "Supervisor — supervises calls of their groups",
+    "roleSupervisorOpt": "Supervisor — sees and manages their team and supervised groups",
     "legendSupervisor": "<0>Supervisor</0> — like Member, and supervises the groups you assign in real time.",
     "extension": "User's extension",
     "extensionHint": "The extension the user answers and calls with. A supervisor listens to calls through it.",
@@ -654,7 +654,9 @@
     "passwordShort": "At least 8 characters",
     "groups": "Groups",
     "groupsHint": "Groups where the user's extension receives calls.",
-    "groupsNeedExtension": "Choose the user's extension first."
+    "groupsNeedExtension": "Choose the user's extension first.",
+    "roleManager": "Manager",
+    "roleManagerOpt": "Manager — all operations (reports, team, supervision), no technical settings"
   },
   "settings": {
     "title": "Settings",
@@ -684,7 +686,8 @@
     "saved": "Settings saved",
     "secretRotated": "Webhook secret regenerated",
     "copySecretWarn": "Copy this secret now. It won't be shown again.",
-    "copySecret": "Copy secret"
+    "copySecret": "Copy secret",
+    "adminOnly": "Only administrators can change these settings."
   },
   "pbx": {
     "title": "PBX integration",
@@ -1526,6 +1529,7 @@
       "subject": "Subject: {{to}}",
       "linked": "Linked {{what}}",
       "unlinked": "Unlinked {{what}}"
-    }
+    },
+    "take": "Take"
   }
 }

@@ -217,7 +217,8 @@ function Thread({ id, onOpen }: { id: string; onOpen: (id: string) => void }) {
             aria-label={t('inbox.assignee')}
           >
             <option value="">{t('inbox.unassigned')}</option>
-            {team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {/* Agente: só se atribui a si (ou devolve à fila) */}
+            {team.filter((m) => user?.role !== 'MEMBER' || m.id === user.id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </Select>
           {conv.status !== 'RESOLVED' ? (
             <>

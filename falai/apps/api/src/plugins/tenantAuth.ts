@@ -30,6 +30,12 @@ export default fp(async (fastify) => {
           return reply.status(403).send({ error: "Conta de tenant inactiva ou suspensa" });
         }
 
+        // VIEWER é só consulta, em todas as rotas — não depende de cada rota se
+        // lembrar de verificar. Excepção: a própria sessão (2FA, password).
+        if (user.role === "VIEWER" && !["GET", "HEAD"].includes(request.method) && !request.url.startsWith("/tenant/auth/")) {
+          return reply.status(403).send({ error: "O seu papel só permite consultar" });
+        }
+
         request.tenantUser = user;
       } catch {
         return reply.status(401).send({ error: "Não autenticado" });

@@ -47,7 +47,7 @@ const STATE_CLASS: Record<string, string> = {
   REJECTED: 'bg-red-100 text-red-700',
   IN_PROGRESS: 'bg-blue-100 text-blue-700',
 };
-const MERGE_ROLES = new Set(['OWNER', 'ADMIN', 'SUPERVISOR']);
+const MERGE_ROLES = new Set(['OWNER', 'ADMIN', 'MANAGER', 'SUPERVISOR']);
 const selectCls = 'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700';
 
 function saveBlob({ blob, filename }: { blob: Blob; filename: string }) {

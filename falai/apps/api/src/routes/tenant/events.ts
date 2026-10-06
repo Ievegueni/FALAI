@@ -51,7 +51,7 @@ export const tenantEventsRoutes: FastifyPluginAsync = async (fastify) => {
     });
     reply.raw.write(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`);
 
-    const unsubscribe = fastify.incomingCalls.subscribe(payload.tenantId, reply);
+    const unsubscribe = fastify.incomingCalls.subscribe(payload.tenantId, reply, { idsOnly: payload.role === "MEMBER" });
 
     // Comentário de keep-alive para atravessar proxies/timeouts.
     const keepalive = setInterval(() => {

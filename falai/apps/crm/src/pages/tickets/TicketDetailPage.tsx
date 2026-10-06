@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, MessageSquare, Pencil, Phone, StickyNote, Unlink, User } from 'lucide-react';
+import { ArrowLeft, Hand, MessageSquare, Pencil, Phone, StickyNote, Unlink, User } from 'lucide-react';
 import { ApiError, ticketsApi, type TicketInput } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -61,8 +61,11 @@ export function TicketDetailPage() {
   if (isLoading) return <><Header title={t('tickets.title')} /><PageSpinner /></>;
   if (!ticket) return <><Header title={t('tickets.title')} /><div className="p-6 text-sm text-gray-500">{t('tickets.notFound')}</div></>;
 
-  const canEdit = user?.role !== 'VIEWER';
-  const locked = !canEdit || ticket.status === 'CLOSED';
+  const locked = !ticket.canEdit;
+  // Agente: pega num ticket da fila (atribui-se) e só atribui a si ou à fila.
+  const isAgent = user?.role === 'MEMBER';
+  const canTake = isAgent && !ticket.assigneeId && ticket.status !== 'CLOSED';
+  const assignees = isAgent ? (meta?.users ?? []).filter((u) => u.id === user?.id) : meta?.users ?? [];
   const tree = categoryTree(meta);
   const subs = tree.find((c) => c.id === ticket.categoryId)?.subs ?? [];
 
@@ -92,6 +95,11 @@ export function TicketDetailPage() {
                   </span>
                 </div>
               </div>
+              {canTake && (
+                <Button size="sm" icon={<Hand className="h-3.5 w-3.5" />} loading={update.isPending} onClick={() => update.mutate({ assigneeId: user!.id })}>
+                  {t('tickets.take')}
+                </Button>
+              )}
               {!locked && (
                 <Button size="sm" variant="ghost" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEditing({ subject: ticket.subject, description: ticket.description ?? '' })}>
                   {t('common.edit')}
@@ -122,7 +130,7 @@ export function TicketDetailPage() {
                 </li>
               ))}
             </ol>
-            {canEdit && (
+            {!locked && (
               <form className="mt-4 space-y-2" onSubmit={(ev) => { ev.preventDefault(); if (note.trim()) addNote.mutate(); }}>
                 <Textarea value={note} onChange={(ev) => setNote(ev.target.value)} rows={3} maxLength={10000} placeholder={t('tickets.notePlaceholder')} />
                 <div className="flex justify-end">
@@ -160,7 +168,7 @@ export function TicketDetailPage() {
               <Field label={t('tickets.assignee')}>
                 <select className={selectCls} value={ticket.assigneeId ?? ''} disabled={locked} onChange={(e) => update.mutate({ assigneeId: e.target.value || null })}>
                   <option value="">{t('tickets.unassigned')}</option>
-                  {meta?.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  {assignees.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
                 </select>
               </Field>
               <Field label={t('tickets.category')}>

@@ -22,8 +22,9 @@ import type { TenantStatus, CallStatus, CampaignStatus, TransactionType, TenantL
 const ROLE_LABELS: Record<TenantRole, string> = {
   OWNER: 'Proprietário',
   ADMIN: 'Administrador',
+  MANAGER: 'Gestor',
   SUPERVISOR: 'Supervisor',
-  MEMBER: 'Membro',
+  MEMBER: 'Agente',
   VIEWER: 'Leitura',
 };
 
@@ -1087,7 +1088,9 @@ export function TenantDetailPage() {
           <Select label="Função" value={userForm.role} onChange={(e) => setUserForm((f) => ({ ...f, role: e.target.value as TenantRole }))}>
             <option value="OWNER">Proprietário</option>
             <option value="ADMIN">Administrador</option>
-            <option value="MEMBER">Membro</option>
+            <option value="MANAGER">Gestor (operação, sem configuração técnica)</option>
+            <option value="SUPERVISOR">Supervisor</option>
+            <option value="MEMBER">Agente</option>
             <option value="VIEWER">Leitura</option>
           </Select>
           {userForm.role !== 'OWNER' && (

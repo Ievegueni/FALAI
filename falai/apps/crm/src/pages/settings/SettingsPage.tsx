@@ -10,10 +10,13 @@ import { Input, Textarea } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
+import { isConfigAdmin } from '@/lib/roles';
 
 export function SettingsPage() {
   const { t } = useTranslation();
-  const { refreshMe } = useAuth();
+  const { refreshMe, user } = useAuth();
+  // Definições da conta e webhooks são configuração técnica: só administradores.
+  const canEdit = isConfigAdmin(user?.role);
   const qc = useQueryClient();
   const { success, error } = useToast();
 
@@ -91,7 +94,8 @@ export function SettingsPage() {
     <>
       <Header title={t('settings.title')} />
 
-      <div className="p-6 max-w-2xl space-y-6">
+      <fieldset disabled={!canEdit} className="p-6 max-w-2xl space-y-6">
+        {!canEdit && <p className="text-sm text-gray-500">{t('settings.adminOnly')}</p>}
         <Card>
           <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('settings.companyInfo')}</h2>
           <div className="flex flex-col gap-4">
@@ -205,14 +209,16 @@ export function SettingsPage() {
           </div>
         </Card>
 
-        <Button
-          icon={<Save className="h-4 w-4" />}
-          loading={save.isPending}
-          onClick={() => save.mutate()}
-        >
-          {t('settings.save')}
-        </Button>
-      </div>
+        {canEdit && (
+          <Button
+            icon={<Save className="h-4 w-4" />}
+            loading={save.isPending}
+            onClick={() => save.mutate()}
+          >
+            {t('settings.save')}
+          </Button>
+        )}
+      </fieldset>
     </>
   );
 }

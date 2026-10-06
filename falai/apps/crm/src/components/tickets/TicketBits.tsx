@@ -79,7 +79,11 @@ export function CreateTicketModal({
   const { success, error } = useToast();
   const { data: meta } = useTicketMeta(open);
   const tree = categoryTree(meta);
-  const empty = { subject: defaultSubject, description: '', priority: 'MEDIUM' as TicketPriority, supportLevel: 1, assigneeId: '', groupId: '', categoryId: '', subcategoryId: '' };
+  // Agente: o ticket fica com ele por omissão; só pode deixá-lo na fila.
+  const { user } = useAuth();
+  const isAgent = user?.role === 'MEMBER';
+  const assignees = isAgent ? (meta?.users ?? []).filter((u) => u.id === user?.id) : meta?.users ?? [];
+  const empty = { subject: defaultSubject, description: '', priority: 'MEDIUM' as TicketPriority, supportLevel: 1, assigneeId: isAgent ? user!.id : '', groupId: '', categoryId: '', subcategoryId: '' };
   const [form, setForm] = useState(empty);
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -152,7 +156,7 @@ export function CreateTicketModal({
         <Field label={t('tickets.assignee')}>
           <select className={selectCls} value={form.assigneeId} onChange={(e) => set('assigneeId', e.target.value)}>
             <option value="">{t('tickets.unassigned')}</option>
-            {meta?.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            {assignees.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         </Field>
         <Field label={t('tickets.category')}>

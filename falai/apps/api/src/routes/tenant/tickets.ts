@@ -11,11 +11,13 @@ import {
   updateTicket,
 } from "../../services/tickets.service.js";
 import { emitWebhookAsync } from "../../services/webhookEmitter.service.js";
+import { agentAssignmentAllowed, canEditTicket, ticketScopeWhere, userScope } from "../../services/userScope.js";
+import type { TenantJwtPayload } from "../../plugins/auth.js";
 
 /**
  * Tickets nativos (centro de atendimento, fase 1) — ver services/tickets.service.ts.
- * Leitura: todos os utilizadores do tenant. Escrita: todos menos VIEWER.
- * ponytail: "o agente só vê o que é seu" é a fase 2 do plano.
+ * Quem vê e altera o quê: services/userScope.ts (agente só o que é seu,
+ * supervisor a sua equipa, gestor/admin tudo; VIEWER só consulta).
  */
 
 const nullableId = z.string().min(1).nullable().optional();
@@ -106,9 +108,28 @@ export function sendTicketError(reply: FastifyReply, err: unknown) {
   throw err;
 }
 
+const NOT_YOURS = "Este ticket não está atribuído a si";
+
+/**
+ * Carrega o ticket para alterar, já com as permissões de quem pede.
+ * `takeOnly`: o pedido é só "atribuir a mim" — o agente pode pegar num
+ * ticket por atribuir que vê, mesmo sem o poder alterar ainda.
+ */
+async function loadEditable(user: TenantJwtPayload, id: string, nextAssigneeId?: string | null, takeOnly = false) {
+  const scope = await userScope(user);
+  const t = await prisma.ticket.findFirst({
+    where: { id, tenantId: user.tenantId, ...ticketScopeWhere(scope) },
+    select: { assigneeId: true, groupId: true, createdById: true },
+  });
+  if (!t) throw new TicketError(404, "Ticket não encontrado");
+  const taking = takeOnly && scope.kind === "SELF" && t.assigneeId === null && nextAssigneeId === user.sub;
+  if (!taking && !canEditTicket(scope, t)) throw new TicketError(403, NOT_YOURS);
+  if (!agentAssignmentAllowed(scope, t, nextAssigneeId)) throw new TicketError(403, "Um agente só pode atribuir a si próprio ou devolver à fila");
+  return scope;
+}
+
 export const tenantTicketsRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
-  const canWrite = (role: string) => role !== "VIEWER";
 
   // GET /tenant/tickets/meta — opções dos formulários (utilizadores, grupos, categorias).
   // Aqui e não nas rotas de cada módulo: essas estão atrás de outras features.
@@ -130,7 +151,7 @@ export const tenantTicketsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get("/tenant/tickets", { preHandler }, async (request) => {
     const { tenantId, sub } = request.tenantUser!;
     const q = listQuery.parse(request.query);
-    const where = ticketWhere(tenantId, sub, q);
+    const where = { AND: [ticketWhere(tenantId, sub, q), ticketScopeWhere(await userScope(request.tenantUser!))] };
     const [data, total] = await Promise.all([
       prisma.ticket.findMany({
         where,
@@ -147,8 +168,9 @@ export const tenantTicketsRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /tenant/tickets/:id — ticket + linha do tempo + interacções ligadas
   fastify.get<{ Params: { id: string } }>("/tenant/tickets/:id", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
+    const scope = await userScope(request.tenantUser!);
     const ticket = await prisma.ticket.findFirst({
-      where: { id: request.params.id, tenantId },
+      where: { id: request.params.id, tenantId, ...ticketScopeWhere(scope) },
       include: {
         ...ticketListInclude,
         events: { orderBy: { createdAt: "asc" }, include: { author: { select: { id: true, name: true } } } },
@@ -163,14 +185,21 @@ export const tenantTicketsRoutes: FastifyPluginAsync = async (fastify) => {
       },
     });
     if (!ticket) return reply.status(404).send({ error: "Ticket não encontrado" });
-    return ticket;
+    return { ...ticket, canEdit: ticket.status !== "CLOSED" && request.tenantUser!.role !== "VIEWER" && canEditTicket(scope, ticket) };
   });
 
   // POST /tenant/tickets
   fastify.post("/tenant/tickets", { preHandler }, async (request, reply) => {
     const { tenantId, sub, role } = request.tenantUser!;
-    if (!canWrite(role)) return reply.status(403).send({ error: "Sem permissão" });
     const body = createSchema.parse(request.body);
+    // Agente: o ticket que abre fica com ele, a não ser que o mande para a fila
+    // (null). Atribuí-lo a um colega não pode.
+    if (role === "MEMBER") {
+      if (body.assigneeId === undefined) body.assigneeId = sub;
+      if (body.assigneeId !== null && body.assigneeId !== sub) {
+        return reply.status(403).send({ error: "Um agente só pode atribuir a si próprio ou devolver à fila" });
+      }
+    }
     try {
       const ticket = await createTicket(tenantId, sub, {
         ...body,
@@ -186,10 +215,11 @@ export const tenantTicketsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // PATCH /tenant/tickets/:id — estado, prioridade, nível, responsável, grupo, categoria
   fastify.patch<{ Params: { id: string } }>("/tenant/tickets/:id", { preHandler }, async (request, reply) => {
-    const { tenantId, sub, role } = request.tenantUser!;
-    if (!canWrite(role)) return reply.status(403).send({ error: "Sem permissão" });
+    const { tenantId, sub } = request.tenantUser!;
     const { updatedAt, dueAt, ...patch } = patchSchema.parse(request.body);
     try {
+      const fields = Object.keys(patch).filter((k) => (patch as Record<string, unknown>)[k] !== undefined);
+      await loadEditable(request.tenantUser!, request.params.id, patch.assigneeId, dueAt === undefined && fields.length === 1 && fields[0] === "assigneeId");
       const { ticket, changed } = await updateTicket(
         tenantId,
         request.params.id,
@@ -208,10 +238,10 @@ export const tenantTicketsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /tenant/tickets/:id/notes — nota interna
   fastify.post<{ Params: { id: string } }>("/tenant/tickets/:id/notes", { preHandler }, async (request, reply) => {
-    const { tenantId, sub, role } = request.tenantUser!;
-    if (!canWrite(role)) return reply.status(403).send({ error: "Sem permissão" });
+    const { tenantId, sub } = request.tenantUser!;
     const { body } = z.object({ body: z.string().trim().min(1).max(10000) }).parse(request.body);
     try {
+      await loadEditable(request.tenantUser!, request.params.id);
       return reply.status(201).send(await addTicketNote(tenantId, request.params.id, sub, body));
     } catch (err) {
       return sendTicketError(reply, err);
@@ -225,10 +255,10 @@ export const tenantTicketsRoutes: FastifyPluginAsync = async (fastify) => {
       url: "/tenant/tickets/:id/links",
       preHandler,
       handler: async (request, reply) => {
-        const { tenantId, sub, role } = request.tenantUser!;
-        if (!canWrite(role)) return reply.status(403).send({ error: "Sem permissão" });
+        const { tenantId, sub } = request.tenantUser!;
         const target = linkSchema.parse(request.body);
         try {
+          await loadEditable(request.tenantUser!, request.params.id);
           await linkInteraction(tenantId, request.params.id, sub, target, method === "POST");
           return reply.status(204).send();
         } catch (err) {

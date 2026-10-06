@@ -7,11 +7,12 @@ import { activeInboundCalls, monitoringNoticePrompt } from "../../services/inbou
 import { SupervisionError } from "../../services/supervision.service.js";
 import { callKpis, abandonedIds } from "../../services/attendanceReport.service.js";
 import { isTelephonyWav } from "../shared/ivrRouting.js";
+import { isOpsManager } from "../../services/userScope.js";
 
 /**
  * Supervisão em tempo real (melhoria 4/4) — ver services/supervision.service.ts.
  *
- * Permissões: OWNER/ADMIN supervisionam tudo; SUPERVISOR só os grupos que lhe
+ * Permissões: OWNER/ADMIN/MANAGER supervisionam tudo; SUPERVISOR só os grupos que lhe
  * foram atribuídos (Equipa) e as extensões desses grupos. O painel actualiza-se
  * por polling (GET /live): cada pedido aplica as permissões de quem pede.
  */
@@ -19,7 +20,7 @@ import { isTelephonyWav } from "../shared/ivrRouting.js";
 type Scope = { all: true } | { all: false; groupIds: Set<string>; extensionIds: Set<string> };
 
 export async function supervisionScope(user: TenantJwtPayload): Promise<Scope | null> {
-  if (user.role === "OWNER" || user.role === "ADMIN") return { all: true };
+  if (isOpsManager(user.role)) return { all: true };
   if (user.role !== "SUPERVISOR") return null;
   const groups = await prisma.supervisorGroup.findMany({ where: { tenantUserId: user.sub }, select: { groupId: true } });
   const groupIds = new Set(groups.map((g) => g.groupId));
@@ -241,7 +242,7 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
     const s = fastify.supervision.get(request.params.id);
     if (!s || s.tenantId !== user.tenantId) return reply.status(404).send({ error: "Supervisão não encontrada" });
     // Quem supervisiona termina; um admin também pode (ex.: sessão esquecida).
-    if (s.supervisorId !== user.sub && user.role !== "OWNER" && user.role !== "ADMIN") {
+    if (s.supervisorId !== user.sub && !isOpsManager(user.role)) {
       return reply.status(403).send({ error: "Esta supervisão é de outro supervisor" });
     }
     await fastify.supervision.end(s.id, "SUPERVISOR");
@@ -251,7 +252,7 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /tenant/supervision/log — registo (OWNER/ADMIN), uma linha por supervisão
   fastify.get("/tenant/supervision/log", { preHandler }, async (request, reply) => {
     const user = request.tenantUser!;
-    if (user.role !== "OWNER" && user.role !== "ADMIN") return reply.status(403).send({ error: "Apenas OWNER ou ADMIN" });
+    if (!isOpsManager(user.role)) return reply.status(403).send({ error: "Apenas administradores ou gestores" });
     const q = logSchema.parse(request.query);
     const PAGE = 25;
     const range = {
@@ -308,7 +309,7 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.patch("/tenant/supervision/settings", { preHandler }, async (request, reply) => {
     const { tenantId, role } = request.tenantUser!;
-    if (role !== "OWNER" && role !== "ADMIN") return reply.status(403).send({ error: "Apenas OWNER ou ADMIN" });
+    if (!isOpsManager(role)) return reply.status(403).send({ error: "Apenas administradores ou gestores" });
     const body = settingsSchema.parse(request.body);
     return prisma.tenant.update({
       where: { id: tenantId },
@@ -323,7 +324,7 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /tenant/supervision/notice-audio — áudio do aviso ao cliente (Lei 22/11)
   fastify.post("/tenant/supervision/notice-audio", { preHandler }, async (request, reply) => {
     const { tenantId, role, sub } = request.tenantUser!;
-    if (role !== "OWNER" && role !== "ADMIN") return reply.status(403).send({ error: "Apenas OWNER ou ADMIN" });
+    if (!isOpsManager(role)) return reply.status(403).send({ error: "Apenas administradores ou gestores" });
     const file = request.isMultipart() ? await request.file() : undefined;
     if (!file) return reply.status(400).send({ error: "Envie o áudio num campo 'file' (multipart)" });
     const wav = await file.toBuffer();

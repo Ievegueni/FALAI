@@ -13,6 +13,7 @@ const {
   exportTable,
   tableToCsv,
   typingBreakdown,
+  scopeRows,
 } = await import("./attendanceReport.service.js");
 type CallRow = import("./attendanceReport.service.js").CallRow;
 type LegRow = import("./attendanceReport.service.js").LegRow;
@@ -214,5 +215,22 @@ describe("Tipificação nos relatórios", () => {
       NOW
     );
     expect(k).toMatchObject({ typed: 1, untyped: 1, untypedRate: 50, wrapUpSecs: 35, tmaSecs: 59 });
+  });
+});
+
+describe("Âmbito (agente / supervisor)", () => {
+  const calls = [call("c1", { groupId: "g_a" }), call("c2", { groupId: "g_b" }), call("c3", { groupId: "g_b" })];
+  const legs = [leg("c1", "ext_1", { groupId: "g_a" }), leg("c2", "ext_2", { groupId: "g_b" }), leg("c3", "ext_1", { groupId: "g_b" })];
+
+  it("agente: só as suas pernas e as chamadas em que tocou", () => {
+    const r = scopeRows(calls, legs, { extensionIds: ["ext_1"], groupIds: [] });
+    expect(r.legs.map((l) => l.callId)).toEqual(["c1", "c3"]);
+    expect(r.calls.map((c) => c.id)).toEqual(["c1", "c3"]);
+  });
+
+  it("supervisor: as do grupo dele, mesmo de agentes de fora, e as dos agentes dele", () => {
+    const r = scopeRows(calls, legs, { extensionIds: ["ext_1"], groupIds: ["g_b"] });
+    expect(r.calls.map((c) => c.id)).toEqual(["c1", "c2", "c3"]);
+    expect(scopeRows(calls, legs, { extensionIds: [], groupIds: ["g_a"] }).calls.map((c) => c.id)).toEqual(["c1"]);
   });
 });

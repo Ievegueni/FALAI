@@ -7,6 +7,7 @@ import { z } from "zod";
 import { appendMessage, broadcastConversation, deliver } from "../../services/textChannels.service.js";
 import { UPLOADS_DIR } from "../../services/email.service.js";
 import { emitWebhookAsync } from "../../services/webhookEmitter.service.js";
+import { conversationScopeWhere, userScope } from "../../services/userScope.js";
 
 const listQuery = z.object({
   status: z.enum(["OPEN", "PENDING", "RESOLVED"]).optional(),
@@ -57,6 +58,7 @@ export const tenantConversationsRoutes: FastifyPluginAsync = async (fastify) => 
       ...(q.assignee === "none" && { assigneeId: null }),
       ...(q.assignee && !["me", "none"].includes(q.assignee) && { assigneeId: q.assignee }),
       ...(q.before && { lastMessageAt: { lt: new Date(q.before) } }),
+      ...conversationScopeWhere(await userScope(request.tenantUser!)),
     };
     const rows = await prisma.conversation.findMany({
       where,
@@ -75,8 +77,9 @@ export const tenantConversationsRoutes: FastifyPluginAsync = async (fastify) => 
   // GET /tenant/conversations/:id — conversa + mensagens
   fastify.get<{ Params: { id: string } }>("/tenant/conversations/:id", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
+    const scopeWhere = conversationScopeWhere(await userScope(request.tenantUser!));
     const conv = await prisma.conversation.findFirst({
-      where: { id: request.params.id, tenantId },
+      where: { id: request.params.id, tenantId, ...scopeWhere },
       include: {
         ...conversationInclude,
         messages: { orderBy: { seq: "asc" }, include: { conversation: false } },
@@ -88,7 +91,7 @@ export const tenantConversationsRoutes: FastifyPluginAsync = async (fastify) => 
     // Outras conversas do mesmo contacto (todos os números e canais) — o histórico não se perde numa troca de número.
     const previous = conv.contactId
       ? await prisma.conversation.findMany({
-          where: { tenantId, contactId: conv.contactId, id: { not: conv.id } },
+          where: { tenantId, contactId: conv.contactId, id: { not: conv.id }, ...scopeWhere },
           orderBy: { lastMessageAt: "desc" },
           take: 20,
           select: { id: true, status: true, lastMessageAt: true, messageCount: true, inbox: { select: { name: true, channel: true } } },
@@ -99,10 +102,12 @@ export const tenantConversationsRoutes: FastifyPluginAsync = async (fastify) => 
 
   // POST /tenant/conversations/:id/messages — resposta do operador (ou nota interna)
   fastify.post<{ Params: { id: string } }>("/tenant/conversations/:id/messages", { preHandler }, async (request, reply) => {
-    const { tenantId, sub, role } = request.tenantUser!;
-    if (role === "VIEWER") return reply.status(403).send({ error: "Sem permissão" });
+    const { tenantId, sub } = request.tenantUser!;
     const body = replySchema.parse(request.body);
-    const conv = await prisma.conversation.findFirst({ where: { id: request.params.id, tenantId }, include: { inbox: true } });
+    const conv = await prisma.conversation.findFirst({
+      where: { id: request.params.id, tenantId, ...conversationScopeWhere(await userScope(request.tenantUser!)) },
+      include: { inbox: true },
+    });
     if (!conv) return reply.status(404).send({ error: "Conversa não encontrada" });
 
     if (body.private) {
@@ -126,9 +131,17 @@ export const tenantConversationsRoutes: FastifyPluginAsync = async (fastify) => 
 
   // PATCH /tenant/conversations/:id — estado, modo (assumir/devolver à IA), atribuição
   fastify.patch<{ Params: { id: string } }>("/tenant/conversations/:id", { preHandler }, async (request, reply) => {
-    const { tenantId, role } = request.tenantUser!;
-    if (role === "VIEWER") return reply.status(403).send({ error: "Sem permissão" });
+    const { tenantId, role, sub } = request.tenantUser!;
     const body = patchSchema.parse(request.body);
+    // Agente: só mexe nas suas conversas e nas da fila, e só se atribui a si
+    // (ou devolve à fila) — não passa conversas a colegas.
+    const scopeWhere = conversationScopeWhere(await userScope(request.tenantUser!));
+    if (!(await prisma.conversation.count({ where: { id: request.params.id, tenantId, ...scopeWhere } }))) {
+      return reply.status(404).send({ error: "Conversa não encontrada" });
+    }
+    if (role === "MEMBER" && body.assigneeId !== undefined && body.assigneeId !== null && body.assigneeId !== sub) {
+      return reply.status(403).send({ error: "Um agente só pode atribuir a si próprio ou devolver à fila" });
+    }
 
     if (body.assigneeId && !(await prisma.tenantUser.findFirst({ where: { id: body.assigneeId, tenantId } }))) {
       return reply.status(400).send({ error: "Utilizador não encontrado" });
@@ -178,8 +191,7 @@ export const tenantConversationsRoutes: FastifyPluginAsync = async (fastify) => 
   });
 
   fastify.post("/tenant/canned-responses", { preHandler }, async (request, reply) => {
-    const { tenantId, role } = request.tenantUser!;
-    if (role === "VIEWER") return reply.status(403).send({ error: "Sem permissão" });
+    const { tenantId } = request.tenantUser!;
     const body = cannedSchema.parse(request.body);
     const row = await prisma.cannedResponse
       .create({ data: { tenantId, ...body } })
@@ -189,8 +201,7 @@ export const tenantConversationsRoutes: FastifyPluginAsync = async (fastify) => 
   });
 
   fastify.delete<{ Params: { id: string } }>("/tenant/canned-responses/:id", { preHandler }, async (request, reply) => {
-    const { tenantId, role } = request.tenantUser!;
-    if (role === "VIEWER") return reply.status(403).send({ error: "Sem permissão" });
+    const { tenantId } = request.tenantUser!;
     await prisma.cannedResponse.deleteMany({ where: { id: request.params.id, tenantId } });
     return reply.status(204).send();
   });

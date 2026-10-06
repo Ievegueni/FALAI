@@ -25,7 +25,7 @@ import { addTableSheet } from "../../services/excelExport.service.js";
 
 const phoneSchema = z.object({ phone: z.string().min(6).max(30), label: z.string().trim().max(40).optional() });
 const mergeSchema = z.object({ otherId: z.string().min(1) });
-const MERGE_ROLES = new Set(["OWNER", "ADMIN", "SUPERVISOR"]);
+const MERGE_ROLES = new Set(["OWNER", "ADMIN", "MANAGER", "SUPERVISOR"]);
 const INVALID_PHONE = "Número inválido. Use o formato nacional de 9 dígitos (ex: 923 456 789).";
 
 const STATE_PT: Record<string, string> = { ANSWERED: "Atendida", MISSED: "Perdida", REJECTED: "Recusada", IN_PROGRESS: "Em curso" };

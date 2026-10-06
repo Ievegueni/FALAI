@@ -620,7 +620,7 @@
     "title": "团队",
     "roleOwner": "所有者",
     "roleAdmin": "管理员",
-    "roleMember": "成员",
+    "roleMember": "坐席",
     "roleViewer": "只读者",
     "email": "邮箱",
     "name": "姓名",
@@ -628,7 +628,7 @@
     "emailPlaceholder": "colleague@company.ao",
     "namePlaceholder": "同事姓名",
     "roleAdminOpt": "管理员 — 除账户与 OWNER 外的所有权限",
-    "roleMemberOpt": "成员 — 操作活动/联系人",
+    "roleMemberOpt": "坐席 — 仅限自己的工单、通话和报表",
     "roleViewerOpt": "只读者 — 仅查看",
     "memberRemoved": "成员已移除",
     "legendOwner": "<0>OWNER</0> — 完全访问权限，包括计费与 API 密钥。",
@@ -638,7 +638,7 @@
     "you": "（您）",
     "removeConfirm": "将 {{name}} 从团队中移除？",
     "roleSupervisor": "主管",
-    "roleSupervisorOpt": "主管 — 监控其所属组的通话",
+    "roleSupervisorOpt": "主管 — 查看并管理其团队和所监控的组",
     "legendSupervisor": "<0>主管</0> — 与成员相同，并可实时监控分配给他的组。",
     "extension": "用户分机",
     "extensionHint": "用户接听和拨打电话使用的分机。主管通过它监听通话。",
@@ -654,7 +654,9 @@
     "passwordShort": "至少 8 个字符",
     "groups": "组",
     "groupsHint": "用户分机接听来电的组。",
-    "groupsNeedExtension": "请先选择用户的分机。"
+    "groupsNeedExtension": "请先选择用户的分机。",
+    "roleManager": "经理",
+    "roleManagerOpt": "经理 — 全部运营（报表、团队、监控），无技术配置"
   },
   "settings": {
     "title": "设置",
@@ -684,7 +686,8 @@
     "saved": "设置已保存",
     "secretRotated": "Webhook 密钥已重新生成",
     "copySecretWarn": "请立即复制此密钥。它将不会再次显示。",
-    "copySecret": "复制密钥"
+    "copySecret": "复制密钥",
+    "adminOnly": "只有管理员可以修改这些设置。"
   },
   "pbx": {
     "title": "PBX 集成",
@@ -1454,6 +1457,7 @@
       "subject": "主题：{{to}}",
       "linked": "已关联{{what}}",
       "unlinked": "已取消关联{{what}}"
-    }
+    },
+    "take": "领取"
   }
 }

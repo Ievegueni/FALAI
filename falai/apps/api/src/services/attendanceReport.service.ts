@@ -235,6 +235,13 @@ export interface AttendanceFilter {
   extensionId?: string | undefined;
   groupId?: string | undefined;
   categoryId?: string | undefined; // tipificação (categoria ou subcategoria)
+  /**
+   * Âmbito de quem pede (services/userScope.ts): só entram as pernas destas
+   * extensões ou destes grupos, e as chamadas desses grupos ou em que tocaram.
+   * Ausente = tenant inteiro. O "tenant" do relatório continua a ser a média
+   * da conta inteira (é só a referência das comparações).
+   */
+  scope?: { extensionIds: string[]; groupIds: string[] } | undefined;
 }
 
 export interface DayRow {
@@ -345,6 +352,15 @@ async function loadRows(tenantId: string, from: Date, to: Date): Promise<{ calls
 }
 
 /** Relatório completo do período. Isolado por tenant em todas as leituras. */
+/** Âmbito de quem pede: pernas das extensões/grupos dele e chamadas em que tocaram ou desses grupos. */
+export function scopeRows(calls: CallRow[], legs: LegRow[], scope: { extensionIds: string[]; groupIds: string[] }) {
+  const exts = new Set(scope.extensionIds);
+  const groups = new Set(scope.groupIds);
+  const inLegs = legs.filter((l) => (l.extensionId !== null && exts.has(l.extensionId)) || (l.groupId !== null && groups.has(l.groupId)));
+  const ids = new Set(inLegs.map((l) => l.callId));
+  return { calls: calls.filter((c) => ids.has(c.id) || (c.groupId !== null && groups.has(c.groupId))), legs: inLegs };
+}
+
 export async function buildAttendanceReport(
   tenantId: string,
   f: AttendanceFilter,
@@ -360,6 +376,7 @@ export async function buildAttendanceReport(
   // as pernas dele e as chamadas em que tocou.
   let selCalls = calls;
   let selLegs = legs;
+  if (f.scope) ({ calls: selCalls, legs: selLegs } = scopeRows(calls, legs, f.scope));
   if (f.groupId) {
     selCalls = selCalls.filter((c) => c.groupId === f.groupId);
     selLegs = selLegs.filter((l) => l.groupId === f.groupId);
@@ -502,6 +519,9 @@ export async function listAttendanceCalls(
     startedAt: { gte: f.from, lte: f.to },
     queuedAt: { not: null },
     ...(f.groupId && { groupId: f.groupId }),
+    ...(f.scope && {
+      OR: [{ groupId: { in: f.scope.groupIds } }, { legs: { some: { extensionId: { in: f.scope.extensionIds } } } }],
+    }),
     ...((f.extensionId || f.categoryId) && {
       legs: {
         some: {

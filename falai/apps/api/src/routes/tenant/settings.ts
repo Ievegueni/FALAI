@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "@falai/db";
 import { createHmac, randomBytes } from "crypto";
+import { requireConfigAdmin } from "../../services/userScope.js";
 
 export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<void> {
   const preHandler = [fastify.verifyTenant];
@@ -47,7 +48,7 @@ export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<vo
   });
 
   // PATCH /tenant/settings — update webhookUrl, rotate secret
-  fastify.patch("/tenant/settings", { preHandler }, async (request, reply) => {
+  fastify.patch("/tenant/settings", { preHandler: [...preHandler, requireConfigAdmin] }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = request.body as {
       webhookUrl?: string | null;
@@ -78,7 +79,7 @@ export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<vo
   });
 
   // POST /tenant/settings/webhook-test — sends a test event to the configured URL
-  fastify.post("/tenant/settings/webhook-test", { preHandler }, async (request, reply) => {
+  fastify.post("/tenant/settings/webhook-test", { preHandler: [...preHandler, requireConfigAdmin] }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
 
     const tenant = await prisma.tenant.findUnique({

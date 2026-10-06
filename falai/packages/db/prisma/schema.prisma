@@ -59,6 +59,7 @@ enum TenantStatus {
 enum TenantRole {
   OWNER
   ADMIN
+  MANAGER // gestor operacional: toda a operação, sem configuração técnica (ver services/userScope.ts)
   SUPERVISOR // supervisão em tempo real dos grupos que lhe são atribuídos (melhoria 4)
   MEMBER
   VIEWER

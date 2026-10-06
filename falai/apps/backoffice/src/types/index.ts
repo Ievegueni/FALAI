@@ -106,7 +106,7 @@ export interface TenantLineInput {
   isActive?: boolean;
 }
 
-export type TenantRole = 'OWNER' | 'ADMIN' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
+export type TenantRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
 
 export interface TenantUser {
   id: string;
