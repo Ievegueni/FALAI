@@ -4,7 +4,8 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { prisma, type Prisma } from "@falai/db";
 import { z } from "zod";
-import { appendMessage, broadcastConversation, deliver } from "../../services/textChannels.service.js";
+import { appendMessage, broadcastConversation, deliver, sendBotText } from "../../services/textChannels.service.js";
+import { askTextCsat } from "../../services/csat.service.js";
 import { UPLOADS_DIR } from "../../services/email.service.js";
 import { emitWebhookAsync } from "../../services/webhookEmitter.service.js";
 import { conversationScopeWhere, userScope } from "../../services/userScope.js";
@@ -166,6 +167,8 @@ export const tenantConversationsRoutes: FastifyPluginAsync = async (fastify) => 
     });
     if (body.status === "RESOLVED") {
       emitWebhookAsync({ tenantId, event: "conversation.resolved", payload: { conversationId: conv.id, channel: conv.inbox.channel, contactId: conv.contactId } });
+      // Inquérito de satisfação pelo mesmo canal, se o cliente o ligou (fase 8).
+      void askTextCsat(conv.id, (inbox, c, text) => sendBotText(fastify, inbox, c, text), fastify.log);
     }
     return conv;
   });

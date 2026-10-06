@@ -8,6 +8,7 @@ import { sendEmailReply } from "./email.service.js";
 import { chargeTextMessage } from "./billing.service.js";
 import { emitWebhookAsync } from "./webhookEmitter.service.js";
 import { classifyError, checkNumber } from "./waPool.service.js";
+import { tryTextCsatAnswer } from "./csat.service.js";
 
 /**
  * Canais de texto (Telegram, widget web, email) — ver docs/PLANO-CANAIS-TEXTO.md.
@@ -176,8 +177,31 @@ export function broadcastConversation(fastify: FastifyInstance, tenantId: string
   fastify.incomingCalls.broadcast(tenantId, "conversation.updated", { conversationId, ...changes });
 }
 
+/** Mensagem automática (inquérito de satisfação, agradecimento): fica no histórico e sai pelo canal. */
+export async function sendBotText(
+  fastify: FastifyInstance,
+  inbox: Inbox,
+  conv: { id: string; tenantId: string; inboxId: string; externalRef: string; subject: string | null; contactId: string | null },
+  text: string
+): Promise<void> {
+  const msg = await appendMessage(fastify, conv, { role: "AGENT", text });
+  await deliver(fastify, inbox, conv, text, msg.id);
+}
+
 /** Mensagem do cliente final a entrar por qualquer canal. */
 export async function ingestInbound(fastify: FastifyInstance, inbox: Inbox, msg: InboundMessage) {
+  // Resposta "1"–"5" ao inquérito de satisfação de uma conversa já resolvida
+  // (fase 8): fica nessa conversa e não abre outra nem vai para a IA.
+  const csat = await tryTextCsatAnswer(inbox, msg.externalRef, msg.text).catch((err) => {
+    fastify.log.warn({ err, inboxId: inbox.id }, "csat.text_answer_failed");
+    return null;
+  });
+  if (csat) {
+    await appendMessage(fastify, csat.conv, { role: "HUMAN", text: msg.text, externalId: msg.externalId ?? null });
+    await sendBotText(fastify, inbox, csat.conv, csat.thanks);
+    return prisma.conversation.findUniqueOrThrow({ where: { id: csat.conv.id } });
+  }
+
   // ponytail: duas mensagens simultâneas do mesmo remetente podem abrir duas
   // conversas. Raro em texto; resolver com índice parcial se aparecer.
   let conv = await prisma.conversation.findFirst({

@@ -273,6 +273,10 @@ model Tenant {
   // Qualidade (fase 7)
   qaForms              QaForm[]
   qaEvaluations        QaEvaluation[]
+  // Satisfação (fase 8): { voice, text, sms, question, thanks } — validado em
+  // services/csat.service.ts. Null = sem inquéritos.
+  csatConfig           Json?
+  csatResponses        CsatResponse[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -569,6 +573,7 @@ model TenantUser {
   shifts          Shift[]
   qaEvaluated     QaEvaluation[] @relation("QaAgent")
   qaEvaluations   QaEvaluation[] @relation("QaEvaluator")
+  csatResponses   CsatResponse[]
 }
 
 // Perfil de acesso ao CRM, gerido pela Comunica no backoffice. A matriz diz,
@@ -1573,5 +1578,31 @@ model QaEvaluation {
 
   @@index([tenantId, createdAt])
   @@index([tenantId, agentId, createdAt])
+  @@index([callId])
+}
+
+// ============ SATISFAÇÃO / CSAT (centro de atendimento, fase 8) ============
+// Ver services/csat.service.ts. Texto e SMS criam a linha ao perguntar (score
+// a null) e preenchem-na com a resposta; a voz cria-a só quando há resposta.
+
+model CsatResponse {
+  id             String      @id @default(cuid())
+  tenantId       String
+  tenant         Tenant      @relation(fields: [tenantId], references: [id])
+  channel        String // VOICE | TEXT | SMS
+  score          Int? // 1–5; null = perguntado, ainda sem resposta
+  callId         String?
+  conversationId String?
+  ticketId       String?
+  agentId        String? // TenantUser que atendeu
+  agent          TenantUser? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  groupId        String?
+  contactId      String?
+  token          String?     @unique // link do SMS
+  createdAt      DateTime    @default(now())
+  answeredAt     DateTime?
+
+  @@index([tenantId, createdAt])
+  @@index([conversationId])
   @@index([callId])
 }

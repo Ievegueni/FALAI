@@ -11,6 +11,7 @@ import { AttendanceTab, type AttendanceView } from './AttendanceTabs';
 import { SummaryTab } from './SummaryTab';
 import { AnalysisTab } from './AnalysisTab';
 import { AgentTimeTab } from './AgentTimeTab';
+import { CsatTab } from './CsatTab';
 import { useToast } from '@/contexts/ToastContext';
 import { clsx } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -36,7 +37,7 @@ function periodRange(p: Exclude<Period, 'custom'>): { from: string; to: string }
   return { from: isoDaysAgo(days), to: new Date().toISOString().slice(0, 10) };
 }
 
-type ReportTab = 'summary' | AttendanceView | 'analysis' | 'agentTime';
+type ReportTab = 'summary' | AttendanceView | 'analysis' | 'agentTime' | 'csat';
 const EXPORTABLE: Partial<Record<ReportTab, 'agents' | 'groups' | 'reasons' | 'typing'>> = {
   agents: 'agents',
   groups: 'groups',
@@ -160,7 +161,7 @@ export function ReportsPage() {
         title={t('nav.reports')}
         actions={
           <>
-            {aiState?.canAnalyze && tab !== 'calls' && tab !== 'agentTime' && (
+            {aiState?.canAnalyze && tab !== 'calls' && tab !== 'agentTime' && tab !== 'csat' && (
               <Button variant="outline" size="sm" icon={<Sparkles className="h-4 w-4 text-blue-600" />} onClick={() => analyze.mutate()} loading={analyze.isPending}>
                 {analyze.isPending ? t('reports.ai.analyzing') : t('reports.ai.analyze')}
               </Button>
@@ -197,6 +198,7 @@ export function ReportsPage() {
             { key: 'typing', label: t('reports.tabs.typing') },
             { key: 'calls', label: t('reports.tabs.calls') },
             { key: 'agentTime', label: t('reports.tabs.agentTime') },
+            { key: 'csat', label: t('reports.tabs.csat') },
             ...(isAgent ? [] : [{ key: 'analysis', label: t('reports.tabs.analysis') }]),
           ]}
         />
@@ -242,7 +244,7 @@ export function ReportsPage() {
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
-          {tab !== 'summary' && tab !== 'agentTime' && (
+          {tab !== 'summary' && tab !== 'agentTime' && tab !== 'csat' && (
             <>
               {!isAgent && <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{t('reports.att.agent')}</label>
@@ -281,6 +283,8 @@ export function ReportsPage() {
           <SummaryTab from={from} to={to} />
         ) : tab === 'agentTime' ? (
           <AgentTimeTab from={from} to={to} />
+        ) : tab === 'csat' ? (
+          <CsatTab from={from} to={to} />
         ) : tab === 'analysis' ? (
           <AnalysisTab state={aiState} analyzing={analyze.isPending} onAnalyze={() => analyze.mutate()} />
         ) : (

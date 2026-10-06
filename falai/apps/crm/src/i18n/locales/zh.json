@@ -899,7 +899,8 @@
       "calls": "通话",
       "typing": "通话分类",
       "analysis": "AI 分析",
-      "agentTime": "坐席时间"
+      "agentTime": "坐席时间",
+      "csat": "满意度"
     },
     "period": "时间段",
     "all": "全部",
@@ -1018,6 +1019,35 @@
       "noReason": "无原因",
       "empty": "没有用户。",
       "hint": "在线 = 打开 CRM 的时间。遵守率 = 班次内在线时间占比。"
+    },
+    "csat": {
+      "settings": "满意度调查",
+      "channelsHint": "语音：坐席挂断后，客户听到问题并按 1 到 5（不计费）。文字：会话解决时发送问题。短信：已接通话结束后发送链接（每条短信计费）。",
+      "question": "问题",
+      "thanks": "感谢语",
+      "avg": "平均满意度",
+      "scale": "1 到 5",
+      "satisfied": "满意",
+      "satisfiedHint": "4 分和 5 分",
+      "responses": "回复",
+      "responseRate": "共询问 {{asked}} 次",
+      "distribution": "分布",
+      "byChannel": "按渠道",
+      "byAgent": "按坐席",
+      "byGroup": "按组",
+      "noAgent": "无坐席",
+      "noGroup": "无组",
+      "channel": {
+        "VOICE": "语音（通话结束按键）",
+        "TEXT": "文字（聊天、WhatsApp、邮件、Telegram）",
+        "SMS": "短信（链接）"
+      },
+      "col": {
+        "name": "名称",
+        "responses": "回复",
+        "avg": "平均",
+        "satisfied": "满意率"
+      }
     }
   },
   "sms": {

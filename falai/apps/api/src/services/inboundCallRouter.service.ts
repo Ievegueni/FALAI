@@ -42,6 +42,8 @@ import {
 import type { CallLegOutcome } from "@falai/db";
 import { busyExtensionIds } from "./callTyping.service.js";
 import { findContactIdForCaller } from "./callerLookup.service.js";
+import { agentUserOfExtension, csatPrompt, csatThanksPrompt, recordVoiceCsat, sendSmsCsat, tenantCsatConfig } from "./csat.service.js";
+import { agentOf } from "./quality.service.js";
 import {
   computeCallCost,
   effectivePrice,
@@ -144,22 +146,23 @@ export function registerInboundCallRouter(
     // entrada), mas trata-se na mesma para o registo não ficar pendurado.
     if (event.type === "CALL_ENDED" || event.type === "CALL_FAILED") {
       // O agente desligou: desliga-se também quem ligou (ficava em silêncio).
+      // Com inquérito de satisfação por voz, fica em linha para o responder.
       const caller = callerByAgent.get(event.providerCallId);
       if (caller) {
         callerByAgent.delete(event.providerCallId);
+        if (await startCsat(caller, asterisk, log)) return;
         await asterisk.hangup(caller).catch(() => {});
         return;
       }
       endIvr(event.providerCallId);
+      endCsat(event.providerCallId);
       // Quem ligou desligou: cancela os toques / desliga o agente.
       await releaseCallerLegs(event.providerCallId, asterisk);
-      await closeInboundCall(
-        event.providerCallId,
-        event.type === "CALL_ENDED" ? event.endedAt : new Date(),
-        asterisk,
-        fastify,
-        log
-      );
+      // O inquérito não se cobra: a conversa acabou quando o agente desligou.
+      const endedAt = event.type === "CALL_ENDED" ? event.endedAt : new Date();
+      const cutoff = csatCutoff.get(event.providerCallId);
+      csatCutoff.delete(event.providerCallId);
+      await closeInboundCall(event.providerCallId, cutoff && cutoff < endedAt ? cutoff : endedAt, asterisk, fastify, log);
       return;
     }
     // A gravação fecha depois da chamada e sem canal associado — liga-se à
@@ -176,11 +179,23 @@ export function registerInboundCallRouter(
       return;
     }
     if (event.type === "DTMF") {
+      const cs = csatSessions.get(event.providerCallId);
+      if (cs) {
+        await onCsatDigit(cs, event.digit, asterisk, log);
+        return;
+      }
       const s = ivrSessions.get(event.providerCallId);
       if (s) await onIvrDigit(s, event.digit, asterisk, log);
       return;
     }
     if (event.type === "PROMPT_FINISHED") {
+      const cs = csatSessions.get(event.providerCallId);
+      if (cs && event.playbackId === cs.playbackId) {
+        // Fim do agradecimento: desliga. Fim da pergunta: espera pela tecla.
+        if (cs.thanking) await hangupCsat(cs, asterisk);
+        else armCsatTimeout(cs, asterisk);
+        return;
+      }
       const s = ivrSessions.get(event.providerCallId);
       // Só o fim da saudação actual arma a espera: um playback cortado a meio
       // (repetição) também gera PROMPT_FINISHED, com o id antigo. O fim das
@@ -577,6 +592,84 @@ function endIvr(providerCallId: string): void {
   ivrSessions.delete(providerCallId);
 }
 
+// ─── Inquérito de satisfação por voz (fase 8) ───────────────────────────────
+// Ver services/csat.service.ts. O agente desligou: quem ligou ouve a pergunta
+// (csat_<tenant>, gerada por TTS ao gravar as definições) e carrega 1–5.
+// ponytail: sessões em memória, como o IVR — passar para Redis com várias APIs.
+
+const CSAT_WAIT_MS = 8_000;
+
+interface CsatSession {
+  callerId: string;
+  tenantId: string;
+  callId: string | null;
+  agentId: string | null;
+  groupId: string | null;
+  playbackId?: string;
+  thanking?: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+}
+const csatSessions = new Map<string, CsatSession>();
+/** Quando o agente desligou: daí para a frente é inquérito, não conversa (não se cobra). */
+const csatCutoff = new Map<string, Date>();
+
+async function startCsat(callerId: string, asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<boolean> {
+  const legs = legsByCaller.get(callerId);
+  if (!legs?.answeredAt || !legs.callId) return false;
+  try {
+    if (!(await tenantCsatConfig(legs.tenantId)).voice) return false;
+    csatCutoff.set(callerId, new Date());
+    // A gravação é da conversa — o inquérito fica de fora.
+    await stopCallRecording(legs.callId, asterisk, log);
+    const s: CsatSession = {
+      callerId,
+      tenantId: legs.tenantId,
+      callId: legs.callId,
+      agentId: await agentUserOfExtension(legs.tenantId, legs.answeredExtensionId),
+      groupId: legs.groupId,
+    };
+    csatSessions.set(callerId, s);
+    s.playbackId = (await asterisk.playMediaOnChannel(callerId, csatPrompt(legs.tenantId))).id;
+    return true;
+  } catch (err) {
+    log.warn({ err, callerId }, "inbound_call_router.csat_start_failed");
+    endCsat(callerId);
+    return false; // sem áudio ou sem config: desliga-se como antes
+  }
+}
+
+function armCsatTimeout(s: CsatSession, asterisk: AsteriskAdapter): void {
+  clearTimeout(s.timer);
+  s.timer = setTimeout(() => void hangupCsat(s, asterisk), CSAT_WAIT_MS);
+}
+
+async function onCsatDigit(s: CsatSession, digit: string, asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
+  if (s.thanking || !/^[1-5]$/.test(digit)) return;
+  clearTimeout(s.timer);
+  s.thanking = true;
+  try {
+    await recordVoiceCsat({ tenantId: s.tenantId, callId: s.callId, agentId: s.agentId, groupId: s.groupId, score: Number(digit) });
+    if (s.playbackId) await asterisk.stopPlayback(s.playbackId).catch(() => {});
+    s.playbackId = (await asterisk.playMediaOnChannel(s.callerId, csatThanksPrompt(s.tenantId))).id;
+    armCsatTimeout(s, asterisk); // se o PROMPT_FINISHED não chegar, desliga na mesma
+  } catch (err) {
+    log.warn({ err, callerId: s.callerId }, "inbound_call_router.csat_answer_failed");
+    await hangupCsat(s, asterisk);
+  }
+}
+
+async function hangupCsat(s: CsatSession, asterisk: AsteriskAdapter): Promise<void> {
+  endCsat(s.callerId);
+  await asterisk.hangup(s.callerId).catch(() => {});
+}
+
+function endCsat(callerId: string): void {
+  const s = csatSessions.get(callerId);
+  if (!s) return;
+  clearTimeout(s.timer);
+  csatSessions.delete(callerId);
+}
+
 /**
  * Abre o registo da chamada de entrada. Idempotente pelo id do canal do trunk:
  * a coluna `yeastarCallId` é única, por isso uma reentrega do StasisStart (ou
@@ -733,6 +826,12 @@ async function closeInboundCall(
       return;
     }
     await chargeInboundCall(call.id, call.tenantId, billedSecs, log);
+    // Inquérito por SMS (fase 8), se o cliente o ligou e não respondeu já por voz.
+    void (async () => {
+      const full = await prisma.call.findUnique({ where: { id: call.id }, select: { contactId: true, groupId: true, ticketId: true } });
+      const agentId = await agentOf(call.tenantId, { callId: call.id }).catch(() => null);
+      await sendSmsCsat(fastify, { id: call.id, tenantId: call.tenantId, fromNumber: call.fromNumber, contactId: full?.contactId ?? null, groupId: full?.groupId ?? null, ticketId: full?.ticketId ?? null }, agentId, log);
+    })().catch((err) => log.warn({ err, callId: call.id }, "inbound_call_router.csat_sms_failed"));
   } catch (err) {
     log.error({ err, providerCallId }, "inbound_call_router.close_failed");
   }

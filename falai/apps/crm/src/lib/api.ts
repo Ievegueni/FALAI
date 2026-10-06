@@ -1445,3 +1445,21 @@ export const qaApi = {
   summary: (q: { from?: string; to?: string }) => get<{ data: QaSummaryRow[] }>(`/tenant/qa/summary${qs(q)}`).then((r) => r.data),
   sample: (q: { days?: number; perAgent?: number }) => get<{ data: QaSampleRow[] }>(`/tenant/qa/sample${qs(q)}`).then((r) => r.data),
 };
+
+// ─── Satisfação / CSAT (fase 8) ─────────────────────────────────────────────
+
+export interface CsatConfig { voice: boolean; text: boolean; sms: boolean; question: string; thanks: string }
+export interface CsatSummary { responses: number; avg: number | null; satisfiedPct: number | null; distribution: Record<'1' | '2' | '3' | '4' | '5', number> }
+export interface CsatReport {
+  overall: CsatSummary;
+  asked: number;
+  byChannel: (CsatSummary & { key: string })[];
+  byAgent: (CsatSummary & { key: string | null; name: string | null })[];
+  byGroup: (CsatSummary & { key: string | null; name: string | null })[];
+}
+
+export const csatApi = {
+  settings: () => get<CsatConfig>('/tenant/csat/settings'),
+  save: (data: CsatConfig) => put<CsatConfig>('/tenant/csat/settings', data),
+  report: (q: { from?: string; to?: string }) => get<CsatReport>(`/tenant/reports/csat${qs(q)}`),
+};

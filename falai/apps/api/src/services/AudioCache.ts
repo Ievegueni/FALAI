@@ -104,7 +104,11 @@ export class AudioCache {
    * nome é fixo por menu, por isso sintetiza e substitui sempre.
    */
   async prepareIvrPrompt(menuId: string, text: string): Promise<string> {
-    const name = `ivr_${menuId}`;
+    return this.prepareNamedPrompt(`ivr_${menuId}`, text);
+  }
+
+  /** Prompt fixo com nome dado (ex.: inquérito de satisfação), sintetizado e substituído sempre. */
+  async prepareNamedPrompt(name: string, text: string): Promise<string> {
     const { wavBuffer } = await this.tts.synthesize({ text, voiceId: this.defaultVoiceId });
     await this.telephony.uploadPrompt(name, wavBuffer);
     return name;

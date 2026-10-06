@@ -5,12 +5,11 @@
 > como projecto à medida: tudo o que entra aqui serve qualquer tenant e liga-se
 > por funcionalidade no backoffice.
 >
-> Criado em 06/10/2026. Estado: **fases 1 (tickets), 2 (papéis), 4 (alertas/SLA),
-> 5 (pausas/turnos/sessões) e 7 (qualidade) feitas em 06/10, branch `feat/tickets`**
-> — migrações `20261006090000_tickets`, `20261006120000_manager_role`,
-> `20261006150000_service_alerts`, `20261006180000_agent_time` e
-> `20261006200000_quality` aplicadas só na BD local. Fase 3 (Freshdesk) à espera
-> de conta de testes da MANO.
+> Criado em 06/10/2026. Estado: **fases 1, 2, 4, 5, 7 e 8 feitas em 06/10, branch
+> `feat/tickets`** — migrações `20261006090000_tickets`, `…120000_manager_role`,
+> `…150000_service_alerts`, `…180000_agent_time`, `…200000_quality` e
+> `…220000_csat` aplicadas só na BD local. Fase 3 (Freshdesk) à espera de conta de
+> testes da MANO; fase 6 à espera da voz real.
 
 ---
 
@@ -265,7 +264,22 @@ Plano original:
 - Opcional: a IA (que já analisa relatórios) pré-preenche uma sugestão; o
   avaliador decide sempre.
 
-### Fase 8 — CSAT (M)
+### Fase 8 — CSAT (M) · ✅ feita 06/10 (voz por provar com chamada real)
+
+Feito: `Tenant.csatConfig` + `CsatResponse`; `services/csat.service.ts` (+
+testes). Os três canais, cada um ligado por cliente (Relatórios → Satisfação):
+- Voz: quando o agente desliga, quem ligou ouve a pergunta (TTS gerado ao
+  gravar) e carrega 1–5; agradecimento e desliga. A cobrança e a gravação
+  param quando o agente desliga. **Escrito sobre o mecanismo do IVR mas sem
+  chamada real — provar com a fase 6.**
+- Texto: pergunta ao resolver a conversa; "1"–"5" nas 24 h fica na conversa
+  resolvida e não abre outra (testado pelo widget).
+- SMS: link para `/public/csat/:token` no fim da chamada atendida, se não
+  respondeu por voz (testado a página e a resposta única).
+Relatório "Satisfação": média, % satisfeitos (4–5), distribuição, por canal,
+agente e grupo, com o âmbito do papel.
+
+Plano original:
 
 - Voz: depois do agente desligar, a chamada segue para um inquérito DTMF de
   1 a 5 (Asterisk, mesmo mecanismo do IVR).

@@ -899,7 +899,8 @@
       "calls": "Calls",
       "typing": "Call types",
       "analysis": "AI analysis",
-      "agentTime": "Agent time"
+      "agentTime": "Agent time",
+      "csat": "Satisfaction"
     },
     "period": "Period",
     "all": "All",
@@ -1018,6 +1019,35 @@
       "noReason": "No reason",
       "empty": "No users.",
       "hint": "Logged in = time with the CRM open. Adherence = % of the shift spent logged in."
+    },
+    "csat": {
+      "settings": "Satisfaction survey",
+      "channelsHint": "Voice: when the agent hangs up, the customer hears the question and presses 1 to 5 (not billed). Text: asked when the conversation is resolved. SMS: link after an answered call (each SMS is billed).",
+      "question": "Question",
+      "thanks": "Thank-you message",
+      "avg": "Average CSAT",
+      "scale": "from 1 to 5",
+      "satisfied": "Satisfied",
+      "satisfiedHint": "scores 4 and 5",
+      "responses": "Responses",
+      "responseRate": "out of {{asked}} asked",
+      "distribution": "Distribution",
+      "byChannel": "By channel",
+      "byAgent": "By agent",
+      "byGroup": "By group",
+      "noAgent": "No agent",
+      "noGroup": "No group",
+      "channel": {
+        "VOICE": "Voice (keypress after the call)",
+        "TEXT": "Text (chat, WhatsApp, email, Telegram)",
+        "SMS": "SMS (link)"
+      },
+      "col": {
+        "name": "Name",
+        "responses": "Responses",
+        "avg": "Average",
+        "satisfied": "% satisfied"
+      }
     }
   },
   "sms": {

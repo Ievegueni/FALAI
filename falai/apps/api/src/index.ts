@@ -89,6 +89,7 @@ import { v1TicketsRoutes } from "./routes/v1/tickets.js";
 import { tenantAlertsRoutes } from "./routes/tenant/alerts.js";
 import { tenantAgentTimeRoutes } from "./routes/tenant/agentTime.js";
 import { tenantQualityRoutes } from "./routes/tenant/quality.js";
+import { tenantCsatRoutes, publicCsatRoutes } from "./routes/tenant/csat.js";
 import { publicChatRoutes } from "./routes/public/chat.js";
 import { publicWaRoutes } from "./routes/public/wa.js";
 import { startEmailPolling } from "./services/email.service.js";
@@ -385,6 +386,7 @@ async function buildApp() {
   await gated(fastify, "webphone", tenantAlertsRoutes);
   await gated(fastify, "webphone", tenantAgentTimeRoutes);
   await gated(fastify, "quality", tenantQualityRoutes);
+  await gated(fastify, "reports", tenantCsatRoutes);
   await fastify.register(tenantEventsRoutes);
   await gated(fastify, "reports", tenantReportsRoutes);
   await gated(fastify, "sms", tenantSmsRoutes);
@@ -394,6 +396,7 @@ async function buildApp() {
   await gated(fastify, "tickets", tenantTicketsRoutes);
   await fastify.register(publicChatRoutes, { prefix: "/public/chat" });
   await fastify.register(publicWaRoutes, { prefix: "/public/wa" });
+  await fastify.register(publicCsatRoutes);
 
   // ── Public API v1 (API key authenticated, per-key rate limiting) ─────────
   await fastify.register(async (v1) => {

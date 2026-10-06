@@ -899,7 +899,8 @@
       "calls": "Chamadas",
       "typing": "Tipificação",
       "analysis": "Análise IA",
-      "agentTime": "Tempo dos agentes"
+      "agentTime": "Tempo dos agentes",
+      "csat": "Satisfação"
     },
     "period": "Período",
     "all": "Todos",
@@ -1018,6 +1019,35 @@
       "noReason": "Sem motivo",
       "empty": "Sem utilizadores.",
       "hint": "Ligado = tempo com o CRM aberto. Aderência = % do turno em que esteve ligado."
+    },
+    "csat": {
+      "settings": "Inquérito de satisfação",
+      "channelsHint": "Voz: quando o agente desliga, o cliente ouve a pergunta e carrega de 1 a 5 (não é cobrado). Texto: pergunta ao resolver a conversa. SMS: link no fim da chamada atendida (cada SMS é cobrado).",
+      "question": "Pergunta",
+      "thanks": "Agradecimento",
+      "avg": "CSAT médio",
+      "scale": "de 1 a 5",
+      "satisfied": "Satisfeitos",
+      "satisfiedHint": "notas 4 e 5",
+      "responses": "Respostas",
+      "responseRate": "de {{asked}} perguntados",
+      "distribution": "Distribuição",
+      "byChannel": "Por canal",
+      "byAgent": "Por agente",
+      "byGroup": "Por grupo",
+      "noAgent": "Sem agente",
+      "noGroup": "Sem grupo",
+      "channel": {
+        "VOICE": "Voz (tecla no fim da chamada)",
+        "TEXT": "Texto (chat, WhatsApp, email, Telegram)",
+        "SMS": "SMS (link)"
+      },
+      "col": {
+        "name": "Nome",
+        "responses": "Respostas",
+        "avg": "Média",
+        "satisfied": "% satisfeitos"
+      }
     }
   },
   "sms": {
