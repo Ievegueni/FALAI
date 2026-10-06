@@ -49,7 +49,8 @@
     "unpin": "Unpin menu",
     "tickets": "Tickets",
     "quality": "Quality",
-    "knowledge": "Knowledge"
+    "knowledge": "Knowledge",
+    "teamChat": "Team chat"
   },
   "login": {
     "subtitle": "Sign in to your account",
@@ -1810,5 +1811,14 @@
       "other": "A platform component is down."
     },
     "notified": "The technical team has been notified."
+  },
+  "chat": {
+    "title": "Team chat",
+    "newDirect": "New conversation",
+    "newGroup": "New group",
+    "groupName": "Group name",
+    "placeholder": "Write a message… (Enter sends, Shift+Enter new line)",
+    "empty": "No conversations yet. Start one with a colleague.",
+    "pick": "Pick a conversation on the left."
   }
 }

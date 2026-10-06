@@ -49,7 +49,8 @@
     "unpin": "Soltar menu",
     "tickets": "Tickets",
     "quality": "Qualidade",
-    "knowledge": "Conhecimento"
+    "knowledge": "Conhecimento",
+    "teamChat": "Chat da equipa"
   },
   "login": {
     "subtitle": "Inicie sessão na sua conta",
@@ -1810,5 +1811,14 @@
       "other": "Há um componente da plataforma em baixo."
     },
     "notified": "A equipa técnica já foi avisada."
+  },
+  "chat": {
+    "title": "Chat da equipa",
+    "newDirect": "Nova conversa",
+    "newGroup": "Novo grupo",
+    "groupName": "Nome do grupo",
+    "placeholder": "Escreva uma mensagem… (Enter envia, Shift+Enter muda de linha)",
+    "empty": "Ainda não há conversas. Comece uma com um colega.",
+    "pick": "Escolha uma conversa à esquerda."
   }
 }

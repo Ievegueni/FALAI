@@ -52,6 +52,7 @@ const FEATURE_LABELS: { key: FeatureKey; label: string; hint?: string; needsAi?:
   { key: 'tickets', label: 'Tickets', hint: 'Casos com estados, níveis de suporte e ligação a chamadas e conversas' },
   { key: 'quality', label: 'Qualidade (QA)', hint: 'Formulários de avaliação, QA score, feedback e contestação dos agentes' },
   { key: 'knowledge', label: 'Base de conhecimento', hint: 'Artigos para os agentes consultarem; a IA dos canais de texto usa-os como contexto' },
+  { key: 'teamChat', label: 'Chat da equipa', hint: 'Conversas directas e grupos entre agentes, supervisores e gestores' },
 ];
 
 function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {

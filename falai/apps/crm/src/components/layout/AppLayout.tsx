@@ -8,6 +8,7 @@ import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { IncomingCallBanner } from '@/components/calls/IncomingCallBanner';
 import { AlertToaster } from '@/components/alerts/AlertToaster';
 import { PlatformBanner } from './PlatformBanner';
+import { ChatToaster } from '@/components/chat/ChatBits';
 
 export function AppLayout() {
   const { user, loading, tenant } = useAuth();
@@ -40,6 +41,7 @@ export function AppLayout() {
     <div className="flex h-screen bg-gray-50">
       <IncomingCallBanner />
       <AlertToaster />
+      <ChatToaster />
       <Sidebar open={navOpen} onClose={() => setNavOpen(false)} pinned={pinned} onTogglePin={togglePin} />
       <div className={`flex min-w-0 flex-1 flex-col transition-[margin] ${pinned ? 'lg:ml-60' : 'lg:ml-16'}`}>
         <div className="flex h-12 shrink-0 items-center gap-3 bg-slate-900 px-4 lg:hidden">

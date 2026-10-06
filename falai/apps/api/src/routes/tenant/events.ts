@@ -52,7 +52,7 @@ export const tenantEventsRoutes: FastifyPluginAsync = async (fastify) => {
     });
     reply.raw.write(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`);
 
-    const unsubscribe = fastify.incomingCalls.subscribe(payload.tenantId, reply, { idsOnly: payload.role === "MEMBER" });
+    const unsubscribe = fastify.incomingCalls.subscribe(payload.tenantId, reply, { idsOnly: payload.role === "MEMBER", userId: payload.sub });
 
     // Tempo ligado do utilizador (fase 5): a sessão dura enquanto o CRM tem
     // este canal aberto — ver services/agentTime.service.ts.

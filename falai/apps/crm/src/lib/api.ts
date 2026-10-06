@@ -1535,3 +1535,30 @@ export const helpdeskApi = {
 export const platformApi = {
   status: () => get<{ ok: boolean; components: { key: string; up: boolean; since: string }[] }>('/tenant/platform-status'),
 };
+
+// ─── Chat interno da equipa ─────────────────────────────────────────────────
+
+export interface ChatRoomRow {
+  id: string;
+  kind: 'DIRECT' | 'GROUP';
+  name: string | null;
+  members: { id: string; name: string }[];
+  lastMessage: { body: string; at: string; author: string } | null;
+  lastMessageAt: string;
+  unread: number;
+  canManage: boolean;
+}
+export interface ChatMessageRow { id: string; body: string; createdAt: string; authorId: string; author: { name: string } }
+
+export const teamChatApi = {
+  rooms: () => get<{ data: ChatRoomRow[]; totalUnread: number }>('/tenant/chat/rooms'),
+  unread: () => get<{ total: number }>('/tenant/chat/unread'),
+  users: () => get<{ data: { id: string; name: string; role: string }[] }>('/tenant/chat/users').then((r) => r.data),
+  direct: (userId: string) => post<{ id: string }>('/tenant/chat/direct', { userId }),
+  createGroup: (data: { name: string; memberIds: string[] }) => post<{ id: string }>('/tenant/chat/rooms', data),
+  updateGroup: (id: string, data: { name?: string; memberIds?: string[] }) => patch<{ ok: true }>(`/tenant/chat/rooms/${id}`, data),
+  leave: (id: string) => del<void>(`/tenant/chat/rooms/${id}/me`),
+  messages: (id: string, before?: string) => get<{ data: ChatMessageRow[]; hasMore: boolean }>(`/tenant/chat/rooms/${id}/messages${qs({ before })}`),
+  send: (id: string, body: string) => post<ChatMessageRow>(`/tenant/chat/rooms/${id}/messages`, { body }),
+  read: (id: string) => post<void>(`/tenant/chat/rooms/${id}/read`),
+};

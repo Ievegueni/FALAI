@@ -279,6 +279,7 @@ model Tenant {
   csatResponses        CsatResponse[]
   kbArticles           KbArticle[]
   helpdesk             HelpdeskConnection?
+  chatRooms            ChatRoom[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -576,6 +577,8 @@ model TenantUser {
   qaEvaluated     QaEvaluation[] @relation("QaAgent")
   qaEvaluations   QaEvaluation[] @relation("QaEvaluator")
   csatResponses   CsatResponse[]
+  chatMemberships ChatMember[]
+  chatMessages    ChatMessage[]
 }
 
 // Perfil de acesso ao CRM, gerido pela Comunica no backoffice. A matriz diz,
@@ -1657,4 +1660,50 @@ model HelpdeskConnection {
   lastErrorAt    DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+}
+
+// ============ CHAT INTERNO DA EQUIPA ============
+// Ver services/teamChat.service.ts. Conversas directas (1:1) e grupos entre
+// utilizadores do mesmo cliente. Nada disto sai para os clientes finais.
+
+model ChatRoom {
+  id            String        @id @default(cuid())
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  kind          String // DIRECT | GROUP
+  name          String? // só nos grupos
+  // Conversas directas: os dois ids ordenados ("a:b") — uma só por par.
+  directKey     String?
+  createdById   String?
+  lastMessageAt DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  members       ChatMember[]
+  messages      ChatMessage[]
+
+  @@unique([tenantId, directKey])
+  @@index([tenantId, lastMessageAt])
+}
+
+model ChatMember {
+  roomId     String
+  room       ChatRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId     String
+  user       TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt DateTime   @default(now())
+  joinedAt   DateTime   @default(now())
+
+  @@id([roomId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id        String     @id @default(cuid())
+  roomId    String
+  room      ChatRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    TenantUser @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String     @db.Text
+  createdAt DateTime   @default(now())
+
+  @@index([roomId, createdAt])
 }

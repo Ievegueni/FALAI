@@ -56,6 +56,14 @@ export function useIncomingCall(): { call: IncomingCall | null; dismiss: () => v
     // evento da janela para o AlertToaster e quem mostra a lista se actualizar.
     // O estado da plataforma (fase 11) segue o mesmo caminho: a faixa de aviso escuta-o.
     es.addEventListener('platform.status', () => window.dispatchEvent(new CustomEvent('falai:platform')));
+    // Chat interno: a API só manda aos membros da conversa.
+    es.addEventListener('chat.message', (ev: MessageEvent<string>) => {
+      try {
+        window.dispatchEvent(new CustomEvent('falai:chat', { detail: JSON.parse(ev.data) }));
+      } catch {
+        // payload inválido — ignora
+      }
+    });
     for (const name of ['alert.opened', 'alert.closed']) {
       es.addEventListener(name, (ev: MessageEvent<string>) => {
         try {

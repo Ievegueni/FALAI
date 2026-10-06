@@ -84,7 +84,8 @@ export type FeatureKey =
   | 'inbox'
   | 'tickets'
   | 'quality'
-  | 'knowledge';
+  | 'knowledge'
+  | 'teamChat';
 
 export type TenantFeatures = Record<FeatureKey, boolean>;
 

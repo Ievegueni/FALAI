@@ -26,18 +26,18 @@ export interface IncomingCallPayload {
 // idsOnly: o agente (MEMBER) só vê as suas conversas e as da fila, por isso
 // os eventos de conversa chegam-lhe só com o id — o conteúdo vem pela API,
 // que aplica o âmbito (services/userScope.ts).
-type Connection = { reply: FastifyReply; idsOnly: boolean };
+type Connection = { reply: FastifyReply; idsOnly: boolean; userId: string | null };
 
 export class IncomingCallHub {
   private connections = new Map<string, Set<Connection>>();
 
-  subscribe(tenantId: string, reply: FastifyReply, opts: { idsOnly?: boolean } = {}): () => void {
+  subscribe(tenantId: string, reply: FastifyReply, opts: { idsOnly?: boolean; userId?: string } = {}): () => void {
     let set = this.connections.get(tenantId);
     if (!set) {
       set = new Set();
       this.connections.set(tenantId, set);
     }
-    const conn: Connection = { reply, idsOnly: opts.idsOnly === true };
+    const conn: Connection = { reply, idsOnly: opts.idsOnly === true, userId: opts.userId ?? null };
     set.add(conn);
     return () => {
       const s = this.connections.get(tenantId);
@@ -49,6 +49,22 @@ export class IncomingCallHub {
 
   connectionCount(tenantId: string): number {
     return this.connections.get(tenantId)?.size ?? 0;
+  }
+
+  /** Só para estes utilizadores (ex.: membros de uma conversa do chat interno). */
+  sendToUsers(tenantId: string, userIds: Iterable<string>, event: string, data: unknown): void {
+    const set = this.connections.get(tenantId);
+    if (!set || set.size === 0) return;
+    const to = new Set(userIds);
+    const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const conn of set) {
+      if (!conn.userId || !to.has(conn.userId)) continue;
+      try {
+        conn.reply.raw.write(frame);
+      } catch {
+        // ligação morta; limpa no evento 'close'
+      }
+    }
   }
 
   broadcast(tenantId: string, event: string, data: unknown): void {

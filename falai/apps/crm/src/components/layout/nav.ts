@@ -19,6 +19,7 @@ import {
   Ticket,
   ClipboardCheck,
   BookOpen,
+  MessagesSquare,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import type { FeatureKey, TenantUser } from '@/types';
@@ -46,6 +47,7 @@ export function useNavItems(): NavItem[] {
     [isOn('webphone'), item('/webphone', PhoneCall, 'webphone')],
     [smsOn, item('/sms', MessageSquare, 'sms')],
     [features?.inbox === true, item('/inbox', Inbox, 'inbox')],
+    [features?.teamChat === true, item('/chat', MessagesSquare, 'teamChat')],
     [features?.tickets === true, item('/tickets', Ticket, 'tickets')],
     [features?.quality === true, item('/quality', ClipboardCheck, 'quality')],
     [features?.knowledge === true, item('/knowledge', BookOpen, 'knowledge')],

@@ -49,7 +49,8 @@
     "unpin": "取消固定菜单",
     "tickets": "工单",
     "quality": "质量",
-    "knowledge": "知识库"
+    "knowledge": "知识库",
+    "teamChat": "团队聊天"
   },
   "login": {
     "subtitle": "登录您的账户",
@@ -1738,5 +1739,14 @@
       "other": "平台某个组件已停止。"
     },
     "notified": "技术团队已收到通知。"
+  },
+  "chat": {
+    "title": "团队聊天",
+    "newDirect": "新对话",
+    "newGroup": "新群组",
+    "groupName": "群组名称",
+    "placeholder": "输入消息…（Enter 发送，Shift+Enter 换行）",
+    "empty": "暂无对话。与同事开始一个吧。",
+    "pick": "在左侧选择一个对话。"
   }
 }
