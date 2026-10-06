@@ -4,7 +4,8 @@ import { prisma } from "@falai/db";
 import { extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
 import type { TenantJwtPayload } from "../../plugins/auth.js";
 import { activeInboundCalls, monitoringNoticePrompt } from "../../services/inboundCallRouter.service.js";
-import { SupervisionError } from "../../services/supervision.service.js";
+import { SupervisionError, type SupervisableCall } from "../../services/supervision.service.js";
+import { activeDirectCalls, DIRECT_CALL_PREFIX, type DirectLiveCall } from "../../services/directLiveCalls.service.js";
 import { callKpis, abandonedIds } from "../../services/attendanceReport.service.js";
 import { isTelephonyWav } from "../shared/ivrRouting.js";
 import { isOpsManager, userScope } from "../../services/userScope.js";
@@ -91,6 +92,29 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
     return online;
   }
 
+  /**
+   * Chamadas supervisionáveis do tenant: as de entrada (router) e as marcadas
+   * no teclado do telefone (só o Asterisk as conhece enquanto decorrem). Se o
+   * Asterisk não responder, ficam só as de entrada.
+   */
+  async function liveCalls(tenantId: string): Promise<{ inbound: SupervisableCall[]; direct: DirectLiveCall[] }> {
+    const inbound = activeInboundCalls(tenantId);
+    const direct = await activeDirectCalls(fastify.asterisk, tenantId).catch((err) => {
+      fastify.log.warn({ err }, "supervision.direct_calls_failed");
+      return null;
+    });
+    if (direct) {
+      // Rede de segurança: sessão numa chamada marcada que já não existe.
+      const alive = new Set(direct.map((c) => c.callId));
+      for (const s of fastify.supervision.forTenant(tenantId)) {
+        if (s.call.callId.startsWith(DIRECT_CALL_PREFIX) && !alive.has(s.call.callId)) {
+          void fastify.supervision.end(s.id, "CALL_ENDED");
+        }
+      }
+    }
+    return { inbound, direct: direct ?? [] };
+  }
+
   // GET /tenant/supervision/live — agentes, chamadas activas e indicadores do dia
   fastify.get("/tenant/supervision/live", { preHandler }, async (request, reply) => {
     const user = request.tenantUser!;
@@ -108,7 +132,9 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
       },
     });
     const extIds = extensions.map((e) => e.id);
-    const calls = activeInboundCalls(tenantId).filter((c) => inScope(scope, c));
+    const live = await liveCalls(tenantId);
+    const directTo = new Map(live.direct.map((c) => [c.callId, c.to]));
+    const calls = [...live.inbound, ...live.direct].filter((c) => inScope(scope, c));
 
     const [ringing, wrapUps, callRows, groups, todayCalls, todayLegs, online, me] = await Promise.all([
       prisma.callLeg.findMany({
@@ -175,7 +201,8 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
           agentNumber: ext?.number ?? null,
           group: c.groupId ? (groupName.get(c.groupId) ?? null) : null,
           customer: row?.contact?.name ?? null,
-          number: row?.fromNumber ?? null,
+          number: row?.fromNumber ?? directTo.get(c.callId) ?? null,
+          direction: directTo.has(c.callId) ? ("OUTBOUND" as const) : ("INBOUND" as const),
           since: c.answeredAt,
           supervision: session
             ? { sessionId: session.id, mode: session.mode, status: session.status, mine: session.supervisorId === user.sub }
@@ -199,7 +226,8 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
     const scope = await scopeOr403(user, reply);
     if (!scope) return;
     const { mode } = modeSchema.parse(request.body);
-    const call = activeInboundCalls(user.tenantId).find((c) => c.callId === request.params.callId);
+    const live = await liveCalls(user.tenantId);
+    const call = [...live.inbound, ...live.direct].find((c) => c.callId === request.params.callId);
     if (!call) return reply.status(404).send({ error: "A chamada já não está activa" });
     if (!inScope(scope, call)) return reply.status(403).send({ error: "Esta chamada não é de um grupo que supervisione" });
 
@@ -270,14 +298,21 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
       prisma.supervisionEvent.findMany({ where, orderBy: { at: "desc" }, skip: (q.page - 1) * PAGE, take: PAGE }),
     ]);
     const sessionIds = starts.map((s) => s.sessionId);
-    const [events, users, contacts] = await Promise.all([
+    // Chamadas marcadas no telefone: a linha em Call só nasce no fim, pelo CDR,
+    // com o uniqueid do canal do agente em yeastarCallId.
+    const directIds = starts.filter((s) => s.callId.startsWith(DIRECT_CALL_PREFIX)).map((s) => s.callId.slice(DIRECT_CALL_PREFIX.length));
+    const [events, users, contacts, directRows] = await Promise.all([
       prisma.supervisionEvent.findMany({ where: { tenantId: user.tenantId, sessionId: { in: sessionIds } }, orderBy: { at: "asc" } }),
       prisma.tenantUser.findMany({ where: { id: { in: [...new Set(starts.map((s) => s.supervisorId))] } }, select: { id: true, name: true } }),
       prisma.contact.findMany({
         where: { tenantId: user.tenantId, id: { in: starts.map((s) => s.contactId).filter((x): x is string => !!x) } },
         select: { id: true, name: true, phone: true },
       }),
+      directIds.length
+        ? prisma.call.findMany({ where: { tenantId: user.tenantId, yeastarCallId: { in: directIds } }, select: { id: true, yeastarCallId: true, toNumber: true } })
+        : Promise.resolve([]),
     ]);
+    const directBy = new Map(directRows.map((r) => [`${DIRECT_CALL_PREFIX}${r.yeastarCallId}`, r]));
     const userName = new Map(users.map((u) => [u.id, u.name]));
     const contactBy = new Map(contacts.map((c) => [c.id, c]));
     return {
@@ -288,12 +323,13 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
         const evs = events.filter((e) => e.sessionId === s.sessionId);
         const end = evs.find((e) => e.type === "END");
         const contact = s.contactId ? contactBy.get(s.contactId) : undefined;
+        const direct = directBy.get(s.callId);
         return {
           sessionId: s.sessionId,
           supervisor: userName.get(s.supervisorId) ?? s.supervisorId,
           agent: s.agentExtension,
-          callId: s.callId,
-          customer: contact ? (contact.name ?? contact.phone) : null,
+          callId: direct?.id ?? s.callId,
+          customer: contact ? (contact.name ?? contact.phone) : (direct?.toNumber ?? null),
           startedAt: s.at,
           endedAt: end?.at ?? null,
           endReason: end?.endReason ?? null,

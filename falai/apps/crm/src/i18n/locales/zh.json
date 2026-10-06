@@ -1357,6 +1357,7 @@
     "duration": "时长",
     "actions": "监控",
     "ownCall": "您的通话",
+    "outbound": "外呼",
     "byOther": "其他主管正在监控",
     "connecting": "正在呼叫您的分机…",
     "end": "结束",

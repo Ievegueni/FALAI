@@ -6,6 +6,12 @@
  *   Sussurro     igual, mas whisper=out — o áudio do supervisor chega só ao agente
  *   Intervenção  o canal do supervisor entra na bridge da conversa (mistura a 3)
  *
+ * As chamadas marcadas no teclado do telefone (directLiveCalls.service.ts) não
+ * têm bridge ARI: a do Dial é nativa. Nessas, a Intervenção é um snoop com
+ * whisper=both — o supervisor fala para o agente e para o cliente, como o
+ * ChanSpy com a opção B. O fim da chamada vê-se pelo fim do snoop, porque o
+ * canal do agente não está no Stasis e não manda eventos.
+ *
  * Trocar de modo não desliga o supervisor: troca-se o snoop, ou o canal dele
  * passa de uma bridge para a outra. Terminar nunca toca na bridge da conversa —
  * agente e cliente continuam. Se o cliente ou o agente desligarem, a sessão
@@ -19,7 +25,19 @@
 import { randomUUID } from "node:crypto";
 import type { CallEvent } from "@falai/shared";
 import type { AsteriskAdapter } from "@falai/providers";
-import type { ActiveInboundCall } from "./inboundCallRouter.service.js";
+
+/** Uma chamada em curso que se pode supervisionar (de entrada, ou marcada no telefone). */
+export interface SupervisableCall {
+  tenantId: string;
+  callId: string;
+  callerChannelId: string;
+  agentChannelId: string;
+  /** Bridge ARI da conversa; null nas chamadas do dialplan (Dial). */
+  bridgeId: string | null;
+  groupId: string | null;
+  agentExtensionId: string;
+  answeredAt: Date;
+}
 
 export type SupervisionMode = "LISTEN" | "WHISPER" | "BARGE";
 export type EndReason = "SUPERVISOR" | "CALL_ENDED" | "SUPERVISOR_HUNGUP" | "SUPERVISOR_NO_ANSWER" | "ERROR";
@@ -60,7 +78,7 @@ export interface SupervisionDeps {
 export interface Session {
   id: string;
   tenantId: string;
-  call: ActiveInboundCall;
+  call: SupervisableCall;
   supervisorId: string;
   status: "CONNECTING" | "ACTIVE";
   mode: SupervisionMode;
@@ -92,6 +110,10 @@ export class SupervisionManager {
     return undefined;
   }
 
+  forTenant(tenantId: string): Session[] {
+    return [...this.sessions.values()].filter((s) => s.tenantId === tenantId);
+  }
+
   get(sessionId: string): Session | undefined {
     return this.sessions.get(sessionId);
   }
@@ -102,7 +124,7 @@ export class SupervisionManager {
    * na rota; aqui ficam as regras da chamada.
    */
   async start(params: {
-    call: ActiveInboundCall;
+    call: SupervisableCall;
     supervisorId: string;
     supervisorExtensionId: string;
     supervisorEndpoints: string[];
@@ -199,15 +221,16 @@ export class SupervisionManager {
   private async apply(s: Session, mode: SupervisionMode): Promise<void> {
     const a = this.deps.asterisk;
     const sup = s.supervisorChannel!;
-    if (mode === "BARGE") {
+    const conversation = s.call.bridgeId;
+    if (mode === "BARGE" && conversation) {
       await this.dropSnoop(s);
       await a.removeChannelFromBridge(s.bridgeId, sup);
-      await a.addChannelToBridge(s.call.bridgeId, sup);
+      await a.addChannelToBridge(conversation, sup);
       s.inConversation = true;
       return;
     }
-    if (s.inConversation) {
-      await a.removeChannelFromBridge(s.call.bridgeId, sup);
+    if (s.inConversation && conversation) {
+      await a.removeChannelFromBridge(conversation, sup);
       await a.addChannelToBridge(s.bridgeId, sup);
       s.inConversation = false;
     }
@@ -215,18 +238,23 @@ export class SupervisionManager {
     const old = s.snoopId;
     const snoop = await a.snoopChannel(s.call.agentChannelId, {
       spy: "both",
-      whisper: mode === "WHISPER" ? "out" : "none",
+      whisper: mode === "WHISPER" ? "out" : mode === "BARGE" ? "both" : "none",
       appArgs: `supervise:${s.id}`,
     });
     await a.addChannelToBridge(s.bridgeId, snoop.id);
     s.snoopId = snoop.id;
-    if (old) await a.hangup(old).catch(() => {});
+    this.byChannel.set(snoop.id, s.id);
+    if (old) {
+      this.byChannel.delete(old); // fim pedido por nós: não é o fim da chamada
+      await a.hangup(old).catch(() => {});
+    }
   }
 
   private async dropSnoop(s: Session): Promise<void> {
     if (!s.snoopId) return;
     const id = s.snoopId;
     s.snoopId = undefined;
+    this.byChannel.delete(id);
     await this.deps.asterisk.hangup(id).catch(() => {});
   }
 
@@ -241,7 +269,7 @@ export class SupervisionManager {
     for (const [ch, sid] of this.byChannel) if (sid === id) this.byChannel.delete(ch);
 
     const a = this.deps.asterisk;
-    if (s.inConversation && s.supervisorChannel) {
+    if (s.inConversation && s.supervisorChannel && s.call.bridgeId) {
       await a.removeChannelFromBridge(s.call.bridgeId, s.supervisorChannel).catch(() => {});
     }
     await this.dropSnoop(s);

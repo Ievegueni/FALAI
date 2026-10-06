@@ -471,6 +471,8 @@ export interface SupervisionLive {
     group: string | null;
     customer: string | null;
     number: string | null;
+    /** OUTBOUND = marcada no teclado do webphone/telefone (sem grupo). */
+    direction?: 'INBOUND' | 'OUTBOUND';
     since: string;
     ownCall: boolean;
     supervision: { sessionId: string; mode: SupervisionMode; status: 'CONNECTING' | 'ACTIVE'; mine: boolean } | null;

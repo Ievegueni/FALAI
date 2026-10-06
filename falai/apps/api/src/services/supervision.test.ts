@@ -171,6 +171,53 @@ describe("fim", () => {
   });
 });
 
+describe("chamada marcada no telefone (sem bridge ARI)", () => {
+  const DIRECT = { ...CALL, callId: "pbx-agent", callerChannelId: "agent", bridgeId: null, groupId: null };
+  async function startDirect(mode: "LISTEN" | "WHISPER" | "BARGE") {
+    const s = await m.start({ call: DIRECT, supervisorId: "sup_1", supervisorExtensionId: "ext_sup", supervisorEndpoints: ["web_sup"], mode });
+    f.answer("ch_web_sup");
+    await flush();
+    return s;
+  }
+  const liveSnoop = () => [...f.snoops.entries()].filter(([id]) => f.live.has(id));
+
+  it("Intervenção é um snoop com whisper=both; a conversa não é tocada", async () => {
+    const s = await startDirect("BARGE");
+    expect(liveSnoop().map(([, v]) => v)).toEqual([{ of: "agent", whisper: "both" }]);
+    expect(supBridge(s.id).has("ch_web_sup")).toBe(true);
+    expect(f.ari.addChannelToBridge).not.toHaveBeenCalledWith("conv", expect.anything());
+    expect(m.get(s.id)!.inConversation).toBe(false);
+  });
+
+  it("troca de modo só troca o snoop, e largar o velho não termina a sessão", async () => {
+    const s = await startDirect("LISTEN");
+    const old = liveSnoop()[0]![0];
+    await m.setMode(s.id, "BARGE");
+    await m.onCallEvent({ type: "CALL_FAILED", providerCallId: old, reason: "16" });
+    expect(m.get(s.id)).toBeDefined();
+    expect(liveSnoop().map(([, v]) => v.whisper)).toEqual(["both"]);
+    await m.setMode(s.id, "WHISPER");
+    expect(liveSnoop().map(([, v]) => v.whisper)).toEqual(["out"]);
+  });
+
+  it("o fim do snoop (o canal do agente desligou) termina a supervisão", async () => {
+    const s = await startDirect("LISTEN");
+    const snoop = liveSnoop()[0]![0];
+    await m.onCallEvent({ type: "CALL_FAILED", providerCallId: snoop, reason: "16" });
+    expect(m.get(s.id)).toBeUndefined();
+    expect(f.live.has("ch_web_sup")).toBe(false);
+    expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({ type: "END", endReason: "CALL_ENDED", callId: "pbx-agent" }));
+  });
+
+  it("terminar limpa o snoop e a bridge do supervisor", async () => {
+    const s = await startDirect("BARGE");
+    await m.end(s.id, "SUPERVISOR");
+    expect(liveSnoop()).toEqual([]);
+    expect(f.bridges.has(`br_supervise-${s.id}`)).toBe(false);
+    expect(f.live.has("agent")).toBe(true);
+  });
+});
+
 describe("regras e permissões", () => {
   it("não pode supervisionar a própria chamada", async () => {
     await expect(

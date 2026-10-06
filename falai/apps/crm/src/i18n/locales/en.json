@@ -1429,6 +1429,7 @@
     "duration": "Duration",
     "actions": "Supervision",
     "ownCall": "Your call",
+    "outbound": "Outbound call",
     "byOther": "With another supervisor",
     "connecting": "Calling your extension…",
     "end": "Stop",

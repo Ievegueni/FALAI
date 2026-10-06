@@ -2,7 +2,7 @@ export type { TelephonyProvider, DialParams, PlayPromptParams } from "./telephon
 export { YeastarAdapter, YeastarError } from "./telephony/YeastarAdapter.js";
 export type { YeastarConfig, YeastarCdrRecord } from "./telephony/YeastarAdapter.js";
 export { AsteriskAdapter, AsteriskError } from "./telephony/AsteriskAdapter.js";
-export type { AsteriskConfig } from "./telephony/AsteriskAdapter.js";
+export type { AsteriskConfig, AriChannelInfo } from "./telephony/AsteriskAdapter.js";
 export {
   trunkEndpointId,
   extensionEndpointId,

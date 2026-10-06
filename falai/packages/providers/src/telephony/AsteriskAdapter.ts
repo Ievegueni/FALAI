@@ -48,6 +48,15 @@ export interface AsteriskConfig {
   dialFormat?: DialFormat;
 }
 
+/** Canal tal como o ARI o devolve em GET /channels (só os campos que usamos). */
+export interface AriChannelInfo {
+  id: string;
+  name: string; // ex.: "PJSIP/extweb_Ab12-0000000c"
+  state: string; // "Up" = em conversa
+  creationtime: string;
+  dialplan?: { context?: string; exten?: string; app_name?: string; app_data?: string };
+}
+
 export class AsteriskError extends Error {
   constructor(message: string, readonly status?: number) {
     super(message);
@@ -198,6 +207,14 @@ export class AsteriskAdapter implements TelephonyProvider {
 
   async listBridges(): Promise<{ id: string; name: string; channels: string[] }[]> {
     return this.api<{ id: string; name: string; channels: string[] }[]>(`/bridges`);
+  }
+
+  /**
+   * Todos os canais vivos no Asterisk, incluindo os que não passam pela nossa
+   * aplicação Stasis (chamadas marcadas no teclado do webphone ou hardphone).
+   */
+  async listChannels(): Promise<AriChannelInfo[]> {
+    return this.api<AriChannelInfo[]>(`/channels`);
   }
 
   async removeChannelFromBridge(bridgeId: string, channelId: string): Promise<void> {

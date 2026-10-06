@@ -1429,6 +1429,7 @@
     "duration": "Duração",
     "actions": "Supervisão",
     "ownCall": "A sua chamada",
+    "outbound": "Chamada de saída",
     "byOther": "Com outro supervisor",
     "connecting": "A ligar para a sua extensão…",
     "end": "Terminar",

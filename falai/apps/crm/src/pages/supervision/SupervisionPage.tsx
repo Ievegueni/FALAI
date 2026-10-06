@@ -147,7 +147,9 @@ function Live() {
               {data.calls.map((c) => (
                 <tr key={c.callId}>
                   <td className="px-4 py-2.5 text-gray-900">{c.agent ?? '—'} <span className="text-gray-400">{c.agentNumber}</span></td>
-                  <td className="px-4 py-2.5 text-gray-700">{c.group ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-gray-700">
+                    {c.direction === 'OUTBOUND' ? <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700">{t('supervision.outbound')}</span> : (c.group ?? '—')}
+                  </td>
                   <td className="px-4 py-2.5 text-gray-700">{c.customer ?? formatPhone(c.number)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-gray-700">{elapsed(c.since, now)}</td>
                   <td className="px-4 py-2.5">
