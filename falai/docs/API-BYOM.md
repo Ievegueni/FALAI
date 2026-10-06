@@ -208,7 +208,7 @@ curl -X POST https://falai.comunica.ao/v1/agents \
   -d '{
     "name": "Apoio ao cliente",
     "systemPrompt": "És um assistente de apoio ao cliente da empresa X. Sê breve.",
-    "ttsVoiceId": "pt-AO-female-1",
+    "ttsVoiceId": "CwhRBWXzGAHq8TQ4Fs17",
     "modelId": "mdl_abc",
     "escalationNumber": "+244923000000",
     "maxCallSeconds": 300
@@ -216,6 +216,9 @@ curl -X POST https://falai.comunica.ao/v1/agents \
 ```
 
 Sem `modelId`, o agente usa o motor da plataforma.
+
+O `ttsVoiceId` é um ID de voz da ElevenLabs, não um código de idioma. Se for
+omitido, usa-se a voz por omissão da conta.
 
 ### Passo 4 — simular
 

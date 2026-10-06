@@ -11,16 +11,12 @@ const DEFAULT_CODECS = ['ulaw', 'alaw', 'g729', 'g726', 'g722', 'gsm'];
 function TrunkModal({ trunk, onClose }: { trunk?: Trunk; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
-  // Lista de clientes: alimenta o selector ao criar e, ao editar, serve para
-  // mostrar o NOME do dono em vez do id — a rota dos trunks só devolve o
-  // tenantId, não o nome.
+  // Lista de clientes para o selector do dono. O dono é o único cliente que
+  // vê o trunk no CRM.
   const { data: tenantPage } = useQuery({
     queryKey: ['admin', 'tenants', 'for-trunk'],
     queryFn: () => tenantsApi.list({ perPage: 100, status: 'ACTIVE' }),
   });
-  const ownerName = trunk?.tenantId
-    ? (tenantPage?.data.find((t) => t.id === trunk.tenantId)?.name ?? trunk.tenantId)
-    : 'Partilhado (do operador)';
 
   const [form, setForm] = useState({
     name: trunk?.name ?? '',
@@ -54,10 +50,10 @@ function TrunkModal({ trunk, onClose }: { trunk?: Trunk; onClose: () => void }) 
         codecs: form.codecs.split(',').map((c) => c.trim()).filter(Boolean),
         maxConcurrent: form.maxConcurrent ? Number(form.maxConcurrent) : null,
         ...(form.authSecret ? { authSecret: form.authSecret } : {}),
-        // Só na criação, e só se houver dono escolhido: a rota de update não
-        // aceita mudança de dono, e mandar o campo vazio tornaria partilhado
-        // um trunk que é de um cliente.
+        // Na criação só se houver dono escolhido. Na edição só se mudou:
+        // vazio (null) torna-o partilhado do operador.
         ...(!trunk && form.tenantId ? { tenantId: form.tenantId } : {}),
+        ...(trunk && form.tenantId !== (trunk.tenantId ?? '') ? { tenantId: form.tenantId || null } : {}),
       };
       return trunk ? trunksApi.update(trunk.id, body) : trunksApi.create(body);
     },
@@ -78,30 +74,21 @@ function TrunkModal({ trunk, onClose }: { trunk?: Trunk; onClose: () => void }) 
           <option value="1">Activado</option>
           <option value="0">Desactivado</option>
         </Select>
-        {trunk ? (
-          <Input
-            label="Cliente dono"
-            value={ownerName}
-            readOnly
-            hint="não se muda depois de criado"
-          />
-        ) : (
-          <Select
-            label="Cliente dono"
-            value={form.tenantId}
-            onChange={(e) => set('tenantId', e.target.value)}
-            hint={
-              form.type === 'PEER' && !form.tenantId
-                ? 'Num peering, sem dono não sabemos de quem é a chamada que entra'
-                : 'vazio = trunk partilhado do operador'
-            }
-          >
-            <option value="">Partilhado (do operador)</option>
-            {tenantPage?.data.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </Select>
-        )}
+        <Select
+          label="Cliente dono"
+          value={form.tenantId}
+          onChange={(e) => set('tenantId', e.target.value)}
+          hint={
+            form.type === 'PEER' && !form.tenantId
+              ? 'Num peering, sem dono não sabemos de quem é a chamada que entra'
+              : 'só o dono vê o trunk no CRM; vazio = partilhado do operador'
+          }
+        >
+          <option value="">Partilhado (do operador)</option>
+          {tenantPage?.data.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </Select>
         <Select label="Tipo" value={form.type} onChange={(e) => set('type', e.target.value)}>
           <option value="REGISTER">Trunk de registo</option>
           <option value="PEER">Peer (IP-to-IP)</option>

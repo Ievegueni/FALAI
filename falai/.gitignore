@@ -9,3 +9,6 @@ infra/asterisk/generated/
 
 # Prompts TTS gerados pela API para o Asterisk — artefactos, não código.
 infra/asterisk/sounds/*.wav
+
+# Anexos dos canais de texto (email) guardados em disco pela API
+uploads/

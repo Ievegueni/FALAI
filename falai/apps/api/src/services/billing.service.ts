@@ -1,4 +1,16 @@
 import { prisma, type BillingMode } from "@falai/db";
+import { getSetting } from "./settings.service.js";
+
+/** Chave em SystemSetting com o custo fixo (em cêntimos) que pagamos ao fornecedor por chamada atendida. */
+export const PROVIDER_COST_PER_CALL_SETTING = "PROVIDER_COST_PER_CALL_CENTS";
+const DEFAULT_PROVIDER_COST_PER_CALL_CENTS = 3000; // 30 Kz
+
+/** Custo actual por chamada, editável no backoffice (aba Financeiro). */
+export async function getProviderCostPerCallCents(): Promise<number> {
+  const stored = await getSetting(PROVIDER_COST_PER_CALL_SETTING);
+  const parsed = stored != null ? parseInt(stored, 10) : NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_PROVIDER_COST_PER_CALL_CENTS;
+}
 
 export interface PriceConfig {
   billingMode: BillingMode;
@@ -38,6 +50,22 @@ export function computeReservation(maxCallSeconds: number, price: PriceConfig): 
     default:
       return Math.ceil(maxCallSeconds / 60) * price.pricePerMinuteCents;
   }
+}
+
+/**
+ * Preço efectivo de um cliente: o do plano, com as excepções definidas na
+ * ficha do cliente no backoffice (modo de cobrança e preço por minuto).
+ */
+export function effectivePrice(tenant: {
+  billingModeOverride: BillingMode | null;
+  pricePerMinuteOverrideCents: number | null;
+  plan: { billingMode: BillingMode; pricePerMinuteCents: number; pricePerCallCents: number };
+}): PriceConfig {
+  return {
+    billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
+    pricePerMinuteCents: tenant.pricePerMinuteOverrideCents ?? tenant.plan.pricePerMinuteCents,
+    pricePerCallCents: tenant.plan.pricePerCallCents,
+  };
 }
 
 /** Modo de cobrança efectivo: override do tenant tem prioridade sobre o do plano. */
@@ -85,11 +113,13 @@ export async function settleCall(params: {
   const actualCents = computeCallCost(billedSecs, price);
   // Positive = over-reserved (refund to tenant); negative = under-reserved (extra debit)
   const delta = reservedCents - actualCents;
+  // Só houve custo real junto do fornecedor se a chamada chegou a decorrer.
+  const providerCostCents = billedSecs > 0 ? await getProviderCostPerCallCents() : 0;
 
   await prisma.$transaction(async (tx) => {
     await tx.call.update({
       where: { id: callId },
-      data: { costCents: actualCents, billedSecs },
+      data: { costCents: actualCents, billedSecs, providerCostCents },
     });
 
     if (delta !== 0) {
@@ -156,4 +186,32 @@ export async function chargeFlatCall(params: {
   ]);
 
   return true;
+}
+
+/**
+ * Cobrança de uma resposta da IA num canal de texto (Plan.pricePerTextMessageCents).
+ * Devolve o valor cobrado, ou null se o saldo não chega — aí a conversa passa
+ * para humano em vez de a IA responder de graça.
+ */
+export async function chargeTextMessage(tenantId: string, conversationId: string): Promise<number | null> {
+  const tenant = await prisma.tenant.findUniqueOrThrow({
+    where: { id: tenantId },
+    select: { plan: { select: { pricePerTextMessageCents: true } } },
+  });
+  const amountCents = tenant.plan.pricePerTextMessageCents;
+  if (amountCents <= 0) return 0;
+  if (!(await reserveBalance(tenantId, amountCents))) return null;
+
+  const { balanceCents } = await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { balanceCents: true } });
+  await prisma.walletTransaction.create({
+    data: {
+      tenantId,
+      type: "TEXT_CHARGE",
+      amountCents: -amountCents,
+      balanceAfterCents: balanceCents,
+      note: `Resposta IA — conversa ${conversationId}`,
+      reference: conversationId,
+    },
+  });
+  return amountCents;
 }

@@ -1,11 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, type Prisma } from "@falai/db";
-import { reserveBalance, computeReservation, effectiveBillingMode } from "../../services/billing.service.js";
+import { reserveBalance, computeReservation, effectivePrice } from "../../services/billing.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
+import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
 
 export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
   // POST /v1/calls — dial a number
-  fastify.post("/v1/calls", { preHandler: [fastify.verifyScope("calls:write")] }, async (request, reply) => {
+  fastify.post("/v1/calls", { preHandler: [fastify.verifyScope("calls:write")], config: { feature: "agents" } }, async (request, reply) => {
     const tenantId = request.apiKey!.tenantId;
     const body = request.body as {
       agentId: string;
@@ -18,6 +19,13 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.status(400).send({ error: "agentId and toNumber are required" });
     }
 
+    // O contacto tem de ser deste cliente: a chamada fica ligada a ele e o nome
+    // aparece no histórico. Um id de outro cliente expunha esse nome.
+    if (body.contactId !== undefined) {
+      const contact = await prisma.contact.findFirst({ where: { id: body.contactId, tenantId }, select: { id: true } });
+      if (!contact) return reply.status(404).send({ error: "Contact not found" });
+    }
+
     const [agent, tenant] = await Promise.all([
       prisma.agent.findUnique({
         where: { id: body.agentId, tenantId, deletedAt: null },
@@ -26,13 +34,14 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
       prisma.tenant.findUnique({
         where: { id: tenantId },
         select: {
-          balanceCents: true, creditLimitCents: true, billingModeOverride: true,
+          balanceCents: true, creditLimitCents: true, billingModeOverride: true, pricePerMinuteOverrideCents: true,
           plan: { select: { billingMode: true, pricePerMinuteCents: true, pricePerCallCents: true, maxConcurrent: true } },
         },
       }),
     ]);
 
     if (!agent) return reply.status(404).send({ error: "Agent not found" });
+    if (!agent.ttsVoiceId) return reply.status(422).send({ error: "Agent has no voice — text channels only" });
     if (agent.status !== "ACTIVE") return reply.status(422).send({ error: "Agent must be ACTIVE to place calls" });
     if (!tenant) return reply.status(404).send({ error: "Tenant not found" });
 
@@ -47,11 +56,7 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
       throw err;
     }
 
-    const price = {
-      billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
-      pricePerMinuteCents: tenant.plan.pricePerMinuteCents,
-      pricePerCallCents: tenant.plan.pricePerCallCents,
-    };
+    const price = effectivePrice(tenant);
     const estimatedCents = computeReservation(agent.maxCallSeconds, price);
 
     const reserved = await reserveBalance(tenantId, estimatedCents);
@@ -89,9 +94,22 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
         prisma.$executeRaw`UPDATE "Tenant" SET "balanceCents" = "balanceCents" + ${estimatedCents} WHERE id = ${tenantId}`,
         prisma.call.update({ where: { id: call.id }, data: { status: "FAILED", failReason: "Dial error" } }),
       ]);
+      await enqueueWebhook({
+        tenantId,
+        event: "call.failed",
+        callId: call.id,
+        payload: { callId: call.id, toNumber: body.toNumber, contactId: body.contactId ?? null, failReason: "Dial error" },
+      });
       fastify.log.error({ err }, "v1.calls.dial_failed");
       return reply.status(502).send({ error: "Failed to place call" });
     }
+
+    await enqueueWebhook({
+      tenantId,
+      event: "call.started",
+      callId: call.id,
+      payload: { callId: call.id, toNumber: body.toNumber, contactId: body.contactId ?? null },
+    });
 
     await fastify.callEngine.registerCall({
       callId: call.id,
@@ -123,7 +141,8 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
       where: { id },
       select: {
         id: true, tenantId: true, agentId: true, toNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, summary: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, summary: true,
+        campaignId: true, contactId: true, recordingUrl: true,
         startedAt: true, answeredAt: true, endedAt: true, createdAt: true,
         variables: true,
       },
@@ -139,22 +158,33 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /v1/calls
   fastify.get("/v1/calls", { preHandler: [fastify.verifyScope("calls:read")] }, async (request, reply) => {
     const tenantId = request.apiKey!.tenantId;
-    const query = request.query as { limit?: string; offset?: string; status?: string };
+    const query = request.query as {
+      limit?: string; offset?: string; status?: string; campaignId?: string; contactId?: string;
+    };
     const limit = Math.min(parseInt(query.limit ?? "20", 10), 100);
     const offset = parseInt(query.offset ?? "0", 10);
+    // Filtrar por campanha/contacto é o caminho directo para "como correu esta
+    // campanha" e "o que aconteceu a este cliente".
+    const where = {
+      tenantId,
+      ...(query.status && { status: query.status as never }),
+      ...(query.campaignId && { campaignId: query.campaignId }),
+      ...(query.contactId && { contactId: query.contactId }),
+    };
 
     const [calls, total] = await Promise.all([
       prisma.call.findMany({
-        where: { tenantId, ...(query.status && { status: query.status as never }) },
+        where,
         select: {
-          id: true, agentId: true, toNumber: true, status: true,
-          durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
+          id: true, agentId: true, campaignId: true, contactId: true, toNumber: true, status: true,
+          outcome: true, failReason: true,
+          durationSecs: true, costCents: true, startedAt: true, answeredAt: true, endedAt: true, createdAt: true,
         },
         orderBy: { createdAt: "desc" },
         take: limit,
         skip: offset,
       }),
-      prisma.call.count({ where: { tenantId, ...(query.status && { status: query.status as never }) } }),
+      prisma.call.count({ where }),
     ]);
 
     return reply.send({ data: calls, total, limit, offset });

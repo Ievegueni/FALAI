@@ -33,7 +33,8 @@ export function formatDuration(secs: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-export function formatPhone(phone: string): string {
+export function formatPhone(phone: string | null): string {
+  if (!phone) return "—";
   // Mostra sempre no formato nacional 9XX XXX XXX (sem +244).
   // Aceita dados legados em +244XXXXXXXXX e o novo formato nacional de 9 dígitos.
   const digits = phone.replace(/\D/g, '');
@@ -83,6 +84,7 @@ export const callStatusColor: Record<CallStatus, string> = {
   IN_PROGRESS: 'bg-indigo-100 text-indigo-700',
   COMPLETED: 'bg-emerald-100 text-emerald-700',
   NO_ANSWER: 'bg-amber-100 text-amber-700',
+  BUSY: 'bg-amber-100 text-amber-700',
   FAILED: 'bg-red-100 text-red-700',
   CANCELLED: 'bg-gray-100 text-gray-500',
   ESCALATED: 'bg-purple-100 text-purple-700',

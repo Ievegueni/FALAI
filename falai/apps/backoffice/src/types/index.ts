@@ -6,8 +6,12 @@ export type AgentStatus = 'DRAFT' | 'PENDING_REVIEW' | 'ACTIVE' | 'PAUSED' | 'BL
 export type AgentReviewStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'BLOCKED';
 export type CallStatus =
   | 'QUEUED' | 'DIALING' | 'RINGING' | 'IN_PROGRESS'
-  | 'COMPLETED' | 'NO_ANSWER' | 'FAILED' | 'CANCELLED' | 'ESCALATED';
-export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
+  | 'COMPLETED' | 'NO_ANSWER' | 'BUSY' | 'FAILED' | 'CANCELLED' | 'ESCALATED';
+
+export type CallStats = Record<'total' | CallStatus, number>;
+export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'RUNNING' | 'PAUSED' | 'DONE' | 'CANCELLED';
+export type CampaignMode = 'VOICE_AI' | 'FIXED_SCRIPT';
+export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'TEXT_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
 
 export interface AdminUser {
   id: string;
@@ -29,9 +33,25 @@ export type ProductType = 'VOICE_AI' | 'CRM_BYO_PBX' | 'API_BYOM';
 
 export type BillingMode = 'PER_MINUTE' | 'PER_SECOND' | 'PER_CALL';
 
+export interface Product {
+  id: string;
+  name: string;
+  description: string | null;
+  baseType: ProductType;
+  aiAgentsEnabled: boolean;
+  clinicEnabled: boolean;
+  smsEnabled: boolean;
+  monthlyFeeCents: number;
+  isActive: boolean;
+  planCount: number;
+}
+
+export type ProductInput = Omit<Product, 'id' | 'planCount'>;
+
 export interface Plan {
   id: string;
   name: string;
+  productId: string | null;
   productType: ProductType;
   aiAgentsEnabled: boolean;
   clinicEnabled: boolean;
@@ -40,6 +60,7 @@ export interface Plan {
   pricePerMinCents: number;
   pricePerCallCents: number;
   pricePerSmsCents: number;
+  pricePerTextMessageCents: number;
   monthlyFeeCents: number;
   maxAgents: number;
   maxConcurrentCalls: number;
@@ -56,7 +77,11 @@ export type FeatureKey =
   | 'webphone'
   | 'wallet'
   | 'team'
-  | 'developers';
+  | 'developers'
+  | 'reports'
+  | 'sms'
+  | 'telephony'
+  | 'inbox';
 
 export type TenantFeatures = Record<FeatureKey, boolean>;
 
@@ -80,16 +105,40 @@ export interface TenantLineInput {
   isActive?: boolean;
 }
 
-export type TenantRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+export type TenantRole = 'OWNER' | 'ADMIN' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
 
 export interface TenantUser {
   id: string;
   name: string;
   email: string;
   role: TenantRole;
+  /** Perfil de acesso ao CRM. Null = sem restrição além da função. */
+  accessProfileId?: string | null;
   lastLoginAt: string | null;
   twoFaEnabled?: boolean;
   createdAt?: string;
+}
+
+/** none = não vê o módulo; read = só consulta; write = acesso completo */
+export type AccessLevel = 'none' | 'read' | 'write';
+
+/** Chaves de um perfil: as features e o Dashboard (que não é feature do tenant). */
+export type ProfileKey = FeatureKey | 'dashboard';
+
+export interface AccessProfile {
+  id: string;
+  name: string;
+  description: string | null;
+  permissions: Record<ProfileKey, AccessLevel>;
+  createdAt: string;
+  updatedAt: string;
+  _count: { users: number };
+}
+
+export interface AccessProfileInput {
+  name: string;
+  description?: string | null;
+  permissions: Partial<Record<ProfileKey, AccessLevel>>;
 }
 
 export type ModelProtocol = 'FALAI_TURN' | 'OPENAI_CHAT' | 'ANTHROPIC_MESSAGES';
@@ -139,11 +188,14 @@ export interface TenantUserInput {
   email: string;
   password: string;
   role?: TenantRole;
+  accessProfileId?: string | null;
 }
 
 export interface Tenant {
   id: string;
   name: string;
+  /** Logo mostrado no CRM do cliente (data URL). Null = logo da Comunica. */
+  logoDataUrl?: string | null;
   email: string;
   phone: string;
   nif: string | null;
@@ -157,7 +209,18 @@ export interface Tenant {
   maxConcurrentCalls: number;
   features?: TenantFeatures;
   featureOverrides?: Partial<TenantFeatures>;
+  /** Funcionalidades que o plano desliga e nenhum override liga. */
+  lockedByPlan?: FeatureKey[];
   billingModeOverride?: BillingMode | null;
+  /** Preço por minuto próprio do cliente, em cêntimos. Null = usa o do plano. */
+  pricePerMinuteOverrideCents?: number | null;
+  recordCalls?: boolean;
+  recordingAnnounce?: boolean;
+  missedCallSms?: boolean;
+  missedCallSmsText?: string | null;
+  /** Análise IA dos relatórios (melhoria 6). */
+  aiReportDailyLimit?: number;
+  aiReportUsageMonth?: { analyses: number; inputTokens: number; outputTokens: number; costUsd: number };
   lines?: TenantLine[];
   users?: TenantUser[];
   createdAt: string;
@@ -209,6 +272,36 @@ export interface Call {
   turns?: CallTurn[];
 }
 
+// ─── Campaign ────────────────────────────────────────────────────────────────
+
+export interface Campaign {
+  id: string;
+  name: string;
+  mode: CampaignMode;
+  status: CampaignStatus;
+  agentName: string | null;
+  totalContacts: number;
+  completed: number;
+  failedCount: number;
+  throttlePerMinute: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CampaignDetail extends Omit<Campaign, 'totalContacts' | 'completed' | 'failedCount'> {
+  scriptText: string | null;
+  scheduleJson: { mode?: 'NOW' | 'WINDOW'; startHour?: number; endHour?: number; timezone?: string; days?: number[]; daysOfWeek?: number[] } | null;
+  retryPolicy: { maxAttempts?: number; retryDelayMinutes?: number; delayMinutes?: number } | null;
+  summary: string | null;
+  contactStatuses: Partial<Record<'PENDING' | 'QUEUED' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'OPTED_OUT' | 'SKIPPED', number>>;
+  calls: { total: number; answered: number; totalDurationSecs: number; avgDurationSecs: number; totalCostCents: number };
+  recentContacts: {
+    id: string; name: string | null; phone: string; status: string; attempts: number; updatedAt: string;
+    callId: string | null; callStatus: CallStatus | null; outcome: string | null;
+    durationSecs: number | null; costCents: number | null;
+  }[];
+}
+
 export interface CallTurn {
   id: string;
   seq: number;
@@ -251,6 +344,22 @@ export interface MarginRow {
   marginCents: number;
   marginPct: number;
   calls: number;
+}
+
+export interface ProviderTopUp {
+  id: string;
+  amountCents: number;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+export interface ProviderBalance {
+  costPerCallCents: number;
+  purchasedCents: number;
+  spentCents: number;
+  remainingCents: number;
+  topups: ProviderTopUp[];
 }
 
 export interface WalletTransaction {
@@ -386,10 +495,11 @@ export interface Paginated<T> {
   total: number;
   page: number;
   perPage: number;
+  stats?: CallStats;
 }
 
 // ─── Estado do motor SIP próprio (Asterisk) ──────────────────────────────────
-// Ver docs/PLANO-INDEPENDENCIA-PBX.txt — substitui o Yeastar no transporte da voz.
+// Motor de telefonia da plataforma, trunk directo à operadora.
 
 export type TrunkRegistrationStatus = 'REGISTERED' | 'NOT_REGISTERED' | 'UNKNOWN';
 
@@ -424,4 +534,86 @@ export interface EngineStatus {
   activeCalls: number | null;
   error: string | null;
   checkedAt: string;
+}
+
+// ─── Pool WhatsApp Active/Standby ────────────────────────────────────────────
+
+export type WaPoolStatus = 'ACTIVE' | 'DEGRADED' | 'STANDBY' | 'FAILED' | 'DISABLED';
+
+export interface TenantWhatsappPool {
+  poolUrl: string;
+  numbers: {
+    id: string;
+    name: string;
+    displayPhone: string | null;
+    verifiedName: string | null;
+    phoneNumberId: string | null;
+    enabled: boolean;
+    status: WaPoolStatus | null;
+    priority: number | null;
+    failCount: number;
+    lastCheckAt: string | null;
+    lastError: string | null;
+    statusAt: string | null;
+    createdAt: string;
+  }[];
+  events: { id: string; severity: string; message: string; createdAt: string }[];
+}
+
+// ─── IVR e rotas de entrada (geridos por tenant) ─────────────────────────────
+export type IvrDestType = 'EXTENSION' | 'GROUP' | 'IVR';
+
+export interface IvrOption {
+  digit: string;
+  destType: IvrDestType;
+  destValue: string;
+}
+
+export interface IvrMenu {
+  id: string;
+  name: string;
+  greeting: string;
+  greetingAudio?: boolean; // saudação é um ficheiro carregado (não TTS)
+  welcomeAudio?: boolean; // boas-vindas carregadas, tocadas uma vez antes da saudação
+  options: IvrOption[];
+  timeoutSecs: number;
+  maxRetries: number;
+}
+
+export interface InboundRoute {
+  id: string;
+  name: string;
+  trunkId: string;
+  trunkName: string;
+  didPattern: string;
+  destType: IvrDestType | 'AI_AGENT';
+  destValue: string;
+}
+
+export interface RoutingOptions {
+  extensions: { number: string; displayName: string | null }[];
+  groups: { id: string; name: string }[];
+  trunks: { id: string; name: string }[];
+}
+
+/** Extensão do PBX nativo — a mesma que o cliente vê no CRM (Telefonia → Extensões). */
+export interface TenantExtension {
+  id: string;
+  number: string;
+  callerId: string;
+  displayName: string | null;
+  sipAuthUser: string;
+  isActive: boolean;
+  isDefault: boolean;
+  phoneNumber: string | null;
+  createdAt: string;
+}
+
+export interface TenantExtensionInput {
+  number?: string;
+  displayName?: string | null;
+  callerId?: string;
+  phoneNumber?: string | null;
+  isActive?: boolean;
+  isDefault?: boolean;
 }

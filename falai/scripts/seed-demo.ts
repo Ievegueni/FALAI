@@ -13,6 +13,11 @@ import { randomBytes } from 'node:crypto';
 
 const db = new PrismaClient();
 
+// Voz real da ElevenLabs (a mesma default de providerConfig.service.ts). Antes
+// havia aqui um 'pt-AO-female-1' inventado, que era copiado para campanhas
+// reais e só rebentava no dispatcher, com a campanha a auto-pausar.
+const ELEVENLABS_DEFAULT_VOICE = process.env['ELEVENLABS_VOICE_ID'] ?? '21m00Tcm4TlvDq8ikWAM';
+
 // ── Utilitários ────────────────────────────────────────────────────────────────
 
 function rand(min: number, max: number) {
@@ -217,7 +222,7 @@ async function main() {
       id: 'agent_demo_cobranca', tenantId: t1.id,
       name: 'Agente de Cobrança', description: 'Cobrança amigável de faturas em atraso',
       systemPrompt: 'És um agente de cobrança amigável da Demo Company. Contacta clientes com faturas em atraso, explica o valor em dívida, e oferece planos de pagamento flexíveis. Sê sempre educado e empático.',
-      ttsVoiceId: 'pt-AO-female-1', status: 'ACTIVE' as const, isApproved: true,
+      ttsVoiceId: ELEVENLABS_DEFAULT_VOICE, status: 'ACTIVE' as const, isApproved: true,
     },
     {
       id: 'agent_demo_satisfacao', tenantId: t1.id,
@@ -236,7 +241,7 @@ async function main() {
       id: 'agent_banca_seguros', tenantId: t2.id,
       name: 'Seguros de Vida', description: 'Upsell de seguros de vida para clientes activos',
       systemPrompt: 'És um agente da BancaPlus especializado em seguros de vida. Explica os benefícios dos planos disponíveis e marca reuniões com gestores de conta.',
-      ttsVoiceId: 'pt-AO-female-1', status: 'ACTIVE' as const, isApproved: true,
+      ttsVoiceId: ELEVENLABS_DEFAULT_VOICE, status: 'ACTIVE' as const, isApproved: true,
     },
     // Telecomunica
     {

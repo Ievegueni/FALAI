@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, KeyRound, Users, Shield, Copy, Check, Radio, Lock } from 'lucide-react';
-import { telephonyApi } from '@/lib/api';
+import { telephonyApi, rejectReasonsApi, callTypingApi, type RejectReason, type CallCategory } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -14,6 +14,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import type { Extension, ExtensionGroup, TelephonyRole, TrunkView } from '@/types';
+import { IvrTab, InboundRoutesTab } from './RoutingTabs';
 
 // ─── Mostrador de credenciais SIP (uma única vez) ────────────────────────────
 function SipCredentialsModal({ ext, onClose }: { ext: Extension | null; onClose: () => void }) {
@@ -349,6 +350,194 @@ function RolesTab({ canManage }: { canManage: boolean }) {
   );
 }
 
+// ─── Motivos de recusa (relatórios de atendimento) ───────────────────────────
+// Não se apagam: desactivar tira-os do webphone e mantém o nome nos relatórios.
+function RejectReasonsTab({ canManage }: { canManage: boolean }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const { success, error } = useToast();
+  const [label, setLabel] = useState('');
+  const [editing, setEditing] = useState<RejectReason | null>(null);
+  const [editLabel, setEditLabel] = useState('');
+
+  const { data: reasons, isLoading } = useQuery({ queryKey: ['reject-reasons', 'all'], queryFn: () => rejectReasonsApi.list(true) });
+  const refresh = () => void qc.invalidateQueries({ queryKey: ['reject-reasons'] });
+
+  const create = useMutation({
+    mutationFn: () => rejectReasonsApi.create({ label: label.trim(), sortOrder: reasons?.length ?? 0 }),
+    onSuccess: () => { success(t('common.saved')); setLabel(''); refresh(); },
+    onError: (e: Error) => error(e.message),
+  });
+  const update = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Pick<RejectReason, 'label' | 'isActive'>> }) => rejectReasonsApi.update(id, data),
+    onSuccess: () => { success(t('common.saved')); setEditing(null); refresh(); },
+    onError: (e: Error) => error(e.message),
+  });
+
+  if (isLoading) return <PageSpinner />;
+
+  return (
+    <>
+      <p className="text-sm text-gray-500 mb-3">{t('telephony.rejectReasonsHint')}</p>
+      {canManage && (
+        <form className="flex gap-2 mb-3" onSubmit={(e) => { e.preventDefault(); if (label.trim()) create.mutate(); }}>
+          <div className="flex-1">
+            <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('telephony.rejectReasonPlaceholder')} maxLength={80} />
+          </div>
+          <Button type="submit" size="sm" icon={<Plus className="h-3.5 w-3.5" />} loading={create.isPending} disabled={!label.trim()}>
+            {t('common.create')}
+          </Button>
+        </form>
+      )}
+      <Card padding={false}>
+        <div className="divide-y divide-gray-50">
+          {reasons?.map((r) => (
+            <div key={r.id} className="flex items-center gap-4 px-5 py-3">
+              <p className={`flex-1 text-sm ${r.isActive ? 'text-gray-900' : 'text-gray-400 line-through'}`}>{r.label}</p>
+              {!r.isActive && <Badge>{t('telephony.inactive')}</Badge>}
+              {canManage && (
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => { setEditing(r); setEditLabel(r.label); }}>{t('common.edit')}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => update.mutate({ id: r.id, data: { isActive: !r.isActive } })}>
+                    {r.isActive ? t('telephony.deactivate') : t('telephony.activate')}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+          {reasons?.length === 0 && <div className="px-5 py-8 text-center text-gray-400 text-sm">{t('telephony.noRejectReasons')}</div>}
+        </div>
+      </Card>
+      <Modal open={editing !== null} onClose={() => setEditing(null)} title={t('common.edit')}
+        footer={<><Button variant="ghost" onClick={() => setEditing(null)}>{t('common.cancel')}</Button><Button loading={update.isPending} disabled={!editLabel.trim()} onClick={() => editing && update.mutate({ id: editing.id, data: { label: editLabel.trim() } })}>{t('common.save')}</Button></>}>
+        <Input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} maxLength={80} autoFocus />
+      </Modal>
+    </>
+  );
+}
+
+// ─── Tipificação de chamadas (melhoria 2) ────────────────────────────────────
+// Categoria → subcategoria. Desactivar em vez de apagar (histórico). Grupos só
+// nas categorias: vazio = todos os agentes vêem.
+function TypingTab({ canManage }: { canManage: boolean }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const { success, error } = useToast();
+  const { data: cats, isLoading } = useQuery({ queryKey: ['call-categories'], queryFn: callTypingApi.categories });
+  const { data: settings } = useQuery({ queryKey: ['call-typing-settings'], queryFn: callTypingApi.settings });
+  const { data: groups } = useQuery({ queryKey: ['telephony', 'groups'], queryFn: telephonyApi.listGroups, retry: false });
+  const [cfg, setCfg] = useState<{ typingRequired: boolean; typingMaxSecs: number } | null>(null);
+  const [modal, setModal] = useState<{ editing: CallCategory | null; parentId: string | null } | null>(null);
+  const [name, setName] = useState('');
+  const [groupIds, setGroupIds] = useState<string[]>([]);
+
+  const current = cfg ?? settings ?? { typingRequired: false, typingMaxSecs: 60 };
+  const refresh = () => void qc.invalidateQueries({ queryKey: ['call-categories'] });
+
+  const saveCfg = useMutation({
+    mutationFn: () => callTypingApi.updateSettings(current),
+    onSuccess: (d) => { success(t('common.saved')); setCfg(null); qc.setQueryData(['call-typing-settings'], d); },
+    onError: (e: Error) => error(e.message),
+  });
+  const save = useMutation({
+    mutationFn: async (): Promise<unknown> => {
+      if (!modal) return;
+      const isTop = (modal.editing?.parentId ?? modal.parentId) === null;
+      return modal.editing
+        ? callTypingApi.updateCategory(modal.editing.id, { name: name.trim(), ...(isTop && { groupIds }) })
+        : callTypingApi.createCategory({ name: name.trim(), parentId: modal.parentId, ...(isTop && { groupIds }) });
+    },
+    onSuccess: () => { success(t('common.saved')); setModal(null); refresh(); },
+    onError: (e: Error) => error(e.message),
+  });
+  const toggle = useMutation({
+    mutationFn: (c: CallCategory) => callTypingApi.updateCategory(c.id, { isActive: !c.isActive }),
+    onSuccess: refresh,
+    onError: (e: Error) => error(e.message),
+  });
+
+  const open = (editing: CallCategory | null, parentId: string | null) => {
+    setModal({ editing, parentId });
+    setName(editing?.name ?? '');
+    setGroupIds(editing?.groupIds ?? []);
+  };
+
+  if (isLoading) return <PageSpinner />;
+  const tops = (cats ?? []).filter((c) => c.parentId === null);
+  const groupName = (id: string) => groups?.find((g) => g.id === id)?.name ?? id;
+  const isTopModal = modal ? (modal.editing?.parentId ?? modal.parentId) === null : false;
+
+  const row = (c: CallCategory, sub: boolean) => (
+    <div key={c.id} className={`flex items-center gap-3 px-5 py-2.5 ${sub ? 'pl-12 bg-gray-50/50' : ''}`}>
+      <p className={`flex-1 text-sm ${c.isActive ? 'text-gray-900' : 'text-gray-400 line-through'} ${sub ? '' : 'font-medium'}`}>{c.name}</p>
+      {!sub && c.groupIds.length > 0 && (
+        <div className="flex gap-1">{c.groupIds.map((g) => <Badge key={g} className="bg-blue-50 text-blue-700">{groupName(g)}</Badge>)}</div>
+      )}
+      {!c.isActive && <Badge className="bg-gray-100 text-gray-500">{t('telephony.inactive')}</Badge>}
+      {canManage && (
+        <div className="flex items-center gap-1">
+          {!sub && <Button size="sm" variant="ghost" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => open(null, c.id)}>{t('telephony.typingAddSub')}</Button>}
+          <Button size="sm" variant="ghost" onClick={() => open(c, c.parentId)}>{t('common.edit')}</Button>
+          <Button size="sm" variant="ghost" onClick={() => toggle.mutate(c)}>{c.isActive ? t('telephony.deactivate') : t('telephony.activate')}</Button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <Card className="mb-4">
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" disabled={!canManage} checked={current.typingRequired}
+              onChange={(e) => setCfg({ ...current, typingRequired: e.target.checked })} />
+            {t('telephony.typingRequired')}
+          </label>
+          <div className="w-48">
+            <Input type="number" label={t('telephony.typingMaxSecs')} min={10} max={1800} disabled={!canManage || !current.typingRequired}
+              value={current.typingMaxSecs} onChange={(e) => setCfg({ ...current, typingMaxSecs: Number(e.target.value) })} />
+          </div>
+          {canManage && <Button size="sm" disabled={!cfg} loading={saveCfg.isPending} onClick={() => saveCfg.mutate()}>{t('common.save')}</Button>}
+        </div>
+        <p className="mt-2 text-xs text-gray-500">{t('telephony.typingRequiredHint')}</p>
+      </Card>
+
+      <div className="flex justify-end mb-3">
+        {canManage && <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => open(null, null)}>{t('telephony.typingNewCategory')}</Button>}
+      </div>
+      <Card padding={false}>
+        <div className="divide-y divide-gray-50">
+          {tops.map((c) => [row(c, false), ...(cats ?? []).filter((s) => s.parentId === c.id).map((s) => row(s, true))])}
+          {tops.length === 0 && <div className="px-5 py-8 text-center text-gray-400 text-sm">{t('telephony.typingEmpty')}</div>}
+        </div>
+      </Card>
+
+      <Modal open={modal !== null} onClose={() => setModal(null)}
+        title={modal?.editing ? t('common.edit') : isTopModal ? t('telephony.typingNewCategory') : t('telephony.typingAddSub')}
+        footer={<><Button variant="ghost" onClick={() => setModal(null)}>{t('common.cancel')}</Button><Button loading={save.isPending} disabled={!name.trim()} onClick={() => save.mutate()}>{t('common.save')}</Button></>}>
+        <div className="space-y-4">
+          <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoFocus />
+          {isTopModal && (groups?.length ?? 0) > 0 && (
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-1">{t('telephony.typingGroups')}</p>
+              <p className="text-xs text-gray-500 mb-2">{t('telephony.typingGroupsHint')}</p>
+              <div className="space-y-1">
+                {groups!.map((g) => (
+                  <label key={g.id} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={groupIds.includes(g.id)}
+                      onChange={(e) => setGroupIds((ids) => (e.target.checked ? [...ids, g.id] : ids.filter((x) => x !== g.id)))} />
+                    {g.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 function TrunkEditModal({ trunk, onClose }: { trunk: TrunkView; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -434,12 +623,20 @@ export function TelephonyPage() {
             { key: 'extensions', label: t('telephony.tabExtensions') },
             { key: 'groups', label: t('telephony.tabGroups') },
             { key: 'roles', label: t('telephony.tabRoles') },
+            { key: 'ivr', label: t('telephony.tabIvr') },
+            { key: 'inbound', label: t('telephony.tabInbound') },
             { key: 'trunk', label: t('telephony.tabTrunk') },
+            { key: 'rejectReasons', label: t('telephony.tabRejectReasons') },
+            { key: 'typing', label: t('telephony.tabTyping') },
           ]}
         />
         {tab === 'extensions' && <ExtensionsTab canManage={canManage} roles={roles ?? []} />}
         {tab === 'groups' && <GroupsTab canManage={canManage} />}
         {tab === 'roles' && <RolesTab canManage={canManage} />}
+        {tab === 'ivr' && <IvrTab canManage={canManage} />}
+        {tab === 'inbound' && <InboundRoutesTab canManage={canManage} />}
+        {tab === 'rejectReasons' && <RejectReasonsTab canManage={canManage} />}
+        {tab === 'typing' && <TypingTab canManage={canManage} />}
         {tab === 'trunk' && <TrunkTab />}
       </div>
     </>

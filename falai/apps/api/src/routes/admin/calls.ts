@@ -40,16 +40,36 @@ export const adminCallsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /admin/calls
   fastify.get<{
-    Querystring: { status?: string; tenantId?: string; page?: string; perPage?: string };
+    Querystring: {
+      status?: string; tenantId?: string; page?: string; perPage?: string;
+      dateFrom?: string; dateTo?: string;
+    };
   }>("/", { preHandler }, async (request) => {
-    const { status, tenantId } = request.query;
+    const { status, tenantId, dateFrom, dateTo } = request.query;
     const page = parseInt(request.query.page ?? "1", 10);
     const perPage = parseInt(request.query.perPage ?? "25", 10);
     const skip = (page - 1) * perPage;
 
-    const where = {
-      ...(status && { status: status as any }),
+    const dateRange = {
+      ...(dateFrom && { gte: new Date(dateFrom) }),
+      ...(dateTo && { lte: new Date(dateTo) }),
+    };
+    const hasDateRange = Object.keys(dateRange).length > 0;
+
+    // Base sem `status` — usada para as contagens (o breakdown por estado não
+    // pode ele próprio estar limitado por um único estado).
+    const baseWhere = {
       ...(tenantId && { tenantId }),
+      ...(hasDateRange && { createdAt: dateRange }),
+    };
+    const pbxBaseWhere = {
+      ...(tenantId && { tenantId }),
+      ...(hasDateRange && { startedAt: dateRange }),
+    };
+
+    const where = {
+      ...baseWhere,
+      ...(status && { status: status as any }),
     };
 
     // Filtro para PbxCall (CDR dos tenants CRM). Se o estado filtrado não tiver
@@ -59,13 +79,13 @@ export const adminCallsRoutes: FastifyPluginAsync = async (fastify) => {
       status && !dispositions
         ? { id: "__none__" }
         : {
-            ...(tenantId && { tenantId }),
+            ...pbxBaseWhere,
             ...(dispositions && { disposition: { in: dispositions } }),
           };
 
     // Buscar skip+perPage mais recentes de cada fonte garante a fatia correta da união
     const window = skip + perPage;
-    const [calls, callTotal, pbxCalls, pbxTotal] = await Promise.all([
+    const [calls, callTotal, pbxCalls, pbxTotal, callStatusCounts, pbxDispositionCounts] = await Promise.all([
       prisma.call.findMany({
         where, orderBy: { createdAt: "desc" }, take: window,
         include: { tenant: { select: { name: true } }, agent: { select: { name: true } } },
@@ -76,13 +96,27 @@ export const adminCallsRoutes: FastifyPluginAsync = async (fastify) => {
         include: { tenant: { select: { name: true } } },
       }),
       prisma.pbxCall.count({ where: pbxWhere as any }),
+      // Breakdown por estado, sem o filtro `status` — é o que alimenta os cartões de resumo
+      prisma.call.groupBy({ by: ["status"], where: baseWhere, _count: { _all: true } }),
+      prisma.pbxCall.groupBy({ by: ["disposition"], where: pbxBaseWhere as any, _count: { _all: true } }),
     ]);
 
     const merged = [...calls.map(mapCall), ...pbxCalls.map(mapPbxToAdmin)]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(skip, skip + perPage);
 
-    return { data: merged, total: callTotal + pbxTotal, page, perPage };
+    const stats: Record<string, number> = {
+      QUEUED: 0, DIALING: 0, RINGING: 0, IN_PROGRESS: 0, COMPLETED: 0,
+      NO_ANSWER: 0, BUSY: 0, FAILED: 0, CANCELLED: 0, ESCALATED: 0,
+    };
+    for (const row of callStatusCounts) stats[row.status] = (stats[row.status] ?? 0) + row._count._all;
+    for (const row of pbxDispositionCounts) {
+      const mapped = pbxCallStatus(row.disposition);
+      stats[mapped] = (stats[mapped] ?? 0) + row._count._all;
+    }
+    const total = callTotal + pbxTotal;
+
+    return { data: merged, total, page, perPage, stats: { total, ...stats } };
   });
 
   // GET /admin/calls/:id

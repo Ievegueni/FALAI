@@ -7,12 +7,18 @@ import type {
   AuditLog,
   BillingMode,
   Call,
+  Campaign,
+  CampaignDetail,
   FinanceSummary,
   HealthStatus,
   MarginRow,
   Paginated,
   Plan,
+  ProviderBalance,
+  ProviderTopUp,
   ProductType,
+  Product,
+  ProductInput,
   SystemEvent,
   SystemSetting,
   Tenant,
@@ -21,12 +27,20 @@ import type {
   TenantLineInput,
   AgentStatus,
   TenantApiKey,
+  IvrMenu,
+  InboundRoute,
+  RoutingOptions,
   TenantModel,
   TenantUser,
   TenantUserInput,
+  AccessProfile,
+  AccessProfileInput,
+  FeatureKey,
   Trunk,
   EngineStatus,
   WalletTransaction,
+  TenantExtension,
+  TenantExtensionInput,
 } from '@/types';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '';
@@ -51,15 +65,20 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
 
-  if (res.status === 401) {
+  // Um 401 só significa sessão expirada quando a chamada ia autenticada com
+  // token. Sem token (ex.: /admin/auth/login com password errada) é só uma
+  // credencial inválida — mostrar a mensagem do backend em vez de mascará-la.
+  if (res.status === 401 && token) {
     localStorage.removeItem('falai_admin_token');
     window.dispatchEvent(new CustomEvent('falai:admin:unauthorized'));
     throw new ApiError(401, 'Sessão expirada');
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { message?: string };
-    throw new ApiError(res.status, body.message ?? 'Erro desconhecido');
+    // A API devolve `{ error }` na generalidade das rotas e `{ message }` nos
+    // erros de validação do Fastify — aceitar ambos.
+    const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
+    throw new ApiError(res.status, body.error ?? body.message ?? 'Erro desconhecido');
   }
 
   if (res.status === 204) return undefined as T;
@@ -68,7 +87,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 const get = <T>(path: string) => request<T>(path);
 const post = <T>(path: string, body?: unknown) =>
-  request<T>(path, { method: 'POST', body: JSON.stringify(body) });
+  request<T>(path, { method: 'POST', body: body instanceof FormData ? body : JSON.stringify(body) });
 const put = <T>(path: string, body: unknown) =>
   request<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 const patch = <T>(path: string, body: unknown) =>
@@ -140,6 +159,11 @@ export const tenantsApi = {
   calls: (id: string, params?: { page?: number; perPage?: number }) =>
     get<Paginated<Call>>(`/admin/tenants/${id}/calls${qs({ page: params?.page ?? 1, perPage: params?.perPage ?? 10 })}`),
 
+  campaigns: (id: string, params?: { page?: number; perPage?: number }) =>
+    get<Paginated<Campaign>>(`/admin/tenants/${id}/campaigns${qs({ page: params?.page ?? 1, perPage: params?.perPage ?? 10 })}`),
+
+  campaign: (id: string, campaignId: string) => get<CampaignDetail>(`/admin/tenants/${id}/campaigns/${campaignId}`),
+
   transactions: (id: string, params?: { page?: number; perPage?: number }) =>
     get<Paginated<WalletTransaction>>(
       `/admin/tenants/${id}/transactions${qs({ page: params?.page ?? 1, perPage: params?.perPage ?? 10 })}`,
@@ -158,6 +182,9 @@ export const tenantsApi = {
     del<{ ok: boolean }>(`/admin/tenants/${id}/lines/${lineId}`),
 
   // Funcionalidades
+  updateLogo: (id: string, logoDataUrl: string | null) =>
+    put<{ logoDataUrl: string | null }>(`/admin/tenants/${id}/logo`, { logoDataUrl }),
+
   updateFeatures: (id: string, features: Partial<TenantFeatures>) =>
     put<{ featureOverrides: Partial<TenantFeatures>; features: TenantFeatures }>(
       `/admin/tenants/${id}/features`,
@@ -173,6 +200,27 @@ export const tenantsApi = {
 
   resetUserPassword: (id: string, userId: string, password: string) =>
     post<{ ok: boolean }>(`/admin/tenants/${id}/users/${userId}/reset-password`, { password }),
+
+  setUserAccessProfile: (id: string, userId: string, accessProfileId: string | null) =>
+    put<{ ok: true; accessProfileId: string | null }>(`/admin/tenants/${id}/users/${userId}/access-profile`, { accessProfileId }),
+
+  // Perfis de acesso ao CRM
+  accessProfiles: (id: string) =>
+    get<{ profiles: AccessProfile[]; modules: { key: import('@/types').ProfileKey; label: string; hint: string; levels?: import('@/types').AccessLevel[] }[] }>(`/admin/tenants/${id}/access-profiles`),
+
+  createAccessProfile: (id: string, data: AccessProfileInput) =>
+    post<AccessProfile>(`/admin/tenants/${id}/access-profiles`, data),
+
+  updateAccessProfile: (id: string, profileId: string, data: Partial<AccessProfileInput>) =>
+    put<AccessProfile>(`/admin/tenants/${id}/access-profiles/${profileId}`, data),
+
+  deleteAccessProfile: (id: string, profileId: string) =>
+    del<void>(`/admin/tenants/${id}/access-profiles/${profileId}`),
+
+  // Pool WhatsApp Active/Standby (só leitura)
+  whatsappPool: (id: string) => get<import('@/types').TenantWhatsappPool>(`/admin/tenants/${id}/whatsapp`),
+  whatsappCheck: (id: string, inboxId?: string) =>
+    post<{ results: { id: string; verdict: string; detail: string }[] }>(`/admin/tenants/${id}/whatsapp/check`, inboxId ? { inboxId } : {}),
 
   // SMS (gateway Futurix — configurado por cliente)
   smsConfig: (id: string) =>
@@ -194,6 +242,46 @@ export const tenantsApi = {
     patch<TenantApiKey>(`/admin/tenants/${id}/api-keys/${keyId}`, data),
 
   revokeApiKey: (id: string, keyId: string) => del<void>(`/admin/tenants/${id}/api-keys/${keyId}`),
+
+  // IVR e rotas de entrada do cliente
+  listExtensions: (id: string) => get<TenantExtension[]>(`/admin/tenants/${id}/extensions`),
+  createExtension: (id: string, data: TenantExtensionInput) =>
+    post<TenantExtension & { sipAuthSecret: string }>(`/admin/tenants/${id}/extensions`, data),
+  updateExtension: (id: string, extId: string, data: TenantExtensionInput) =>
+    put<TenantExtension>(`/admin/tenants/${id}/extensions/${extId}`, data),
+  resetExtensionSip: (id: string, extId: string) =>
+    post<TenantExtension & { sipAuthSecret: string }>(`/admin/tenants/${id}/extensions/${extId}/reset-sip`, {}),
+  deleteExtension: (id: string, extId: string) => del<void>(`/admin/tenants/${id}/extensions/${extId}`),
+  routingOptions: (id: string) => get<RoutingOptions>(`/admin/tenants/${id}/routing-options`),
+  listIvr: (id: string) => get<IvrMenu[]>(`/admin/tenants/${id}/ivr`),
+  createIvr: (id: string, data: Omit<IvrMenu, 'id'>) => post<{ id: string }>(`/admin/tenants/${id}/ivr`, data),
+  updateIvr: (id: string, menuId: string, data: Omit<IvrMenu, 'id'>) => put<{ ok: true }>(`/admin/tenants/${id}/ivr/${menuId}`, data),
+  deleteIvr: (id: string, menuId: string) => del<void>(`/admin/tenants/${id}/ivr/${menuId}`),
+  uploadIvrAudio: (id: string, menuId: string, wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'greeting.wav');
+    return post<{ ok: true }>(`/admin/tenants/${id}/ivr/${menuId}/audio`, fd);
+  },
+  removeIvrAudio: (id: string, menuId: string) => del<void>(`/admin/tenants/${id}/ivr/${menuId}/audio`),
+  uploadIvrWelcome: (id: string, menuId: string, wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'welcome.wav');
+    return post<{ ok: true }>(`/admin/tenants/${id}/ivr/${menuId}/welcome`, fd);
+  },
+  removeIvrWelcome: (id: string, menuId: string) => del<void>(`/admin/tenants/${id}/ivr/${menuId}/welcome`),
+  getHoldAudio: (id: string) => get<{ enabled: boolean }>(`/admin/tenants/${id}/hold-audio`),
+  uploadHoldAudio: (id: string, wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'hold.wav');
+    return post<{ ok: true }>(`/admin/tenants/${id}/hold-audio`, fd);
+  },
+  removeHoldAudio: (id: string) => del<void>(`/admin/tenants/${id}/hold-audio`),
+  listInboundRoutes: (id: string) => get<InboundRoute[]>(`/admin/tenants/${id}/inbound-routes`),
+  createInboundRoute: (id: string, data: Omit<InboundRoute, 'id' | 'trunkName'>) =>
+    post<{ id: string }>(`/admin/tenants/${id}/inbound-routes`, data),
+  updateInboundRoute: (id: string, routeId: string, data: Omit<InboundRoute, 'id' | 'trunkName'>) =>
+    put<{ ok: true }>(`/admin/tenants/${id}/inbound-routes/${routeId}`, data),
+  deleteInboundRoute: (id: string, routeId: string) => del<void>(`/admin/tenants/${id}/inbound-routes/${routeId}`),
 };
 
 // ─── Agents (Moderation) ─────────────────────────────────────────────────────
@@ -254,6 +342,7 @@ interface ModerationResult {
 interface RawPlan {
   id: string;
   name: string;
+  productId: string | null;
   productType: ProductType;
   aiAgentsEnabled: boolean;
   clinicEnabled: boolean;
@@ -262,6 +351,7 @@ interface RawPlan {
   pricePerMinuteCents: number;
   pricePerCallCents: number;
   pricePerSmsCents: number;
+  pricePerTextMessageCents?: number;
   monthlyFeeCents: number;
   maxAgents: number;
   maxConcurrent: number;
@@ -271,6 +361,7 @@ interface RawPlan {
 const toPlan = (p: RawPlan): Plan => ({
   id: p.id,
   name: p.name,
+  productId: p.productId ?? null,
   productType: p.productType ?? 'VOICE_AI',
   aiAgentsEnabled: p.aiAgentsEnabled ?? true,
   clinicEnabled: p.clinicEnabled ?? false,
@@ -279,6 +370,7 @@ const toPlan = (p: RawPlan): Plan => ({
   pricePerMinCents: p.pricePerMinuteCents,
   pricePerCallCents: p.pricePerCallCents ?? 0,
   pricePerSmsCents: p.pricePerSmsCents ?? 0,
+  pricePerTextMessageCents: p.pricePerTextMessageCents ?? 0,
   monthlyFeeCents: p.monthlyFeeCents,
   maxAgents: p.maxAgents,
   maxConcurrentCalls: p.maxConcurrent,
@@ -287,6 +379,7 @@ const toPlan = (p: RawPlan): Plan => ({
 
 const toRawPlanBody = (data: Partial<Omit<Plan, 'id' | 'isActive'>>) => ({
   ...(data.name !== undefined && { name: data.name }),
+  ...(data.productId !== undefined && { productId: data.productId }),
   ...(data.productType !== undefined && { productType: data.productType }),
   ...(data.aiAgentsEnabled !== undefined && { aiAgentsEnabled: data.aiAgentsEnabled }),
   ...(data.clinicEnabled !== undefined && { clinicEnabled: data.clinicEnabled }),
@@ -295,6 +388,7 @@ const toRawPlanBody = (data: Partial<Omit<Plan, 'id' | 'isActive'>>) => ({
   ...(data.pricePerMinCents !== undefined && { pricePerMinuteCents: data.pricePerMinCents }),
   ...(data.pricePerCallCents !== undefined && { pricePerCallCents: data.pricePerCallCents }),
   ...(data.pricePerSmsCents !== undefined && { pricePerSmsCents: data.pricePerSmsCents }),
+  ...(data.pricePerTextMessageCents !== undefined && { pricePerTextMessageCents: data.pricePerTextMessageCents }),
   ...(data.monthlyFeeCents !== undefined && { monthlyFeeCents: data.monthlyFeeCents }),
   ...(data.maxAgents !== undefined && { maxAgents: data.maxAgents }),
   ...(data.maxConcurrentCalls !== undefined && { maxConcurrent: data.maxConcurrentCalls }),
@@ -312,18 +406,37 @@ export const plansApi = {
   delete: (id: string) => del<void>(`/admin/plans/${id}`),
 };
 
+// ─── Products ────────────────────────────────────────────────────────────────
+
+type RawProduct = Omit<Product, 'planCount'> & { _count?: { plans: number } };
+
+const toProduct = (p: RawProduct): Product => {
+  const { _count, ...rest } = p;
+  return { ...rest, planCount: _count?.plans ?? 0 };
+};
+
+export const productsApi = {
+  list: () => get<{ products: RawProduct[] }>('/admin/products').then((r) => r.products.map(toProduct)),
+
+  create: (data: ProductInput) =>
+    post<{ product: RawProduct }>('/admin/products', data).then((r) => toProduct(r.product)),
+
+  update: (id: string, data: Partial<ProductInput>) =>
+    patch<{ product: RawProduct }>(`/admin/products/${id}`, data).then((r) => toProduct(r.product)),
+
+  delete: (id: string) => del<void>(`/admin/products/${id}`),
+};
+
 // ─── Trunks (módulo PBX nativo) ──────────────────────────────────────────────
 
 export type TrunkInput = Partial<Omit<Trunk, 'id' | 'shared' | 'dids' | 'secretSet' | 'createdAt' | 'updatedAt' | 'tenantId'>> & {
   authSecret?: string;
   /**
-   * Cliente dono do trunk. Ausente = trunk partilhado do operador.
-   *
-   * Só na CRIAÇÃO: o backend não deixa mudar o dono depois, e ainda bem —
-   * trocar o dono de um trunk activo mudava em silêncio para onde vão as
-   * chamadas que entram por ele.
+   * Cliente dono do trunk (o único que o vê no CRM). Na criação, ausente =
+   * partilhado do operador; na edição, null = passa a partilhado. O backend
+   * recusa a mudança se houver rotas de outro cliente a usar o trunk.
    */
-  tenantId?: string;
+  tenantId?: string | null;
 };
 
 export const trunksApi = {
@@ -355,6 +468,20 @@ export const testCallApi = {
 
 // ─── System Settings ─────────────────────────────────────────────────────────
 
+export interface SystemStatus {
+  startedAt: string;
+  env: string;
+  running: { aiStubMode: boolean; anthropicConfigured: boolean };
+  saved: { aiStubMode: boolean; anthropicConfigured: boolean };
+  pendingRestart: boolean;
+}
+
+/** Estado da API e reinício para aplicar configurações (Configurações). */
+export const systemApi = {
+  status: () => get<SystemStatus>('/admin/system/status'),
+  restart: () => post<{ ok: true; startedAt: string }>('/admin/system/restart'),
+};
+
 export const settingsApi = {
   list: () =>
     get<{ settings: SystemSetting[] }>('/admin/settings').then((r) => r.settings),
@@ -378,6 +505,14 @@ export const financeApi = {
 
   marginReport: (params: { from: string; to: string }) =>
     get<MarginRow[]>(`/admin/finance/margin-report${qs({ from: params.from, to: params.to })}`),
+
+  providerBalance: () => get<ProviderBalance>('/admin/finance/provider-balance'),
+
+  updateProviderCost: (costPerCallCents: number) =>
+    put<{ ok: true; costPerCallCents: number }>('/admin/finance/provider-cost', { costPerCallCents }),
+
+  addProviderTopup: (data: { amountCents: number; note?: string }) =>
+    post<ProviderTopUp>('/admin/finance/provider-topup', data),
 };
 
 // ─── Health ──────────────────────────────────────────────────────────────────
@@ -432,8 +567,35 @@ export const auditApi = {
 export const callsApi = {
   get: (id: string) => get<Call>(`/admin/calls/${id}`),
 
-  list: (params?: { page?: number; tenantId?: string; status?: string }) =>
+  list: (params?: { page?: number; tenantId?: string; status?: string; dateFrom?: string; dateTo?: string }) =>
     get<Paginated<Call>>(
-      `/admin/calls${qs({ page: params?.page ?? 1, tenantId: params?.tenantId, status: params?.status })}`,
+      `/admin/calls${qs({
+        page: params?.page ?? 1,
+        tenantId: params?.tenantId,
+        status: params?.status,
+        dateFrom: params?.dateFrom,
+        dateTo: params?.dateTo,
+      })}`,
     ),
+};
+
+// ─── Funcionalidades (matriz clientes × funcionalidades) ─────────────────────
+
+export interface FeatureMatrix {
+  features: { key: import('@/types').FeatureKey; label: string; hint: string; default: boolean }[];
+  tenants: {
+    id: string;
+    name: string;
+    status: string;
+    plan: { name: string; productType: string } | null;
+    features: import('@/types').TenantFeatures;
+    overrides: Partial<import('@/types').TenantFeatures>;
+    lockedByPlan: import('@/types').FeatureKey[];
+  }[];
+}
+
+export const featuresApi = {
+  matrix: () => get<FeatureMatrix>('/admin/tenants/features'),
+  set: (tenantId: string, changes: Partial<import('@/types').TenantFeatures>) =>
+    patch<{ overrides: Partial<import('@/types').TenantFeatures> }>(`/admin/tenants/${tenantId}/features`, changes),
 };

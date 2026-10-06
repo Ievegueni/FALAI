@@ -1,66 +1,27 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import {
-  LayoutDashboard,
-  Bot,
-  Users,
-  Phone,
-  MessageSquare,
-  Megaphone,
-  BarChart3,
-  Wallet,
-  UserCheck,
-  Code2,
-  Settings,
-  Server,
-  Network,
-  LogOut,
-  PhoneCall,
-} from 'lucide-react';
+import { useState } from 'react';
+import { LogOut, Pin, PinOff } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { clsx } from '@/lib/utils';
+import { useNavItems, useProfileLabel } from './nav';
 
-import type { FeatureKey } from '@/types';
+interface Props {
+  open: boolean; // gaveta no telemóvel
+  onClose: () => void;
+  pinned: boolean; // ecrã grande: fixada aberta
+  onTogglePin: () => void;
+}
 
-const dashboardItem = { to: '/dashboard', icon: LayoutDashboard, labelKey: 'nav.dashboard' };
-// Cada item pode declarar a feature que o activa; sem feature = sempre visível
-const featureItems: { to: string; icon: typeof Bot; labelKey: string; feature: FeatureKey }[] = [
-  { to: '/agents', icon: Bot, labelKey: 'nav.agents', feature: 'agents' },
-  { to: '/campaigns', icon: Megaphone, labelKey: 'nav.campaigns', feature: 'campaigns' },
-  { to: '/contacts', icon: Users, labelKey: 'nav.contacts', feature: 'contacts' },
-  { to: '/calls', icon: Phone, labelKey: 'nav.calls', feature: 'calls' },
-  { to: '/webphone', icon: PhoneCall, labelKey: 'nav.webphone', feature: 'webphone' },
-  { to: '/reports', icon: BarChart3, labelKey: 'nav.reports', feature: 'calls' },
-  { to: '/wallet', icon: Wallet, labelKey: 'nav.wallet', feature: 'wallet' },
-  { to: '/team', icon: UserCheck, labelKey: 'nav.team', feature: 'team' },
-  { to: '/developers', icon: Code2, labelKey: 'nav.developers', feature: 'developers' },
-];
-const settingsItem = { to: '/settings', icon: Settings, labelKey: 'nav.settings' };
-const smsItem = { to: '/sms', icon: MessageSquare, labelKey: 'nav.sms' };
-const telephonyItem = { to: '/telephony', icon: Network, labelKey: 'nav.telephony' };
-
-export function Sidebar() {
+export function Sidebar({ open, onClose, pinned, onTogglePin }: Props) {
+  const [hover, setHover] = useState(false);
+  // No telemóvel só se vê aberta (gaveta), por isso aí está sempre larga
+  const wide = pinned || hover || open;
   const { t } = useTranslation();
-  const { tenant, logout } = useAuth();
+  const { user, tenant, logout } = useAuth();
   const navigate = useNavigate();
-
-  const features = tenant?.features;
-  const ownPbx = tenant?.plan?.productType === 'CRM_BYO_PBX';
-
-  // Mostra um item se a sua feature estiver activa (default: visível se não houver info de features)
-  const isOn = (f: FeatureKey) => features?.[f] !== false;
-
-  // SMS visível quando o plano o inclui (o backend valida à mesma no envio)
-  const smsOn = tenant?.plan?.smsEnabled === true;
-
-  const nav = [
-    dashboardItem,
-    ...featureItems.filter((i) => isOn(i.feature)),
-    ...(smsOn ? [smsItem] : []),
-    telephonyItem,
-    settingsItem,
-    ...(ownPbx ? [{ to: '/settings/pbx', icon: Server, labelKey: 'nav.pbx' }] : []),
-  ];
+  const nav = useNavItems();
+  const profileLabel = useProfileLabel();
 
   function handleLogout() {
     logout();
@@ -68,18 +29,46 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex h-screen w-60 flex-col bg-slate-900 text-slate-100 fixed left-0 top-0 z-30">
+    <>
+    {open && <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={onClose} />}
+    <aside
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      className={clsx(
+        'flex h-full flex-col overflow-hidden bg-slate-900 text-slate-100 fixed left-0 top-0 z-40 transition-[transform,width] duration-200 lg:translate-x-0',
+        open ? 'translate-x-0' : '-translate-x-full',
+        wide ? 'w-60' : 'w-16',
+        hover && !pinned && 'lg:shadow-2xl',
+      )}
+    >
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-slate-700/60">
-        <div className="flex items-center justify-center rounded-lg bg-white px-2 py-1.5">
-          <img src="/logo.png" alt="Comunica" className="h-5 w-auto" />
+      <div className={clsx('flex items-center gap-2.5 py-5 border-b border-slate-700/60', wide ? 'px-5' : 'px-2 justify-center')}>
+        <div className="flex shrink-0 items-center justify-center rounded-lg bg-white px-2 py-1.5">
+          <img
+            src={tenant?.logoDataUrl ?? '/logo.png'}
+            alt={tenant?.logoDataUrl ? tenant.name : 'Comunica'}
+            className={clsx('h-5 w-auto object-contain', wide ? 'max-w-[96px]' : 'max-w-[28px]')}
+          />
         </div>
-        <div>
+        <div className={clsx('min-w-0 flex-1', !wide && 'hidden')}>
           <p className="text-sm font-bold text-white leading-none">Falaí</p>
           <p className="text-xs text-slate-400 leading-none mt-0.5 truncate max-w-[120px]">
             {tenant?.name ?? '…'}
           </p>
         </div>
+        {wide && (
+          <button
+            onClick={onTogglePin}
+            title={pinned ? t('nav.unpin') : t('nav.pin')}
+            aria-label={pinned ? t('nav.unpin') : t('nav.pin')}
+            className={clsx(
+              'hidden shrink-0 rounded-md p-1.5 transition-colors lg:block',
+              pinned ? 'text-blue-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-800 hover:text-white',
+            )}
+          >
+            {pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+          </button>
+        )}
       </div>
 
       {/* Nav */}
@@ -89,6 +78,7 @@ export function Sidebar() {
             <li key={to}>
               <NavLink
                 to={to}
+                title={wide ? undefined : t(labelKey)}
                 className={({ isActive }) =>
                   clsx(
                     'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
@@ -99,7 +89,7 @@ export function Sidebar() {
                 }
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
-                {t(labelKey)}
+                {wide && <span className="truncate">{t(labelKey)}</span>}
               </NavLink>
             </li>
           ))}
@@ -108,14 +98,26 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="border-t border-slate-700/60 p-3">
+        {/* No telemóvel o cabeçalho esconde o utilizador; mostra-se aqui */}
+        <div className="mb-2 flex items-center gap-2.5 px-3 py-1 lg:hidden">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
+            {user?.name.charAt(0).toUpperCase() ?? '?'}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-white">{user?.name}</p>
+            <p className="truncate text-xs text-slate-400">{profileLabel}</p>
+          </div>
+        </div>
         <button
           onClick={handleLogout}
+          title={wide ? undefined : t('nav.logout')}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
         >
-          <LogOut className="h-4 w-4" />
-          {t('nav.logout')}
+          <LogOut className="h-4 w-4 flex-shrink-0" />
+          {wide && <span className="truncate">{t('nav.logout')}</span>}
         </button>
       </div>
     </aside>
+    </>
   );
 }

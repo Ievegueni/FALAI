@@ -1,7 +1,8 @@
 import fp from "fastify-plugin";
 import { Queue } from "bullmq";
 import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter } from "@falai/providers";
-import type { TtsProvider } from "@falai/providers";
+import type { TtsProvider, LlmProvider } from "@falai/providers";
+import { TtsVoiceValidator } from "../services/ttsVoices.service.js";
 import { prisma } from "@falai/db";
 import { config } from "../config.js";
 import { QUEUES, JOBS } from "@falai/shared";
@@ -9,10 +10,15 @@ import { AudioCache } from "../services/AudioCache.js";
 import { TurnProcessor } from "../services/TurnProcessor.js";
 import { CallEngineService } from "../services/CallEngineService.js";
 import { settleCampaignContact } from "../services/callSettlement.service.js";
+import { notifyMissedCall } from "../services/missedCallSms.service.js";
 
 declare module "fastify" {
   interface FastifyInstance {
     callEngine: CallEngineService;
+    /** Valida ttsVoiceId contra a lista real do provedor, antes de gravar. */
+    ttsVoices: TtsVoiceValidator;
+    /** Motor LLM da plataforma — partilhado com os canais de texto. */
+    llm: LlmProvider;
     /** True quando o LLM corre em modo stub (sem chave real) — respostas não são IA real. */
     llmStub: boolean;
   }
@@ -20,7 +26,7 @@ declare module "fastify" {
 
 export default fp(async (fastify) => {
   const providers = fastify.providerConfig;
-  const stubMode = providers.yeastar.stubMode;
+  const stubMode = providers.aiStubMode; // backoffice (SystemSetting) → .env
 
   const stt = new DeepgramAdapter({
     apiKey: providers.deepgram.apiKey,
@@ -47,6 +53,8 @@ export default fp(async (fastify) => {
 
   const defaultVoiceId = useMacTts ? "Joana" : providers.elevenlabs.defaultVoiceId;
 
+  fastify.decorate("ttsVoices", new TtsVoiceValidator(fastify.redis, tts));
+
   const audioCache = new AudioCache(fastify.redis, tts, fastify.telephony, defaultVoiceId);
   const turnProcessor = new TurnProcessor(stt, llm, tts, fastify.telephony, audioCache);
   const webhooksQueue = new Queue(QUEUES.WEBHOOKS_OUT, {
@@ -63,10 +71,28 @@ export default fp(async (fastify) => {
       settleCampaignContact({ callId, tenantId, status, log: fastify.log })
         .catch((err) => fastify.log.error({ err, callId }, "settlement.failed"));
 
+      // Não atenderam o agente: responde-se por SMS, se o cliente o tiver
+      // pedido. Vai daqui e não do CallEngineService para o motor de conversa
+      // não passar a saber de SMS nem de tarifários.
+      if (status === "NO_ANSWER") {
+        prisma.call
+          .findUnique({ where: { id: callId }, select: { toNumber: true } })
+          .then((call) =>
+            notifyMissedCall({ fastify, tenantId, toNumber: call?.toNumber, callId, log: fastify.log })
+          )
+          .catch((err) => fastify.log.error({ err, callId }, "missed_call_sms.dispatch_failed"));
+      }
+
       // Enqueue webhook delivery if tenant has a URL configured
       Promise.all([
         prisma.tenant.findUnique({ where: { id: tenantId }, select: { webhookUrl: true } }),
-        prisma.call.findUnique({ where: { id: callId }, select: { campaignId: true, contactId: true } }),
+        prisma.call.findUnique({
+          where: { id: callId },
+          select: {
+            campaignId: true, contactId: true, toNumber: true, outcome: true, failReason: true,
+            costCents: true, recordingUrl: true, startedAt: true, answeredAt: true,
+          },
+        }),
       ])
         .then(([tenant, call]) => {
           if (!tenant?.webhookUrl) return;
@@ -83,6 +109,13 @@ export default fp(async (fastify) => {
                 durationSecs,
                 campaignId: call?.campaignId ?? null,
                 contactId: call?.contactId ?? null,
+                toNumber: call?.toNumber ?? null,
+                outcome: call?.outcome ?? null,
+                failReason: call?.failReason ?? null,
+                costCents: call?.costCents ?? 0,
+                recordingUrl: call?.recordingUrl ?? null,
+                startedAt: call?.startedAt ?? null,
+                answeredAt: call?.answeredAt ?? null,
               },
             },
             { attempts: 3, backoff: { type: "exponential", delay: 5000 } }
@@ -102,6 +135,7 @@ export default fp(async (fastify) => {
 
   fastify.decorate("callEngine", callEngine);
   fastify.decorate("llmStub", llmStub);
+  fastify.decorate("llm", llm);
 
   fastify.log.info({
     sttStub: stubMode || !providers.deepgram.apiKey,

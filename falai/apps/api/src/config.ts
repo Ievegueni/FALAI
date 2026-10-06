@@ -33,11 +33,11 @@ const envSchema = z.object({
   PUBLIC_WEBPHONE_WSS_URL: z.string().optional(),
   PUBLIC_WEBPHONE_SIP_DOMAIN: z.string().optional(),
 
-  YEASTAR_BASE_URL: z.string().optional(),
-  YEASTAR_CLIENT_ID: z.string().optional(),
-  YEASTAR_CLIENT_SECRET: z.string().optional(),
-  YEASTAR_STUB_MODE: z.coerce.boolean().default(true),
-  YEASTAR_OUTBOUND_EXTENSION: z.string().default("1000"),
+  // true = STT/LLM/TTS em modo stub (sem chamar Deepgram/Claude/ElevenLabs),
+  // mesmo com chaves configuradas. Para desenvolvimento. Só "true" liga.
+  AI_STUB_MODE: z.string().optional().transform((v) => v === "true"),
+  // Modelo da análise dos relatórios (melhoria 6); por omissão o mesmo das chamadas.
+  AI_REPORT_MODEL: z.string().default("claude-sonnet-4-6"),
 
   DEEPGRAM_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),

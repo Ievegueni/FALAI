@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Phone, Mic, Bot, Volume2, CreditCard, MessageSquare, Save } from 'lucide-react';
+import { Mic, Bot, Volume2, CreditCard, MessageSquare, Disc, Save } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { settingsApi } from '@/lib/api';
 import { Card, Button, Input } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
+import { SystemControls } from './SystemControls';
 
 type FieldType = 'text' | 'secret' | 'bool';
 
@@ -24,17 +25,6 @@ interface Section {
 }
 
 const SECTIONS: Section[] = [
-  {
-    title: 'Telefonia — Yeastar PBX',
-    subtitle: 'Ligação à OpenAPI do PBX (faz e recebe as chamadas)',
-    icon: <Phone className="h-5 w-5" />,
-    fields: [
-      { key: 'YEASTAR_BASE_URL', label: 'Base URL', type: 'text', placeholder: 'https://a-tua-empresa.yeastar.cloud' },
-      { key: 'YEASTAR_CLIENT_ID', label: 'Client ID', type: 'text' },
-      { key: 'YEASTAR_CLIENT_SECRET', label: 'Client Secret', type: 'secret' },
-      { key: 'YEASTAR_STUB_MODE', label: 'Modo stub (sem chamadas reais)', type: 'bool', hint: 'Deixa "Ligado" enquanto testas sem PBX. Muda para "Desligado" para chamadas reais.' },
-    ],
-  },
   {
     title: 'Reconhecimento de voz — Deepgram',
     subtitle: 'Transcrição de fala (STT)',
@@ -67,6 +57,34 @@ const SECTIONS: Section[] = [
     subtitle: 'Envio de SMS',
     icon: <MessageSquare className="h-5 w-5" />,
     fields: [{ key: 'FUTURIX_SMS_API_KEY', label: 'API Key', type: 'secret' }],
+  },
+  {
+    title: 'Gravação de chamadas',
+    subtitle: 'Onde ficam os ficheiros e em que formato. Ligar/desligar é por cliente, na ficha dele.',
+    icon: <Disc className="h-5 w-5" />,
+    fields: [
+      {
+        key: 'RECORDING_DIR',
+        label: 'Pasta das gravações',
+        type: 'text',
+        placeholder: '/opt/falai/asterisk/recordings',
+        hint: 'Caminho no servidor da API, apontado à pasta montada em /var/spool/asterisk/recording no contentor do Asterisk. Vazio = não se grava nada.',
+      },
+      {
+        key: 'RECORDING_FORMAT',
+        label: 'Formato',
+        type: 'text',
+        placeholder: 'ogg',
+        hint: 'ogg (recomendado: ~6x menor que wav, sem perda audível). Usa wav se precisares de tocar as gravações no Safari.',
+      },
+      {
+        key: 'RECORDING_ANNOUNCE_PROMPT',
+        label: 'Áudio do aviso de gravação',
+        type: 'text',
+        placeholder: 'aviso-gravacao',
+        hint: 'Nome do ficheiro de som (sem extensão) tocado quando o cliente tem o aviso ligado.',
+      },
+    ],
   },
 ];
 
@@ -117,8 +135,9 @@ export function ProvidersSettings() {
     },
     onSuccess: (count) => {
       void qc.invalidateQueries({ queryKey: ['admin', 'settings'] });
+      void qc.invalidateQueries({ queryKey: ['admin', 'system'] });
       setForm({});
-      toast.success(count === 0 ? 'Nada para guardar.' : `${count} chave(s) actualizada(s). Reinicia a API para aplicar.`);
+      toast.success(count === 0 ? 'Nada para guardar.' : `${count} chave(s) actualizada(s). Carregue em "Reiniciar API" para aplicar.`);
     },
     onError: () => toast.error('Erro ao guardar as chaves.'),
   });
@@ -128,12 +147,14 @@ export function ProvidersSettings() {
       <div className="flex items-start justify-between mb-1">
         <div>
           <h2 className="text-base font-semibold text-gray-900">Provedores &amp; Integrações</h2>
-          <p className="text-sm text-gray-500">Chaves de API dos serviços externos. Segredos são encriptados; alterações aplicam-se após reiniciar a API.</p>
+          <p className="text-sm text-gray-500">Chaves de API dos serviços externos. Segredos são encriptados; alterações aplicam-se ao reiniciar a API (botão abaixo).</p>
         </div>
         <Button icon={<Save className="h-4 w-4" />} loading={saveMut.isPending} onClick={() => saveMut.mutate()}>
           Guardar alterações
         </Button>
       </div>
+
+      <SystemControls />
 
       <div className="mt-5 space-y-8">
         {SECTIONS.map((section) => (

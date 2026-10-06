@@ -6,7 +6,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ToastProvider } from '@/contexts/ToastContext';
 import { WebphoneProvider } from '@/contexts/WebphoneContext';
 import { AppLayout, AuthLayout } from '@/components/layout/AppLayout';
-import { RequireFeature } from '@/components/layout/RequireFeature';
+import { RequireFeature, RequireDashboard } from '@/components/layout/RequireFeature';
 import { PageSpinner } from '@/components/ui/Spinner';
 
 // Só o login entra no bundle de arranque — é a única página garantidamente
@@ -31,6 +31,8 @@ const DirectCallPage = lazy(() => import('@/pages/calls/DirectCallPage').then((m
 const CallDetailPage = lazy(() => import('@/pages/calls/CallDetailPage').then((m) => ({ default: m.CallDetailPage })));
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage').then((m) => ({ default: m.ReportsPage })));
 const SmsPage = lazy(() => import('@/pages/sms/SmsPage').then((m) => ({ default: m.SmsPage })));
+const InboxPage = lazy(() => import('@/pages/inbox/InboxPage').then((m) => ({ default: m.InboxPage })));
+const InboxSettingsPage = lazy(() => import('@/pages/inbox/InboxSettingsPage').then((m) => ({ default: m.InboxSettingsPage })));
 const CampaignsPage = lazy(() => import('@/pages/campaigns/CampaignsPage').then((m) => ({ default: m.CampaignsPage })));
 const CampaignFormPage = lazy(() => import('@/pages/campaigns/CampaignFormPage').then((m) => ({ default: m.CampaignFormPage })));
 const CampaignDetailPage = lazy(() => import('@/pages/campaigns/CampaignDetailPage').then((m) => ({ default: m.CampaignDetailPage })));
@@ -41,6 +43,7 @@ const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then((m)
 const PbxIntegrationPage = lazy(() => import('@/pages/settings/PbxIntegrationPage').then((m) => ({ default: m.PbxIntegrationPage })));
 const TelephonyPage = lazy(() => import('@/pages/telephony/TelephonyPage').then((m) => ({ default: m.TelephonyPage })));
 const WebphonePage = lazy(() => import('@/pages/calls/WebphonePage').then((m) => ({ default: m.WebphonePage })));
+const SupervisionPage = lazy(() => import('@/pages/supervision/SupervisionPage').then((m) => ({ default: m.SupervisionPage })));
 
 export default function App() {
   return (
@@ -63,7 +66,7 @@ export default function App() {
               {/* Protected app routes */}
               <Route element={<AppLayout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/dashboard" element={<RequireDashboard><DashboardPage /></RequireDashboard>} />
 
                 <Route path="/agents" element={<RequireFeature feature="agents"><AgentsPage /></RequireFeature>} />
                 <Route path="/agents/new" element={<RequireFeature feature="agents"><AgentFormPage /></RequireFeature>} />
@@ -79,9 +82,11 @@ export default function App() {
                 <Route path="/calls/direct" element={<RequireFeature feature="directCall"><DirectCallPage /></RequireFeature>} />
                 <Route path="/calls/:id" element={<RequireFeature feature="calls"><CallDetailPage /></RequireFeature>} />
 
-                <Route path="/reports" element={<RequireFeature feature="calls"><ReportsPage /></RequireFeature>} />
+                <Route path="/reports" element={<RequireFeature feature="reports"><ReportsPage /></RequireFeature>} />
 
-                <Route path="/sms" element={<SmsPage />} />
+                <Route path="/sms" element={<RequireFeature feature="sms"><SmsPage /></RequireFeature>} />
+                <Route path="/inbox" element={<RequireFeature feature="inbox"><InboxPage /></RequireFeature>} />
+                <Route path="/inbox/settings" element={<RequireFeature feature="inbox"><InboxSettingsPage /></RequireFeature>} />
 
                 <Route path="/campaigns" element={<RequireFeature feature="campaigns"><CampaignsPage /></RequireFeature>} />
                 <Route path="/campaigns/new" element={<RequireFeature feature="campaigns"><CampaignFormPage /></RequireFeature>} />
@@ -91,9 +96,10 @@ export default function App() {
                 <Route path="/team" element={<RequireFeature feature="team"><TeamPage /></RequireFeature>} />
                 <Route path="/developers" element={<RequireFeature feature="developers"><DevelopersPage /></RequireFeature>} />
                 <Route path="/webphone" element={<RequireFeature feature="webphone"><WebphonePage /></RequireFeature>} />
+                <Route path="/supervision" element={<RequireFeature feature="webphone"><SupervisionPage /></RequireFeature>} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/settings/pbx" element={<PbxIntegrationPage />} />
-                <Route path="/telephony" element={<TelephonyPage />} />
+                <Route path="/telephony" element={<RequireFeature feature="telephony"><TelephonyPage /></RequireFeature>} />
               </Route>
 
               {/* Fallback */}

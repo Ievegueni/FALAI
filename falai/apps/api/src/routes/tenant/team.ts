@@ -1,17 +1,26 @@
 import type { FastifyPluginAsync } from "fastify";
-import { randomBytes } from "crypto";
 import { prisma } from "@falai/db";
 import { z } from "zod";
 import { hashPassword } from "../../services/auth.service.js";
 
-const inviteSchema = z.object({
-  email: z.string().email(),
-  name: z.string().min(2).max(100),
-  role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
+const password = z.string().min(8, "A password deve ter pelo menos 8 caracteres").max(128);
+
+// Nome, password nova, papel, extensão, grupos da extensão (onde atende) e — para SUPERVISOR — os grupos que supervisiona.
+const updateSchema = z.object({
+  name: z.string().trim().min(2).max(100).optional(),
+  password: password.optional(),
+  role: z.enum(["ADMIN", "SUPERVISOR", "MEMBER", "VIEWER"]).optional(),
+  extensionId: z.string().nullable().optional(),
+  groupIds: z.array(z.string()).max(200).optional(),
+  supervisedGroupIds: z.array(z.string()).max(200).optional(),
 });
 
-const updateRoleSchema = z.object({
-  role: z.enum(["ADMIN", "MEMBER", "VIEWER"]),
+// O gestor cria o utilizador já com a password (sem convite por email).
+const createSchema = updateSchema.extend({
+  email: z.string().trim().toLowerCase().email(),
+  name: z.string().trim().min(2).max(100),
+  password,
+  role: z.enum(["ADMIN", "SUPERVISOR", "MEMBER", "VIEWER"]),
 });
 
 const userSelect = {
@@ -21,9 +30,22 @@ const userSelect = {
   role: true,
   twoFaSecret: true,
   createdAt: true,
+  extensionId: true,
+  extension: { select: { groups: { select: { groupId: true } } } },
+  supervisedGroups: { select: { groupId: true } },
 } as const;
 
-function toTeamUser(u: { id: string; name: string; email: string; role: string; twoFaSecret: string | null; createdAt: Date }) {
+function toTeamUser(u: {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  twoFaSecret: string | null;
+  createdAt: Date;
+  extensionId: string | null;
+  extension: { groups: { groupId: string }[] } | null;
+  supervisedGroups: { groupId: string }[];
+}) {
   return {
     id: u.id,
     name: u.name,
@@ -31,6 +53,9 @@ function toTeamUser(u: { id: string; name: string; email: string; role: string; 
     role: u.role,
     twoFaEnabled: !!u.twoFaSecret,
     createdAt: u.createdAt,
+    extensionId: u.extensionId,
+    groupIds: u.extension?.groups.map((g) => g.groupId) ?? [],
+    supervisedGroupIds: u.supervisedGroups.map((g) => g.groupId),
   };
 }
 
@@ -45,6 +70,34 @@ export const tenantTeamRoutes: FastifyPluginAsync = async (fastify) => {
     return true;
   }
 
+  /** Valida a extensão (do tenant e livre) e filtra os grupos para os do tenant. */
+  async function checkExtensionAndGroups(
+    tenantId: string,
+    userId: string | null,
+    body: { extensionId?: string | null | undefined; groupIds?: string[] | undefined; supervisedGroupIds?: string[] | undefined },
+  ): Promise<{ error: string; status: number } | { groupIds: string[] | null; supervisedGroupIds: string[] | null }> {
+    if (body.extensionId) {
+      const ext = await prisma.extension.findFirst({ where: { id: body.extensionId, tenantId }, select: { id: true } });
+      if (!ext) return { status: 400, error: "Extensão inválida" };
+      const taken = await prisma.tenantUser.findFirst({
+        where: { extensionId: body.extensionId, ...(userId && { id: { not: userId } }) },
+        select: { name: true },
+      });
+      if (taken) return { status: 409, error: `A extensão já está associada a ${taken.name}` };
+    }
+    const own = async (ids: string[] | undefined) =>
+      ids ? (await prisma.extensionGroup.findMany({ where: { tenantId, id: { in: ids } }, select: { id: true } })).map((g) => g.id) : null;
+    return { groupIds: await own(body.groupIds), supervisedGroupIds: await own(body.supervisedGroupIds) };
+  }
+
+  /** Grupos onde a extensão atende (os mesmos de Telefonia → Grupos). */
+  async function setExtensionGroups(extensionId: string, groupIds: string[]) {
+    await prisma.$transaction([
+      prisma.extensionGroupMember.deleteMany({ where: { extensionId } }),
+      prisma.extensionGroupMember.createMany({ data: groupIds.map((groupId) => ({ extensionId, groupId })) }),
+    ]);
+  }
+
   // GET /tenant/team — list members
   fastify.get("/", { preHandler }, async (request) => {
     const { tenantId } = request.tenantUser!;
@@ -56,56 +109,95 @@ export const tenantTeamRoutes: FastifyPluginAsync = async (fastify) => {
     return users.map(toTeamUser);
   });
 
-  // POST /tenant/team/invite — add a member
-  fastify.post("/invite", { preHandler }, async (request, reply) => {
+  // POST /tenant/team — cria o utilizador com password, papel, extensão e grupos
+  fastify.post("/", { preHandler }, async (request, reply) => {
     const { tenantId, role } = request.tenantUser!;
     if (!requireManager(role, reply)) return;
 
-    const body = inviteSchema.parse(request.body);
-
+    const body = createSchema.parse(request.body);
     const existing = await prisma.tenantUser.findUnique({ where: { email: body.email } });
     if (existing) return reply.status(409).send({ error: "Email já registado" });
+    if (body.groupIds?.length && !body.extensionId) {
+      return reply.status(400).send({ error: "Para atribuir grupos, escolha a extensão do utilizador" });
+    }
+    const checked = await checkExtensionAndGroups(tenantId, null, body);
+    if ("error" in checked) return reply.status(checked.status).send({ error: checked.error });
 
-    // Temporary password — the member resets it via a password-reset flow.
-    const tempPassword = randomBytes(12).toString("base64url");
-    const user = await prisma.tenantUser.create({
+    const created = await prisma.tenantUser.create({
       data: {
         tenantId,
         name: body.name,
         email: body.email,
         role: body.role,
-        passwordHash: await hashPassword(tempPassword),
+        passwordHash: await hashPassword(body.password),
+        ...(body.extensionId && { extensionId: body.extensionId }),
+        ...(body.role === "SUPERVISOR" && checked.supervisedGroupIds && {
+          supervisedGroups: { create: checked.supervisedGroupIds.map((groupId) => ({ groupId })) },
+        }),
       },
-      select: userSelect,
+      select: { id: true },
     });
+    if (body.extensionId && checked.groupIds) await setExtensionGroups(body.extensionId, checked.groupIds);
 
     await fastify.audit({
       actorType: "TENANT_USER",
       actorId: request.tenantUser!.sub,
-      action: "tenant.team.invited",
+      action: "tenant.team.created",
       targetType: "TenantUser",
-      targetId: user.id,
+      targetId: created.id,
       ip: request.ip,
     });
 
+    const user = await prisma.tenantUser.findUniqueOrThrow({ where: { id: created.id }, select: userSelect });
     return reply.status(201).send(toTeamUser(user));
   });
 
-  // PATCH /tenant/team/:userId — change role
+  // PATCH /tenant/team/:userId — papel, extensão e grupos supervisionados
   fastify.patch<{ Params: { userId: string } }>("/:userId", { preHandler }, async (request, reply) => {
-    const { tenantId, role } = request.tenantUser!;
+    const { tenantId, role, sub } = request.tenantUser!;
     if (!requireManager(role, reply)) return;
 
-    const body = updateRoleSchema.parse(request.body);
+    const body = updateSchema.parse(request.body);
     const target = await prisma.tenantUser.findFirst({ where: { id: request.params.userId, tenantId } });
     if (!target) return reply.status(404).send({ error: "Membro não encontrado" });
-    if (target.role === "OWNER") return reply.status(400).send({ error: "Não é possível alterar o papel do OWNER" });
+    if (body.role && target.role === "OWNER") return reply.status(400).send({ error: "Não é possível alterar o papel do OWNER" });
+    // Senão um ADMIN redefinia a password do OWNER e ficava com a conta dele.
+    if (body.password && target.role === "OWNER" && target.id !== sub) {
+      return reply.status(403).send({ error: "Só o próprio OWNER pode alterar a sua password" });
+    }
 
-    const user = await prisma.tenantUser.update({
+    const checked = await checkExtensionAndGroups(tenantId, target.id, body);
+    if ("error" in checked) return reply.status(checked.status).send({ error: checked.error });
+    const extensionId = body.extensionId !== undefined ? body.extensionId : target.extensionId;
+    if (checked.groupIds?.length && !extensionId) {
+      return reply.status(400).send({ error: "Para atribuir grupos, escolha a extensão do utilizador" });
+    }
+
+    await prisma.tenantUser.update({
       where: { id: target.id },
-      data: { role: body.role },
-      select: userSelect,
+      data: {
+        ...(body.name && { name: body.name }),
+        ...(body.password && { passwordHash: await hashPassword(body.password) }),
+        ...(body.role && { role: body.role }),
+        ...(body.extensionId !== undefined && { extensionId: body.extensionId }),
+        ...(checked.supervisedGroupIds && {
+          supervisedGroups: { deleteMany: {}, create: checked.supervisedGroupIds.map((groupId) => ({ groupId })) },
+        }),
+      },
     });
+    if (extensionId && checked.groupIds) await setExtensionGroups(extensionId, checked.groupIds);
+    if (body.password) {
+      await fastify.audit({
+        actorType: "TENANT_USER",
+        actorId: request.tenantUser!.sub,
+        action: "tenant.team.password_reset",
+        targetType: "TenantUser",
+        targetId: target.id,
+        ip: request.ip,
+      });
+    }
+
+    const user = await prisma.tenantUser.findUniqueOrThrow({ where: { id: target.id }, select: userSelect });
     return toTeamUser(user);
   });
 

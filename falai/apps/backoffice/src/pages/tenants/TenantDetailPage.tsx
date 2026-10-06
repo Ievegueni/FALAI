@@ -8,16 +8,21 @@ import {
   EmptyState, Pagination,
 } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
+import { TenantIvrTab } from './TenantIvrTab';
+import { TenantExtensionsTab } from './TenantExtensionsTab';
+import { TenantAccessProfilesTab } from './TenantAccessProfilesTab';
 import {
   formatAOA, formatDate, formatDuration,
   tenantStatusColor, tenantStatusLabel,
   callStatusColor, callStatusLabel, txTypeLabel,
+  campaignStatusColor, campaignStatusLabel,
 } from '@/lib/utils';
-import type { TenantStatus, CallStatus, TransactionType, TenantLine, TenantLineInput, TenantUser, TenantRole, BillingMode, FeatureKey, TenantFeatures } from '@/types';
+import type { TenantStatus, CallStatus, CampaignStatus, TransactionType, TenantLine, TenantLineInput, TenantUser, TenantRole, BillingMode, FeatureKey, TenantFeatures, WaPoolStatus } from '@/types';
 
 const ROLE_LABELS: Record<TenantRole, string> = {
   OWNER: 'Proprietário',
   ADMIN: 'Administrador',
+  SUPERVISOR: 'Supervisor',
   MEMBER: 'Membro',
   VIEWER: 'Leitura',
 };
@@ -39,6 +44,10 @@ const FEATURE_LABELS: { key: FeatureKey; label: string; hint?: string; needsAi?:
   { key: 'wallet', label: 'Carteira', hint: 'Saldo e movimentos' },
   { key: 'team', label: 'Equipa', hint: 'Gestão de utilizadores do cliente' },
   { key: 'developers', label: 'Developers / API', hint: 'API keys, webhooks e documentação' },
+  { key: 'reports', label: 'Relatórios', hint: 'Relatórios de chamadas (CSV/PDF)' },
+  { key: 'sms', label: 'SMS', hint: 'Envio de SMS avulso e campanhas (o plano tem de incluir SMS)' },
+  { key: 'telephony', label: 'Telefonia', hint: 'Extensões, grupos, trunks e rotas' },
+  { key: 'inbox', label: 'Caixa de entrada', hint: 'WhatsApp Business, chat no site, email e Telegram com IA e operadores' },
 ];
 
 function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
@@ -66,6 +75,8 @@ export function TenantDetailPage() {
   const [tab, setTab] = useState('overview');
   const [callPage, setCallPage] = useState(1);
   const [txPage, setTxPage] = useState(1);
+  const [campaignPage, setCampaignPage] = useState(1);
+  const [openCampaignId, setOpenCampaignId] = useState<string | null>(null);
   const [adjustModal, setAdjustModal] = useState(false);
   const [adjustAmt, setAdjustAmt] = useState('');
   const [adjustNote, setAdjustNote] = useState('');
@@ -78,7 +89,7 @@ export function TenantDetailPage() {
   const [resetUser, setResetUser] = useState<TenantUser | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [userModal, setUserModal] = useState(false);
-  const [userForm, setUserForm] = useState<{ name: string; email: string; password: string; role: TenantRole }>({ name: '', email: '', password: '', role: 'MEMBER' });
+  const [userForm, setUserForm] = useState<{ name: string; email: string; password: string; role: TenantRole; accessProfileId: string }>({ name: '', email: '', password: '', role: 'MEMBER', accessProfileId: '' });
 
   const { data: tenant, isLoading, isError } = useQuery({
     queryKey: ['admin', 'tenant', id],
@@ -108,6 +119,12 @@ export function TenantDetailPage() {
     queryKey: ['admin', 'tenant-txs', id, txPage],
     queryFn: () => tenantsApi.transactions(id!, { page: txPage, perPage: 10 }),
     enabled: tab === 'wallet' && !!id,
+  });
+
+  const { data: campaigns } = useQuery({
+    queryKey: ['admin', 'tenant-campaigns', id, campaignPage],
+    queryFn: () => tenantsApi.campaigns(id!, { page: campaignPage, perPage: 10 }),
+    enabled: tab === 'campaigns' && !!id,
   });
 
   const invalidateTenant = () => {
@@ -184,8 +201,31 @@ export function TenantDetailPage() {
     onError: () => toast.error('Erro ao remover linha.'),
   });
 
+  // O que o plano desliga não se liga com um override. Se deixássemos o
+  // interruptor activo, o operador ligava, gravava, e a página voltava a
+  // mostrar desligado.
+  const isLocked = (key: FeatureKey) =>
+    tenant?.lockedByPlan
+      ? tenant.lockedByPlan.includes(key)
+      : (key === 'agents' || key === 'campaigns') && tenant?.plan?.aiAgentsEnabled === false;
+  const lockedReason = (f: (typeof FEATURE_LABELS)[number]) => {
+    if (tenant?.plan?.productType === 'API_BYOM') return 'Indisponível: o plano API BYOM só usa a API.';
+    if (f.needsAi && tenant?.plan?.aiAgentsEnabled === false) return 'Indisponível: o plano deste cliente não inclui IA.';
+    if (f.key === 'sms') return 'Indisponível: o plano deste cliente não inclui SMS.';
+    return 'Indisponível no plano deste cliente.';
+  };
+
   const saveFeaturesMut = useMutation({
-    mutationFn: () => tenantsApi.updateFeatures(id!, featuresDraft ?? {}),
+    // Só se gravam as escolhas que o plano deixa fazer. Os valores forçados pelo
+    // plano não são escolha do operador: gravá-los como override fazia-os
+    // aparecer desligados mais tarde, quando o cliente mudasse de plano.
+    mutationFn: () =>
+      tenantsApi.updateFeatures(id!, {
+        ...(tenant?.featureOverrides ?? {}),
+        ...Object.fromEntries(
+          Object.entries(featuresDraft ?? {}).filter(([k]) => !isLocked(k as FeatureKey)),
+        ),
+      }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] }); toast.success('Funcionalidades actualizadas.'); },
     onError: () => toast.error('Erro ao gravar funcionalidades.'),
   });
@@ -201,20 +241,85 @@ export function TenantDetailPage() {
   });
 
   const createUserMut = useMutation({
-    mutationFn: () => tenantsApi.createUser(id!, userForm),
+    mutationFn: () => tenantsApi.createUser(id!, {
+      ...userForm,
+      accessProfileId: userForm.role === 'OWNER' ? null : userForm.accessProfileId || null,
+    }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] });
+      void qc.invalidateQueries({ queryKey: ['tenant-access-profiles', id] });
       toast.success('Utilizador criado.');
       setUserModal(false);
-      setUserForm({ name: '', email: '', password: '', role: 'MEMBER' });
+      setUserForm({ name: '', email: '', password: '', role: 'MEMBER', accessProfileId: '' });
     },
     onError: (e: Error) => toast.error(e.message || 'Erro ao criar utilizador.'),
+  });
+
+  const { data: accessProfilesData } = useQuery({
+    queryKey: ['tenant-access-profiles', id],
+    queryFn: () => tenantsApi.accessProfiles(id!),
+    enabled: !!id && (tab === 'users' || userModal),
+  });
+  const accessProfiles = accessProfilesData?.profiles ?? [];
+
+  const setUserProfileMut = useMutation({
+    mutationFn: ({ userId, accessProfileId }: { userId: string; accessProfileId: string | null }) =>
+      tenantsApi.setUserAccessProfile(id!, userId, accessProfileId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] });
+      void qc.invalidateQueries({ queryKey: ['tenant-access-profiles', id] });
+      toast.success('Perfil de acesso actualizado.');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao mudar o perfil.'),
+  });
+
+  const [smsTextDraft, setSmsTextDraft] = useState<string | null>(null);
+
+  const missedSmsMut = useMutation({
+    mutationFn: (data: { missedCallSms?: boolean; missedCallSmsText?: string | null }) =>
+      tenantsApi.update(id!, data as never),
+    onSuccess: () => { invalidateTenant(); setSmsTextDraft(null); toast.success('SMS de chamada não atendida actualizado.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar o SMS automático.'),
+  });
+
+  const recordingMut = useMutation({
+    mutationFn: (data: { recordCalls?: boolean; recordingAnnounce?: boolean }) =>
+      tenantsApi.update(id!, data as never),
+    onSuccess: () => { invalidateTenant(); toast.success('Gravação de chamadas actualizada.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar a gravação.'),
+  });
+
+  const aiLimitMut = useMutation({
+    mutationFn: (v: number) => tenantsApi.update(id!, { aiReportDailyLimit: v } as never),
+    onSuccess: () => { invalidateTenant(); toast.success('Limite de análises IA actualizado.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar o limite.'),
   });
 
   const billingOverrideMut = useMutation({
     mutationFn: (mode: BillingMode | null) => tenantsApi.update(id!, { billingModeOverride: mode } as never),
     onSuccess: () => { invalidateTenant(); toast.success('Modo de cobrança do cliente actualizado.'); },
     onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar cobrança.'),
+  });
+
+  // Preço por minuto só deste cliente (null = o do plano). Vale para as
+  // cobranças por minuto e por segundo; a chamada fixa usa sempre o plano.
+  const priceOverrideMut = useMutation({
+    mutationFn: (cents: number | null) => tenantsApi.update(id!, { pricePerMinuteOverrideCents: cents } as never),
+    onSuccess: () => { invalidateTenant(); toast.success('Preço por minuto do cliente actualizado.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar o preço.'),
+  });
+
+  // Limite de chamadas simultâneas do cliente. É este valor (e não o do plano)
+  // que o dispatcher de campanhas respeita, por isso tem de ser editável aqui:
+  // sem o campo, um cliente com um plano de 10 ficava preso no 1 por omissão e
+  // só se destrancava com um UPDATE à mão na base de dados.
+  const maxConcurrentMut = useMutation({
+    // A API espera `maxConcurrent` (admin/tenants.ts:48). Enviar o nome que o
+    // frontend usa (`maxConcurrentCalls`) fazia o zod descartar a chave em
+    // silêncio: gravava com sucesso aparente e não mudava nada.
+    mutationFn: (value: number) => tenantsApi.update(id!, { maxConcurrent: value } as never),
+    onSuccess: () => { invalidateTenant(); toast.success('Limite de chamadas simultâneas actualizado.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar o limite.'),
   });
 
   if (isLoading) return <PageSpinner />;
@@ -274,11 +379,17 @@ export function TenantDetailPage() {
         tabs={[
           { key: 'overview', label: 'Visão geral' },
           { key: 'users', label: 'Utilizadores' },
-          { key: 'lines', label: 'Linhas' },
+          { key: 'access-profiles', label: 'Perfis de acesso' },
+          { key: 'extensions', label: 'Extensões' },
+          // Tabela antiga (TenantLine): o CRM não a mostra. Só aparece a quem ainda tem linhas.
+          ...((tenant.lines ?? []).length > 0 ? [{ key: 'lines', label: 'Linhas (antigo)' }] : []),
           { key: 'features', label: 'Funcionalidades' },
           { key: 'sms', label: 'SMS' },
+          { key: 'whatsapp', label: 'WhatsApp' },
+          { key: 'ivr', label: 'IVR' },
           { key: 'api-keys', label: 'Chaves de API' },
           { key: 'calls', label: 'Chamadas' },
+          { key: 'campaigns', label: 'Campanhas' },
           { key: 'wallet', label: 'Carteira' },
         ]}
         active={tab}
@@ -286,10 +397,15 @@ export function TenantDetailPage() {
       />
 
       {tab === 'sms' && <SmsConfigTab tenantId={id!} />}
+      {tab === 'whatsapp' && <WhatsappPoolTab tenantId={id!} />}
+      {tab === 'ivr' && <TenantIvrTab tenantId={id!} />}
+      {tab === 'extensions' && <TenantExtensionsTab tenantId={id!} />}
       {tab === 'api-keys' && <ApiKeysTab tenantId={id!} />}
+      {tab === 'access-profiles' && <TenantAccessProfilesTab tenantId={id!} features={tenant.features} />}
 
       {tab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <LogoCard tenantId={tenant.id} logo={tenant.logoDataUrl ?? null} />
           <Card>
             <h2 className="text-sm font-semibold text-gray-700 mb-4">Organização</h2>
             <dl className="space-y-3 text-sm">
@@ -320,9 +436,176 @@ export function TenantDetailPage() {
                   </Select>
                 </dd>
               </div>
+              {(tenant.billingModeOverride ?? tenant.plan?.billingMode) !== 'PER_CALL' && (
+                <div className="flex justify-between items-center gap-4">
+                  <dt className="text-gray-500">Preço por minuto</dt>
+                  <dd className="flex items-center gap-2">
+                    <Input
+                      key={tenant.pricePerMinuteOverrideCents ?? 'plano'}
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className="w-28 text-right"
+                      placeholder={tenant.plan ? String(tenant.plan.pricePerMinCents / 100) : ''}
+                      defaultValue={tenant.pricePerMinuteOverrideCents != null ? String(tenant.pricePerMinuteOverrideCents / 100) : ''}
+                      disabled={priceOverrideMut.isPending}
+                      onBlur={(e) => {
+                        const raw = e.target.value.trim().replace(',', '.');
+                        // Vazio = volta ao preço do plano
+                        const cents = raw === '' ? null : Math.round(parseFloat(raw) * 100);
+                        if (cents !== null && (Number.isNaN(cents) || cents < 0)) {
+                          e.target.value = tenant.pricePerMinuteOverrideCents != null ? String(tenant.pricePerMinuteOverrideCents / 100) : '';
+                          return;
+                        }
+                        if (cents !== (tenant.pricePerMinuteOverrideCents ?? null)) priceOverrideMut.mutate(cents);
+                      }}
+                    />
+                    <span className="text-xs text-gray-500">Kz</span>
+                  </dd>
+                </div>
+              )}
+              {(tenant.billingModeOverride ?? tenant.plan?.billingMode) !== 'PER_CALL' && (
+                <p className="text-right text-xs text-gray-400 -mt-2">
+                  {tenant.pricePerMinuteOverrideCents != null
+                    ? 'Preço próprio deste cliente. Apaga o valor para voltar ao do plano.'
+                    : `Vazio = usa o do plano${tenant.plan ? ` (${formatAOA(tenant.plan.pricePerMinCents)}/min)` : ''}.`}
+                </p>
+              )}
+              <div className="flex justify-between items-center gap-4">
+                <dt className="text-gray-500">Chamadas simultâneas</dt>
+                <dd className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={50}
+                    className="w-20 text-right"
+                    defaultValue={String(tenant.maxConcurrentCalls ?? 1)}
+                    disabled={maxConcurrentMut.isPending}
+                    onBlur={(e) => {
+                      const value = parseInt(e.target.value, 10);
+                      if (Number.isNaN(value) || value < 1 || value > 50) {
+                        e.target.value = String(tenant.maxConcurrentCalls ?? 1);
+                        return;
+                      }
+                      if (value !== tenant.maxConcurrentCalls) maxConcurrentMut.mutate(value);
+                    }}
+                  />
+                  <span className="text-xs text-gray-400">plano: {tenant.plan?.maxConcurrentCalls ?? '–'}</span>
+                </dd>
+              </div>
+              <div className="flex justify-between items-center gap-4">
+                <dt className="text-gray-500">Análises IA dos relatórios / dia</dt>
+                <dd className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={1000}
+                    className="w-20 text-right"
+                    defaultValue={String(tenant.aiReportDailyLimit ?? 20)}
+                    disabled={aiLimitMut.isPending}
+                    onBlur={(e) => {
+                      const value = parseInt(e.target.value, 10);
+                      if (Number.isNaN(value) || value < 0 || value > 1000) {
+                        e.target.value = String(tenant.aiReportDailyLimit ?? 20);
+                        return;
+                      }
+                      if (value !== tenant.aiReportDailyLimit) aiLimitMut.mutate(value);
+                    }}
+                  />
+                  <span className="text-xs text-gray-400">0 = desligado</span>
+                </dd>
+              </div>
+              {tenant.aiReportUsageMonth && (
+                <p className="text-right text-xs text-gray-400 -mt-2">
+                  Este mês: {tenant.aiReportUsageMonth.analyses} análises ·{' '}
+                  {(tenant.aiReportUsageMonth.inputTokens + tenant.aiReportUsageMonth.outputTokens).toLocaleString('pt-PT')} tokens ·{' '}
+                  US$ {tenant.aiReportUsageMonth.costUsd.toFixed(2)}
+                </p>
+              )}
               <div className="flex justify-between"><dt className="text-gray-500">Webhook URL</dt><dd className="font-medium text-right max-w-[200px] truncate">{tenant.webhookUrl ?? '–'}</dd></div>
               <div className="flex justify-between"><dt className="text-gray-500">Onboarding</dt><dd className="font-medium">{tenant.onboardingCompletedAt ? formatDate(tenant.onboardingCompletedAt) : 'Pendente'}</dd></div>
             </dl>
+          </Card>
+          <Card>
+            <h2 className="text-sm font-semibold text-gray-700 mb-1">Gravação de chamadas</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Grava as chamadas de entrada deste cliente. A pasta e o formato definem-se em Configurações do Sistema.
+            </p>
+            <div className="space-y-3">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={tenant.recordCalls ?? false}
+                  disabled={recordingMut.isPending}
+                  onChange={(e) => recordingMut.mutate({ recordCalls: e.target.checked })}
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-gray-800">Gravar as chamadas</span>
+                  <span className="block text-xs text-gray-400">Desligado = não se grava nada deste cliente.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={tenant.recordingAnnounce ?? false}
+                  disabled={recordingMut.isPending || !tenant.recordCalls}
+                  onChange={(e) => recordingMut.mutate({ recordingAnnounce: e.target.checked })}
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-gray-800">Avisar que a chamada será gravada</span>
+                  <span className="block text-xs text-gray-400">
+                    Toca o aviso aos dois lados assim que alguém atende, e o aviso fica dentro da própria gravação.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </Card>
+          <Card>
+            <h2 className="text-sm font-semibold text-gray-700 mb-1">SMS de chamada não atendida</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Envia uma mensagem a quem ficou sem resposta — quem ligou e não foi atendido, ou quem este
+              cliente tentou contactar em vão. No máximo um SMS por número por dia. Cada SMS é cobrado ao cliente.
+            </p>
+            <div className="space-y-3">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  checked={tenant.missedCallSms ?? false}
+                  disabled={missedSmsMut.isPending}
+                  onChange={(e) => missedSmsMut.mutate({ missedCallSms: e.target.checked })}
+                />
+                <span className="text-sm">
+                  <span className="font-medium text-gray-800">Enviar SMS automático</span>
+                  <span className="block text-xs text-gray-400">Precisa da mensagem escrita em baixo.</span>
+                </span>
+              </label>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Mensagem</label>
+                <textarea
+                  rows={3}
+                  maxLength={480}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  placeholder="Ligou para a {empresa} e não conseguimos atender. Entraremos em contacto."
+                  value={smsTextDraft ?? tenant.missedCallSmsText ?? ''}
+                  onChange={(e) => setSmsTextDraft(e.target.value)}
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Variáveis: <code>{'{empresa}'}</code> (nome do cliente) e <code>{'{numero}'}</code> (número de destino).
+                </p>
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    size="sm"
+                    disabled={smsTextDraft === null || missedSmsMut.isPending}
+                    onClick={() => missedSmsMut.mutate({ missedCallSmsText: smsTextDraft })}
+                  >
+                    Guardar mensagem
+                  </Button>
+                </div>
+              </div>
+            </div>
           </Card>
         </div>
       )}
@@ -337,7 +620,7 @@ export function TenantDetailPage() {
             <Button
               size="sm"
               icon={<UserPlus className="h-4 w-4" />}
-              onClick={() => { setUserForm({ name: '', email: '', password: '', role: 'MEMBER' }); setUserModal(true); }}
+              onClick={() => { setUserForm({ name: '', email: '', password: '', role: 'MEMBER', accessProfileId: '' }); setUserModal(true); }}
             >
               Novo utilizador
             </Button>
@@ -364,6 +647,21 @@ export function TenantDetailPage() {
                   <div className="text-right text-xs text-gray-400 hidden sm:block">
                     {u.lastLoginAt ? `Último acesso ${formatDate(u.lastLoginAt)}` : 'Nunca acedeu'}
                   </div>
+                  {u.role === 'OWNER' ? (
+                    <span className="w-48 text-xs text-gray-400">Acesso total (proprietário)</span>
+                  ) : (
+                    <div className="w-48">
+                      <Select
+                        aria-label={`Perfil de acesso de ${u.name}`}
+                        value={u.accessProfileId ?? ''}
+                        disabled={setUserProfileMut.isPending}
+                        onChange={(e) => setUserProfileMut.mutate({ userId: u.id, accessProfileId: e.target.value || null })}
+                      >
+                        <option value="">Sem perfil (tudo)</option>
+                        {accessProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </Select>
+                    </div>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -384,7 +682,7 @@ export function TenantDetailPage() {
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
             <div>
               <h2 className="text-sm font-semibold text-gray-700">Linhas de chamadas</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Cada linha é uma extensão/DID que o cliente pode usar para chamadas.</p>
+              <p className="text-xs text-gray-500 mt-0.5">Configuração antiga, que o cliente não vê no CRM. Usa o separador Extensões.</p>
             </div>
             <Button
               size="sm"
@@ -464,15 +762,21 @@ export function TenantDetailPage() {
               Guardar
             </Button>
           </div>
+          {tenant.plan?.productType === 'API_BYOM' && (
+            <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              O plano deste cliente é API BYOM: usa só a API, por isso o painel fica limitado a Developers.
+              Para ligar outras funcionalidades, muda-o para um plano com CRM.
+            </p>
+          )}
           <div className="divide-y divide-gray-100">
             {FEATURE_LABELS.map((f) => {
-              const blockedByPlan = f.needsAi && tenant.plan?.aiAgentsEnabled === false;
+              const blockedByPlan = isLocked(f.key);
               return (
                 <div key={f.key} className="flex items-center justify-between py-3">
                   <div>
                     <p className="text-sm font-medium text-gray-900">{f.label}</p>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      {blockedByPlan ? 'Indisponível — o plano deste cliente não inclui IA.' : f.hint}
+                      {blockedByPlan ? lockedReason(f) : f.hint}
                     </p>
                   </div>
                   <Toggle
@@ -519,6 +823,46 @@ export function TenantDetailPage() {
               </table>
               <Pagination page={callPage} total={calls?.total ?? 0} perPage={10} onPage={setCallPage} />
             </>
+          )}
+        </Card>
+      )}
+
+      {tab === 'campaigns' && (
+        <Card padding={false}>
+          {(campaigns?.data ?? []).length === 0 ? (
+            <EmptyState icon={<PhoneCall className="h-8 w-8" />} title="Sem campanhas" />
+          ) : (
+            <>
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                  <tr>
+                    {['Nome', 'Status', 'Contactos', 'Concluídas', 'Falhadas', 'Criada em'].map((h) => (
+                      <th key={h} className="px-6 py-3 text-left font-medium">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(campaigns?.data ?? []).map((c) => (
+                    <tr key={c.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setOpenCampaignId(c.id)}>
+                      <td className="px-6 py-3 font-medium text-gray-900">{c.name}</td>
+                      <td className="px-6 py-3">
+                        <Badge className={campaignStatusColor[c.status as CampaignStatus]}>
+                          {campaignStatusLabel[c.status as CampaignStatus] ?? c.status}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-3 text-gray-600">{c.totalContacts}</td>
+                      <td className="px-6 py-3 text-gray-600">{c.completed}</td>
+                      <td className="px-6 py-3 text-gray-600">{c.failedCount}</td>
+                      <td className="px-6 py-3 text-gray-500">{formatDate(c.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <Pagination page={campaignPage} total={campaigns?.total ?? 0} perPage={10} onPage={setCampaignPage} />
+            </>
+          )}
+          {openCampaignId && (
+            <CampaignDetailModal tenantId={id!} campaignId={openCampaignId} onClose={() => setOpenCampaignId(null)} />
           )}
         </Card>
       )}
@@ -745,6 +1089,17 @@ export function TenantDetailPage() {
             <option value="MEMBER">Membro</option>
             <option value="VIEWER">Leitura</option>
           </Select>
+          {userForm.role !== 'OWNER' && (
+            <Select
+              label="Perfil de acesso"
+              value={userForm.accessProfileId}
+              onChange={(e) => setUserForm((f) => ({ ...f, accessProfileId: e.target.value }))}
+              hint="Os perfis criam-se no separador Perfis de acesso."
+            >
+              <option value="">Sem perfil (todos os módulos activos)</option>
+              {accessProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          )}
         </div>
       </Modal>
     </div>
@@ -1051,5 +1406,353 @@ function SmsConfigTab({ tenantId }: { tenantId: string }) {
       </div>
       <Button onClick={() => save.mutate()} disabled={save.isPending}>Guardar</Button>
     </Card>
+  );
+}
+
+const CONTACT_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Pendente',
+  QUEUED: 'Na fila',
+  IN_PROGRESS: 'Em curso',
+  COMPLETED: 'Concluído',
+  FAILED: 'Falhou',
+  OPTED_OUT: 'Recusou contacto',
+  SKIPPED: 'Não marcado',
+};
+
+const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+function CampaignDetailModal({ tenantId, campaignId, onClose }: { tenantId: string; campaignId: string; onClose: () => void }) {
+  const navigate = useNavigate();
+  const { data: c, isLoading, isError } = useQuery({
+    queryKey: ['admin', 'tenant-campaign', tenantId, campaignId],
+    queryFn: () => tenantsApi.campaign(tenantId, campaignId),
+  });
+
+  const cs = c?.contactStatuses ?? {};
+  const n = (k: keyof typeof cs) => cs[k] ?? 0;
+  const totalContacts = Object.values(cs).reduce<number>((sum, v) => sum + (v ?? 0), 0);
+  const attempted = n('COMPLETED') + n('FAILED');
+  const answerRate = attempted > 0 && c ? Math.round((c.calls.answered / attempted) * 100) : 0;
+
+  const s = c?.scheduleJson ?? {};
+  const days = s.daysOfWeek ?? s.days ?? [];
+  const window = s.mode === 'NOW'
+    ? 'Imediato'
+    : `${String(s.startHour ?? 8).padStart(2, '0')}h às ${String(s.endHour ?? 20).padStart(2, '0')}h`;
+  const r = c?.retryPolicy ?? {};
+
+  return (
+    <Modal open onClose={onClose} title={c?.name ?? 'Campanha'} size="xl">
+      {isLoading ? (
+        <PageSpinner />
+      ) : isError || !c ? (
+        <p className="text-sm text-red-600">Não foi possível carregar a campanha.</p>
+      ) : (
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+            <Badge className={campaignStatusColor[c.status]}>{campaignStatusLabel[c.status] ?? c.status}</Badge>
+            <span>{c.mode === 'FIXED_SCRIPT' ? 'Script fixo' : `Agente IA: ${c.agentName ?? '(sem agente)'}`}</span>
+            <span>· Criada em {formatDate(c.createdAt)}</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Contactos', value: totalContacts },
+              { label: 'Chamadas feitas', value: c.calls.total },
+              { label: 'Taxa de atendimento', value: `${answerRate}%` },
+              { label: 'Custo', value: formatAOA(c.calls.totalCostCents) },
+            ].map((k) => (
+              <div key={k.label} className="rounded-lg border border-gray-200 p-3 text-center">
+                <p className="text-lg font-bold text-gray-900">{k.value}</p>
+                <p className="text-xs text-gray-500">{k.label}</p>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Contactos por estado</h3>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(CONTACT_STATUS_LABELS).map(([k, label]) => (
+                <span key={k} className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
+                  {label}: <strong>{cs[k as keyof typeof cs] ?? 0}</strong>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <div><span className="text-gray-500">Janela horária:</span> <span className="text-gray-900">{window}</span></div>
+            {s.mode !== 'NOW' && days.length > 0 && (
+              <div><span className="text-gray-500">Dias:</span> <span className="text-gray-900">{days.map((d) => WEEKDAYS[d]).join(', ')}</span></div>
+            )}
+            <div><span className="text-gray-500">Ritmo:</span> <span className="text-gray-900">{c.throttlePerMinute} chamadas/min</span></div>
+            <div>
+              <span className="text-gray-500">Tentativas:</span>{' '}
+              <span className="text-gray-900">
+                {r.maxAttempts ?? 1}{(r.maxAttempts ?? 1) > 1 && ` (intervalo ${r.retryDelayMinutes ?? r.delayMinutes ?? 60} min)`}
+              </span>
+            </div>
+            <div><span className="text-gray-500">Duração média:</span> <span className="text-gray-900">{formatDuration(c.calls.avgDurationSecs)}</span></div>
+            <div><span className="text-gray-500">Duração total:</span> <span className="text-gray-900">{formatDuration(c.calls.totalDurationSecs)}</span></div>
+          </div>
+
+          {c.mode === 'FIXED_SCRIPT' && c.scriptText && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Script</h3>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{c.scriptText}</p>
+            </div>
+          )}
+
+          {c.summary && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Resumo</h3>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3">{c.summary}</p>
+            </div>
+          )}
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Últimos contactos</h3>
+            {c.recentContacts.length === 0 ? (
+              <p className="text-sm text-gray-500">Sem contactos nesta campanha.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-gray-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      {['Contacto', 'Estado', 'Chamada', 'Tent.', 'Duração', 'Custo', 'Actualizado'].map((h) => (
+                        <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {c.recentContacts.map((rc) => (
+                      <tr
+                        key={rc.id}
+                        className={rc.callId ? 'hover:bg-gray-50 cursor-pointer' : undefined}
+                        onClick={rc.callId ? () => navigate(`/calls/${rc.callId}`) : undefined}
+                      >
+                        <td className="px-3 py-2">
+                          <p className="text-gray-900">{rc.name ?? rc.phone}</p>
+                          {rc.name && <p className="text-xs text-gray-500">{rc.phone}</p>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">{CONTACT_STATUS_LABELS[rc.status] ?? rc.status}</td>
+                        <td className="px-3 py-2">
+                          {rc.callStatus ? (
+                            <Badge className={callStatusColor[rc.callStatus]}>{callStatusLabel[rc.callStatus]}</Badge>
+                          ) : <span className="text-gray-400">(sem chamada)</span>}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">{rc.attempts}</td>
+                        <td className="px-3 py-2 text-gray-600">{rc.durationSecs != null ? formatDuration(rc.durationSecs) : ''}</td>
+                        <td className="px-3 py-2 text-gray-600">{rc.costCents != null ? formatAOA(rc.costCents) : ''}</td>
+                        <td className="px-3 py-2 text-gray-500">{formatDate(rc.updatedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+const MAX_LOGO_BYTES = 256 * 1024;
+
+/** Logo do cliente no CRM. Guardado como data URL; sem logo usa-se o da Comunica. */
+function LogoCard({ tenantId, logo }: { tenantId: string; logo: string | null }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const save = useMutation({
+    mutationFn: (dataUrl: string | null) => tenantsApi.updateLogo(tenantId, dataUrl),
+    onSuccess: (_r, dataUrl) => {
+      toast.success(dataUrl ? 'Logo actualizado' : 'Logo removido');
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', tenantId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Não foi possível guardar o logo'),
+  });
+
+  const onFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type)) {
+      toast.error('Formato inválido — use PNG, JPG, WEBP ou SVG');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      toast.error('Logo demasiado grande (máx. 256 KB)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => save.mutate(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-gray-700 mb-1">Logo no CRM</h2>
+      <p className="text-xs text-gray-500 mb-4">Aparece no topo do menu do cliente. PNG, JPG, WEBP ou SVG até 256 KB, fundo transparente de preferência.</p>
+      <div className="flex items-center gap-4">
+        {/* Pré-visualização sobre o mesmo fundo escuro do menu do CRM */}
+        <div className="flex h-16 w-40 items-center justify-center rounded-lg bg-slate-900 p-2">
+          <div className="flex items-center justify-center rounded-lg bg-white px-2 py-1.5">
+            <img src={logo ?? '/logo.png'} alt="Logo do cliente" className="h-8 max-w-[120px] object-contain" />
+          </div>
+        </div>
+        <div className="flex flex-col gap-2">
+          <label className="inline-flex cursor-pointer items-center justify-center rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700">
+            {save.isPending ? 'A guardar…' : logo ? 'Trocar logo' : 'Carregar logo'}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              className="sr-only"
+              disabled={save.isPending}
+              onChange={(e) => {
+                onFile(e.target.files?.[0]);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {logo && (
+            <Button size="sm" variant="ghost" onClick={() => save.mutate(null)} disabled={save.isPending}>
+              Repor logo da Comunica
+            </Button>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+const WA_POOL_COLOR: Record<WaPoolStatus, string> = {
+  ACTIVE: 'bg-green-100 text-green-700',
+  DEGRADED: 'bg-amber-100 text-amber-700',
+  STANDBY: 'bg-blue-100 text-blue-700',
+  FAILED: 'bg-red-100 text-red-700',
+  DISABLED: 'bg-gray-100 text-gray-600',
+};
+
+const VERDICT_LABEL: Record<string, string> = {
+  ok: 'OK', warn: 'Aviso', ignore: 'Inconclusivo (Meta/rede/token)', suspect: 'Suspeito', fatal: 'Indisponível',
+};
+
+/** Números WhatsApp do cliente e estado do pool Active/Standby. O cliente gere-os no CRM; aqui o suporte vê e faz health check. */
+function WhatsappPoolTab({ tenantId }: { tenantId: string }) {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['tenant-whatsapp', tenantId],
+    queryFn: () => tenantsApi.whatsappPool(tenantId),
+    refetchInterval: 30_000,
+  });
+  const check = useMutation({
+    mutationFn: (inboxId?: string) => tenantsApi.whatsappCheck(tenantId, inboxId),
+    onSuccess: ({ results }) => {
+      for (const r of results) {
+        const name = data?.numbers.find((n) => n.id === r.id)?.displayPhone ?? r.id;
+        const msg = `${name}: ${VERDICT_LABEL[r.verdict] ?? r.verdict} — ${r.detail}`;
+        if (r.verdict === 'ok') toast.success(msg);
+        else toast.error(msg);
+      }
+      void qc.invalidateQueries({ queryKey: ['tenant-whatsapp', tenantId] });
+    },
+    onError: () => toast.error('Erro ao fazer o health check'),
+  });
+  if (isLoading || !data) return <PageSpinner />;
+  const inService = data.numbers.find((n) => n.status === 'ACTIVE' || n.status === 'DEGRADED');
+  const count = (st: WaPoolStatus) => data.numbers.filter((n) => n.status === st).length;
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+          <div>
+            <span className="text-gray-500">Em serviço: </span>
+            {inService ? (
+              <span className="font-medium text-gray-900">{inService.name} · {inService.displayPhone ?? '—'}</span>
+            ) : (
+              <span className="font-medium text-red-600">nenhum — o botão do site está sem destino</span>
+            )}
+          </div>
+          <div className="text-gray-500">Standby: <b className="text-gray-900">{count('STANDBY')}</b></div>
+          <div className="text-gray-500">Falhados: <b className="text-gray-900">{count('FAILED')}</b></div>
+          <div className="text-gray-500">Desactivados: <b className="text-gray-900">{count('DISABLED')}</b></div>
+        </div>
+        <p className="mt-3 truncate text-xs text-gray-500">Link do botão: <code>{data.poolUrl}</code></p>
+      </Card>
+
+      <Card>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-700">Números</h2>
+          {data.numbers.length > 0 && (
+            <Button size="sm" variant="secondary" icon={<RefreshCw className="h-4 w-4" />} loading={check.isPending && check.variables === undefined} disabled={check.isPending} onClick={() => check.mutate(undefined)}>
+              Health check a todos
+            </Button>
+          )}
+        </div>
+        <p className="mb-3 text-xs text-gray-500">O health check consulta a Meta agora. Se o número em serviço estiver comprovadamente em baixo, a troca para o standby seguinte acontece logo.</p>
+        {data.numbers.length === 0 ? (
+          <EmptyState title="Sem números WhatsApp" description="O cliente ainda não ligou nenhum número no CRM." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs text-gray-500">
+                <tr>
+                  <th className="py-2 pr-3">#</th>
+                  <th className="pr-3">Número</th>
+                  <th className="pr-3">Estado</th>
+                  <th className="pr-3">Último check</th>
+                  <th className="pr-3">Último erro</th>
+                  <th className="pr-3">Última mudança</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {data.numbers.map((n) => (
+                  <tr key={n.id} className="border-t border-gray-100 align-top">
+                    <td className="py-2 pr-3 text-gray-500">{n.priority ?? '—'}</td>
+                    <td className="pr-3">
+                      <div className="font-medium text-gray-900">{n.displayPhone ?? '—'}</div>
+                      <div className="text-xs text-gray-500">{n.name}{n.verifiedName ? ` · ${n.verifiedName}` : ''} · ID {n.phoneNumberId ?? '—'}</div>
+                    </td>
+                    <td className="pr-3">
+                      {n.status ? <Badge className={WA_POOL_COLOR[n.status]}>{n.status}</Badge> : '—'}
+                      {!n.enabled && <div className="text-xs text-gray-400">canal desligado</div>}
+                      {n.failCount > 0 && <div className="text-xs text-amber-600">{n.failCount} falha(s) seguida(s)</div>}
+                    </td>
+                    <td className="pr-3 text-xs text-gray-600">{n.lastCheckAt ? formatDate(n.lastCheckAt) : '—'}</td>
+                    <td className="max-w-[260px] pr-3 text-xs text-gray-600" title={n.lastError ?? ''}>
+                      <span className="line-clamp-2">{n.lastError ?? '—'}</span>
+                    </td>
+                    <td className="pr-3 text-xs text-gray-600">{n.statusAt ? formatDate(n.statusAt) : '—'}</td>
+                    <td>
+                      <Button size="sm" variant="ghost" loading={check.isPending && check.variables === n.id} disabled={check.isPending} onClick={() => check.mutate(n.id)}>
+                        Health check
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Histórico de trocas</h2>
+        {data.events.length === 0 ? (
+          <p className="text-sm text-gray-400">Sem trocas registadas.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {data.events.map((e) => (
+              <li key={e.id} className="flex gap-3">
+                <span className="w-36 shrink-0 text-xs text-gray-500">{formatDate(e.createdAt)}</span>
+                <span className={e.severity === 'ERROR' ? 'text-red-700' : 'text-gray-700'}>{e.message}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </div>
   );
 }

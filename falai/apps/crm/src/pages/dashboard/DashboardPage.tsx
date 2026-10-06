@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Phone, PhoneIncoming, TrendingUp, Clock, DollarSign, Bot, Megaphone, Plus } from 'lucide-react';
+import { Phone, PhoneIncoming, PhoneOutgoing, TrendingUp, Clock, DollarSign, Bot, Megaphone, Plus } from 'lucide-react';
 import {
   AreaChart,
   Area,
@@ -114,9 +114,16 @@ export function DashboardPage() {
         {/* KPI cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
-            label={t('dashboard.callsToday')}
-            value={data.callsToday}
-            icon={<Phone className="h-5 w-5" />}
+            label={t('dashboard.inboundToday')}
+            value={data.inboundToday}
+            sub={t('dashboard.today')}
+            icon={<PhoneIncoming className="h-5 w-5" />}
+          />
+          <StatCard
+            label={t('dashboard.outboundToday')}
+            value={data.outboundToday}
+            sub={t('dashboard.today')}
+            icon={<PhoneOutgoing className="h-5 w-5" />}
           />
           <StatCard
             label={t('dashboard.answerRate')}
@@ -129,15 +136,15 @@ export function DashboardPage() {
             value={formatDuration(data.avgDurationSecs)}
             icon={<Clock className="h-5 w-5" />}
           />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard
             label={t('dashboard.avgCost')}
             value={formatAOA(data.avgCostCents)}
             sub={t('dashboard.perCall')}
             icon={<DollarSign className="h-5 w-5" />}
           />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
           <StatCard
             label={t('dashboard.activeAgents')}
             value={data.activeAgents}

@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { YeastarAdapter } from "@falai/providers";
+import type { TelephonyProvider } from "@falai/providers";
 
 export interface OtpCallParams {
   to: string;
@@ -8,18 +8,19 @@ export interface OtpCallParams {
   dialPermission?: string;
   language?: string;
   autoAnswer?: "yes" | "no";
-  telephony: YeastarAdapter;
+  telephony: TelephonyProvider;
+  /** Decide o trunk de saída no motor Asterisk. */
+  tenantId: string;
 }
 
 /**
  * Entrega de código OTP por voz.
  *
- * Usa o `call/play_prompt` do Yeastar, que faz a chamada de saída ao destino e toca
- * a sequência de prompts pré-gravados (intro + dígitos + "repito" + dígitos + fecho).
- * O Yeastar trata do ciclo completo — dial, atender, tocar, desligar — pelo que não
- * é preciso polling nem eventos.
+ * O motor faz a chamada de saída ao destino e, quando atendem, toca a sequência
+ * de prompts pré-gravados (intro + dígitos + "repito" + dígitos + fecho) e
+ * desliga — ver AsteriskAdapter.playPrompt. Não é preciso polling nem eventos.
  *
- * Os prompts têm de ter sido enviados previamente com `pnpm -F api otp:prompts`.
+ * Os prompts têm de ter sido gerados previamente com `pnpm -F api otp:prompts`.
  */
 export class OtpCallService {
   constructor(private log: FastifyBaseLogger) {}
@@ -34,6 +35,7 @@ export class OtpCallService {
       count: 1,
       dialPermission: params.dialPermission ?? params.fromExtension,
       autoAnswer: params.autoAnswer ?? "no",
+      tenantId: params.tenantId,
     });
 
     this.log.info({ ref, to: params.to, prompts: prompts.length }, "otp_call.initiated");

@@ -1,11 +1,18 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { prisma, chargeMonthlyInvoice } from "@falai/db";
 import { z } from "zod";
 import { hashPassword } from "../../services/auth.service.js";
 import { pbxCallStatus } from "../../services/pbxCdr.service.js";
-import { computeFeatures, sanitizeFeatureOverrides, FEATURE_KEYS } from "../../services/features.js";
+import {
+  computeFeatures, sanitizeFeatureOverrides, invalidateTenantFeatures, lockedByPlan,
+  FEATURE_KEYS, FEATURE_LABELS, FEATURE_HINTS, DEFAULT_FEATURES,
+} from "../../services/features.js";
 import { encryptSecret } from "../../services/crypto.service.js";
 import { invalidateTenantSms } from "../../services/sms.service.js";
+import { publicApiUrl } from "../tenant/inboxes.js";
+import { checkNumber } from "../../services/waPool.service.js";
+import { registerIvrRouting, type RoutingCtx } from "../shared/ivrRouting.js";
+import { registerExtensions } from "../shared/extensions.js";
 
 const lineCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -21,6 +28,15 @@ const lineUpdateSchema = z.object({
   phoneNumber: z.string().max(30).nullable().optional(),
   isDefault: z.boolean().optional(),
   isActive: z.boolean().optional(),
+});
+
+// Só imagens rasterizadas ou SVG em base64; 256 KB de imagem ≈ 350 KB em base64.
+const logoSchema = z.object({
+  logoDataUrl: z
+    .string()
+    .regex(/^data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/, "Formato inválido (PNG, JPG, WEBP ou SVG)")
+    .max(350_000, "Logo demasiado grande (máx. 256 KB)")
+    .nullable(),
 });
 
 const featuresSchema = z.object(
@@ -51,6 +67,12 @@ const updateSchema = z.object({
   webhookUrl: z.string().url().optional(),
   webhookSecret: z.string().min(16).optional(),
   billingModeOverride: z.enum(["PER_MINUTE", "PER_SECOND", "PER_CALL"]).nullable().optional(),
+  pricePerMinuteOverrideCents: z.number().int().min(0).nullable().optional(),
+  recordCalls: z.boolean().optional(),
+  recordingAnnounce: z.boolean().optional(),
+  missedCallSms: z.boolean().optional(),
+  missedCallSmsText: z.string().max(480).nullable().optional(),
+  aiReportDailyLimit: z.number().int().min(0).max(1000).optional(), // análises IA dos relatórios por dia (0 = desligado)
 });
 
 const smsConfigSchema = z.object({
@@ -74,6 +96,7 @@ const userCreateSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   role: z.enum(["OWNER", "ADMIN", "MEMBER", "VIEWER"]).optional(),
+  accessProfileId: z.string().nullable().optional(),
 });
 
 function mapTenant(t: any) {
@@ -98,20 +121,35 @@ function mapTenant(t: any) {
           pricePerCallCents: t.plan.pricePerCallCents ?? 0,
           monthlyFeeCents: t.plan.monthlyFeeCents ?? 0,
           maxAgents: t.plan.maxAgents ?? 0,
-          maxConcurrentCalls: t.plan.maxConcurrent ?? t.maxConcurrent ?? 1,
+          // O que o PLANO permite. Antes caía para `t.maxConcurrent`, o que
+          // punha o valor do cliente dentro do objecto do plano: na listagem
+          // via-se o teto do plano (ex.: 10) e no detalhe o do cliente (1),
+          // com o dispatcher a obedecer ao segundo. Ver `campaignDispatcher`.
+          maxConcurrentCalls: t.plan.maxConcurrent ?? 1,
           aiAgentsEnabled: t.plan.aiAgentsEnabled ?? true,
+          productType: t.plan.productType ?? "VOICE_AI",
           isActive: t.plan.isActive ?? true,
         }
       : null,
+    // O limite efectivo: é este que o dispatcher de campanhas respeita.
     maxConcurrentCalls: t.maxConcurrent,
     billingModeOverride: t.billingModeOverride ?? null,
+    pricePerMinuteOverrideCents: t.pricePerMinuteOverrideCents ?? null,
+    recordCalls: t.recordCalls ?? false,
+    recordingAnnounce: t.recordingAnnounce ?? false,
+    missedCallSms: t.missedCallSms ?? false,
+    missedCallSmsText: t.missedCallSmsText ?? null,
+    aiReportDailyLimit: t.aiReportDailyLimit ?? 20,
     // features efectivas (o que o cliente vê) + overrides crus (o que o operador definiu)
     features: computeFeatures({
       overrides: t.features,
       aiAgentsEnabled: t.plan?.aiAgentsEnabled,
+      smsEnabled: t.plan?.smsEnabled,
       productType: t.plan?.productType,
     }),
     featureOverrides: (t.features ?? {}) as Record<string, boolean>,
+    lockedByPlan: lockedByPlan(t.plan),
+    logoDataUrl: (t as { logoDataUrl?: string | null }).logoDataUrl ?? null,
     ...(t.lines !== undefined && { lines: t.lines }),
     createdAt: t.createdAt,
     _count: t._count,
@@ -196,13 +234,30 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
       where: { id: request.params.id, deletedAt: null },
       include: {
         plan: true,
-        users: { select: { id: true, name: true, email: true, role: true, lastLoginAt: true } },
+        users: { select: { id: true, name: true, email: true, role: true, accessProfileId: true, lastLoginAt: true } },
         lines: { orderBy: { createdAt: "asc" } },
         _count: { select: { agents: true, calls: true, contacts: true } },
       },
     });
     if (!tenant) return reply.status(404).send({ error: "Tenant não encontrado" });
-    return mapTenant(tenant);
+    // Análise IA dos relatórios (melhoria 6): uso e custo deste mês.
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const ai = await prisma.reportAnalysis.aggregate({
+      where: { tenantId: tenant.id, createdAt: { gte: monthStart }, error: null, model: { not: "stub" } },
+      _count: true,
+      _sum: { inputTokens: true, outputTokens: true, costMicroUsd: true },
+    });
+    return {
+      ...mapTenant(tenant),
+      aiReportUsageMonth: {
+        analyses: ai._count,
+        inputTokens: ai._sum.inputTokens ?? 0,
+        outputTokens: ai._sum.outputTokens ?? 0,
+        costUsd: (ai._sum.costMicroUsd ?? 0) / 1_000_000,
+      },
+    };
   });
 
   // PATCH /admin/tenants/:id
@@ -213,6 +268,16 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null } });
     if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
 
+    // Ligar o SMS automático sem mensagem escrita deixava o aviso ligado a não
+    // fazer nada — falha silenciosa que só se nota quando um cliente se queixa
+    // de não receber nada.
+    const smsText = body.missedCallSmsText !== undefined ? body.missedCallSmsText : existing.missedCallSmsText;
+    const smsOn = body.missedCallSms !== undefined ? body.missedCallSms : existing.missedCallSms;
+    if (smsOn && !(smsText ?? "").trim()) {
+      return reply.status(400).send({ error: "Define o texto da mensagem antes de ligar o SMS automático" });
+    }
+
+    invalidateTenantFeatures(request.params.id); // pode mudar de plano
     const tenant = await prisma.tenant.update({
       where: { id: request.params.id },
       data: {
@@ -226,6 +291,12 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.webhookUrl !== undefined && { webhookUrl: body.webhookUrl }),
         ...(body.webhookSecret !== undefined && { webhookSecret: body.webhookSecret }),
         ...(body.billingModeOverride !== undefined && { billingModeOverride: body.billingModeOverride }),
+        ...(body.pricePerMinuteOverrideCents !== undefined && { pricePerMinuteOverrideCents: body.pricePerMinuteOverrideCents }),
+        ...(body.recordCalls !== undefined && { recordCalls: body.recordCalls }),
+        ...(body.recordingAnnounce !== undefined && { recordingAnnounce: body.recordingAnnounce }),
+        ...(body.missedCallSms !== undefined && { missedCallSms: body.missedCallSms }),
+        ...(body.missedCallSmsText !== undefined && { missedCallSmsText: body.missedCallSmsText }),
+        ...(body.aiReportDailyLimit !== undefined && { aiReportDailyLimit: body.aiReportDailyLimit }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },
     });
@@ -240,6 +311,74 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /admin/tenants/:id/sms — configuração de SMS do tenant (chave mascarada)
+  // Pool WhatsApp do cliente (só leitura: é o cliente que gere os números no CRM).
+  fastify.get<{ Params: { id: string } }>("/:id/whatsapp", { preHandler }, async (request, reply) => {
+    const tenantId = request.params.id;
+    if (!(await prisma.tenant.findFirst({ where: { id: tenantId, deletedAt: null }, select: { id: true } }))) {
+      return reply.status(404).send({ error: "Tenant não encontrado" });
+    }
+    const [numbers, events] = await Promise.all([
+      prisma.inbox.findMany({
+        where: { tenantId, channel: "WHATSAPP", deletedAt: null },
+        orderBy: [{ waPriority: "asc" }, { createdAt: "asc" }],
+      }),
+      prisma.systemEvent.findMany({
+        where: { tenantId, source: "whatsapp-pool" },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: { id: true, severity: true, message: true, createdAt: true },
+      }),
+    ]);
+    return {
+      poolUrl: `${publicApiUrl(request)}/public/wa/${tenantId}`,
+      // Nunca devolver config inteiro: tem o token e o app secret cifrados.
+      numbers: numbers.map((i) => {
+        const c = i.config as { displayPhone?: string; verifiedName?: string; phoneNumberId?: string };
+        return {
+          id: i.id,
+          name: i.name,
+          displayPhone: c.displayPhone ?? null,
+          verifiedName: c.verifiedName ?? null,
+          phoneNumberId: c.phoneNumberId ?? null,
+          enabled: i.enabled,
+          status: i.waStatus,
+          priority: i.waPriority,
+          failCount: i.waFailCount,
+          lastCheckAt: i.waLastCheckAt,
+          lastError: i.waLastError,
+          statusAt: i.waStatusAt,
+          createdAt: i.createdAt,
+        };
+      }),
+      events,
+    };
+  });
+
+  // Health check pedido pelo suporte. Mesma lógica do automático: se o número
+  // estiver comprovadamente em baixo, o failover acontece aqui também.
+  fastify.post<{ Params: { id: string }; Body: { inboxId?: string } }>("/:id/whatsapp/check", { preHandler }, async (request, reply) => {
+    const tenantId = request.params.id;
+    const inboxId = request.body?.inboxId;
+    const numbers = await prisma.inbox.findMany({
+      where: { tenantId, channel: "WHATSAPP", deletedAt: null, ...(inboxId && { id: inboxId }) },
+      select: { id: true },
+    });
+    if (!numbers.length) return reply.status(404).send({ error: "Número não encontrado" });
+    const results = [];
+    for (const n of numbers) results.push({ id: n.id, ...(await checkNumber(fastify, n.id)) });
+    await fastify.audit({
+      actorType: "ADMIN",
+      actorId: request.adminUser!.sub,
+      tenantId,
+      action: "whatsapp.pool.check",
+      targetType: "Inbox",
+      targetId: inboxId ?? tenantId,
+      after: results,
+      ip: request.ip,
+    });
+    return { results };
+  });
+
   fastify.get<{ Params: { id: string } }>("/:id/sms", { preHandler }, async (request, reply) => {
     const t = await prisma.tenant.findFirst({
       where: { id: request.params.id, deletedAt: null },
@@ -422,6 +561,111 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
+  // GET /admin/tenants/:id/campaigns — campanhas de chamadas criadas pelo cliente e o respectivo estado
+  fastify.get<{ Params: { id: string }; Querystring: { page?: string; perPage?: string } }>(
+    "/:id/campaigns", { preHandler }, async (request) => {
+      const page = parseInt(request.query.page ?? "1", 10);
+      const perPage = parseInt(request.query.perPage ?? "10", 10);
+      const skip = (page - 1) * perPage;
+
+      const tenantId = request.params.id;
+      const [campaigns, total] = await Promise.all([
+        prisma.campaign.findMany({
+          where: { tenantId },
+          orderBy: { createdAt: "desc" }, take: perPage, skip,
+          include: { agent: { select: { name: true } } },
+        }),
+        prisma.campaign.count({ where: { tenantId } }),
+      ]);
+
+      return {
+        data: campaigns.map((c) => ({
+          id: c.id, name: c.name, mode: c.mode, status: c.status,
+          agentName: c.agent?.name ?? null,
+          totalContacts: c.totalContacts, completed: c.completed, failedCount: c.failedCount,
+          throttlePerMinute: c.throttlePerMinute,
+          createdAt: c.createdAt, updatedAt: c.updatedAt,
+        })),
+        total, page, perPage,
+      };
+    }
+  );
+
+  // GET /admin/tenants/:id/campaigns/:campaignId — detalhe de uma campanha: configuração,
+  // contagens por estado (vindas da tabela, não dos contadores desnormalizados) e últimos contactos.
+  fastify.get<{ Params: { id: string; campaignId: string } }>(
+    "/:id/campaigns/:campaignId", { preHandler }, async (request, reply) => {
+      const { id: tenantId, campaignId } = request.params;
+      const campaign = await prisma.campaign.findFirst({
+        where: { id: campaignId, tenantId },
+        include: { agent: { select: { name: true } } },
+      });
+      if (!campaign) return reply.status(404).send({ error: "Campanha não encontrada" });
+
+      const [callStats, contactStats, answeredCount, recent] = await Promise.all([
+        prisma.call.aggregate({
+          where: { campaignId },
+          _count: { id: true },
+          _sum: { durationSecs: true, costCents: true },
+          _avg: { durationSecs: true },
+        }),
+        prisma.campaignContact.groupBy({
+          by: ["status"],
+          where: { campaignId },
+          _count: { status: true },
+        }),
+        prisma.call.count({ where: { campaignId, status: { in: ["COMPLETED", "ESCALATED"] } } }),
+        prisma.campaignContact.findMany({
+          where: { campaignId },
+          orderBy: { updatedAt: "desc" },
+          take: 20,
+          select: {
+            id: true, status: true, attempts: true, callId: true, updatedAt: true,
+            contact: { select: { name: true, phone: true } },
+          },
+        }),
+      ]);
+
+      const callIds = recent.map((r) => r.callId).filter((v): v is string => !!v);
+      const calls = callIds.length
+        ? await prisma.call.findMany({
+            where: { id: { in: callIds } },
+            select: { id: true, status: true, outcome: true, durationSecs: true, costCents: true },
+          })
+        : [];
+      const callById = new Map(calls.map((c) => [c.id, c]));
+
+      return {
+        id: campaign.id, name: campaign.name, mode: campaign.mode, status: campaign.status,
+        agentName: campaign.agent?.name ?? null,
+        scriptText: campaign.scriptText,
+        scheduleJson: campaign.scheduleJson,
+        retryPolicy: campaign.retryPolicy,
+        throttlePerMinute: campaign.throttlePerMinute,
+        summary: campaign.summary,
+        createdAt: campaign.createdAt, updatedAt: campaign.updatedAt,
+        contactStatuses: Object.fromEntries(contactStats.map((s) => [s.status, s._count.status])),
+        calls: {
+          total: callStats._count.id,
+          answered: answeredCount,
+          totalDurationSecs: callStats._sum.durationSecs ?? 0,
+          avgDurationSecs: Math.round(callStats._avg.durationSecs ?? 0),
+          totalCostCents: callStats._sum.costCents ?? 0,
+        },
+        recentContacts: recent.map((r) => {
+          const call = r.callId ? callById.get(r.callId) ?? null : null;
+          return {
+            id: r.id, name: r.contact.name, phone: r.contact.phone,
+            status: r.status, attempts: r.attempts, updatedAt: r.updatedAt,
+            callId: r.callId,
+            callStatus: call?.status ?? null, outcome: call?.outcome ?? null,
+            durationSecs: call?.durationSecs ?? null, costCents: call?.costCents ?? null,
+          };
+        }),
+      };
+    }
+  );
+
   // GET /admin/tenants/:id/transactions
   fastify.get<{ Params: { id: string }; Querystring: { page?: string; perPage?: string } }>(
     "/:id/transactions", { preHandler }, async (request) => {
@@ -554,7 +798,74 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     return { ok: true };
   });
 
+  // ============ LOGO ============
+
+  // PUT /admin/tenants/:id/logo — logo do cliente no CRM (null = volta ao da Comunica)
+  fastify.put<{ Params: { id: string } }>("/:id/logo", { preHandler }, async (request, reply) => {
+    const parsed = logoSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? "Logo inválido" });
+    const { logoDataUrl } = parsed.data;
+    const admin = request.adminUser!;
+    const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null }, select: { id: true } });
+    if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
+    await prisma.tenant.update({ where: { id: request.params.id }, data: { logoDataUrl } });
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: logoDataUrl ? "tenant.logo_updated" : "tenant.logo_removed",
+      targetType: "Tenant", targetId: request.params.id, ip: request.ip,
+    });
+    return { logoDataUrl };
+  });
+
   // ============ FUNCIONALIDADES ============
+
+  // GET /admin/tenants/features — matriz clientes × funcionalidades (página global)
+  fastify.get("/features", { preHandler }, async () => {
+    const tenants = await prisma.tenant.findMany({
+      where: { deletedAt: null },
+      orderBy: { name: "asc" },
+      select: {
+        id: true, name: true, status: true, features: true,
+        plan: { select: { name: true, productType: true, aiAgentsEnabled: true, smsEnabled: true } },
+      },
+    });
+    return {
+      features: FEATURE_KEYS.map((key) => ({ key, label: FEATURE_LABELS[key], hint: FEATURE_HINTS[key], default: DEFAULT_FEATURES[key] })),
+      tenants: tenants.map((t) => {
+        const effective = computeFeatures({
+          overrides: t.features,
+          aiAgentsEnabled: t.plan?.aiAgentsEnabled,
+          smsEnabled: t.plan?.smsEnabled,
+          productType: t.plan?.productType,
+        });
+        return {
+          id: t.id,
+          name: t.name,
+          status: t.status,
+          plan: t.plan ? { name: t.plan.name, productType: t.plan.productType } : null,
+          features: effective,
+          overrides: (t.features ?? {}) as Record<string, boolean>,
+          lockedByPlan: lockedByPlan(t.plan),
+        };
+      }),
+    };
+  });
+
+  // PATCH /admin/tenants/:id/features — muda só as chaves enviadas (célula da matriz)
+  fastify.patch<{ Params: { id: string } }>("/:id/features", { preHandler }, async (request, reply) => {
+    const admin = request.adminUser!;
+    const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null }, select: { features: true } });
+    if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
+    const before = sanitizeFeatureOverrides(existing.features);
+    const overrides = { ...before, ...sanitizeFeatureOverrides(featuresSchema.parse(request.body)) };
+    await prisma.tenant.update({ where: { id: request.params.id }, data: { features: overrides } });
+    invalidateTenantFeatures(request.params.id);
+    await fastify.audit({
+      actorType: "ADMIN", actorId: admin.sub, action: "tenant.features_updated",
+      targetType: "Tenant", targetId: request.params.id,
+      before: before as object, after: overrides as object, ip: request.ip,
+    });
+    return { overrides };
+  });
 
   // PUT /admin/tenants/:id/features — grava overrides de funcionalidades
   fastify.put<{ Params: { id: string } }>("/:id/features", { preHandler }, async (request, reply) => {
@@ -563,12 +874,13 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
 
     const existing = await prisma.tenant.findFirst({
       where: { id: request.params.id, deletedAt: null },
-      include: { plan: { select: { aiAgentsEnabled: true, productType: true } } },
+      include: { plan: { select: { aiAgentsEnabled: true, smsEnabled: true, productType: true } } },
     });
     if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
 
     const overrides = sanitizeFeatureOverrides(body);
     await prisma.tenant.update({ where: { id: request.params.id }, data: { features: overrides } });
+    invalidateTenantFeatures(request.params.id);
 
     await fastify.audit({
       actorType: "ADMIN", actorId: admin.sub, action: "tenant.features_updated",
@@ -581,6 +893,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
       features: computeFeatures({
         overrides,
         aiAgentsEnabled: existing.plan?.aiAgentsEnabled,
+        smsEnabled: existing.plan?.smsEnabled,
         productType: existing.plan?.productType,
       }),
     };
@@ -596,13 +909,13 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     const users = await prisma.tenantUser.findMany({
       where: { tenantId: request.params.id },
       orderBy: { createdAt: "asc" },
-      select: { id: true, name: true, email: true, role: true, lastLoginAt: true, twoFaSecret: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, accessProfileId: true, lastLoginAt: true, twoFaSecret: true, createdAt: true },
     });
 
     // Nunca expomos a passwordHash. Indicamos apenas se o 2FA está activo.
     return {
       users: users.map((u) => ({
-        id: u.id, name: u.name, email: u.email, role: u.role,
+        id: u.id, name: u.name, email: u.email, role: u.role, accessProfileId: u.accessProfileId,
         lastLoginAt: u.lastLoginAt, twoFaEnabled: !!u.twoFaSecret, createdAt: u.createdAt,
       })),
     };
@@ -648,6 +961,11 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     const existingEmail = await prisma.tenantUser.findUnique({ where: { email: body.email } });
     if (existingEmail) return reply.status(409).send({ error: "Email já registado" });
 
+    if (body.accessProfileId) {
+      const profile = await prisma.accessProfile.findFirst({ where: { id: body.accessProfileId, tenantId: tenant.id }, select: { id: true } });
+      if (!profile) return reply.status(400).send({ error: "Perfil de acesso inválido" });
+    }
+
     const user = await prisma.tenantUser.create({
       data: {
         tenantId: request.params.id,
@@ -655,8 +973,9 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         email: body.email,
         passwordHash: await hashPassword(body.password),
         role: body.role ?? "MEMBER",
+        accessProfileId: body.accessProfileId ?? null,
       },
-      select: { id: true, name: true, email: true, role: true, lastLoginAt: true, createdAt: true },
+      select: { id: true, name: true, email: true, role: true, accessProfileId: true, lastLoginAt: true, createdAt: true },
     });
 
     await fastify.audit({
@@ -667,4 +986,20 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
 
     return reply.status(201).send({ ...user, twoFaEnabled: false });
   });
+
+  // O operador gere o cliente sem entrar no CRM, com o mesmo código que o CRM
+  // usa — o que se configura aqui é o que o cliente vê no perfil.
+  const adminCtx = async (request: FastifyRequest, reply: FastifyReply): Promise<RoutingCtx | null> => {
+    const { id } = request.params as { id: string };
+    const tenant = await prisma.tenant.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+    if (!tenant) {
+      reply.status(404).send({ error: "Tenant não encontrado" });
+      return null;
+    }
+    return { tenantId: tenant.id, actorType: "ADMIN", actorId: request.adminUser!.sub };
+  };
+  // Rotas de entrada e menus IVR — ver routes/shared/ivrRouting.ts.
+  registerIvrRouting(fastify, { base: "/:id", preHandler, ctx: adminCtx });
+  // Extensões — ver routes/shared/extensions.ts.
+  registerExtensions(fastify, { base: "/:id/extensions", preHandler, ctx: adminCtx });
 };

@@ -5,12 +5,9 @@ import { YEASTAR_EVENTS } from "@falai/shared";
 /**
  * Chamadas a entrar (inbound): "screen pop" no CRM + registo ao vivo na tabela Call.
  *
- * Duas fontes alimentam este módulo, ambas com o payload cru do Yeastar:
- *   - PBX partilhado (VOICE_AI): eventos via WebSocket/webhook do Yeastar global;
- *     o tenant é resolvido pela extensão de destino (TenantLine) no toque, e pelo
- *     yeastarCallId nos eventos seguintes.
- *   - PBX próprio (CRM_BYO_PBX): eventos em /webhooks/pbx/:token — o token já
- *     identifica o tenant.
+ * Fonte: o PBX Yeastar próprio de um cliente CRM_BYO_PBX, com o payload cru em
+ * /webhooks/pbx/:token — o token identifica o tenant. As chamadas do motor
+ * Asterisk da plataforma entram por inboundCallRouter.service.ts.
  *
  * O registo ao vivo cria um Call (kind INBOUND) no toque e actualiza-o à medida
  * que a chamada é atendida/termina, para o cliente ver a entrada de imediato —
@@ -136,26 +133,6 @@ export async function ingestTenantPbxEvent(
   await applyEvent(fastify, tenantId, ev);
 }
 
-/** PBX partilhado: resolve o tenant pela extensão de destino (toque) ou pelo Call existente. */
-export async function ingestSharedPbxEvent(fastify: FastifyInstance, raw: Record<string, unknown>): Promise<void> {
-  const ev = parseCallEvent(raw);
-  if (!ev) return;
-
-  let tenantId: string | null = null;
-  if (ev.state === "RINGING" && !ev.isOutbound && ev.calleeNumber) {
-    tenantId = await resolveTenantByExtension(ev.calleeNumber);
-  } else {
-    // Eventos seguintes: encontra o tenant pela chamada já registada
-    const existing = await prisma.call.findUnique({
-      where: { yeastarCallId: ev.callId },
-      select: { tenantId: true },
-    });
-    tenantId = existing?.tenantId ?? null;
-  }
-  if (!tenantId) return;
-  await applyEvent(fastify, tenantId, ev);
-}
-
 async function applyEvent(fastify: FastifyInstance, tenantId: string, ev: ParsedCallEvent): Promise<void> {
   switch (ev.state) {
     case "RINGING":
@@ -225,15 +202,6 @@ async function onRinging(fastify: FastifyInstance, tenantId: string, ev: ParsedC
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Resolve o tenant dono da extensão de destino (PBX partilhado). */
-export async function resolveTenantByExtension(extension: string): Promise<string | null> {
-  const line = await prisma.tenantLine.findFirst({
-    where: { extension, isActive: true },
-    select: { tenantId: true },
-  });
-  return line?.tenantId ?? null;
-}
 
 /** Procura um contacto do tenant cujo telefone corresponda ao número (pelos últimos 9 dígitos). */
 async function findContactIdByPhone(tenantId: string, phone: string): Promise<string | null> {

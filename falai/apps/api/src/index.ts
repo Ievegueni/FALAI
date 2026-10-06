@@ -1,14 +1,15 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance, type FastifyPluginAsync, type FastifyRequest } from "fastify";
 import fastifyCors from "@fastify/cors";
 import fastifyWebSocket from "@fastify/websocket";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyRawBody from "fastify-raw-body";
 import fastifyMultipart from "@fastify/multipart";
 import { Redis } from "ioredis";
+import { ZodError } from "zod";
 
 import { config } from "./config.js";
 import { resolveProviderConfig, type ResolvedProviderConfig } from "./services/providerConfig.service.js";
-import { YeastarAdapter, AsteriskAdapter, trunkEndpointId, parseDialFormat, type TelephonyProvider } from "@falai/providers";
+import { AsteriskAdapter, trunkEndpointId, parseDialFormat, type TelephonyProvider } from "@falai/providers";
 import { registerInboundCallRouter } from "./services/inboundCallRouter.service.js";
 import { startDirectCallSweeper, registerDirectCallEvents } from "./services/directCall.service.js";
 import { prisma } from "@falai/db";
@@ -22,18 +23,22 @@ import campaignDispatcherPlugin from "./plugins/campaignDispatcher.js";
 
 import { adminAuthRoutes } from "./routes/admin/auth.js";
 import { adminSettingsRoutes } from "./routes/admin/settings.js";
+import { adminSystemRoutes } from "./routes/admin/system.js";
 import { adminTestCallRoutes } from "./routes/admin/test-call.js";
 import { adminCallsRoutes } from "./routes/admin/calls.js";
 import { adminSimulateRoutes } from "./routes/admin/simulate-conversation.js";
 import { adminPlansRoutes } from "./routes/admin/plans.js";
+import { adminProductsRoutes } from "./routes/admin/products.js";
 import { adminTenantsRoutes } from "./routes/admin/tenants.js";
 import { adminTenantApiKeysRoutes } from "./routes/admin/tenant-api-keys.js";
+import { adminTenantAccessProfilesRoutes } from "./routes/admin/tenant-access-profiles.js";
 import { adminAgentsModerationRoutes } from "./routes/admin/agents-moderation.js";
 import { adminModelsModerationRoutes } from "./routes/admin/models-moderation.js";
 import { tenantAuthRoutes } from "./routes/tenant/auth.js";
 import { tenantAgentsRoutes } from "./routes/tenant/agents.js";
 import { tenantDashboardRoutes } from "./routes/tenant/dashboard.js";
 import { tenantContactsRoutes } from "./routes/tenant/contacts.js";
+import { tenantContactProfileRoutes } from "./routes/tenant/contactProfile.js";
 import { tenantCallsRoutes } from "./routes/tenant/calls.js";
 import { tenantTeamRoutes } from "./routes/tenant/team.js";
 import { tenantCampaignsRoutes } from "./routes/tenant/campaigns.js";
@@ -49,6 +54,11 @@ import { tenantBillingRoutes } from "./routes/tenant/billing.js";
 import { tenantApiKeysRoutes } from "./routes/tenant/api-keys.js";
 import { tenantWebhookEventsRoutes } from "./routes/tenant/webhook-events.js";
 import { tenantSettingsRoutes } from "./routes/tenant/settings.js";
+import { tenantRejectReasonsRoutes } from "./routes/tenant/rejectReasons.js";
+import { tenantCallTypingRoutes } from "./routes/tenant/callTyping.js";
+import { tenantCallersRoutes } from "./routes/tenant/callers.js";
+import { tenantSupervisionRoutes } from "./routes/tenant/supervision.js";
+import { SupervisionManager } from "./services/supervision.service.js";
 import { tenantEventsRoutes } from "./routes/tenant/events.js";
 import { tenantReportsRoutes } from "./routes/tenant/reports.js";
 import { tenantSmsRoutes } from "./routes/tenant/sms.js";
@@ -66,11 +76,35 @@ import { v1OtpRoutes } from "./routes/v1/otp.js";
 import { v1SmsRoutes } from "./routes/v1/sms.js";
 import { v1ModelsRoutes } from "./routes/v1/models.js";
 import { v1UsageRoutes } from "./routes/v1/usage.js";
-import { yeastarWebhookRoutes } from "./routes/webhooks/yeastar.js";
 import { pbxWebhookRoutes } from "./routes/webhooks/pbx.js";
 import { asteriskWebhookRoutes } from "./routes/webhooks/asterisk.js";
 import { smsWebhookRoutes } from "./routes/webhooks/sms.js";
-import { registerYeastarWebSocket } from "./websocket/yeastar.js";
+import { telegramWebhookRoutes } from "./routes/webhooks/telegram.js";
+import { whatsappWebhookRoutes } from "./routes/webhooks/whatsapp.js";
+import { tenantInboxesRoutes } from "./routes/tenant/inboxes.js";
+import { tenantConversationsRoutes } from "./routes/tenant/conversations.js";
+import { v1ConversationsRoutes } from "./routes/v1/conversations.js";
+import { publicChatRoutes } from "./routes/public/chat.js";
+import { publicWaRoutes } from "./routes/public/wa.js";
+import { startEmailPolling } from "./services/email.service.js";
+import { startWaHealthCheck } from "./services/waPool.service.js";
+import { gateFeature, type FeatureKey } from "./services/features.js";
+
+/**
+ * Regista um grupo de rotas atrás de uma funcionalidade do tenant: cada rota
+ * responde 403 se a Comunica não a activou (backoffice → Funcionalidades).
+ */
+async function gated(
+  parent: FastifyInstance,
+  key: FeatureKey,
+  plugin: FastifyPluginAsync<any> | ((f: FastifyInstance) => Promise<void>),
+  opts?: Record<string, unknown>
+): Promise<void> {
+  await parent.register(async (scope) => {
+    scope.addHook("onRoute", gateFeature(key));
+    await scope.register(plugin as FastifyPluginAsync, opts ?? {});
+  });
+}
 import { syncAllPbx } from "./services/pbxSync.service.js";
 
 declare module "fastify" {
@@ -83,19 +117,15 @@ declare module "fastify" {
      */
     telephony: TelephonyProvider;
     /**
-     * @deprecated Referência ao adaptador Yeastar concreto. Só para o código que
-     * usa funções fora da interface (webhooks, WebSocket de eventos, CDR e o
-     * produto BYO-PBX). Esse código é removido no fim da migração (§13.4).
+     * O motor Asterisk nativo — o único motor da plataforma. Necessário para as
+     * funções que vivem fora da interface TelephonyProvider — bridges, ring
+     * groups e originate para um endpoint PJSIP concreto — usadas pelas chamadas
+     * directas e pelo router de entrada. O Yeastar só existe no produto
+     * CRM_BYO_PBX, por tenant (ver tenantTelephony.service.ts).
      */
-    yeastar: YeastarAdapter;
-    /**
-     * O motor Asterisk nativo, ou null se estiver desligado
-     * (TELEPHONY_ENGINE != asterisk). Necessário para as funções que vivem
-     * fora da interface TelephonyProvider — bridges, ring groups e originate
-     * para um endpoint PJSIP concreto — usadas pelas chamadas directas e pelo
-     * router de entrada.
-     */
-    asterisk: AsteriskAdapter | null;
+    asterisk: AsteriskAdapter;
+    /** Supervisão de chamadas em tempo real (melhoria 4) — ver supervision.service.ts. */
+    supervision: SupervisionManager;
     providerConfig: ResolvedProviderConfig;
   }
 }
@@ -110,6 +140,35 @@ declare module "fastify" {
 function parseTrustedProxies(raw: string | undefined): string[] | false {
   const list = (raw ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   return list.length > 0 ? list : false;
+}
+
+/**
+ * Chave do rate-limit global: por tenant/admin autenticado, não por IP.
+ * Um escritório inteiro (ou toda a Internet atrás de um NAT/proxy da operadora,
+ * comum em Angola) partilha o mesmo IP público — com a chave por IP, uma
+ * campanha de um cliente com muitos contactos gastava o balde inteiro à custa
+ * de todos os outros pedidos (dashboard, outros tenants) que passassem pelo
+ * mesmo endereço. Descodifica o JWT sem verificar assinatura — é só para
+ * agrupar o balde, a autenticação real continua a cargo dos preHandlers de
+ * cada rota.
+ */
+function rateLimitKey(fastify: { jwt: { decode: (token: string) => unknown } }) {
+  return (req: FastifyRequest): string => {
+    const header = req.headers.authorization;
+    const token = typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : undefined;
+    if (token) {
+      try {
+        const payload = fastify.jwt.decode(token) as
+          | { type?: string; tenantId?: string; sub?: string }
+          | null;
+        if (payload?.type === "tenant" && payload.tenantId) return `tenant:${payload.tenantId}`;
+        if (payload?.type === "admin" && payload.sub) return `admin:${payload.sub}`;
+      } catch {
+        // token ilegível — cai para o IP, tal como antes
+      }
+    }
+    return req.ip;
+  };
 }
 
 async function buildApp() {
@@ -128,6 +187,14 @@ async function buildApp() {
   });
 
   // ── Core plugins ───────────────────────────────────────────────────────
+  // As rotas validam com `schema.parse(...)`: sem isto um corpo inválido saía
+  // como 500. Dados errados do cliente são 400, com a mensagem do Zod.
+  fastify.setErrorHandler((err, _request, reply) => {
+    if (err instanceof ZodError) {
+      return reply.status(400).send({ error: err.issues[0]?.message ?? "Dados inválidos", issues: err.issues });
+    }
+    return reply.send(err);
+  });
   await fastify.register(fastifyRawBody, { global: false });
   await fastify.register(fastifyMultipart, { limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
   // Em produção: usa a whitelist de ALLOWED_ORIGINS se definida; senão bloqueia
@@ -143,12 +210,13 @@ async function buildApp() {
   await fastify.register(fastifyWebSocket);
   await fastify.register(fastifyRateLimit, {
     global: true,
-    max: 200,
+    max: 500,
     timeWindow: "1 minute",
+    keyGenerator: rateLimitKey(fastify),
     redis: new Redis(config.REDIS_URL),
   });
 
-  // ── App plugins (order matters: redis → auth → audit → tenantAuth → yeastar → callEngine) ──
+  // ── App plugins (order matters: redis → auth → audit → tenantAuth → telefonia → callEngine) ──
   await fastify.register(redisPlugin);
   await fastify.register(authPlugin);
   await fastify.register(auditPlugin);
@@ -167,74 +235,91 @@ async function buildApp() {
   const providerConfig = await resolveProviderConfig();
   fastify.decorate("providerConfig", providerConfig);
 
-  // Yeastar adapter (decorated before callEngine plugin needs it)
-  const yeastar = new YeastarAdapter(
-    {
-      baseUrl: providerConfig.yeastar.baseUrl,
-      clientId: providerConfig.yeastar.clientId,
-      clientSecret: providerConfig.yeastar.clientSecret,
-      stubMode: providerConfig.yeastar.stubMode,
+  // Motor de telefonia: o Asterisk próprio, trunk directo à operadora. É o
+  // único motor — sem ele não há chamadas, por isso a API não arranca sem ARI.
+  if (!process.env["ASTERISK_ARI_URL"]) throw new Error("ASTERISK_ARI_URL em falta — ver DEPLOY.md");
+  const asteriskAdapter = new AsteriskAdapter({
+    baseUrl: process.env["ASTERISK_ARI_URL"]!,
+    username: process.env["ASTERISK_ARI_USER"] ?? "falai",
+    password: process.env["ASTERISK_ARI_PASSWORD"] ?? "",
+    soundsDir: process.env["ASTERISK_SOUNDS_DIR"] ?? "",
+    dialFormat: parseDialFormat(process.env["ASTERISK_DIAL_FORMAT"]),
+    // Por onde sai uma chamada para a rede: o trunk activo na base de
+    // dados. Lido a pedido (com cache curta no adaptador) para mudar o
+    // trunk no backoffice não obrigar a reiniciar a API.
+    // O trunk do PRÓPRIO cliente tem precedência; na falta dele usa-se um
+    // partilhado (tenantId nulo). Nunca o de outro cliente — antes isto era
+    // "o primeiro trunk activo", e um cliente saía pelo trunk e com o
+    // Caller ID de outro. Sem tenant conhecido só se aceitam partilhados.
+    resolveTrunk: async (tenantId?: string) => {
+      const trunk = await prisma.trunk.findFirst({
+        where: tenantId
+          ? { enabled: true, OR: [{ tenantId }, { tenantId: null }] }
+          : { enabled: true, tenantId: null },
+        orderBy: [{ tenantId: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }],
+        select: { name: true, authUser: true },
+      });
+      if (!trunk) return null;
+      return {
+        endpoint: trunkEndpointId(trunk.name),
+        callerId: process.env["ASTERISK_CALLER_ID"] || trunk.authUser,
+      };
     },
-    fastify.redis
-  );
-  fastify.decorate("yeastar", yeastar);
-
-  // Motor de telefonia activo. TELEPHONY_ENGINE=asterisk liga o motor próprio;
-  // qualquer outro valor (ou ausência) mantém o PBX externo. É o interruptor
-  // que permite migrar e reverter sem redeploy — ver plano §15.2.
-  const useAsterisk =
-    process.env["TELEPHONY_ENGINE"] === "asterisk" && Boolean(process.env["ASTERISK_ARI_URL"]);
-  const asteriskAdapter = useAsterisk
-    ? new AsteriskAdapter({
-        baseUrl: process.env["ASTERISK_ARI_URL"]!,
-        username: process.env["ASTERISK_ARI_USER"] ?? "falai",
-        password: process.env["ASTERISK_ARI_PASSWORD"] ?? "",
-        soundsDir: process.env["ASTERISK_SOUNDS_DIR"] ?? "",
-        dialFormat: parseDialFormat(process.env["ASTERISK_DIAL_FORMAT"]),
-        // Por onde sai uma chamada para a rede: o trunk activo na base de
-        // dados. Lido a pedido (com cache curta no adaptador) para mudar o
-        // trunk no backoffice não obrigar a reiniciar a API.
-        // O trunk do PRÓPRIO cliente tem precedência; na falta dele usa-se um
-        // partilhado (tenantId nulo). Nunca o de outro cliente — antes isto era
-        // "o primeiro trunk activo", e um cliente saía pelo trunk e com o
-        // Caller ID de outro. Sem tenant conhecido só se aceitam partilhados.
-        resolveTrunk: async (tenantId?: string) => {
-          const trunk = await prisma.trunk.findFirst({
-            where: tenantId
-              ? { enabled: true, OR: [{ tenantId }, { tenantId: null }] }
-              : { enabled: true, tenantId: null },
-            orderBy: [{ tenantId: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }],
-            select: { name: true, authUser: true },
-          });
-          if (!trunk) return null;
-          return {
-            endpoint: trunkEndpointId(trunk.name),
-            callerId: process.env["ASTERISK_CALLER_ID"] || trunk.authUser,
-          };
-        },
-      })
-    : null;
-  const telephony: TelephonyProvider = asteriskAdapter ?? (yeastar as TelephonyProvider);
-  fastify.decorate("telephony", telephony);
+  });
+  fastify.decorate("telephony", asteriskAdapter as TelephonyProvider);
   fastify.decorate("asterisk", asteriskAdapter);
-  fastify.log.info({ engine: useAsterisk ? "asterisk" : "yeastar" }, "telephony.engine_selected");
   // Expira sessões esquecidas em memória e fecha registos DIRECT pendurados
   // (por exemplo os de antes de um reinício, que perde o mapa de sessões).
-  if (asteriskAdapter) startDirectCallSweeper(asteriskAdapter, fastify.log);
+  startDirectCallSweeper(asteriskAdapter, fastify.log);
 
-  // eventBus: multiplexor de eventos Yeastar (deve ser registado antes de callEngine e otpCallService)
+  // eventBus: multiplexor de eventos do motor (deve ser registado antes de callEngine e otpCallService)
   const { default: eventBusPlugin } = await import("./plugins/eventBus.js");
   await fastify.register(eventBusPlugin);
 
-  // Router de chamadas de entrada (ARI/Stasis) — só faz sentido com o motor
-  // Asterisk nativo; o Yeastar tem o seu próprio fluxo de entrada. Ver
+  // Router de chamadas de entrada (ARI/Stasis). Ver
   // services/inboundCallRouter.service.ts.
-  if (asteriskAdapter) {
-    registerInboundCallRouter(fastify.onCallEvent, asteriskAdapter, fastify.log);
-    // Fecha a chamada directa quando quem desliga é o outro lado — sem isto só
-    // o botão do CRM a fechava e o registo ficava "Em curso" para sempre.
-    registerDirectCallEvents(fastify.onCallEvent, asteriskAdapter, fastify.log);
-  }
+  registerInboundCallRouter(fastify.onCallEvent, asteriskAdapter, fastify, fastify.log);
+  // Fecha a chamada directa quando quem desliga é o outro lado — sem isto só
+  // o botão do CRM a fechava e o registo ficava "Em curso" para sempre.
+  registerDirectCallEvents(fastify.onCallEvent, asteriskAdapter, fastify.log);
+
+  // Supervisão (melhoria 4): registo imutável de cada sessão e aviso ao agente.
+  const supervision = new SupervisionManager({
+    asterisk: asteriskAdapter,
+    audit: async (e) => {
+      const [ext, call] = await Promise.all([
+        prisma.extension.findUnique({ where: { id: e.agentExtensionId }, select: { number: true } }),
+        prisma.call.findUnique({ where: { id: e.callId }, select: { contactId: true } }),
+      ]);
+      await prisma.supervisionEvent.create({
+        data: {
+          tenantId: e.tenantId,
+          sessionId: e.sessionId,
+          type: e.type,
+          mode: e.mode ?? null,
+          supervisorId: e.supervisorId,
+          agentExtensionId: e.agentExtensionId,
+          agentExtension: ext?.number ?? null,
+          callId: e.callId,
+          contactId: call?.contactId ?? null,
+          endReason: e.endReason ?? null,
+        },
+      });
+    },
+    // Sussurro e Intervenção avisam sempre; Escuta só se o tenant o quiser.
+    notifyAgent: (tenantId, extensionId, mode) => {
+      void (async () => {
+        if (mode === "LISTEN") {
+          const t = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { supervisionNotifyListen: true } });
+          if (!t?.supervisionNotifyListen) return;
+        }
+        fastify.incomingCalls.broadcast(tenantId, "supervision.agent", { extensionId, mode });
+      })().catch((err) => fastify.log.warn({ err }, "supervision.notify_failed"));
+    },
+    log: fastify.log,
+  });
+  fastify.decorate("supervision", supervision);
+  fastify.onCallEvent((e) => supervision.onCallEvent(e));
 
   // Call engine wires STT/LLM/TTS e regista no eventBus
   await fastify.register(callEnginePlugin);
@@ -249,12 +334,15 @@ async function buildApp() {
   // ── Admin routes ────────────────────────────────────────────────────────
   await fastify.register(adminAuthRoutes, { prefix: "/admin/auth" });
   await fastify.register(adminSettingsRoutes, { prefix: "/admin/settings" });
+  await fastify.register(adminSystemRoutes, { prefix: "/admin/system" });
   await fastify.register(adminTestCallRoutes, { prefix: "/admin/test-call" });
   await fastify.register(adminCallsRoutes, { prefix: "/admin/calls" });
   await fastify.register(adminSimulateRoutes, { prefix: "/admin/simulate-conversation" });
   await fastify.register(adminPlansRoutes, { prefix: "/admin/plans" });
+  await fastify.register(adminProductsRoutes, { prefix: "/admin/products" });
   await fastify.register(adminTenantsRoutes, { prefix: "/admin/tenants" });
   await fastify.register(adminTenantApiKeysRoutes, { prefix: "/admin/tenants" });
+  await fastify.register(adminTenantAccessProfilesRoutes, { prefix: "/admin/tenants" });
   await fastify.register(adminTrunksRoutes, { prefix: "/admin/trunks" });
   await fastify.register(adminAgentsModerationRoutes, { prefix: "/admin/agents" });
   await fastify.register(adminModelsModerationRoutes, { prefix: "/admin/models" });
@@ -265,68 +353,88 @@ async function buildApp() {
 
   // ── Tenant (CRM) routes ─────────────────────────────────────────────────
   await fastify.register(tenantAuthRoutes, { prefix: "/tenant/auth" });
-  await fastify.register(tenantAgentsRoutes, { prefix: "/tenant/agents" });
+  await gated(fastify, "agents", tenantAgentsRoutes, { prefix: "/tenant/agents" });
   await fastify.register(tenantDashboardRoutes, { prefix: "/tenant/dashboard" });
-  await fastify.register(tenantContactsRoutes, { prefix: "/tenant/contacts" });
-  await fastify.register(tenantCallsRoutes, { prefix: "/tenant/calls" });
-  await fastify.register(tenantCampaignsRoutes, { prefix: "/tenant/campaigns" });
-  await fastify.register(tenantWalletRoutes, { prefix: "/tenant/wallet" });
+  await gated(fastify, "contacts", tenantContactsRoutes, { prefix: "/tenant/contacts" });
+  await gated(fastify, "contacts", tenantContactProfileRoutes, { prefix: "/tenant/contacts" });
+  await gated(fastify, "calls", tenantCallsRoutes, { prefix: "/tenant/calls" });
+  await gated(fastify, "campaigns", tenantCampaignsRoutes, { prefix: "/tenant/campaigns" });
+  await gated(fastify, "wallet", tenantWalletRoutes, { prefix: "/tenant/wallet" });
   await fastify.register(tenantPbxRoutes, { prefix: "/tenant/pbx" });
-  await fastify.register(tenantExtensionsRoutes, { prefix: "/tenant/extensions" });
-  await fastify.register(tenantExtensionGroupsRoutes, { prefix: "/tenant/extension-groups" });
-  await fastify.register(tenantRolesRoutes, { prefix: "/tenant/roles" });
-  await fastify.register(tenantTrunksRoutes, { prefix: "/tenant/trunks" });
-  await fastify.register(tenantRoutingRoutes, { prefix: "/tenant/routing" });
-  await fastify.register(tenantBillingRoutes, { prefix: "/tenant/billing" });
-  await fastify.register(tenantTeamRoutes, { prefix: "/tenant/team" });
-  await fastify.register(tenantApiKeysRoutes);
-  await fastify.register(tenantWebhookEventsRoutes);
+  await gated(fastify, "telephony", tenantExtensionsRoutes, { prefix: "/tenant/extensions" });
+  await gated(fastify, "telephony", tenantExtensionGroupsRoutes, { prefix: "/tenant/extension-groups" });
+  await gated(fastify, "telephony", tenantRolesRoutes, { prefix: "/tenant/roles" });
+  await gated(fastify, "telephony", tenantTrunksRoutes, { prefix: "/tenant/trunks" });
+  await gated(fastify, "telephony", tenantRoutingRoutes, { prefix: "/tenant/routing" });
+  await gated(fastify, "wallet", tenantBillingRoutes, { prefix: "/tenant/billing" });
+  await gated(fastify, "team", tenantTeamRoutes, { prefix: "/tenant/team" });
+  await gated(fastify, "developers", tenantApiKeysRoutes);
+  await gated(fastify, "developers", tenantWebhookEventsRoutes);
   await fastify.register(tenantSettingsRoutes);
+  await gated(fastify, "webphone", tenantRejectReasonsRoutes);
+  await gated(fastify, "webphone", tenantCallTypingRoutes);
+  await gated(fastify, "webphone", tenantCallersRoutes);
+  await gated(fastify, "webphone", tenantSupervisionRoutes);
   await fastify.register(tenantEventsRoutes);
-  await fastify.register(tenantReportsRoutes);
-  await fastify.register(tenantSmsRoutes);
+  await gated(fastify, "reports", tenantReportsRoutes);
+  await gated(fastify, "sms", tenantSmsRoutes);
+  // Canais de texto — ver docs/PLANO-CANAIS-TEXTO.md
+  await gated(fastify, "inbox", tenantInboxesRoutes, { prefix: "/tenant/inboxes" });
+  await gated(fastify, "inbox", tenantConversationsRoutes);
+  await fastify.register(publicChatRoutes, { prefix: "/public/chat" });
+  await fastify.register(publicWaRoutes, { prefix: "/public/wa" });
 
   // ── Public API v1 (API key authenticated, per-key rate limiting) ─────────
   await fastify.register(async (v1) => {
+    // A chave tem de ficar resolvida ANTES do limitador: ele conta em
+    // `onRequest` e o `verifyScope` só corre no `preHandler`. Sem este hook o
+    // `keyGenerator` via sempre `apiKey` a `undefined` e caía no `req.ip`, ou
+    // seja, o limite de 300/min era partilhado por todos os clientes que
+    // saíssem pelo mesmo IP público (NAT da operadora, escritório, gateway).
+    v1.addHook("onRequest", fastify.resolveApiKeyEarly);
+
     // Per-API-key rate limit: 300 req/min (separate from global limit)
     await v1.register(fastifyRateLimit, {
       max: 300,
       timeWindow: "1 minute",
-      keyGenerator: (req) => {
-        const apiKey = (req as typeof req & { apiKey?: { id: string } }).apiKey;
-        return apiKey?.id ?? req.ip;
-      },
+      keyGenerator: (req) => req.apiKeyRecord?.id ?? req.ip,
       redis: new Redis(config.REDIS_URL),
     });
-    await v1.register(v1CallsRoutes);
-    await v1.register(v1AgentsRoutes);
-    await v1.register(v1ContactsRoutes);
-    await v1.register(v1CampaignsRoutes);
-    await v1.register(v1WalletRoutes);
-    await v1.register(v1OtpRoutes);
-    await v1.register(v1SmsRoutes);
-    await v1.register(v1ModelsRoutes);
+    await gated(v1, "calls", v1CallsRoutes);
+    await gated(v1, "agents", v1AgentsRoutes);
+    await gated(v1, "contacts", v1ContactsRoutes);
+    await gated(v1, "campaigns", v1CampaignsRoutes);
+    await gated(v1, "wallet", v1WalletRoutes);
+    await gated(v1, "otpCall", v1OtpRoutes);
+    await gated(v1, "sms", v1SmsRoutes);
+    await gated(v1, "agents", v1ModelsRoutes);
     await v1.register(v1UsageRoutes);
+    await gated(v1, "inbox", v1ConversationsRoutes);
   });
 
   // ── Webhooks ────────────────────────────────────────────────────────────
-  await fastify.register(yeastarWebhookRoutes, { prefix: "/webhooks/yeastar" });
   await fastify.register(pbxWebhookRoutes, { prefix: "/webhooks/pbx" });
   // CDR das chamadas marcadas no telefone — chamado pelo dialplan do Asterisk
   await fastify.register(asteriskWebhookRoutes, { prefix: "/webhooks/asterisk" });
   await fastify.register(smsWebhookRoutes, { prefix: "/webhooks/sms" });
   await fastify.register(proxypayWebhookRoutes, { prefix: "/webhooks/proxypay" });
+  await fastify.register(telegramWebhookRoutes, { prefix: "/webhooks/telegram" });
+  await fastify.register(whatsappWebhookRoutes, { prefix: "/webhooks/whatsapp" });
 
-  // ── WebSocket ──────────────────────────────────────────────────────────
-  registerYeastarWebSocket(fastify);
+  // Canal de email: lê as caixas IMAP dos inboxes a cada minuto.
+  const stopEmailPolling = startEmailPolling(fastify);
+  fastify.addHook("onClose", async () => stopEmailPolling());
+  // Pool WhatsApp Active/Standby: health check de cada número a cada minuto.
+  const stopWaHealthCheck = startWaHealthCheck(fastify);
+  fastify.addHook("onClose", async () => stopWaHealthCheck());
 
   // ── Health ─────────────────────────────────────────────────────────────
   fastify.get("/health", async () => {
-    const yeastarHealth = await yeastar.healthCheck();
+    const asteriskHealth = await asteriskAdapter.healthCheck();
     return {
       status: "ok",
       activeCalls: fastify.callEngine.activeCallCount,
-      providers: { yeastar: yeastarHealth },
+      providers: { asterisk: asteriskHealth },
     };
   });
 
@@ -339,8 +447,13 @@ async function main() {
     await app.listen({ port: config.PORT, host: config.HOST });
 
     // Projecta a configuração PBX para o motor próprio. Fire-and-forget: se o
-    // motor estiver em baixo, a API arranca na mesma e as chamadas continuam a
-    // sair pelo PBX externo.
+    // motor estiver em baixo, a API arranca na mesma e volta a sincronizar na
+    // próxima alteração de extensões/trunks.
+    // Bridges de supervisão que sobraram de um reinício (canais órfãos).
+    void app.supervision
+      .sweepOrphans()
+      .then((n) => n > 0 && app.log.info({ n }, "supervision.orphans_swept"))
+      .catch((err) => app.log.warn({ err }, "supervision.sweep_failed"));
     void syncAllPbx()
       .then(() => app.log.info("pbx_sync.boot_complete"))
       .catch((err) => app.log.warn({ err }, "pbx_sync.boot_failed"));

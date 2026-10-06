@@ -22,6 +22,7 @@ export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<vo
         webhookUrl: true,
         // Never return webhookSecret raw — only whether one is set
         plan: { select: { name: true, pricePerMinuteCents: true, maxAgents: true, maxConcurrent: true } },
+        pricePerMinuteOverrideCents: true,
         createdAt: true,
       },
     });
@@ -33,8 +34,14 @@ export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<vo
       select: { webhookSecret: true },
     });
 
+    // O cliente vê o preço que lhe é cobrado: o seu, se tiver, senão o do plano
+    const { pricePerMinuteOverrideCents, ...rest } = tenant;
+    if (rest.plan && pricePerMinuteOverrideCents !== null) {
+      rest.plan = { ...rest.plan, pricePerMinuteCents: pricePerMinuteOverrideCents };
+    }
+
     return reply.send({
-      ...tenant,
+      ...rest,
       webhookSecretConfigured: !!hasWebhookSecret?.webhookSecret,
     });
   });

@@ -15,6 +15,8 @@ export const VALID_SCOPES = [
   "wallet:read",
   "otp:call",
   "sms:send",
+  "conversations:read",
+  "conversations:write",
 ] as const;
 
 export type ApiScope = (typeof VALID_SCOPES)[number];

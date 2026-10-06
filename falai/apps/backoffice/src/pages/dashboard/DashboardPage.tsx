@@ -24,13 +24,13 @@ export function DashboardPage() {
   const chart = m?.chartData ?? [];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 space-y-6 sm:p-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-500">Visão geral do sistema Falaí</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard label="Tenants activos" value={m?.tenantsActive ?? '–'} icon={<Users className="h-5 w-5" />} />
         <StatCard label="Chamadas hoje" value={m?.callsToday ?? '–'} icon={<Phone className="h-5 w-5" />} />
         <StatCard label="Minutos hoje" value={m?.minutesToday !== undefined ? `${m.minutesToday}m` : '–'} icon={<Clock className="h-5 w-5" />} />
@@ -98,11 +98,12 @@ export function DashboardPage() {
         <div className="px-6 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-900">Tenants recentes</h2>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-500">
             <tr>
               {['Nome', 'Status', 'Saldo', 'Criado em'].map((h) => (
-                <th key={h} className="px-6 py-3 text-left font-medium">{h}</th>
+                <th key={h} className="whitespace-nowrap px-6 py-3 text-left font-medium">{h}</th>
               ))}
             </tr>
           </thead>
@@ -115,12 +116,13 @@ export function DashboardPage() {
                     {t.status}
                   </Badge>
                 </td>
-                <td className="px-6 py-3 text-gray-600">{formatAOA(t.balanceCents)}</td>
-                <td className="px-6 py-3 text-gray-500">{formatDate(t.createdAt)}</td>
+                <td className="whitespace-nowrap px-6 py-3 text-gray-600">{formatAOA(t.balanceCents)}</td>
+                <td className="whitespace-nowrap px-6 py-3 text-gray-500">{formatDate(t.createdAt)}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
     </div>
   );

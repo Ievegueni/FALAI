@@ -1,8 +1,12 @@
 import type { FastifyPluginAsync } from "fastify";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { resolve, sep, extname } from "node:path";
 import { prisma, type Prisma } from "@falai/db";
 import { z } from "zod";
+import { recordingSettings } from "../../services/callRecording.service.js";
 import { YeastarAdapter } from "@falai/providers";
-import { reserveBalance, computeReservation, effectiveBillingMode } from "../../services/billing.service.js";
+import { reserveBalance, computeReservation, effectivePrice } from "../../services/billing.service.js";
 import { getTenantTelephony, getTenantAsterisk } from "../../services/tenantTelephony.service.js";
 import {
   startAsteriskDirectCall,
@@ -12,6 +16,9 @@ import {
 } from "../../services/directCall.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
 import { ensureCdrSynced, mapPbxCall, PBX_CALL_SELECT, activeInboundCalls } from "../../services/pbxCdr.service.js";
+import { callsFilterSchema, callsWhere, pbxCallsWhere } from "../../services/callsFilter.service.js";
+import ExcelJS from "exceljs";
+import { addTableSheet } from "../../services/excelExport.service.js";
 
 const createSchema = z.object({
   agentId: z.string().min(1),
@@ -40,6 +47,7 @@ type CallRow = {
   fromNumber?: string | null;
   status: string;
   outcome: string | null;
+  failReason?: string | null;
   durationSecs: number;
   costCents: number;
   startedAt: Date | null;
@@ -49,6 +57,13 @@ type CallRow = {
   variables?: unknown;
   agent?: { name: string } | null;
   contact?: { name: string | null } | null;
+  // Chamadas de entrada: a perna que atendeu (quem atendeu e a tipificação).
+  legs?: {
+    extensionNumber: string;
+    extension: { displayName: string | null } | null;
+    category: { name: string } | null;
+    subcategory: { name: string } | null;
+  }[];
   turns?: {
     id: string;
     seq: number;
@@ -60,6 +75,18 @@ type CallRow = {
     createdAt: Date;
   }[];
 };
+
+/** Tipo de conteúdo da gravação, pela extensão com que foi gravada. */
+function recordingContentType(file: string): string {
+  switch (extname(file).toLowerCase()) {
+    case ".ogg": return "audio/ogg";
+    case ".wav": case ".wav49": return "audio/wav";
+    case ".gsm": return "audio/x-gsm";
+    case ".g722": return "audio/G722";
+    case ".alaw": case ".ulaw": return "audio/basic";
+    default: return "application/octet-stream";
+  }
+}
 
 function mapCall(c: CallRow) {
   const direction = c.kind === "INBOUND" ? "inbound" : "outbound";
@@ -75,14 +102,25 @@ function mapCall(c: CallRow) {
     party: direction === "inbound" ? c.fromNumber ?? c.toNumber : c.toNumber,
     status: c.status,
     outcome: c.outcome,
+    failReason: c.failReason ?? null,
     durationSecs: c.durationSecs,
     costCents: c.costCents,
     startedAt: c.startedAt,
     endedAt: c.endedAt,
     createdAt: c.createdAt,
-    recordingUrl: c.recordingUrl ?? null,
+    // Nunca se devolve o caminho do ficheiro: o que o cliente recebe é a rota
+    // que o serve, já autenticada e com o dono da chamada validado.
+    recordingUrl: c.recordingUrl ? `/tenant/calls/${c.id}/recording` : null,
     agent: c.agent ?? { name: "" },
     contact: c.contact ? { name: c.contact.name ?? "" } : null,
+    ...(c.legs && {
+      handledBy: c.legs[0]
+        ? { number: c.legs[0].extensionNumber, name: c.legs[0].extension?.displayName ?? null }
+        : null,
+      typing: c.legs[0]?.category
+        ? [c.legs[0].category.name, c.legs[0].subcategory?.name].filter(Boolean).join(" › ")
+        : null,
+    }),
     ...(c.variables !== undefined && { variables: c.variables }),
     ...(c.turns && {
       turns: c.turns.map((t) => ({
@@ -102,13 +140,33 @@ function mapCall(c: CallRow) {
 export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
 
-  // GET /tenant/calls — paginated list
-  fastify.get<{ Querystring: { status?: string; agentId?: string; campaignId?: string; limit?: string; offset?: string } }>(
+  const listSelect = {
+    id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
+    outcome: true, failReason: true, durationSecs: true, costCents: true,
+    startedAt: true, endedAt: true, createdAt: true,
+    agent: { select: { name: true } },
+    contact: { select: { name: true } },
+    legs: {
+      where: { outcome: "ANSWERED" as const },
+      take: 1,
+      select: {
+        extensionNumber: true,
+        extension: { select: { displayName: true } },
+        category: { select: { name: true } },
+        subcategory: { select: { name: true } },
+      },
+    },
+  } satisfies Prisma.CallSelect;
+
+  // GET /tenant/calls — lista paginada, com filtros (ver callsFilter.service.ts)
+  fastify.get<{ Querystring: { limit?: string; offset?: string } }>(
     "/",
     { preHandler },
     async (request) => {
       const { tenantId } = request.tenantUser!;
-      const { status, agentId, campaignId, limit = "50", offset = "0" } = request.query;
+      const { limit = "50", offset = "0" } = request.query;
+      const filter = callsFilterSchema.parse(request.query);
+      const { status } = filter;
 
       // Tenants CRM (BYO-PBX): a lista vem do CDR do PBX do cliente, não da tabela Call
       const { isCrmPbx } = await ensureCdrSynced(fastify, tenantId);
@@ -117,38 +175,28 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
         const skip = parseInt(offset, 10);
         const [rows, total, liveRows] = await Promise.all([
           prisma.pbxCall.findMany({
-            where: { tenantId },
+            where: pbxCallsWhere(tenantId, filter),
             orderBy: { startedAt: "desc" },
             take,
             skip,
             select: PBX_CALL_SELECT,
           }),
-          prisma.pbxCall.count({ where: { tenantId } }),
-          // Chamadas de entrada em curso ainda sem CDR — só na 1ª página e sem filtro de estado
-          skip === 0 && !status ? activeInboundCalls(tenantId) : Promise.resolve([]),
+          prisma.pbxCall.count({ where: pbxCallsWhere(tenantId, filter) }),
+          // Chamadas de entrada em curso ainda sem CDR — só na 1ª página e sem filtros
+          skip === 0 && !status && !filter.q && !filter.from && !filter.to ? activeInboundCalls(tenantId) : Promise.resolve([]),
         ]);
         const live = liveRows.map(mapCall);
         return { calls: [...live, ...rows.map(mapPbxCall)], total: total + live.length };
       }
 
-      const where: Prisma.CallWhereInput = { tenantId };
-      if (status) where.status = status as import("@falai/db").CallStatus;
-      if (agentId) where.agentId = agentId;
-      if (campaignId) where.campaignId = campaignId;
-
+      const where = callsWhere(tenantId, filter);
       const [calls, total] = await Promise.all([
         prisma.call.findMany({
           where,
           orderBy: { createdAt: "desc" },
           take: parseInt(limit, 10),
           skip: parseInt(offset, 10),
-          select: {
-            id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-            outcome: true, durationSecs: true, costCents: true,
-            startedAt: true, endedAt: true, createdAt: true,
-            agent: { select: { name: true } },
-            contact: { select: { name: true } },
-          },
+          select: listSelect,
         }),
         prisma.call.count({ where }),
       ]);
@@ -157,6 +205,45 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
+  // GET /tenant/calls/export.xlsx — a lista filtrada em Excel formatado
+  fastify.get("/export.xlsx", { preHandler }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    const filter = callsFilterSchema.parse(request.query);
+    const MAX = 20_000; // ponytail: limite de linhas por exportação; acima disso, filtrar o período
+    const [rows, tenant] = await Promise.all([
+      prisma.call.findMany({ where: callsWhere(tenantId, filter), orderBy: { createdAt: "desc" }, take: MAX, select: listSelect }),
+      prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
+    ]);
+    const KIND: Record<string, string> = { INBOUND: "Entrada", DIRECT: "Directa", OTP: "OTP", AI_AGENT: "Agente IA", FIXED_SCRIPT: "Script fixo" };
+    const STATUS: Record<string, string> = {
+      COMPLETED: "Concluída", ESCALATED: "Escalada", NO_ANSWER: "Não atendida", BUSY: "Ocupado", FAILED: "Falhou",
+      CANCELLED: "Cancelada", IN_PROGRESS: "Em curso", RINGING: "A tocar", DIALING: "A marcar", QUEUED: "Em fila",
+    };
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "Falaí";
+    const period = filter.from || filter.to ? `${filter.from ?? "…"} – ${filter.to ?? "…"}` : "todo o histórico";
+    addTableSheet(wb, "Chamadas", "Chamadas", `${tenant.name} · ${period} · ${rows.length} chamadas · gerado em ${new Date().toLocaleString("pt-PT")}`, [
+      { header: "Data", width: 17, fmt: "datetime" },
+      { header: "Tipo", width: 11, fmt: "text" },
+      { header: "Número", width: 16, fmt: "text" },
+      { header: "Contacto", width: 22, fmt: "text" },
+      { header: "Atendida por / agente", width: 22, fmt: "text" },
+      { header: "Estado", width: 13, fmt: "text" },
+      { header: "Tipificação", width: 28, fmt: "text" },
+      { header: "Resultado", width: 14, fmt: "text" },
+      { header: "Duração", width: 10, fmt: "secs" },
+      { header: "Custo", width: 12, fmt: "money" },
+    ], rows.map((r) => {
+      const c = mapCall(r);
+      const by = c.handledBy ? [c.handledBy.number, c.handledBy.name].filter(Boolean).join(" ") : c.agent?.name || null;
+      return [c.createdAt, KIND[c.kind] ?? c.kind, c.party, c.contact?.name ?? null, by, STATUS[c.status] ?? c.status, c.typing ?? null, c.outcome && c.outcome !== c.status ? c.outcome : null, c.durationSecs, c.costCents];
+    }));
+    return reply
+      .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .header("Content-Disposition", `attachment; filename="chamadas_${new Date().toISOString().slice(0, 10)}.xlsx"`)
+      .send(Buffer.from(await wb.xlsx.writeBuffer()));
+  });
+
   // GET /tenant/calls/:id — detail with transcript turns
   fastify.get<{ Params: { id: string } }>("/:id", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
@@ -164,7 +251,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       where: { id: request.params.id, tenantId },
       select: {
         id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, variables: true, recordingUrl: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, variables: true, recordingUrl: true,
         startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
@@ -174,7 +261,72 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
         },
       },
     });
-    if (call) return { call: mapCall(call) };
+    if (call) {
+      if (call.kind !== "INBOUND") return { call: mapCall(call) };
+      // Chamada de entrada: percurso (pernas), tipificação com a observação e
+      // as notas feitas durante a chamada (melhorias 1–3).
+      const [extra, legs, notes] = await Promise.all([
+        prisma.call.findUnique({
+          where: { id: call.id },
+          select: { queuedAt: true, answeredAt: true, group: { select: { name: true } } },
+        }),
+        prisma.callLeg.findMany({
+          where: { callId: call.id, tenantId },
+          orderBy: { ringStartedAt: "asc" },
+          select: {
+            id: true, extensionNumber: true, outcome: true, ringStartedAt: true, answeredAt: true, endedAt: true,
+            rejectNote: true, typingNote: true, typedAt: true, typedById: true, wrapUpEndsAt: true,
+            extension: { select: { displayName: true } },
+            rejectReason: { select: { label: true } },
+            category: { select: { name: true } },
+            subcategory: { select: { name: true } },
+          },
+        }),
+        prisma.contactNote.findMany({
+          where: { callId: call.id, tenantId },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, body: true, createdAt: true, authorId: true },
+        }),
+      ]);
+      const userIds = [...new Set([...legs.map((l) => l.typedById), ...notes.map((n) => n.authorId)].filter((x): x is string => !!x))];
+      const users = new Map(
+        (await prisma.tenantUser.findMany({ where: { id: { in: userIds }, tenantId }, select: { id: true, name: true } })).map((u) => [u.id, u.name])
+      );
+      const secs = (a: Date | null | undefined, b: Date | null | undefined) =>
+        a && b ? Math.max(0, Math.round((b.getTime() - a.getTime()) / 1000)) : null;
+      const answered = legs.find((l) => l.outcome === "ANSWERED");
+      return {
+        call: {
+          ...mapCall(call),
+          attendance: {
+            group: extra?.group?.name ?? null,
+            waitSecs: secs(extra?.queuedAt, extra?.answeredAt),
+            legs: legs.map((l) => ({
+              id: l.id,
+              extension: l.extensionNumber,
+              agent: l.extension?.displayName ?? null,
+              outcome: l.outcome,
+              ringStartedAt: l.ringStartedAt,
+              responseSecs: secs(l.ringStartedAt, l.answeredAt),
+              reason: l.rejectReason?.label ?? l.rejectNote ?? null,
+            })),
+            typing: answered
+              ? {
+                  legId: answered.id,
+                  category: answered.category?.name ?? null,
+                  subcategory: answered.subcategory?.name ?? null,
+                  note: answered.typingNote,
+                  typedAt: answered.typedAt,
+                  typedBy: answered.typedById ? (users.get(answered.typedById) ?? null) : null,
+                  // Por tipificar dentro do prazo (tipificação obrigatória).
+                  pendingUntil: !answered.typedAt && answered.wrapUpEndsAt && answered.wrapUpEndsAt > new Date() ? answered.wrapUpEndsAt : null,
+                }
+              : null,
+            notes: notes.map((n) => ({ id: n.id, body: n.body, createdAt: n.createdAt, author: users.get(n.authorId) ?? null })),
+          },
+        },
+      };
+    }
 
     // Fallback: chamada do PBX (produto CRM BYO-PBX) — sem turnos de IA
     const pbxCall = await prisma.pbxCall.findFirst({
@@ -186,8 +338,54 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.status(404).send({ error: "Chamada não encontrada" });
   });
 
+  /**
+   * GET /tenant/calls/:id/recording — devolve o áudio da gravação.
+   *
+   * O ficheiro vive fora da árvore pública de propósito: uma gravação é das
+   * coisas mais sensíveis que a plataforma guarda, por isso passa por aqui,
+   * onde se confirma que a chamada é mesmo deste cliente.
+   */
+  fastify.get<{ Params: { id: string } }>("/:id/recording", { preHandler }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    const call = await prisma.call.findFirst({
+      where: { id: request.params.id, tenantId },
+      select: { recordingUrl: true },
+    });
+    if (!call?.recordingUrl) return reply.status(404).send({ error: "Gravação não encontrada" });
+
+    const { dir } = await recordingSettings();
+    if (!dir) return reply.status(503).send({ error: "Pasta de gravações não configurada" });
+
+    // O caminho vem da nossa base de dados, mas confirma-se na mesma que cai
+    // dentro da pasta de gravações: um valor estragado não pode virar uma forma
+    // de ler ficheiros do servidor.
+    const base = resolve(dir);
+    const file = resolve(base, call.recordingUrl);
+    if (file !== base && !file.startsWith(base + sep)) {
+      request.log.error({ callId: request.params.id }, "call_recording.path_outside_dir");
+      return reply.status(404).send({ error: "Gravação não encontrada" });
+    }
+
+    let size: number;
+    try {
+      size = (await stat(file)).size;
+    } catch {
+      // A linha diz que há gravação mas o ficheiro não está lá (apagado à mão,
+      // pasta trocada, purga). Não é erro do servidor — é uma gravação que
+      // deixou de existir.
+      request.log.warn({ callId: request.params.id, file }, "call_recording.file_missing");
+      return reply.status(404).send({ error: "Gravação não encontrada" });
+    }
+
+    return reply
+      .type(recordingContentType(call.recordingUrl))
+      .header("Content-Length", size)
+      .header("Cache-Control", "private, no-store")
+      .send(createReadStream(file));
+  });
+
   // POST /tenant/calls — place an outbound call now
-  fastify.post("/", { preHandler }, async (request, reply) => {
+  fastify.post("/", { preHandler, config: { feature: "agents" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = createSchema.parse(request.body);
 
@@ -199,7 +397,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       prisma.tenant.findUnique({
         where: { id: tenantId },
         select: {
-          billingModeOverride: true,
+          billingModeOverride: true, pricePerMinuteOverrideCents: true,
           plan: { select: { billingMode: true, pricePerMinuteCents: true, pricePerCallCents: true, aiAgentsEnabled: true } },
         },
       }),
@@ -210,6 +408,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     if (!agent) return reply.status(404).send({ error: "Agente não encontrado" });
+    if (!agent.ttsVoiceId) return reply.status(422).send({ error: "Agente sem voz — só serve canais de texto" });
     if (agent.status !== "ACTIVE") return reply.status(422).send({ error: "O agente tem de estar ACTIVO para fazer chamadas" });
     if (!tenant) return reply.status(404).send({ error: "Tenant não encontrado" });
 
@@ -224,11 +423,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       throw err;
     }
 
-    const price = {
-      billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
-      pricePerMinuteCents: tenant.plan.pricePerMinuteCents,
-      pricePerCallCents: tenant.plan.pricePerCallCents,
-    };
+    const price = effectivePrice(tenant);
     const estimatedCents = computeReservation(agent.maxCallSeconds, price);
 
     const reserved = await reserveBalance(tenantId, estimatedCents);
@@ -245,7 +440,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       },
       select: {
         id: true, agentId: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
       },
@@ -292,7 +487,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls/:id/cancel — hang up a call still in progress
-  fastify.post<{ Params: { id: string } }>("/:id/cancel", { preHandler }, async (request, reply) => {
+  fastify.post<{ Params: { id: string } }>("/:id/cancel", { preHandler, config: { feature: "agents" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const existing = await prisma.call.findFirst({
       where: { id: request.params.id, tenantId },
@@ -318,7 +513,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       data: { status: "CANCELLED", endedAt: new Date() },
       select: {
         id: true, agentId: true, contactId: true, toNumber: true, fromNumber: true, status: true,
-        outcome: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
+        outcome: true, failReason: true, durationSecs: true, costCents: true, startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
       },
@@ -329,10 +524,17 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // ── Chamadas directas (click-to-call, sem agente/IA) ──────────────────────
 
-  // GET /tenant/calls/extensions — lista as linhas do próprio cliente para o dropdown
-  // (não expõe extensões de outros clientes no PBX partilhado)
-  fastify.get("/extensions", { preHandler }, async (request) => {
+  // GET /tenant/calls/extensions — extensões do próprio cliente para o dropdown
+  // (não expõe extensões de outros clientes no PBX partilhado). Fonte: modelo
+  // Extension; TenantLine só para quem ainda não tem extensões (compat §6).
+  fastify.get("/extensions", { preHandler, config: { feature: "directCall" } }, async (request) => {
     const { tenantId } = request.tenantUser!;
+    const exts = await prisma.extension.findMany({
+      where: { tenantId, isActive: true },
+      orderBy: [{ isDefault: "desc" }, { number: "asc" }],
+      select: { number: true, displayName: true },
+    });
+    if (exts.length > 0) return { extensions: exts.map((e) => ({ number: e.number, name: e.displayName ?? e.number })) };
     const lines = await prisma.tenantLine.findMany({
       where: { tenantId, isActive: true },
       orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
@@ -342,7 +544,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /tenant/calls/direct/status/:callId — verifica se uma chamada directa ainda está activa no PBX
-  fastify.get<{ Params: { callId: string } }>("/direct/status/:callId", { preHandler }, async (request, reply) => {
+  fastify.get<{ Params: { callId: string } }>("/direct/status/:callId", { preHandler, config: { feature: "directCall" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     try {
       if (await getTenantAsterisk(fastify, tenantId)) {
@@ -358,16 +560,21 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls/direct — origina uma chamada normal (extensão → número), sem agente
-  fastify.post("/direct", { preHandler }, async (request, reply) => {
+  fastify.post("/direct", { preHandler, config: { feature: "directCall" } }, async (request, reply) => {
     const body = directCallSchema.parse(request.body);
     const admin = request.tenantUser!;
     const { tenantId } = admin;
 
-    // A extensão de origem tem de ser uma linha activa deste cliente
-    const ownLine = await prisma.tenantLine.findFirst({
-      where: { tenantId, isActive: true, extension: body.fromExtension },
-      select: { id: true },
-    });
+    // A extensão de origem tem de ser uma extensão (ou linha antiga) activa deste cliente
+    const ownLine =
+      (await prisma.extension.findFirst({
+        where: { tenantId, isActive: true, number: body.fromExtension },
+        select: { id: true },
+      })) ??
+      (await prisma.tenantLine.findFirst({
+        where: { tenantId, isActive: true, extension: body.fromExtension },
+        select: { id: true },
+      }));
     if (!ownLine) {
       return reply.status(422).send({ error: "Extensão de origem inválida — não pertence a nenhuma linha activa deste cliente." });
     }
@@ -391,6 +598,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
             fromExtension: body.fromExtension,
             to: body.to,
             ref,
+            fastify,
             log: fastify.log,
           })
         : await (await getTenantTelephony(fastify, tenantId)).dial({
@@ -426,7 +634,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/calls/direct/hangup — desliga uma chamada directa pelo providerCallId
-  fastify.post("/direct/hangup", { preHandler }, async (request, reply) => {
+  fastify.post("/direct/hangup", { preHandler, config: { feature: "directCall" } }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = hangupSchema.parse(request.body);
     try {

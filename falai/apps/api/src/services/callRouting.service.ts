@@ -44,26 +44,81 @@ export async function resolveInbound(
 }
 
 /**
+ * Forma canónica de um DID para comparar números de clientes diferentes:
+ * só dígitos, sem "00" internacional e sem o indicativo de Angola quando vem
+ * à frente de um número nacional de 9 dígitos.
+ */
+export function normalizeDid(did: string): string {
+  let d = did.replace(/\D/g, "");
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.length === 12 && d.startsWith("244")) d = d.slice(3);
+  return d;
+}
+
+/** Um DID num trunk partilhado tem de ser um número completo, não um prefixo. */
+export function isFullDid(did: string): boolean {
+  return /^\+?[0-9]{6,15}$/.test(did.trim());
+}
+
+/**
  * Igual a `resolveInbound`, mas sem tenant conhecido à partida — é o caso de
- * uma chamada a chegar do trunk (router ARI/Stasis de entrada): só se sabe o
- * DID, o tenant é o que a rota disser. Devolve também o tenantId, para quem
- * chama poder ir buscar a Extension certa.
+ * uma chamada a chegar do trunk partilhado (router ARI/Stasis de entrada): só
+ * se sabe o DID, o tenant é o que a rota disser. Devolve também o tenantId,
+ * para quem chama poder ir buscar a Extension certa.
+ *
+ * Só considera rotas de trunks partilhados e só por número exacto. Antes
+ * procurava em todas as rotas e aceitava prefixos: um cliente que criasse uma
+ * rota "9" no trunk partilhado ficava com as chamadas de entrada dos outros.
+ * Se o mesmo número aparecer em mais de um cliente, não se entrega a nenhum.
  */
 export async function resolveInboundGlobal(
   did: string,
 ): Promise<{ tenantId: string; destType: string; destValue: string } | null> {
-  const exact = await prisma.inboundRoute.findFirst({
-    where: { didPattern: did },
-    select: { tenantId: true, destType: true, destValue: true },
-  });
-  if (exact) return exact;
+  const wanted = normalizeDid(did);
+  if (!wanted) return null;
 
   const routes = await prisma.inboundRoute.findMany({
+    where: { trunk: { tenantId: null } },
     orderBy: { createdAt: "asc" },
     select: { tenantId: true, didPattern: true, destType: true, destValue: true },
   });
-  const match = routes.find((r) => did.startsWith(r.didPattern));
-  return match ? { tenantId: match.tenantId, destType: match.destType, destValue: match.destValue } : null;
+  const matches = routes.filter((r) => normalizeDid(r.didPattern) === wanted);
+  if (matches.length === 0) return null;
+  if (new Set(matches.map((m) => m.tenantId)).size > 1) return null;
+
+  const m = matches[0]!;
+  return { tenantId: m.tenantId, destType: m.destType, destValue: m.destValue };
+}
+
+/**
+ * Num trunk partilhado, o número tem de ser completo e de um só cliente.
+ * Devolve o motivo da recusa, ou null se a rota pode ser gravada.
+ */
+export async function sharedTrunkDidProblem(
+  tenantId: string,
+  trunkId: string,
+  didPattern: string,
+  ignoreRouteId?: string,
+): Promise<string | null> {
+  const trunk = await prisma.trunk.findUnique({ where: { id: trunkId }, select: { tenantId: true } });
+  if (!trunk || trunk.tenantId !== null) return null; // trunk próprio: a numeração é do cliente
+
+  if (!isFullDid(didPattern)) {
+    return "Num trunk partilhado indica o número completo (só dígitos), não um prefixo.";
+  }
+  const wanted = normalizeDid(didPattern);
+  const others = await prisma.inboundRoute.findMany({
+    where: {
+      tenantId: { not: tenantId },
+      trunk: { tenantId: null },
+      ...(ignoreRouteId && { id: { not: ignoreRouteId } }),
+    },
+    select: { didPattern: true },
+  });
+  if (others.some((r) => normalizeDid(r.didPattern) === wanted)) {
+    return "Este número já está atribuído a outro cliente. Fala com a Comunica.";
+  }
+  return null;
 }
 
 /**

@@ -28,6 +28,10 @@ services:
       # /usr/local/share/asterisk/sounds. Montar no sítio errado dava
       # "does not exist in any format" com o ficheiro visível no contentor.
       - ./sounds:/usr/local/share/asterisk/sounds
+      # Gravações das chamadas. É aqui que o ARI escreve (é o caminho que ele
+      # usa por defeito) e é esta pasta, do lado do host, que se configura no
+      # backoffice em RECORDING_DIR para a API poder servir os ficheiros.
+      - ./recordings:/var/spool/asterisk/recording
     ports:
       - "5060:5060/udp"
       - "5060:5060/tcp"

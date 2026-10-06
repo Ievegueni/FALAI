@@ -15,7 +15,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import type * as JsSIPType from 'jssip';
 import type { RTCSession } from 'jssip/lib/RTCSession';
 import type { RTCSessionEvent } from 'jssip/lib/UA';
-import { webphoneApi } from '@/lib/api';
+import { apiBaseUrl, webphoneApi, type SupervisionMode } from '@/lib/api';
+import { startRingtone, stopRingtone, unlockRingtone } from '@/lib/ringtone';
 import { useToast } from '@/contexts/ToastContext';
 
 export type RegistrationState = 'unregistered' | 'registering' | 'registered' | 'failed';
@@ -26,12 +27,20 @@ interface WebphoneContextValue {
   registration: RegistrationState;
   callState: CallState;
   remoteIdentity: string | null;
+  /** Perna da chamada a entrar (cabeçalho X-Falai-Leg-Id) — para gravar o motivo de uma recusa. */
+  incomingLegId: string | null;
   error: string | null;
+  /** Esta sessão é uma supervisão (o utilizador é o supervisor a ouvir). */
+  supervising: boolean;
+  /** Um supervisor está nesta chamada do agente (null = ninguém, ou Escuta sem aviso). */
+  supervisedMode: SupervisionMode | null;
   selectExtension: (extensionId: string) => Promise<void>;
   unregister: () => void;
   call: (number: string) => void;
   answer: () => void;
   hangup: () => void;
+  /** Recusa a chamada a entrar com 603 Decline — conta como recusa nos relatórios. */
+  reject: () => void;
   mute: () => void;
   unmute: () => void;
   sendDTMF: (digit: string) => void;
@@ -54,7 +63,10 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
   const [registration, setRegistration] = useState<RegistrationState>('unregistered');
   const [callState, setCallState] = useState<CallState>('idle');
   const [remoteIdentity, setRemoteIdentity] = useState<string | null>(null);
+  const [incomingLegId, setIncomingLegId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [supervising, setSupervising] = useState(false);
+  const [supervisedMode, setSupervisedMode] = useState<SupervisionMode | null>(null);
 
   // <audio> escondido para tocar o stream remoto — não há UI própria disso.
   useEffect(() => {
@@ -81,6 +93,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
       sessionRef.current = session;
       setCallState(initialState);
       setRemoteIdentity(session.remote_identity?.uri?.user ?? null);
+      setIncomingLegId(null);
 
       session.on('progress', () => setCallState((s) => (s === 'incoming' ? s : 'ringing')));
       session.on('accepted', () => setCallState('in-call'));
@@ -108,6 +121,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
 
   const selectExtension = useCallback(
     async (id: string) => {
+      unlockRingtone(); // gesto do utilizador: autoriza o toque para depois
       teardownUa();
       setError(null);
       setExtensionId(id);
@@ -134,12 +148,25 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
           setError(e.cause ?? 'Falha no registo SIP');
         });
 
-        ua.on('newRTCSession', ({ session, originator }: RTCSessionEvent) => {
+        ua.on('newRTCSession', ({ session, originator, request }: RTCSessionEvent) => {
           if (originator !== 'remote') return;
+          // Supervisão (melhoria 4): a API liga para a extensão do supervisor
+          // com X-Falai-Supervise — atende-se sozinha, sem toque nem painel.
+          if (request.getHeader('X-Falai-Supervise')) {
+            attachSession(session, 'in-call');
+            setSupervising(true);
+            session.on('ended', () => setSupervising(false));
+            session.on('failed', () => setSupervising(false));
+            session.answer({ mediaConstraints: { audio: true, video: false } });
+            return;
+          }
           // Chamada de entrada — se o agente não estiver na página do
           // webphone, o único aviso é este toast (a sessão continua viva no
           // Context, mas sem UI própria aqui para atender).
           attachSession(session, 'incoming');
+          // Posto pelo router de entrada (inboundCallRouter.service.ts) para
+          // o motivo de uma recusa ficar na perna certa dos relatórios.
+          setIncomingLegId(request.getHeader('X-Falai-Leg-Id') || null);
           if (locationRef.current !== '/webphone') {
             info('Chamada a entrar — abra o Webphone para atender.');
           }
@@ -182,11 +209,56 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
     sessionRef.current?.terminate();
   }, []);
 
+  // Sem status_code o JsSIP manda 480, que é igual a "ninguém atendeu".
+  const reject = useCallback(() => {
+    sessionRef.current?.terminate({ status_code: 603, reason_phrase: 'Decline' });
+  }, []);
+
   const mute = useCallback(() => sessionRef.current?.mute({ audio: true }), []);
   const unmute = useCallback(() => sessionRef.current?.unmute({ audio: true }), []);
   const sendDTMF = useCallback((digit: string) => sessionRef.current?.sendDTMF(digit), []);
 
   useEffect(() => () => teardownUa(), [teardownUa]);
+
+  // Aviso de supervisão para o agente (melhoria 4). O evento vem pelo SSE do
+  // tenant e só interessa à extensão escolhida aqui.
+  useEffect(() => {
+    setSupervisedMode(null);
+    const token = localStorage.getItem('falai_token');
+    if (!extensionId || !token) return;
+    const es = new EventSource(`${apiBaseUrl}/tenant/events/stream?token=${encodeURIComponent(token)}`);
+    es.addEventListener('supervision.agent', (ev: MessageEvent<string>) => {
+      try {
+        const d = JSON.parse(ev.data) as { extensionId: string; mode: SupervisionMode | null };
+        if (d.extensionId === extensionId) setSupervisedMode(d.mode);
+      } catch {
+        // payload inválido — ignora
+      }
+    });
+    return () => es.close();
+  }, [extensionId]);
+  // A supervisão acaba sempre com a chamada.
+  useEffect(() => {
+    if (callState === 'idle') setSupervisedMode(null);
+  }, [callState]);
+
+  // Toque no browser enquanto a chamada de entrada não é atendida/rejeitada.
+  useEffect(() => {
+    if (callState === 'incoming') startRingtone();
+    else stopRingtone();
+  }, [callState]);
+  useEffect(() => stopRingtone, []);
+
+  // Com a página recarregada, o gesto de escolher a linha pode não voltar a
+  // acontecer (linha reposta automaticamente): qualquer clique autoriza o som.
+  useEffect(() => {
+    window.addEventListener('pointerdown', unlockRingtone);
+    window.addEventListener('keydown', unlockRingtone);
+    return () => {
+      window.removeEventListener('pointerdown', unlockRingtone);
+      window.removeEventListener('keydown', unlockRingtone);
+    };
+  }, []);
 
   // Se uma chamada de entrada tocar noutra página, dar um atalho fácil ao
   // agente para a ir atender sem ter de navegar manualmente.
@@ -207,12 +279,16 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
         registration,
         callState,
         remoteIdentity,
+        incomingLegId,
+        supervising,
+        supervisedMode,
         error,
         selectExtension,
         unregister,
         call,
         answer,
         hangup,
+        reject,
         mute,
         unmute,
         sendDTMF,

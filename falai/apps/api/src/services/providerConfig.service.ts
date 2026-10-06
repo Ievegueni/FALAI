@@ -9,31 +9,22 @@ import { getSetting } from "./settings.service.js";
  * SystemSetting usam os mesmos nomes das variáveis de ambiente.
  *
  * Nota: os valores são lidos uma vez no arranque, portanto alterações no
- * backoffice só passam a valer após reiniciar a API.
+ * backoffice só passam a valer após reiniciar a API (botão "Reiniciar API"
+ * em Configurações → routes/admin/system.ts).
  */
 
 export interface ResolvedProviderConfig {
-  yeastar: {
-    baseUrl: string;
-    clientId: string;
-    clientSecret: string;
-    stubMode: boolean;
-    outboundExtension: string;
-  };
   deepgram: { apiKey: string };
   anthropic: { apiKey: string };
   elevenlabs: { apiKey: string; defaultVoiceId: string };
   proxypay: { apiKey: string };
   futurix: { apiKey: string; baseUrl: string; stubMode: boolean };
+  /** IA em modo de teste (STT/LLM/TTS sem chamar os provedores). Backoffice → .env AI_STUB_MODE. */
+  aiStubMode: boolean;
 }
 
 /** Chaves de provedores geridas via SystemSetting (para o backoffice conhecer o conjunto). */
 export const PROVIDER_SETTING_KEYS = [
-  "YEASTAR_BASE_URL",
-  "YEASTAR_CLIENT_ID",
-  "YEASTAR_CLIENT_SECRET",
-  "YEASTAR_STUB_MODE",
-  "YEASTAR_OUTBOUND_EXTENSION",
   "DEEPGRAM_API_KEY",
   "ANTHROPIC_API_KEY",
   "ELEVENLABS_API_KEY",
@@ -42,6 +33,7 @@ export const PROVIDER_SETTING_KEYS = [
   "FUTURIX_SMS_API_KEY",
   "FUTURIX_SMS_BASE_URL",
   "FUTURIX_SMS_STUB_MODE",
+  "AI_STUB_MODE",
 ] as const;
 
 async function val(key: string, envFallback: string | undefined): Promise<string | undefined> {
@@ -51,12 +43,7 @@ async function val(key: string, envFallback: string | undefined): Promise<string
 }
 
 export async function resolveProviderConfig(): Promise<ResolvedProviderConfig> {
-  const [yBase, yId, ySecret, yStub, yExt, dg, an, el, elVoice, pp, fx, fxBase, fxStub] = await Promise.all([
-    val("YEASTAR_BASE_URL", config.YEASTAR_BASE_URL),
-    val("YEASTAR_CLIENT_ID", config.YEASTAR_CLIENT_ID),
-    val("YEASTAR_CLIENT_SECRET", config.YEASTAR_CLIENT_SECRET),
-    val("YEASTAR_STUB_MODE", config.YEASTAR_STUB_MODE ? "true" : "false"),
-    val("YEASTAR_OUTBOUND_EXTENSION", config.YEASTAR_OUTBOUND_EXTENSION),
+  const [dg, an, el, elVoice, pp, fx, fxBase, fxStub, aiStub] = await Promise.all([
     val("DEEPGRAM_API_KEY", config.DEEPGRAM_API_KEY),
     val("ANTHROPIC_API_KEY", config.ANTHROPIC_API_KEY),
     val("ELEVENLABS_API_KEY", config.ELEVENLABS_API_KEY),
@@ -65,16 +52,10 @@ export async function resolveProviderConfig(): Promise<ResolvedProviderConfig> {
     val("FUTURIX_SMS_API_KEY", config.FUTURIX_SMS_API_KEY),
     val("FUTURIX_SMS_BASE_URL", config.FUTURIX_SMS_BASE_URL),
     val("FUTURIX_SMS_STUB_MODE", config.FUTURIX_SMS_STUB_MODE ? "true" : "false"),
+    val("AI_STUB_MODE", config.AI_STUB_MODE ? "true" : "false"),
   ]);
 
   return {
-    yeastar: {
-      baseUrl: yBase ?? "http://localhost:8080",
-      clientId: yId ?? "",
-      clientSecret: ySecret ?? "",
-      stubMode: yStub === "true",
-      outboundExtension: yExt ?? "1000",
-    },
     deepgram: { apiKey: dg ?? "" },
     anthropic: { apiKey: an ?? "" },
     elevenlabs: { apiKey: el ?? "", defaultVoiceId: elVoice ?? "21m00Tcm4TlvDq8ikWAM" },
@@ -84,5 +65,6 @@ export async function resolveProviderConfig(): Promise<ResolvedProviderConfig> {
       baseUrl: fxBase ?? "https://sms-api.futurix.ao",
       stubMode: fxStub === "true",
     },
+    aiStubMode: aiStub === "true",
   };
 }

@@ -1,10 +1,85 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { financeApi } from '@/lib/api';
-import { Card, StatCard, PageSpinner, Tabs } from '@/components/ui';
+import { Card, StatCard, PageSpinner, Tabs, Button, Input, Modal } from '@/components/ui';
+import { useToast } from '@/contexts/ToastContext';
 import { formatAOA, formatDateShort } from '@/lib/utils';
-import { TrendingUp, DollarSign, Percent, Phone } from 'lucide-react';
+import { TrendingUp, DollarSign, Percent, Phone, Wallet, Plus, Pencil } from 'lucide-react';
+
+/** Converte Kz (o que o utilizador digita) para cêntimos (o que a API guarda). */
+function kzToCents(v: string): number {
+  const n = Number(v.replace(',', '.'));
+  return Number.isFinite(n) ? Math.round(n * 100) : 0;
+}
+
+function ProviderCostEditor({ costPerCallCents }: { costPerCallCents: number }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(() => (costPerCallCents / 100).toFixed(2));
+
+  const mut = useMutation({
+    mutationFn: () => financeApi.updateProviderCost(kzToCents(value)),
+    onSuccess: () => {
+      toast.success('Custo por chamada actualizado.');
+      void qc.invalidateQueries({ queryKey: ['admin', 'finance', 'provider-balance'] });
+      setEditing(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (!editing) {
+    return (
+      <StatCard
+        label="Custo por chamada"
+        value={formatAOA(costPerCallCents)}
+        sub="pago ao fornecedor — clique para editar"
+        icon={<Pencil className="h-5 w-5" />}
+        className="cursor-pointer"
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 flex items-end gap-2">
+      <Input label="Custo por chamada (Kz)" value={value} onChange={(e) => setValue(e.target.value)}
+        inputMode="decimal" className="w-32" />
+      <Button size="sm" loading={mut.isPending} onClick={() => mut.mutate()}>Guardar</Button>
+      <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>Cancelar</Button>
+    </div>
+  );
+}
+
+function ProviderTopUpModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+
+  const mut = useMutation({
+    mutationFn: () => financeApi.addProviderTopup({ amountCents: kzToCents(amount), note: note || undefined }),
+    onSuccess: () => {
+      toast.success('Saldo registado.');
+      void qc.invalidateQueries({ queryKey: ['admin', 'finance', 'provider-balance'] });
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Modal open onClose={onClose} title="Registar compra de saldo ao fornecedor"
+      footer={<><Button variant="ghost" onClick={onClose}>Cancelar</Button>
+        <Button loading={mut.isPending} disabled={kzToCents(amount) <= 0} onClick={() => mut.mutate()}>Guardar</Button></>}>
+      <div className="space-y-4">
+        <Input label="Valor comprado (Kz)" value={amount} onChange={(e) => setAmount(e.target.value)}
+          inputMode="decimal" placeholder="50000" />
+        <Input label="Nota (opcional)" value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="ex.: recarga ElevenLabs Setembro" />
+      </div>
+    </Modal>
+  );
+}
 
 export function FinancePage() {
   const [tab, setTab] = useState('summary');
@@ -24,6 +99,12 @@ export function FinancePage() {
     queryFn: () => financeApi.marginReport({ from, to }),
     enabled: tab === 'margin',
   });
+
+  const { data: providerBalance } = useQuery({
+    queryKey: ['admin', 'finance', 'provider-balance'],
+    queryFn: () => financeApi.providerBalance(),
+  });
+  const [topUpOpen, setTopUpOpen] = useState(false);
 
   if (isLoading && !summary) return <PageSpinner />;
 
@@ -113,6 +194,53 @@ export function FinancePage() {
           </table>
         </Card>
       )}
+
+      <div>
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-700">Saldo do fornecedor</h2>
+            <p className="text-xs text-gray-500">Saldo comprado ao fornecedor de voz/telefonia, descontado à medida que as chamadas são atendidas</p>
+          </div>
+          <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setTopUpOpen(true)}>Registar compra de saldo</Button>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {providerBalance && <ProviderCostEditor costPerCallCents={providerBalance.costPerCallCents} />}
+          <StatCard label="Saldo comprado" value={providerBalance ? formatAOA(providerBalance.purchasedCents) : '–'} icon={<Wallet className="h-5 w-5" />} />
+          <StatCard label="Saldo gasto" value={providerBalance ? formatAOA(providerBalance.spentCents) : '–'} icon={<TrendingUp className="h-5 w-5" />} />
+          <StatCard
+            label="Saldo restante"
+            value={providerBalance ? formatAOA(providerBalance.remainingCents) : '–'}
+            icon={<DollarSign className="h-5 w-5" />}
+            trend={providerBalance ? { positive: providerBalance.remainingCents > 0, label: providerBalance.remainingCents > 0 ? 'OK' : 'Esgotado' } : undefined}
+          />
+        </div>
+
+        {providerBalance && providerBalance.topups.length > 0 && (
+          <Card padding={false} className="mt-4">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                <tr>
+                  {['Data', 'Valor', 'Nota'].map((h) => (
+                    <th key={h} className="px-6 py-3 text-left font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {providerBalance.topups.map((t) => (
+                  <tr key={t.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-3 text-gray-600">{formatDateShort(t.createdAt)}</td>
+                    <td className="px-6 py-3 font-medium text-gray-900">{formatAOA(t.amountCents)}</td>
+                    <td className="px-6 py-3 text-gray-500">{t.note ?? '–'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        )}
+      </div>
+
+      {topUpOpen && <ProviderTopUpModal onClose={() => setTopUpOpen(false)} />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { prisma } from "@falai/db";
 import type { CallStatus, BillingMode } from "@falai/db";
-import type { CallEvent } from "@falai/shared";
+import { isChannelCallEvent, type CallEvent } from "@falai/shared";
 import type { TelephonyProvider, TurnMessage, LlmProvider } from "@falai/providers";
 import { VadDetector } from "./VadDetector.js";
 import type { TurnProcessor } from "./TurnProcessor.js";
@@ -14,6 +14,8 @@ type AudioCacheKey = Parameters<AudioCache["getPromptName"]>[0];
 // State per active call
 interface CallSession {
   callId: string;
+  /** FIXED_SCRIPT só toca um áudio e desliga: não tem turnos, IA nem saudação. */
+  kind: "VOICE_AI" | "FIXED_SCRIPT";
   agentId: string;
   tenantId: string;
   toNumber: string;
@@ -99,14 +101,22 @@ export class CallEngineService {
       // Para onde é lícito transferir esta chamada. Sem isto, um modelo do
       // cliente podia devolver `escalate` para um número qualquer e desviar a
       // chamada do cliente final. Ver guardrail.service.ts.
-      const lines = await prisma.tenantLine.findMany({
-        where: { tenantId: params.tenantId, isActive: true },
-        select: { phoneNumber: true, extension: true },
-      });
+      const [lines, exts] = await Promise.all([
+        prisma.tenantLine.findMany({
+          where: { tenantId: params.tenantId, isActive: true },
+          select: { phoneNumber: true, extension: true },
+        }),
+        prisma.extension.findMany({
+          where: { tenantId: params.tenantId, isActive: true },
+          select: { phoneNumber: true, number: true },
+        }),
+      ]);
       allowedEscalationNumbers = [
         params.escalationNumber,
         ...lines.map((l) => l.phoneNumber),
         ...lines.map((l) => l.extension),
+        ...exts.map((e) => e.phoneNumber),
+        ...exts.map((e) => e.number),
       ].filter((n): n is string => typeof n === "string" && n.trim() !== "");
     } catch (err) {
       this.cfg.log.error(
@@ -118,6 +128,7 @@ export class CallEngineService {
 
     const session: CallSession = {
       callId: params.callId,
+      kind: "VOICE_AI",
       agentId: params.agentId,
       tenantId: params.tenantId,
       toNumber: params.toNumber,
@@ -158,7 +169,64 @@ export class CallEngineService {
     );
   }
 
+  /**
+   * Regista uma chamada de campanha de script fixo. Não passa pelo
+   * `registerCall` porque este exige agente, prompt e motor de IA, que aqui não
+   * existem — mas partilha o mesmo `Map` de sessões, e é isso que importa: sem
+   * sessão, os eventos do Asterisk não encontram a chamada e o registo ficava
+   * com duração zero e por faturar.
+   */
+  registerFixedScriptCall(params: {
+    callId: string;
+    tenantId: string;
+    toNumber: string;
+    providerCallId: string;
+    variables?: Record<string, unknown>;
+    reservedCents: number;
+    billingMode: BillingMode;
+    pricePerMinuteCents: number;
+    pricePerCallCents: number;
+  }): void {
+    this.sessions.set(params.providerCallId, {
+      callId: params.callId,
+      kind: "FIXED_SCRIPT",
+      agentId: "",
+      tenantId: params.tenantId,
+      toNumber: params.toNumber,
+      providerCallId: params.providerCallId,
+      systemPrompt: "",
+      ttsVoiceId: "",
+      variables: params.variables ?? {},
+      maxCallSeconds: 0,
+      maxTurnSeconds: 0,
+      escalationNumber: null,
+      llm: null,
+      modelId: null,
+      maxReplyChars: null,
+      allowedEscalationNumbers: [],
+      reservedCents: params.reservedCents,
+      billingMode: params.billingMode,
+      pricePerMinuteCents: params.pricePerMinuteCents,
+      pricePerCallCents: params.pricePerCallCents,
+      state: "DIALING",
+      history: [],
+      turnSeq: 0,
+      startedAt: new Date(),
+      answeredAt: null,
+      vad: null,
+      maxCallTimer: null,
+      silenceTimer: null,
+    });
+    this.callIndex.set(params.callId, params.providerCallId);
+    this.cfg.log.info(
+      { callId: params.callId, providerCallId: params.providerCallId },
+      "call_engine.registered_fixed_script"
+    );
+  }
+
   async handleEvent(event: CallEvent): Promise<void> {
+    // Gravação de chamada não tem canal e não diz respeito ao motor de conversa.
+    if (!isChannelCallEvent(event)) return;
     const session = this.sessions.get(event.providerCallId);
     if (!session) return;
 
@@ -200,6 +268,10 @@ export class CallEngineService {
       where: { id: session.callId },
       data: { status: "IN_PROGRESS", answeredAt },
     });
+
+    // O script fixo já está a tocar, tocado pelo próprio adaptador. Sobrepor-lhe
+    // a saudação do agente daria duas vozes em simultâneo.
+    if (session.kind === "FIXED_SCRIPT") return;
 
     session.maxCallTimer = setTimeout(() => { void this.handleMaxDuration(session); }, session.maxCallSeconds * 1000);
     await this.playSystemPrompt(session, "greeting");
@@ -350,6 +422,9 @@ export class CallEngineService {
   }
 
   private async onCallFailed(session: CallSession, reason: string): Promise<void> {
+    // Mesma guarda do onCallEnded: uma chamada já fechada não pode ser
+    // reaberta como falhada por um evento tardio ou duplicado.
+    if (session.state === "TERMINATED") return;
     await this.cleanupSession(session, "FAILED", 0, reason);
   }
 
@@ -391,9 +466,14 @@ export class CallEngineService {
 
     if (session.history.length > 0) void this.generateCallSummary(session);
 
-    // Settle billing for campaign/dispatcher calls
+    // Settle billing for campaign/dispatcher calls.
+    //
+    // Esperado, e não lançado em segundo plano: o `onCallEnded` logo abaixo
+    // emite o webhook lendo o custo da base de dados. Sem este await, a leitura
+    // corria contra esta escrita e ganhava — o cliente recebia `costCents: 0`
+    // numa chamada que afinal foi faturada, e só o GET dizia a verdade.
     if (session.reservedCents > 0) {
-      settleCall({
+      await settleCall({
         callId: session.callId,
         tenantId: session.tenantId,
         billedSecs: duration,

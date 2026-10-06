@@ -1,9 +1,11 @@
 import type { FastifyPluginAsync } from "fastify";
+import { invalidateTenantFeatures } from "../../services/features.js";
 import { prisma } from "@falai/db";
 import { z } from "zod";
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
+  productId: z.string().nullish(),
   productType: z.enum(["VOICE_AI", "CRM_BYO_PBX", "API_BYOM"]).default("VOICE_AI"),
   aiAgentsEnabled: z.boolean().default(true),
   clinicEnabled: z.boolean().default(false),
@@ -12,6 +14,7 @@ const createSchema = z.object({
   pricePerMinuteCents: z.number().int().min(0),
   pricePerCallCents: z.number().int().min(0).default(0),
   pricePerSmsCents: z.number().int().min(0).default(0),
+  pricePerTextMessageCents: z.number().int().min(0).default(0),
   includedMinutes: z.number().int().min(0).default(0),
   monthlyFeeCents: z.number().int().min(0).default(0),
   maxAgents: z.number().int().min(1).default(1),
@@ -21,6 +24,14 @@ const createSchema = z.object({
 });
 
 const updateSchema = createSchema.partial();
+
+// Com produto, o tipo do plano é sempre o baseType do produto (é o que o resto
+// do código lê); sem produto, vale o productType enviado.
+async function resolveProductType(productId: string | null | undefined) {
+  if (!productId) return undefined;
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { baseType: true } });
+  return product?.baseType ?? null;
+}
 
 export const adminPlansRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.authenticate];
@@ -36,7 +47,10 @@ export const adminPlansRoutes: FastifyPluginAsync = async (fastify) => {
     const body = createSchema.parse(request.body);
     const admin = request.adminUser!;
 
-    const plan = await prisma.plan.create({ data: body });
+    const baseType = await resolveProductType(body.productId);
+    if (baseType === null) return reply.status(400).send({ error: "Produto não encontrado" });
+
+    const plan = await prisma.plan.create({ data: { ...body, productId: body.productId ?? null, ...(baseType && { productType: baseType }) } });
 
     await fastify.audit({
       actorType: "ADMIN",
@@ -66,11 +80,17 @@ export const adminPlansRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await prisma.plan.findUnique({ where: { id: request.params.id } });
     if (!existing) return reply.status(404).send({ error: "Plano não encontrado" });
 
+    const baseType = await resolveProductType(body.productId);
+    if (baseType === null) return reply.status(400).send({ error: "Produto não encontrado" });
+
+    invalidateTenantFeatures(); // limites do plano (IA, SMS) mudam as features efectivas
     const plan = await prisma.plan.update({
       where: { id: request.params.id },
       data: {
         ...(body.name !== undefined && { name: body.name }),
+        ...(body.productId !== undefined && { productId: body.productId }),
         ...(body.productType !== undefined && { productType: body.productType }),
+        ...(baseType && { productType: baseType }),
         ...(body.aiAgentsEnabled !== undefined && { aiAgentsEnabled: body.aiAgentsEnabled }),
         ...(body.clinicEnabled !== undefined && { clinicEnabled: body.clinicEnabled }),
         ...(body.smsEnabled !== undefined && { smsEnabled: body.smsEnabled }),
@@ -78,6 +98,7 @@ export const adminPlansRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.pricePerMinuteCents !== undefined && { pricePerMinuteCents: body.pricePerMinuteCents }),
         ...(body.pricePerCallCents !== undefined && { pricePerCallCents: body.pricePerCallCents }),
         ...(body.pricePerSmsCents !== undefined && { pricePerSmsCents: body.pricePerSmsCents }),
+        ...(body.pricePerTextMessageCents !== undefined && { pricePerTextMessageCents: body.pricePerTextMessageCents }),
         ...(body.includedMinutes !== undefined && { includedMinutes: body.includedMinutes }),
         ...(body.monthlyFeeCents !== undefined && { monthlyFeeCents: body.monthlyFeeCents }),
         ...(body.maxAgents !== undefined && { maxAgents: body.maxAgents }),

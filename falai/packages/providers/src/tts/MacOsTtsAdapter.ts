@@ -44,6 +44,12 @@ export class MacOsTtsAdapter implements TtsProvider {
     }
   }
 
+  // O `say` aceita qualquer nome de voz instalada no sistema e cai na voz por
+  // defeito quando não conhece — não há lista fiável a validar contra.
+  async listVoices(): Promise<Array<{ voiceId: string; name: string }> | null> {
+    return null;
+  }
+
   async healthCheck(): Promise<{ ok: boolean; details?: string }> {
     try {
       await exec("which", ["say"]);

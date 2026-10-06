@@ -1,5 +1,17 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { prisma } from "@falai/db";
+import { upsertSetting } from "../../services/settings.service.js";
+import { PROVIDER_COST_PER_CALL_SETTING, getProviderCostPerCallCents } from "../../services/billing.service.js";
+
+const topUpSchema = z.object({
+  amountCents: z.number().int().positive(),
+  note: z.string().trim().max(280).optional(),
+});
+
+const providerCostSchema = z.object({
+  costPerCallCents: z.number().int().min(0),
+});
 
 export const adminFinanceRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.authenticate];
@@ -148,4 +160,63 @@ export const adminFinanceRoutes: FastifyPluginAsync = async (fastify) => {
       }));
     }
   );
+
+  // GET /admin/finance/provider-balance
+  // Saldo comprado ao fornecedor (voz/telefonia) menos o custo já consumido
+  // (Call.providerCostCents), para controlar quanto ainda resta.
+  fastify.get("/finance/provider-balance", { preHandler }, async () => {
+    const [costPerCallCents, purchased, spent, topups] = await Promise.all([
+      getProviderCostPerCallCents(),
+      prisma.providerTopUp.aggregate({ _sum: { amountCents: true } }),
+      prisma.call.aggregate({ _sum: { providerCostCents: true } }),
+      prisma.providerTopUp.findMany({ orderBy: { createdAt: "desc" }, take: 20 }),
+    ]);
+
+    const purchasedCents = purchased._sum.amountCents ?? 0;
+    const spentCents = spent._sum.providerCostCents ?? 0;
+
+    return {
+      costPerCallCents,
+      purchasedCents,
+      spentCents,
+      remainingCents: purchasedCents - spentCents,
+      topups,
+    };
+  });
+
+  // PUT /admin/finance/provider-cost — actualiza o custo fixo por chamada
+  fastify.put("/finance/provider-cost", { preHandler }, async (request, reply) => {
+    const body = providerCostSchema.parse(request.body);
+    const admin = request.adminUser!;
+
+    await upsertSetting({
+      key: PROVIDER_COST_PER_CALL_SETTING,
+      value: String(body.costPerCallCents),
+      updatedBy: admin.sub,
+    });
+
+    return reply.status(200).send({ ok: true, costPerCallCents: body.costPerCallCents });
+  });
+
+  // POST /admin/finance/provider-topup — regista uma compra de saldo ao fornecedor
+  fastify.post("/finance/provider-topup", { preHandler }, async (request, reply) => {
+    const body = topUpSchema.parse(request.body);
+    const admin = request.adminUser!;
+
+    const topup = await prisma.providerTopUp.create({
+      data: { amountCents: body.amountCents, note: body.note ?? null, createdBy: admin.sub },
+    });
+
+    await fastify.audit({
+      actorType: "ADMIN",
+      actorId: admin.sub,
+      action: "provider_topup.create",
+      targetType: "ProviderTopUp",
+      targetId: topup.id,
+      after: { amountCents: body.amountCents, note: body.note ?? null },
+      ip: request.ip,
+    });
+
+    return reply.status(201).send(topup);
+  });
 };

@@ -49,7 +49,9 @@ export interface TelephonyProvider {
   hangup(providerCallId: string): Promise<void>;
   transfer(providerCallId: string, to: string): Promise<void>;
   uploadPrompt(name: string, wavBuffer: Buffer): Promise<void>;
-  playPrompt(params: PlayPromptParams): Promise<void>;
+  /** Devolve o canal onde o áudio toca — o chamador precisa dele para associar
+   *  os eventos seguintes (fim da chamada, duração) a esta chamada. */
+  playPrompt(params: PlayPromptParams): Promise<{ providerCallId: string }>;
   subscribeToEvents(handler: (event: CallEvent) => void): Promise<void>;
   unsubscribeFromEvents(): Promise<void>;
   healthCheck(): Promise<{ ok: boolean; details?: string }>;

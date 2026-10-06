@@ -1,0 +1,1 @@
+ALTER TABLE "IvrMenu" ALTER COLUMN "timeoutSecs" SET DEFAULT 3;

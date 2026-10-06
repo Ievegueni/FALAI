@@ -10,6 +10,7 @@ import { Input, Select } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
+import { ContactFileUpload } from '@/components/contacts/ContactFileUpload';
 import { formatAOA, daysOfWeekLabel } from '@/lib/utils';
 import type { CallStatus, CampaignMode } from '@/types';
 
@@ -218,6 +219,11 @@ export function CampaignFormPage() {
         <Card>
           <h2 className="text-sm font-semibold text-gray-900 mb-1">{t('campaigns.form.contacts')}</h2>
           <p className="text-xs text-gray-500 mb-3">{t('campaigns.form.selectedCount', { count: selectedContactIds.length })}</p>
+          <div className="mb-3">
+            <ContactFileUpload
+              onResolved={(r) => setSelectedContactIds((prev) => [...new Set([...prev, ...r.contacts.map((c) => c.id)])])}
+            />
+          </div>
           <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
             {contacts?.data.map((c) => (
               <label

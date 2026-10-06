@@ -13,12 +13,12 @@
  * como no Yeastar. O streaming em tempo real para a IA (externalMedia) é a
  * Etapa 4 e não faz parte deste adaptador.
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { WebSocket } from "ws";
 import type { CallEvent } from "@falai/shared";
 import type { TelephonyProvider, DialParams, PlayPromptParams } from "./TelephonyProvider.js";
-import { formatDialNumber, type DialFormat } from "./asteriskNaming.js";
+import { formatDialNumber, holdMusicDir, type DialFormat } from "./asteriskNaming.js";
 
 export interface AsteriskConfig {
   /** Ex.: http://127.0.0.1:8088 */
@@ -60,12 +60,15 @@ export class AsteriskError extends Error {
  * + webphone da mesma extensão) a tocar em simultâneo. A primeira a atender
  * (ChannelStateChange → Up) dispara onAnswer; quem chama trata de desligar as
  * restantes. Se todas caírem sem ninguém atender, dispara onAllFailed.
+ * onLegEnded recebe cada perna que cai antes do atendimento, com a causa Q.850
+ * (21 = recusada, 17 = ocupado, 19 = sem resposta) — base dos relatórios.
  */
 interface RingGroup {
   remaining: Set<string>;
   settled: boolean;
   onAnswer: (answeredChannelId: string) => void;
   onAllFailed: () => void;
+  onLegEnded: ((channelId: string, cause: number | null) => void) | undefined;
 }
 
 export class AsteriskAdapter implements TelephonyProvider {
@@ -81,6 +84,9 @@ export class AsteriskAdapter implements TelephonyProvider {
    * channelId → o que falta tocar. Ver playPrompt().
    */
   private promptSessions = new Map<string, { prompts: string[]; index: number; remainingLoops: number }>();
+
+  /** Canais para os quais já emitimos evento terminal. Ver StasisEnd/ChannelDestroyed. */
+  private settledChannels = new Set<string>();
 
   private readonly app: string;
   private readonly context: string;
@@ -163,7 +169,9 @@ export class AsteriskAdapter implements TelephonyProvider {
     endpointId: string,
     appArgs: string,
     callerId: string | undefined,
-    timeoutSecs: number
+    timeoutSecs: number,
+    /** Variáveis do canal, ex. { "PJSIP_HEADER(add,X-Falai-Leg-Id)": id }. */
+    variables?: Record<string, string>
   ): Promise<{ id: string }> {
     const q = new URLSearchParams({
       endpoint: `PJSIP/${endpointId}`,
@@ -172,15 +180,60 @@ export class AsteriskAdapter implements TelephonyProvider {
       timeout: String(timeoutSecs),
       ...(callerId ? { callerId } : {}),
     });
-    return this.api<{ id: string }>(`/channels?${q}`, { method: "POST" });
+    return this.api<{ id: string }>(`/channels?${q}`, {
+      method: "POST",
+      ...(variables ? { body: JSON.stringify({ variables }) } : {}),
+    });
   }
 
   async answerChannel(providerCallId: string): Promise<void> {
     await this.api(`/channels/${encodeURIComponent(providerCallId)}/answer`, { method: "POST" });
   }
 
-  async createBridge(): Promise<{ id: string }> {
-    return this.api<{ id: string }>(`/bridges?type=mixing`, { method: "POST" });
+  /** `name` permite reconhecer a bridge depois (ex.: "supervise-…" na limpeza do arranque). */
+  async createBridge(name?: string): Promise<{ id: string }> {
+    const q = new URLSearchParams({ type: "mixing", ...(name ? { name } : {}) });
+    return this.api<{ id: string }>(`/bridges?${q}`, { method: "POST" });
+  }
+
+  async listBridges(): Promise<{ id: string; name: string; channels: string[] }[]> {
+    return this.api<{ id: string; name: string; channels: string[] }[]>(`/bridges`);
+  }
+
+  async removeChannelFromBridge(bridgeId: string, channelId: string): Promise<void> {
+    try {
+      await this.api(
+        `/bridges/${encodeURIComponent(bridgeId)}/removeChannel?channel=${encodeURIComponent(channelId)}`,
+        { method: "POST" }
+      );
+    } catch (err) {
+      // 404/422 = a bridge ou o canal já não existem / já não estão juntos.
+      if (!(err instanceof AsteriskError && (err.status === 404 || err.status === 422))) throw err;
+    }
+  }
+
+  /**
+   * Canal "espião" de outro canal (supervisão). `spy` = que áudio do canal se
+   * ouve; `whisper` = para onde vai o áudio injectado: "out" chega ao aparelho
+   * do canal espiado (o agente ouve), "none" = só escuta. O snoop entra na
+   * aplicação Stasis com `appArgs`, pronto a juntar a uma bridge.
+   */
+  async snoopChannel(
+    channelId: string,
+    opts: { spy: "none" | "in" | "out" | "both"; whisper: "none" | "in" | "out" | "both"; appArgs: string }
+  ): Promise<{ id: string }> {
+    const q = new URLSearchParams({ spy: opts.spy, whisper: opts.whisper, app: this.app, appArgs: opts.appArgs });
+    return this.api<{ id: string }>(`/channels/${encodeURIComponent(channelId)}/snoop?${q}`, { method: "POST" });
+  }
+
+  /** "online" se o endpoint PJSIP tem algum registo activo. */
+  async endpointState(endpointId: string): Promise<"online" | "offline" | "unknown"> {
+    try {
+      const r = await this.api<{ state?: string }>(`/endpoints/PJSIP/${encodeURIComponent(endpointId)}`);
+      return r.state === "online" ? "online" : r.state === "offline" ? "offline" : "unknown";
+    } catch {
+      return "unknown";
+    }
   }
 
   /**
@@ -207,9 +260,10 @@ export class AsteriskAdapter implements TelephonyProvider {
   registerRingGroup(
     memberChannelIds: string[],
     onAnswer: (answeredChannelId: string) => void,
-    onAllFailed: () => void
+    onAllFailed: () => void,
+    onLegEnded?: (channelId: string, cause: number | null) => void
   ): void {
-    const group: RingGroup = { remaining: new Set(memberChannelIds), settled: false, onAnswer, onAllFailed };
+    const group: RingGroup = { remaining: new Set(memberChannelIds), settled: false, onAnswer, onAllFailed, onLegEnded };
     for (const id of memberChannelIds) this.ringGroups.set(id, group);
   }
 
@@ -221,8 +275,11 @@ export class AsteriskAdapter implements TelephonyProvider {
   async noRouteFallback(providerCallId: string): Promise<void> {
     try {
       await this.answerChannel(providerCallId);
-      await this.playPrompt({ providerCallId, number: "", prompts: ["ss-noservice"] });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      // Som de sistema do Asterisk, não um prompt nosso: via playPrompt ia
+      // procurar custom/ss-noservice, que não existe, e o chamador só ouvia
+      // silêncio até desligar. Dura ~5 s.
+      await this.api(`/channels/${encodeURIComponent(providerCallId)}/play?media=sound:ss-noservice`, { method: "POST" });
+      await new Promise((resolve) => setTimeout(resolve, 5500));
     } finally {
       await this.hangup(providerCallId).catch(() => {});
     }
@@ -258,12 +315,51 @@ export class AsteriskAdapter implements TelephonyProvider {
       throw new AsteriskError("soundsDir não configurado — não há onde guardar os prompts");
     }
     await mkdir(this.cfg.soundsDir, { recursive: true });
-    await writeFile(join(this.cfg.soundsDir, `${name}.wav`), wavBuffer);
+    // O Asterisk escolhe o formato pela extensão e recusa com "frequency
+    // mismatch" se não bater com o cabeçalho: ".wav" é 8 kHz, ".wav16" é
+    // 16 kHz. O TTS devolve 16 kHz; o áudio carregado no CRM vem a 8 kHz.
+    const rate = wavBuffer.length >= 28 ? wavBuffer.readUInt32LE(24) : 16000;
+    const [ext, other] = rate === 8000 ? ["wav", "wav16"] : ["wav16", "wav"];
+    await writeFile(join(this.cfg.soundsDir, `${name}.${ext}`), wavBuffer);
+    // Tira a versão no outro formato (ex.: TTS antigo), senão ficam duas com o
+    // mesmo nome e o Asterisk toca a que preferir.
+    await rm(join(this.cfg.soundsDir, `${name}.${other}`), { force: true });
   }
 
   /**
-   * Nome com que o Asterisk conhece um prompt nosso. A pasta partilhada está
-   * montada em /var/lib/asterisk/sounds/custom, e é assim que o ARI a resolve.
+   * Música de espera do cliente: um único ficheiro na pasta da classe MOH
+   * (ver holdMusicDir). Mesma regra de formato que uploadPrompt.
+   */
+  async uploadHoldMusic(tenantId: string, wavBuffer: Buffer): Promise<void> {
+    if (!this.cfg.soundsDir) {
+      throw new AsteriskError("soundsDir não configurado — não há onde guardar a música");
+    }
+    const dir = join(this.cfg.soundsDir, holdMusicDir(tenantId));
+    await mkdir(dir, { recursive: true });
+    const rate = wavBuffer.length >= 28 ? wavBuffer.readUInt32LE(24) : 16000;
+    const [ext, other] = rate === 8000 ? ["wav", "wav16"] : ["wav16", "wav"];
+    await writeFile(join(dir, `hold.${ext}`), wavBuffer);
+    await rm(join(dir, `hold.${other}`), { force: true });
+  }
+
+  /** Música de espera na bridge (toca a quem lá estiver) até stopBridgeMoh. */
+  async startBridgeMoh(bridgeId: string, mohClass: string): Promise<void> {
+    const q = new URLSearchParams({ mohClass });
+    await this.api(`/bridges/${encodeURIComponent(bridgeId)}/moh?${q}`, { method: "POST" });
+  }
+
+  async stopBridgeMoh(bridgeId: string): Promise<void> {
+    try {
+      await this.api(`/bridges/${encodeURIComponent(bridgeId)}/moh`, { method: "DELETE" });
+    } catch (err) {
+      if (!(err instanceof AsteriskError && err.status === 404)) throw err;
+    }
+  }
+
+  /**
+   * Nome com que o Asterisk conhece um prompt nosso. `soundsDir` tem de ser a
+   * pasta para onde "custom/" resolve no motor (ver o symlink em
+   * <astdatadir>/sounds/custom), senão o playback falha por ficheiro inexistente.
    */
   private mediaFor(prompt: string): string {
     return `sound:custom/${prompt}`;
@@ -279,7 +375,7 @@ export class AsteriskAdapter implements TelephonyProvider {
    * "playPrompt no Asterisk exige providerCallId" — ou seja, nenhuma campanha
    * de script fixo chegava a ligar seja a quem for.
    */
-  async playPrompt(params: PlayPromptParams): Promise<void> {
+  async playPrompt(params: PlayPromptParams): Promise<{ providerCallId: string }> {
     const id = params.providerCallId;
     if (!id) {
       if (!params.number) {
@@ -298,7 +394,7 @@ export class AsteriskAdapter implements TelephonyProvider {
         index: 0,
         remainingLoops: params.count ?? 1,
       });
-      return;
+      return { providerCallId };
     }
 
     for (let i = 0; i < (params.count ?? 1); i++) {
@@ -308,6 +404,83 @@ export class AsteriskAdapter implements TelephonyProvider {
       }
     }
     // O fim real chega pelo evento PlaybackFinished do ARI.
+    return { providerCallId: id };
+  }
+
+  /**
+   * Toca um prompt num canal já existente e devolve o id do playback. Ao
+   * contrário de `playPrompt`, que dispara e esquece, aqui o id é preciso para
+   * poder CORTAR o áudio a meio — é o que o IVR faz quando o chamador prime a
+   * tecla sem esperar pelo fim do anúncio.
+   */
+  async playMediaOnChannel(channelId: string, prompt: string): Promise<{ id: string }> {
+    const q = new URLSearchParams({ media: this.mediaFor(prompt) });
+    return this.api<{ id: string }>(`/channels/${encodeURIComponent(channelId)}/play?${q}`, {
+      method: "POST",
+    });
+  }
+
+  /**
+   * Começa a gravar uma bridge — os dois lados já misturados, que é o que se
+   * quer numa chamada. Grava-se a bridge e não o canal porque cada canal só
+   * traz a sua própria voz.
+   *
+   * `name` é o nome do ficheiro (sem extensão) e é também por ele que a
+   * gravação é identificada quando termina: o ARI não devolve o canal nessa
+   * altura. `ifExists=overwrite` para uma reentrega não rebentar com "já
+   * existe" e deixar a chamada por gravar.
+   */
+  async recordBridge(bridgeId: string, name: string, format: string): Promise<void> {
+    const q = new URLSearchParams({
+      name,
+      format,
+      ifExists: "overwrite",
+      // 0 = sem limite: quem manda parar é o fim da chamada.
+      maxDurationSeconds: "0",
+      maxSilenceSeconds: "0",
+    });
+    await this.api(`/bridges/${encodeURIComponent(bridgeId)}/record?${q}`, { method: "POST" });
+  }
+
+  /**
+   * Fecha a gravação. Sem isto a gravação só terminava quando a bridge morresse
+   * — e a bridge fica viva até alguém a destruir, pelo que o ficheiro podia
+   * ficar aberto muito depois de a chamada acabar. 404 = já parou.
+   */
+  async stopRecording(name: string): Promise<void> {
+    try {
+      await this.api(`/recordings/live/${encodeURIComponent(name)}/stop`, { method: "POST" });
+    } catch (err) {
+      if (!(err instanceof AsteriskError && err.status === 404)) throw err;
+    }
+  }
+
+  /** Toca um áudio na bridge — ouvem-no os dois lados (ex.: aviso de gravação). */
+  async playMediaOnBridge(bridgeId: string, prompt: string): Promise<{ id: string }> {
+    const q = new URLSearchParams({ media: this.mediaFor(prompt) });
+    return this.api<{ id: string }>(`/bridges/${encodeURIComponent(bridgeId)}/play?${q}`, {
+      method: "POST",
+    });
+  }
+
+  /** Corta um playback a meio. 404 = já acabou sozinho, não é erro. */
+  /**
+   * Sinal de chamada em banda para quem liga, enquanto as extensões tocam. O
+   * canal já foi atendido (está numa bridge), por isso o 180 Ringing não chega:
+   * sem isto o chamador ouve silêncio e desliga. Toca até stopPlayback.
+   * Tons europeus (425 Hz), os mesmos de Angola.
+   */
+  async startRingback(channelId: string): Promise<{ id: string }> {
+    const q = new URLSearchParams({ media: "tone:ring;tonezone=pt" });
+    return this.api<{ id: string }>(`/channels/${encodeURIComponent(channelId)}/play?${q}`, { method: "POST" });
+  }
+
+  async stopPlayback(playbackId: string): Promise<void> {
+    try {
+      await this.api(`/playbacks/${encodeURIComponent(playbackId)}`, { method: "DELETE" });
+    } catch (err) {
+      if (!(err instanceof AsteriskError && err.status === 404)) throw err;
+    }
   }
 
   /** Toca o próximo prompt de uma chamada de script fixo; desliga no fim. */
@@ -370,8 +543,35 @@ export class AsteriskAdapter implements TelephonyProvider {
     const channel = e["channel"] as
       | { id?: string; state?: string; caller?: { number?: string } }
       | undefined;
+    if (!this.handler) return;
+
+    // Uma gravação que termina não traz canal nenhum (a esta altura já morreu),
+    // por isso tem de sair daqui ANTES da guarda do `id` abaixo — senão estes
+    // eventos eram silenciosamente deitados fora e nenhuma gravação chegava a
+    // ser registada.
+    const recording = e["recording"] as
+      | { name?: string; format?: string; duration?: number; cause?: string }
+      | undefined;
+    if (type === "RecordingFinished" && recording?.name) {
+      this.handler({
+        type: "RECORDING_FINISHED",
+        recordingName: recording.name,
+        format: recording.format ?? "",
+        ...(typeof recording.duration === "number" ? { durationSecs: recording.duration } : {}),
+      });
+      return;
+    }
+    if (type === "RecordingFailed" && recording?.name) {
+      this.handler({
+        type: "RECORDING_FAILED",
+        recordingName: recording.name,
+        reason: recording.cause ?? "unknown",
+      });
+      return;
+    }
+
     const id = channel?.id ?? (e["playback"] as { target_uri?: string } | undefined)?.target_uri?.split(":")[1];
-    if (!id || !this.handler) return;
+    if (!id) return;
 
     switch (type) {
       case "ChannelStateChange":
@@ -388,9 +588,13 @@ export class AsteriskAdapter implements TelephonyProvider {
             ring.onAnswer(id);
             break;
           }
-          // Campanha de script fixo: atenderam, começa o áudio.
+          // Campanha de script fixo: atenderam, começa o áudio. O CALL_ANSWERED
+          // é emitido à mesma — quem regista a chamada precisa do instante do
+          // atendimento; o motor sabe não lhe sobrepor a saudação do agente.
           if (this.promptSessions.has(id)) {
-            this.answeredAt.set(id, Date.now());
+            const at = new Date();
+            this.answeredAt.set(id, at.getTime());
+            this.handler({ type: "CALL_ANSWERED", providerCallId: id, answeredAt: at });
             this.advancePromptSession(id);
             break;
           }
@@ -435,11 +639,29 @@ export class AsteriskAdapter implements TelephonyProvider {
         if (ring) {
           this.ringGroups.delete(id);
           ring.remaining.delete(id);
+          const rawCause = e["cause"];
+          ring.onLegEnded?.(id, typeof rawCause === "number" ? rawCause : null);
           if (!ring.settled && ring.remaining.size === 0) {
             ring.settled = true;
             ring.onAllFailed();
           }
           break;
+        }
+
+        // O Asterisk manda StasisEnd E ChannelDestroyed para o mesmo canal. Sem
+        // isto, o segundo já não encontrava o answeredAt (apagado pelo
+        // primeiro), concluía que ninguém tinha atendido e emitia um
+        // CALL_FAILED que sobrepunha o CALL_ENDED correcto — a chamada acabava
+        // registada como falhada, com duração zero e por faturar.
+        if (this.settledChannels.has(id)) break;
+        this.settledChannels.add(id);
+        if (this.settledChannels.size > 500) {
+          // Limpeza preguiçosa: o Set não pode crescer sem fim num processo
+          // que corre semanas.
+          for (const old of this.settledChannels) {
+            this.settledChannels.delete(old);
+            if (this.settledChannels.size <= 250) break;
+          }
         }
 
         this.promptSessions.delete(id);
@@ -468,7 +690,14 @@ export class AsteriskAdapter implements TelephonyProvider {
           this.advancePromptSession(id);
           break;
         }
-        this.handler({ type: "PROMPT_FINISHED", providerCallId: id });
+        {
+          const playbackId = (e["playback"] as { id?: string } | undefined)?.id;
+          this.handler({
+            type: "PROMPT_FINISHED",
+            providerCallId: id,
+            ...(playbackId ? { playbackId } : {}),
+          });
+        }
         break;
 
       case "ChannelDtmfReceived":
