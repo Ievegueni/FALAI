@@ -1,4 +1,5 @@
 import { prisma, type Prisma, type TicketEventType, type TicketPriority, type TicketStatus } from "@falai/db";
+import { enqueueNotePush, enqueueTicketPush } from "./helpdesk/sync.js";
 
 /**
  * Tickets (centro de atendimento, fase 1) — ver docs/PLANO-CENTRO-ATENDIMENTO.md.
@@ -193,6 +194,9 @@ export async function createTicket(tenantId: string, authorId: string | null, in
       await tx.ticketEvent.create({ data: { ticketId: ticket.id, type: "LINKED", toValue: `conversation:${input.conversationId}`, authorId } });
     }
     return ticket;
+  }).then(async (ticket) => {
+    await enqueueTicketPush(tenantId, ticket.id); // helpdesk externo, se o cliente tiver
+    return ticket;
   });
 }
 
@@ -230,6 +234,7 @@ export async function updateTicket(tenantId: string, id: string, authorId: strin
     await prisma.ticketEvent.createMany({ data: events.map((e) => ({ ...e, ticketId: id, authorId })) });
   }
   const ticket = await prisma.ticket.findUniqueOrThrow({ where: { id } });
+  await enqueueTicketPush(tenantId, id);
   return { ticket, changed: true, reopened };
 }
 
@@ -241,6 +246,9 @@ export async function addTicketNote(tenantId: string, id: string, authorId: stri
     // Mexe no updatedAt para a lista ordenar pela última actividade.
     prisma.ticket.update({ where: { id }, data: { updatedAt: new Date() } }),
   ]);
+  // Helpdesk externo: a nota vai como nota privada; o envio do ticket acerta o resto.
+  await enqueueNotePush(tenantId, event.id);
+  await enqueueTicketPush(tenantId, id);
   return event;
 }
 

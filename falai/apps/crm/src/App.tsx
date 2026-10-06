@@ -33,6 +33,7 @@ const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage').then((m) =>
 const SmsPage = lazy(() => import('@/pages/sms/SmsPage').then((m) => ({ default: m.SmsPage })));
 const InboxPage = lazy(() => import('@/pages/inbox/InboxPage').then((m) => ({ default: m.InboxPage })));
 const TicketsPage = lazy(() => import('@/pages/tickets/TicketsPage').then((m) => ({ default: m.TicketsPage })));
+const HelpdeskPage = lazy(() => import('@/pages/tickets/HelpdeskPage').then((m) => ({ default: m.HelpdeskPage })));
 const TicketDetailPage = lazy(() => import('@/pages/tickets/TicketDetailPage').then((m) => ({ default: m.TicketDetailPage })));
 const QualityPage = lazy(() => import('@/pages/quality/QualityPage').then((m) => ({ default: m.QualityPage })));
 const EvaluationPage = lazy(() => import('@/pages/quality/EvaluationPage').then((m) => ({ default: m.EvaluationPage })));
@@ -94,6 +95,7 @@ export default function App() {
                 <Route path="/inbox" element={<RequireFeature feature="inbox"><InboxPage /></RequireFeature>} />
                 <Route path="/inbox/settings" element={<RequireFeature feature="inbox"><InboxSettingsPage /></RequireFeature>} />
                 <Route path="/tickets" element={<RequireFeature feature="tickets"><TicketsPage /></RequireFeature>} />
+                <Route path="/tickets/helpdesk" element={<RequireFeature feature="tickets"><HelpdeskPage /></RequireFeature>} />
                 <Route path="/tickets/:id" element={<RequireFeature feature="tickets"><TicketDetailPage /></RequireFeature>} />
                 <Route path="/knowledge" element={<RequireFeature feature="knowledge"><KnowledgePage /></RequireFeature>} />
                 <Route path="/quality" element={<RequireFeature feature="quality"><QualityPage /></RequireFeature>} />

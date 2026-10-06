@@ -278,6 +278,7 @@ model Tenant {
   csatConfig           Json?
   csatResponses        CsatResponse[]
   kbArticles           KbArticle[]
+  helpdesk             HelpdeskConnection?
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -1395,6 +1396,10 @@ model Ticket {
   reopenCount    Int             @default(0)
   externalSystem String? // "FRESHDESK" quando é espelho
   externalId     String?
+  // Última versão local (updatedAt) já enviada ao helpdesk externo. Se o
+  // ticket mudou depois disto há alterações por enviar — e a sincronização
+  // de lá para cá não as pisa.
+  externalSyncedAt DateTime?
   createdById    String? // TenantUser (null = API/sistema)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
@@ -1628,4 +1633,28 @@ model KbArticle {
 
   @@index([tenantId, isPublished])
   @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "KbArticle_title_trgm_idx")
+}
+
+// ============ HELPDESK EXTERNO (centro de atendimento, fase 3) ============
+// Ver services/helpdesk/. Uma ligação por cliente; `provider` deixa entrar
+// outros helpdesks sem mudar o esquema (hoje só FRESHDESK).
+
+model HelpdeskConnection {
+  id             String    @id @default(cuid())
+  tenantId       String    @unique
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+  provider       String    @default("FRESHDESK")
+  enabled        Boolean   @default(false)
+  domain         String // ex.: "mano.freshdesk.com"
+  apiKey         String // encriptada (AES-256-GCM) via crypto.service
+  // Token do URL do webhook que o helpdesk chama (/webhooks/helpdesk/:token)
+  webhookToken   String    @unique
+  // NEVER | AGENT_CHOICE | ALWAYS — criar ticket no fim da chamada atendida
+  ticketOnCall   String    @default("AGENT_CHOICE")
+  includeRecordingLink Boolean @default(false)
+  lastSyncAt     DateTime? // última reconciliação bem-sucedida
+  lastError      String?
+  lastErrorAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }

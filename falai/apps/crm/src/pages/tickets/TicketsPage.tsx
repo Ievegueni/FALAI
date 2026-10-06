@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Plus, Search, Ticket as TicketIcon } from 'lucide-react';
+import { Plus, Search, Ticket as TicketIcon, PlugZap } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { isOpsManager } from '@/lib/roles';
 import { ticketsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -25,6 +27,7 @@ import {
 export function TicketsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [f, setF] = useState({ status: 'active', priority: '', supportLevel: '', assignee: '', groupId: '', q: '', page: 1 });
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch, page: patch.page ?? 1 }));
   const [showCreate, setShowCreate] = useState(false);
@@ -48,7 +51,14 @@ export function TicketsPage() {
     <>
       <Header
         title={t('tickets.title')}
-        actions={<Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>{t('tickets.new')}</Button>}
+        actions={
+          <>
+            {isOpsManager(user?.role) && (
+              <Button size="sm" variant="outline" icon={<PlugZap className="h-3.5 w-3.5" />} onClick={() => navigate('/tickets/helpdesk')}>{t('helpdesk.title')}</Button>
+            )}
+            <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>{t('tickets.new')}</Button>
+          </>
+        }
       />
 
       <div className="space-y-4 p-4 sm:p-6">

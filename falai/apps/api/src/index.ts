@@ -92,6 +92,8 @@ import { tenantAgentTimeRoutes } from "./routes/tenant/agentTime.js";
 import { tenantQualityRoutes } from "./routes/tenant/quality.js";
 import { tenantCsatRoutes, publicCsatRoutes } from "./routes/tenant/csat.js";
 import { tenantKnowledgeRoutes } from "./routes/tenant/knowledge.js";
+import { tenantHelpdeskRoutes, helpdeskWebhookRoutes } from "./routes/tenant/helpdesk.js";
+import { startHelpdeskSync } from "./services/helpdesk/sync.js";
 import { publicChatRoutes } from "./routes/public/chat.js";
 import { publicWaRoutes } from "./routes/public/wa.js";
 import { startEmailPolling } from "./services/email.service.js";
@@ -390,6 +392,7 @@ async function buildApp() {
   await gated(fastify, "quality", tenantQualityRoutes);
   await gated(fastify, "reports", tenantCsatRoutes);
   await gated(fastify, "knowledge", tenantKnowledgeRoutes);
+  await gated(fastify, "tickets", tenantHelpdeskRoutes);
   await fastify.register(tenantEventsRoutes);
   await gated(fastify, "reports", tenantReportsRoutes);
   await gated(fastify, "sms", tenantSmsRoutes);
@@ -439,6 +442,7 @@ async function buildApp() {
   await fastify.register(proxypayWebhookRoutes, { prefix: "/webhooks/proxypay" });
   await fastify.register(telegramWebhookRoutes, { prefix: "/webhooks/telegram" });
   await fastify.register(whatsappWebhookRoutes, { prefix: "/webhooks/whatsapp" });
+  await fastify.register(helpdeskWebhookRoutes);
 
   // Canal de email: lê as caixas IMAP dos inboxes a cada minuto.
   const stopEmailPolling = startEmailPolling(fastify);
@@ -449,6 +453,9 @@ async function buildApp() {
   // Alertas operacionais e metas (fase 4): avaliação a cada 15 s.
   const stopAlerts = startAlertEvaluator(fastify);
   fastify.addHook("onClose", async () => stopAlerts());
+  // Helpdesk externo (Freshdesk) por cliente: fila de envio + reconciliação a cada 5 min.
+  const stopHelpdesk = startHelpdeskSync(fastify.log);
+  fastify.addHook("onClose", async () => stopHelpdesk());
   // Sessões de agentes que ficaram abertas se a API caiu (fase 5).
   await closeStaleSessions().catch((err) => fastify.log.warn({ err }, "agent_session.close_stale_error"));
 

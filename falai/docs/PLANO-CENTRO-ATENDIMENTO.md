@@ -5,8 +5,8 @@
 > como projecto à medida: tudo o que entra aqui serve qualquer tenant e liga-se
 > por funcionalidade no backoffice.
 >
-> Criado em 06/10/2026. Estado: **fases 1, 2, 4, 5, 7, 8, 9 e 10 feitas, branch
-> `feat/tickets`** — migrações `20261006090000_tickets`, `…120000_manager_role`,
+> Criado em 06/10/2026. Estado: **fases 1, 2, 3 (Freshdesk, sem Freshchat), 4, 5,
+> 7, 8, 9 e 10 feitas, branch `feat/tickets`** — migrações `20261006090000_tickets`, `…120000_manager_role`,
 > `…150000_service_alerts`, `…180000_agent_time`, `…200000_quality` e
 > `…220000_csat` aplicadas só na BD local. Fase 3 (Freshdesk) à espera de conta de
 > testes da MANO; fase 6 à espera da voz real.
@@ -144,7 +144,22 @@ O que falta construir:
 - **Perfis-modelo** no backoffice ("Gestor Operacional", "Agente") para não
   configurar à mão em cada cliente.
 
-### Fase 3 — Conector Freshdesk + Freshchat (G) · modo `FRESHDESK`
+### Fase 3 — Conector Freshdesk + Freshchat (G) · modo `FRESHDESK` · ✅ Freshdesk feito 07/10
+
+Feito sem conta real, testado contra um Freshdesk falso que imita a API v2:
+`HelpdeskConnection` por cliente (genérico, campo `provider`; migração
+`20261007120000_helpdesk`) + `Ticket.externalSyncedAt`;
+`services/helpdesk/{freshdesk,sync}.ts` (+ testes). Grava-se cá primeiro e uma
+fila BullMQ (dentro da API) envia com novas tentativas; webhook
+`/webhooks/helpdesk/:token` + reconciliação a cada 5 min (importa os últimos
+30 dias na 1.ª vez). Agentes por email, grupos por nome. Configuração em
+CRM → Tickets → Integração Freshdesk (OWNER/ADMIN). Guia: `docs/FRESHDESK.md`.
+Nova variável opcional `PUBLIC_CRM_URL` (link da chamada no ticket).
+
+Falta: **validar com a conta real da MANO**; **Freshchat** (não se escreveu à
+adivinha — precisa da conta para ver a API); campos personalizados.
+
+Plano original:
 
 Configuração por tenant (backoffice e CRM → Integrações): domínio, API key
 (**encriptada**, como as credenciais de PBX), modo `NATIVE | FRESHDESK`,

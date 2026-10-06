@@ -44,6 +44,8 @@ import { busyExtensionIds } from "./callTyping.service.js";
 import { findContactIdForCaller } from "./callerLookup.service.js";
 import { agentUserOfExtension, csatPrompt, csatThanksPrompt, recordVoiceCsat, sendSmsCsat, tenantCsatConfig } from "./csat.service.js";
 import { agentOf } from "./quality.service.js";
+import { activeConnection } from "./helpdesk/sync.js";
+import { createTicket } from "./tickets.service.js";
 import {
   computeCallCost,
   effectivePrice,
@@ -831,6 +833,21 @@ async function closeInboundCall(
       const full = await prisma.call.findUnique({ where: { id: call.id }, select: { contactId: true, groupId: true, ticketId: true } });
       const agentId = await agentOf(call.tenantId, { callId: call.id }).catch(() => null);
       await sendSmsCsat(fastify, { id: call.id, tenantId: call.tenantId, fromNumber: call.fromNumber, contactId: full?.contactId ?? null, groupId: full?.groupId ?? null, ticketId: full?.ticketId ?? null }, agentId, log);
+      // Helpdesk externo com "ticket em todas as chamadas": cria-o já (vai para o Freshdesk pela fila).
+      const hd = await activeConnection(call.tenantId);
+      if (hd?.ticketOnCall === "ALWAYS" && !full?.ticketId) {
+        const crm = process.env["PUBLIC_CRM_URL"]?.replace(/\/$/, "");
+        const agent = agentId ? (await prisma.tenantUser.findUnique({ where: { id: agentId }, select: { name: true } }))?.name : null;
+        await createTicket(call.tenantId, null, {
+          subject: `Chamada de ${call.fromNumber ?? "número oculto"}`,
+          callId: call.id,
+          ...(agentId && { assigneeId: agentId }),
+          description: [
+            `Chamada de entrada atendida${agent ? ` por ${agent}` : ""}, ${billedSecs} s.`,
+            hd.includeRecordingLink && crm ? `Chamada e gravação: ${crm}/calls/${call.id}` : null,
+          ].filter(Boolean).join("\n"),
+        });
+      }
     })().catch((err) => log.warn({ err, callId: call.id }, "inbound_call_router.csat_sms_failed"));
   } catch (err) {
     log.error({ err, providerCallId }, "inbound_call_router.close_failed");

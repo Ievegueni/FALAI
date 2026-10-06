@@ -1696,5 +1696,35 @@
     "emptyDescription": "主管在此编写答案、流程和政策——坐席在服务时查阅。",
     "draft": "草稿",
     "deleteConfirm": "删除此文章？"
+  },
+  "helpdesk": {
+    "title": "Freshdesk 集成",
+    "intro": "连接 Freshdesk 后，Falaí 的工单成为 Freshdesk 工单的镜像：此处创建或修改的内容会同步过去（坐席无需等待），那边的修改通过 webhook 及每 5 分钟的同步传回。首次连接会导入最近 30 天的工单。坐席和组按邮箱和名称匹配。",
+    "domain": "Freshdesk 域名",
+    "apiKey": "API 密钥",
+    "apiKeyKept": "已保存——留空则保留",
+    "apiKeyHint": "Freshdesk → 个人资料 → \"Your API Key\"。请使用专用技术用户（如 \"Falaí Integração\"）。加密保存。",
+    "ticketOnCall": "每通已接通话结束时的工单",
+    "onCall": {
+      "AGENT_CHOICE": "仅在坐席创建时",
+      "ALWAYS": "始终创建",
+      "NEVER": "从不"
+    },
+    "recordingLink": "在工单中附上通话和录音的链接（CRM 中）",
+    "enabled": "启用连接",
+    "test": "测试连接",
+    "testOk": "连接正常——用户 {{name}}",
+    "syncNow": "立即同步",
+    "synced": "已同步：新增 {{created}}，更新 {{updated}}",
+    "lastSync": "上次同步",
+    "lastError": "上次错误",
+    "webhookTitle": "Freshdesk 通知（webhook）",
+    "webhookBody": "请求体（JSON）",
+    "webhookSteps": [
+      "在 Freshdesk：Admin → Automations → Ticket updates → New rule。",
+      "条件：\"When an action performed by… Anyone\" 且 \"Involves any of these events: Ticket is updated\"（或状态、优先级、负责人）。",
+      "操作：\"Trigger webhook\"，POST 到下方 URL，内容为 JSON，使用下方请求体。",
+      "保存并启用规则。即使没有该规则，Freshdesk 中的修改也会在 5 分钟同步时传回。"
+    ]
   }
 }

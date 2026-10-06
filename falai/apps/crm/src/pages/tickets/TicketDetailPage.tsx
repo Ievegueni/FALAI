@@ -93,6 +93,7 @@ export function TicketDetailPage() {
                   <span className="text-xs text-gray-400">
                     {t('tickets.levelN', { n: ticket.supportLevel })} · {t(`tickets.source.${ticket.source}`, { defaultValue: ticket.source })} · {formatDate(ticket.createdAt)}
                     {ticket.reopenCount > 0 && ` · ${t('tickets.reopened', { count: ticket.reopenCount })}`}
+                    {ticket.externalId && ` · Freshdesk #${ticket.externalId}`}
                   </span>
                 </div>
               </div>

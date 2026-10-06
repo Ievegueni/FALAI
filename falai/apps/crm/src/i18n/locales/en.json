@@ -1768,5 +1768,35 @@
     "emptyDescription": "Supervisors write answers, procedures and policies here — agents look them up while serving customers.",
     "draft": "Draft",
     "deleteConfirm": "Delete this article?"
+  },
+  "helpdesk": {
+    "title": "Freshdesk integration",
+    "intro": "With Freshdesk connected, Falaí tickets mirror Freshdesk: what is created or changed here goes there (without making the agent wait), and changes there arrive by webhook and a sync every 5 minutes. The first connection imports tickets from the last 30 days. Agents and groups are matched by email and name.",
+    "domain": "Freshdesk domain",
+    "apiKey": "API key",
+    "apiKeyKept": "saved — leave empty to keep",
+    "apiKeyHint": "Freshdesk → your profile → \"Your API Key\". Use a dedicated technical user (e.g. \"Falaí Integration\"). Stored encrypted.",
+    "ticketOnCall": "Ticket at the end of each answered call",
+    "onCall": {
+      "AGENT_CHOICE": "Only when the agent creates one",
+      "ALWAYS": "Always create",
+      "NEVER": "Never"
+    },
+    "recordingLink": "Include a link to the call and recording (in the CRM) in the ticket",
+    "enabled": "Connection active",
+    "test": "Test connection",
+    "testOk": "Connection OK — user {{name}}",
+    "syncNow": "Sync now",
+    "synced": "Synced: {{created}} new, {{updated}} updated",
+    "lastSync": "Last sync",
+    "lastError": "Last error",
+    "webhookTitle": "Freshdesk notifications (webhook)",
+    "webhookBody": "Body (JSON)",
+    "webhookSteps": [
+      "In Freshdesk: Admin → Automations → Ticket updates → New rule.",
+      "Condition: \"When an action performed by… Anyone\" and \"Involves any of these events: Ticket is updated\" (or status, priority, agent).",
+      "Action: \"Trigger webhook\", POST request to the URL below, JSON content with the body below.",
+      "Save and enable the rule. Without it, changes made in Freshdesk still arrive in the 5-minute sync."
+    ]
   }
 }

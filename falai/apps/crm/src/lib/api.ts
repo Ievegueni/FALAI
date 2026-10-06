@@ -1504,3 +1504,28 @@ export const kbApi = {
   update: (id: string, data: KbInput) => put<KbArticle>(`/tenant/kb/${id}`, data),
   remove: (id: string) => del<void>(`/tenant/kb/${id}`),
 };
+
+// ─── Helpdesk externo / Freshdesk (fase 3) ──────────────────────────────────
+
+export type TicketOnCall = 'NEVER' | 'AGENT_CHOICE' | 'ALWAYS';
+export interface HelpdeskStatus {
+  configured: boolean;
+  canEdit: boolean;
+  enabled?: boolean;
+  domain?: string;
+  apiKeySet?: boolean;
+  ticketOnCall?: TicketOnCall;
+  includeRecordingLink?: boolean;
+  webhookUrl?: string;
+  webhookBody?: string;
+  lastSyncAt?: string | null;
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+}
+
+export const helpdeskApi = {
+  get: () => get<HelpdeskStatus>('/tenant/helpdesk'),
+  save: (data: { domain: string; apiKey?: string; enabled: boolean; ticketOnCall: TicketOnCall; includeRecordingLink: boolean }) => put<{ ok: true }>('/tenant/helpdesk', data),
+  test: () => post<{ ok: true; agent: string | null; email: string | null }>('/tenant/helpdesk/test'),
+  sync: () => post<{ ok: true; created: number; updated: number; skipped: number; unchanged: number }>('/tenant/helpdesk/sync'),
+};

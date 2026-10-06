@@ -116,6 +116,11 @@ ALLOWED_ORIGINS=https://crm.teu-dominio.com,https://admin.teu-dominio.com
 # NUNCA pôr um valor demasiado largo — quem estiver fora da lista pode forjar
 # X-Forwarded-For e contornar a allowlist com uma chave roubada.
 TRUSTED_PROXIES=127.0.0.1
+# endereços públicos: links que saem para fora (webhooks que o cliente
+# configura no PBX/Freshdesk, link do inquérito de satisfação por SMS, ligação
+# para a chamada/gravação nos tickets do Freshdesk)
+PUBLIC_API_URL=https://api.teu-dominio.com
+PUBLIC_CRM_URL=https://crm.teu-dominio.com
 
 # Motor de telefonia (Asterisk, ver infra/asterisk/README.md). OBRIGATÓRIO:
 # a API não arranca sem ASTERISK_ARI_URL. Ver .env.example para o resto.

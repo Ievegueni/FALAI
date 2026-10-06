@@ -1768,5 +1768,35 @@
     "emptyDescription": "A supervisão escreve aqui respostas, procedimentos e políticas — os agentes consultam-nos durante o atendimento.",
     "draft": "Rascunho",
     "deleteConfirm": "Apagar este artigo?"
+  },
+  "helpdesk": {
+    "title": "Integração Freshdesk",
+    "intro": "Com o Freshdesk ligado, os tickets do Falaí passam a ser um espelho dos do Freshdesk: o que se cria ou altera cá segue para lá (sem fazer esperar o agente), e o que muda lá chega por webhook e por sincronização a cada 5 minutos. Na primeira ligação importam-se os tickets dos últimos 30 dias. Agentes e grupos correspondem-se pelo email e pelo nome.",
+    "domain": "Domínio do Freshdesk",
+    "apiKey": "API key",
+    "apiKeyKept": "guardada — deixe vazio para manter",
+    "apiKeyHint": "Freshdesk → o seu perfil → \"Your API Key\". Use um utilizador técnico dedicado (ex.: \"Falaí Integração\"). Fica guardada encriptada.",
+    "ticketOnCall": "Ticket no fim de cada chamada atendida",
+    "onCall": {
+      "AGENT_CHOICE": "Só quando o agente cria",
+      "ALWAYS": "Criar sempre",
+      "NEVER": "Nunca"
+    },
+    "recordingLink": "Incluir no ticket a ligação para a chamada e a gravação (no CRM)",
+    "enabled": "Ligação activa",
+    "test": "Testar ligação",
+    "testOk": "Ligação OK — utilizador {{name}}",
+    "syncNow": "Sincronizar agora",
+    "synced": "Sincronizado: {{created}} novos, {{updated}} actualizados",
+    "lastSync": "Última sincronização",
+    "lastError": "Último erro",
+    "webhookTitle": "Avisos do Freshdesk (webhook)",
+    "webhookBody": "Corpo (JSON)",
+    "webhookSteps": [
+      "No Freshdesk: Admin → Automations → Ticket updates → New rule.",
+      "Condição: \"When an action performed by… Anyone\" e \"Involves any of these events: Ticket is updated\" (ou estado, prioridade, responsável).",
+      "Acção: \"Trigger webhook\", pedido POST para o URL abaixo, conteúdo JSON com o corpo abaixo.",
+      "Guardar e activar a regra. Sem a regra, as alterações feitas no Freshdesk chegam na mesma na sincronização dos 5 minutos."
+    ]
   }
 }
