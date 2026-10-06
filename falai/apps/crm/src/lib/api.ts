@@ -1406,3 +1406,42 @@ export interface AgentTimeRow {
 export const agentTimeApi = {
   report: (q: { from?: string; to?: string }) => get<{ from: string; to: string; data: AgentTimeRow[] }>(`/tenant/reports/agent-time${qs(q)}`),
 };
+
+// ─── Qualidade (fase 7) ─────────────────────────────────────────────────────
+
+export type QaAnswer = 'YES' | 'NO' | 'NA';
+export type QaStatus = 'SUBMITTED' | 'ACKNOWLEDGED' | 'DISPUTED' | 'RESOLVED';
+export interface QaCriterion { id?: string; label: string; weight: number; critical: boolean }
+export interface QaDefinition { sections: { title: string; criteria: QaCriterion[] }[] }
+export interface QaForm { id: string; name: string; isActive: boolean; definition: QaDefinition; updatedAt: string }
+type Person = { id: string; name: string };
+export interface QaEvaluationRow {
+  id: string; score: number; criticalFail: boolean; status: QaStatus; createdAt: string;
+  callId: string | null; conversationId: string | null; ticketId: string | null;
+  form: { name: string } | null; agent: Person; evaluator: Person;
+}
+export interface QaEvaluationDetail extends QaEvaluationRow {
+  formSnapshot: QaDefinition & { name: string };
+  answers: Record<string, QaAnswer>;
+  comment: string | null; agentComment: string | null; resolution: string | null; acknowledgedAt: string | null;
+  canEdit: boolean; isMine: boolean;
+}
+export interface QaSummaryRow { agentId: string; agent: string; evaluations: number; avgScore: number | null; criticalFails: number; disputed: number }
+export interface QaSampleRow { agentId: string; agent: string; calls: { id: string; at: string; fromNumber: string | null; durationSecs: number }[] }
+
+export const qaApi = {
+  forms: (all = false) => get<{ data: QaForm[] }>(`/tenant/qa/forms${all ? '?all=1' : ''}`).then((r) => r.data),
+  createForm: (data: { name: string; definition: QaDefinition }) => post<QaForm>('/tenant/qa/forms', data),
+  updateForm: (id: string, data: { name: string; definition: QaDefinition; isActive?: boolean }) => put<QaForm>(`/tenant/qa/forms/${id}`, data),
+  list: (q: { agentId?: string; status?: QaStatus; from?: string; to?: string; page?: number }) =>
+    get<Paginated<QaEvaluationRow>>(`/tenant/qa/evaluations${qs(q)}`),
+  get: (id: string) => get<QaEvaluationDetail>(`/tenant/qa/evaluations/${id}`),
+  create: (data: { formId: string; callId?: string; conversationId?: string; ticketId?: string; answers: Record<string, QaAnswer>; comment?: string }) =>
+    post<{ id: string }>('/tenant/qa/evaluations', data),
+  revise: (id: string, data: { answers?: Record<string, QaAnswer>; comment?: string | null; resolution?: string }) =>
+    patch<QaEvaluationDetail>(`/tenant/qa/evaluations/${id}`, data),
+  acknowledge: (id: string, comment?: string) => post<unknown>(`/tenant/qa/evaluations/${id}/acknowledge`, comment ? { comment } : {}),
+  dispute: (id: string, comment: string) => post<unknown>(`/tenant/qa/evaluations/${id}/dispute`, { comment }),
+  summary: (q: { from?: string; to?: string }) => get<{ data: QaSummaryRow[] }>(`/tenant/qa/summary${qs(q)}`).then((r) => r.data),
+  sample: (q: { days?: number; perAgent?: number }) => get<{ data: QaSampleRow[] }>(`/tenant/qa/sample${qs(q)}`).then((r) => r.data),
+};

@@ -28,6 +28,7 @@ export const FEATURE_KEYS = [
   "telephony",
   "inbox",
   "tickets",
+  "quality",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -50,6 +51,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   telephony: "Telefonia (extensões, trunks, rotas)",
   inbox: "Caixa de entrada (WhatsApp, chat, email, Telegram)",
   tickets: "Tickets",
+  quality: "Qualidade (QA)",
 };
 
 export const FEATURE_HINTS: Record<FeatureKey, string> = {
@@ -68,6 +70,7 @@ export const FEATURE_HINTS: Record<FeatureKey, string> = {
   telephony: "Extensões, grupos, trunks e rotas",
   inbox: "WhatsApp Business, chat no site, email e Telegram, com IA e operadores",
   tickets: "Casos com estados, níveis de suporte e ligação a chamadas e conversas",
+  quality: "Formulários de avaliação, QA score, feedback e contestação dos agentes",
 };
 
 export const DEFAULT_FEATURES: Features = {
@@ -88,6 +91,7 @@ export const DEFAULT_FEATURES: Features = {
   // a Comunica as activa no backoffice.
   inbox: false,
   tickets: false,
+  quality: false,
 };
 
 /**

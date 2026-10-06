@@ -47,7 +47,8 @@
     "supervision": "监控",
     "pin": "固定菜单",
     "unpin": "取消固定菜单",
-    "tickets": "工单"
+    "tickets": "工单",
+    "quality": "质量"
   },
   "login": {
     "subtitle": "登录您的账户",
@@ -1539,6 +1540,73 @@
       "SLA_BELOW": "当日服务水平 {{value}}（目标 {{threshold}}）",
       "ABANDON_ABOVE": "当日放弃率 {{value}}（阈值 {{threshold}}）",
       "TMA_ABOVE": "当日平均处理时长 {{value}}（阈值 {{threshold}}）"
+    }
+  },
+  "quality": {
+    "title": "质量",
+    "tabEvaluations": "评估",
+    "tabSummary": "质检得分",
+    "tabSample": "待评估",
+    "tabForms": "表单",
+    "evaluate": "评估",
+    "newTitle": "新建评估",
+    "evaluation": "评估",
+    "notFound": "未找到评估。",
+    "noForms": "尚无评估表单——由经理在 质量 → 表单 中创建。",
+    "openCall": "查看通话",
+    "comment": "评估人备注",
+    "commentPlaceholder": "做得好的地方和需要改进的地方…",
+    "submit": "提交评估",
+    "by": "评估人 {{name}}",
+    "critical": "否决项",
+    "criticalFail": "否决项未达标——得分为 0。",
+    "agentComment": "坐席备注",
+    "resolution": "申诉回复",
+    "agentNote": "给评估人的备注（申诉时必填）",
+    "acknowledge": "确认已读",
+    "dispute": "申诉",
+    "reviseAnswers": "修改答案",
+    "auditHint": "每次修改都会记入审计日志（修改前后）。",
+    "allStatuses": "所有状态",
+    "empty": "暂无评估。",
+    "lastDays_one": "最近一天",
+    "lastDays_other": "最近 {{count}} 天",
+    "reshuffle": "重新抽样",
+    "sampleHint": "每个坐席随机抽取两通尚未评估的通话。",
+    "nothingToEvaluate": "此期间没有待评估的内容。",
+    "newForm": "新建表单",
+    "editForm": "编辑表单",
+    "formName": "表单名称",
+    "editHint": "已完成的评估保留当时的表单——此处修改仅对新评估生效。",
+    "sectionTitle": "部分标题",
+    "criterion": "评估项",
+    "weight": "权重",
+    "addCriterion": "评估项",
+    "addSection": "部分",
+    "criteriaCount_one": "{{count}} 个评估项",
+    "criteriaCount_other": "{{count}} 个评估项",
+    "answer": {
+      "YES": "达标",
+      "NO": "未达标",
+      "NA": "不适用"
+    },
+    "status": {
+      "SUBMITTED": "待确认",
+      "ACKNOWLEDGED": "已确认",
+      "DISPUTED": "已申诉",
+      "RESOLVED": "已复核"
+    },
+    "col": {
+      "date": "日期",
+      "agent": "坐席",
+      "form": "表单",
+      "evaluator": "评估人",
+      "score": "得分",
+      "statusLabel": "状态",
+      "evaluations": "评估数",
+      "avgScore": "平均质检得分",
+      "criticalFails": "否决项",
+      "disputed": "申诉"
     }
   }
 }

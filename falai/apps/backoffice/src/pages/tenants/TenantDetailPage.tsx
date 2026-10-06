@@ -50,6 +50,7 @@ const FEATURE_LABELS: { key: FeatureKey; label: string; hint?: string; needsAi?:
   { key: 'telephony', label: 'Telefonia', hint: 'Extensões, grupos, trunks e rotas' },
   { key: 'inbox', label: 'Caixa de entrada', hint: 'WhatsApp Business, chat no site, email e Telegram com IA e operadores' },
   { key: 'tickets', label: 'Tickets', hint: 'Casos com estados, níveis de suporte e ligação a chamadas e conversas' },
+  { key: 'quality', label: 'Qualidade (QA)', hint: 'Formulários de avaliação, QA score, feedback e contestação dos agentes' },
 ];
 
 function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {

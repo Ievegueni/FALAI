@@ -47,7 +47,8 @@
     "supervision": "Supervision",
     "pin": "Pin menu",
     "unpin": "Unpin menu",
-    "tickets": "Tickets"
+    "tickets": "Tickets",
+    "quality": "Quality"
   },
   "login": {
     "subtitle": "Sign in to your account",
@@ -1611,6 +1612,73 @@
       "SLA_BELOW": "Daily SLA at {{value}} (target {{threshold}})",
       "ABANDON_ABOVE": "Daily abandon rate at {{value}} (limit {{threshold}})",
       "TMA_ABOVE": "Daily AHT at {{value}} (limit {{threshold}})"
+    }
+  },
+  "quality": {
+    "title": "Quality",
+    "tabEvaluations": "Evaluations",
+    "tabSummary": "QA score",
+    "tabSample": "To evaluate",
+    "tabForms": "Forms",
+    "evaluate": "Evaluate",
+    "newTitle": "New evaluation",
+    "evaluation": "Evaluation",
+    "notFound": "Evaluation not found.",
+    "noForms": "No evaluation forms yet — a manager creates them in Quality → Forms.",
+    "openCall": "Open call",
+    "comment": "Evaluator comment",
+    "commentPlaceholder": "What went well and what to improve…",
+    "submit": "Submit evaluation",
+    "by": "by {{name}}",
+    "critical": "Critical",
+    "criticalFail": "Critical criterion failed — score 0.",
+    "agentComment": "Agent comment",
+    "resolution": "Reply to the dispute",
+    "agentNote": "Note for the evaluator (required to dispute)",
+    "acknowledge": "Acknowledge",
+    "dispute": "Dispute",
+    "reviseAnswers": "Revise answers",
+    "auditHint": "Every revision is recorded in the audit log (before and after).",
+    "allStatuses": "All statuses",
+    "empty": "No evaluations.",
+    "lastDays_one": "Last day",
+    "lastDays_other": "Last {{count}} days",
+    "reshuffle": "New sample",
+    "sampleHint": "Two random calls per agent, not yet evaluated.",
+    "nothingToEvaluate": "Nothing to evaluate in this period.",
+    "newForm": "New form",
+    "editForm": "Edit form",
+    "formName": "Form name",
+    "editHint": "Existing evaluations keep the form as it was — changes here only apply to new ones.",
+    "sectionTitle": "Section title",
+    "criterion": "Criterion",
+    "weight": "Weight",
+    "addCriterion": "Criterion",
+    "addSection": "Section",
+    "criteriaCount_one": "{{count}} criterion",
+    "criteriaCount_other": "{{count}} criteria",
+    "answer": {
+      "YES": "Met",
+      "NO": "Not met",
+      "NA": "N/A"
+    },
+    "status": {
+      "SUBMITTED": "Pending",
+      "ACKNOWLEDGED": "Acknowledged",
+      "DISPUTED": "Disputed",
+      "RESOLVED": "Reviewed"
+    },
+    "col": {
+      "date": "Date",
+      "agent": "Agent",
+      "form": "Form",
+      "evaluator": "Evaluator",
+      "score": "Score",
+      "statusLabel": "Status",
+      "evaluations": "Evaluations",
+      "avgScore": "Average QA score",
+      "criticalFails": "Critical fails",
+      "disputed": "Disputed"
     }
   }
 }

@@ -47,7 +47,8 @@
     "supervision": "Supervisão",
     "pin": "Fixar menu",
     "unpin": "Soltar menu",
-    "tickets": "Tickets"
+    "tickets": "Tickets",
+    "quality": "Qualidade"
   },
   "login": {
     "subtitle": "Inicie sessão na sua conta",
@@ -1611,6 +1612,73 @@
       "SLA_BELOW": "SLA do dia em {{value}} (meta {{threshold}})",
       "ABANDON_ABOVE": "Abandono do dia em {{value}} (limite {{threshold}})",
       "TMA_ABOVE": "TMA do dia em {{value}} (limite {{threshold}})"
+    }
+  },
+  "quality": {
+    "title": "Qualidade",
+    "tabEvaluations": "Avaliações",
+    "tabSummary": "QA score",
+    "tabSample": "Por avaliar",
+    "tabForms": "Formulários",
+    "evaluate": "Avaliar",
+    "newTitle": "Nova avaliação",
+    "evaluation": "Avaliação",
+    "notFound": "Avaliação não encontrada.",
+    "noForms": "Ainda não há formulários de avaliação — um gestor cria-os em Qualidade → Formulários.",
+    "openCall": "Ver chamada",
+    "comment": "Comentário do avaliador",
+    "commentPlaceholder": "O que correu bem e o que melhorar…",
+    "submit": "Submeter avaliação",
+    "by": "por {{name}}",
+    "critical": "Eliminatório",
+    "criticalFail": "Critério eliminatório não cumprido — score 0.",
+    "agentComment": "Comentário do agente",
+    "resolution": "Resposta à contestação",
+    "agentNote": "Nota para o avaliador (obrigatória para contestar)",
+    "acknowledge": "Confirmar leitura",
+    "dispute": "Contestar",
+    "reviseAnswers": "Rever respostas",
+    "auditHint": "Cada revisão fica registada na auditoria (antes e depois).",
+    "allStatuses": "Todos os estados",
+    "empty": "Sem avaliações.",
+    "lastDays_one": "Último dia",
+    "lastDays_other": "Últimos {{count}} dias",
+    "reshuffle": "Outra amostra",
+    "sampleHint": "Duas chamadas ao acaso por agente, ainda por avaliar.",
+    "nothingToEvaluate": "Nada por avaliar neste período.",
+    "newForm": "Novo formulário",
+    "editForm": "Editar formulário",
+    "formName": "Nome do formulário",
+    "editHint": "As avaliações já feitas guardam o formulário como estava — mudar aqui só vale para as novas.",
+    "sectionTitle": "Título da secção",
+    "criterion": "Critério",
+    "weight": "Peso",
+    "addCriterion": "Critério",
+    "addSection": "Secção",
+    "criteriaCount_one": "{{count}} critério",
+    "criteriaCount_other": "{{count}} critérios",
+    "answer": {
+      "YES": "Conforme",
+      "NO": "Não conforme",
+      "NA": "N/A"
+    },
+    "status": {
+      "SUBMITTED": "Por confirmar",
+      "ACKNOWLEDGED": "Confirmada",
+      "DISPUTED": "Contestada",
+      "RESOLVED": "Revista"
+    },
+    "col": {
+      "date": "Data",
+      "agent": "Agente",
+      "form": "Formulário",
+      "evaluator": "Avaliador",
+      "score": "Score",
+      "statusLabel": "Estado",
+      "evaluations": "Avaliações",
+      "avgScore": "QA score médio",
+      "criticalFails": "Eliminatórios",
+      "disputed": "Contestadas"
     }
   }
 }

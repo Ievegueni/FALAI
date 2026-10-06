@@ -36,7 +36,7 @@ export const tenantAlertsRoutes: FastifyPluginAsync = async (fastify) => {
     // Grava-se sempre um objecto (mesmo tudo desligado): assim o avaliador
     // continua a passar por este cliente e fecha os alertas que ficaram abertos.
     await prisma.tenant.update({ where: { id: tenantId }, data: { serviceTargets: targets } });
-    await fastify.audit({ actorType: "TENANT_USER", actorId: sub, action: "tenant.alerts.targets_updated", targetType: "Tenant", targetId: tenantId, ip: request.ip });
+    await fastify.audit({ actorType: "TENANT_USER", actorId: sub, tenantId, action: "tenant.alerts.targets_updated", targetType: "Tenant", targetId: tenantId, after: targets, ip: request.ip });
     return targets;
   });
 

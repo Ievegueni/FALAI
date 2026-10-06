@@ -270,6 +270,9 @@ model Tenant {
   agentPauses          AgentPause[]
   agentSessions        AgentSession[]
   shifts               Shift[]
+  // Qualidade (fase 7)
+  qaForms              QaForm[]
+  qaEvaluations        QaEvaluation[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -564,6 +567,8 @@ model TenantUser {
   pauses          AgentPause[]
   sessions        AgentSession[]
   shifts          Shift[]
+  qaEvaluated     QaEvaluation[] @relation("QaAgent")
+  qaEvaluations   QaEvaluation[] @relation("QaEvaluator")
 }
 
 // Perfil de acesso ao CRM, gerido pela Comunica no backoffice. A matriz diz,
@@ -1512,4 +1517,61 @@ model Shift {
   endMin    Int
 
   @@index([tenantId, userId])
+}
+
+// ============ QUALIDADE (centro de atendimento, fase 7) ============
+// Ver services/quality.service.ts. Em vez de versões do formulário, cada
+// avaliação guarda a cópia do formulário com que foi feita (formSnapshot):
+// mudar o formulário não mexe nas avaliações já feitas.
+
+model QaForm {
+  id          String         @id @default(cuid())
+  tenantId    String
+  tenant      Tenant         @relation(fields: [tenantId], references: [id])
+  name        String
+  // { sections: [{ title, criteria: [{ id, label, weight, critical }] }] }
+  definition  Json
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  evaluations QaEvaluation[]
+
+  @@unique([tenantId, name])
+}
+
+enum QaStatus {
+  SUBMITTED // feita, à espera do agente
+  ACKNOWLEDGED // o agente leu
+  DISPUTED // o agente contestou
+  RESOLVED // contestação revista
+}
+
+model QaEvaluation {
+  id             String     @id @default(cuid())
+  tenantId       String
+  tenant         Tenant     @relation(fields: [tenantId], references: [id])
+  formId         String?
+  form           QaForm?    @relation(fields: [formId], references: [id], onDelete: SetNull)
+  formSnapshot   Json
+  callId         String?
+  conversationId String?
+  ticketId       String?
+  agentId        String // TenantUser avaliado
+  agent          TenantUser @relation("QaAgent", fields: [agentId], references: [id], onDelete: Cascade)
+  evaluatorId    String
+  evaluator      TenantUser @relation("QaEvaluator", fields: [evaluatorId], references: [id], onDelete: Cascade)
+  answers        Json // { [criterionId]: "YES" | "NO" | "NA" }
+  score          Float // 0–100, calculado no servidor
+  criticalFail   Boolean    @default(false)
+  comment        String?    @db.Text
+  status         QaStatus   @default(SUBMITTED)
+  agentComment   String?    @db.Text // contestação ou nota do agente
+  acknowledgedAt DateTime?
+  resolution     String?    @db.Text // resposta à contestação
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, agentId, createdAt])
+  @@index([callId])
 }

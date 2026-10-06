@@ -34,6 +34,9 @@ const SmsPage = lazy(() => import('@/pages/sms/SmsPage').then((m) => ({ default:
 const InboxPage = lazy(() => import('@/pages/inbox/InboxPage').then((m) => ({ default: m.InboxPage })));
 const TicketsPage = lazy(() => import('@/pages/tickets/TicketsPage').then((m) => ({ default: m.TicketsPage })));
 const TicketDetailPage = lazy(() => import('@/pages/tickets/TicketDetailPage').then((m) => ({ default: m.TicketDetailPage })));
+const QualityPage = lazy(() => import('@/pages/quality/QualityPage').then((m) => ({ default: m.QualityPage })));
+const EvaluationPage = lazy(() => import('@/pages/quality/EvaluationPage').then((m) => ({ default: m.EvaluationPage })));
+const NewEvaluationPage = lazy(() => import('@/pages/quality/EvaluationPage').then((m) => ({ default: m.NewEvaluationPage })));
 const InboxSettingsPage = lazy(() => import('@/pages/inbox/InboxSettingsPage').then((m) => ({ default: m.InboxSettingsPage })));
 const CampaignsPage = lazy(() => import('@/pages/campaigns/CampaignsPage').then((m) => ({ default: m.CampaignsPage })));
 const CampaignFormPage = lazy(() => import('@/pages/campaigns/CampaignFormPage').then((m) => ({ default: m.CampaignFormPage })));
@@ -91,6 +94,9 @@ export default function App() {
                 <Route path="/inbox/settings" element={<RequireFeature feature="inbox"><InboxSettingsPage /></RequireFeature>} />
                 <Route path="/tickets" element={<RequireFeature feature="tickets"><TicketsPage /></RequireFeature>} />
                 <Route path="/tickets/:id" element={<RequireFeature feature="tickets"><TicketDetailPage /></RequireFeature>} />
+                <Route path="/quality" element={<RequireFeature feature="quality"><QualityPage /></RequireFeature>} />
+                <Route path="/quality/new" element={<RequireFeature feature="quality"><NewEvaluationPage /></RequireFeature>} />
+                <Route path="/quality/evaluations/:id" element={<RequireFeature feature="quality"><EvaluationPage /></RequireFeature>} />
 
                 <Route path="/campaigns" element={<RequireFeature feature="campaigns"><CampaignsPage /></RequireFeature>} />
                 <Route path="/campaigns/new" element={<RequireFeature feature="campaigns"><CampaignFormPage /></RequireFeature>} />

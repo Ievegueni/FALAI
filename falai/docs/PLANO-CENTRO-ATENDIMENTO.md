@@ -5,11 +5,12 @@
 > como projecto à medida: tudo o que entra aqui serve qualquer tenant e liga-se
 > por funcionalidade no backoffice.
 >
-> Criado em 06/10/2026. Estado: **fases 1 (tickets), 2 (papéis), 4 (alertas/SLA)
-> e 5 (pausas/turnos/sessões) feitas em 06/10, branch `feat/tickets`** — migrações
-> `20261006090000_tickets`, `20261006120000_manager_role`,
-> `20261006150000_service_alerts` e `20261006180000_agent_time` aplicadas só na
-> BD local. Fase 3 (Freshdesk) à espera de conta de testes da MANO.
+> Criado em 06/10/2026. Estado: **fases 1 (tickets), 2 (papéis), 4 (alertas/SLA),
+> 5 (pausas/turnos/sessões) e 7 (qualidade) feitas em 06/10, branch `feat/tickets`**
+> — migrações `20261006090000_tickets`, `20261006120000_manager_role`,
+> `20261006150000_service_alerts`, `20261006180000_agent_time` e
+> `20261006200000_quality` aplicadas só na BD local. Fase 3 (Freshdesk) à espera
+> de conta de testes da MANO.
 
 ---
 
@@ -237,7 +238,22 @@ Plano original:
   `CallbackRequest` que aparece aos agentes do grupo e se liga com o
   click-to-call que já existe. Reaproveita o fluxo de chamadas perdidas.
 
-### Fase 7 — Qualidade (QA) (G) · feature `quality`
+### Fase 7 — Qualidade (QA) (G) · feature `quality` · ✅ feita 06/10
+
+**Mudança face ao plano:** em vez de versões do formulário, cada avaliação
+guarda a cópia do formulário (`formSnapshot`) — mesmo efeito, menos peças.
+
+Feito: `QaForm`, `QaEvaluation`; `services/quality.service.ts` (score no
+servidor: peso dos conformes / peso avaliado, N/A fora, eliminatório = 0) +
+testes; agente da chamada descoberto sozinho (quem atendeu); amostra aleatória
+por agente; agente confirma ou contesta; avaliador/gestor revê (antes/depois
+no AuditLog); página Qualidade (avaliações, QA score por agente, por avaliar,
+editor de formulários) e botão "Avaliar" no detalhe da chamada.
+
+Ficou de fora: pré-preenchimento pela IA; avaliar conversas/tickets pela UI
+(a API já aceita `conversationId`/`ticketId`).
+
+Plano original:
 
 - `QaForm` (secções, critérios, peso, critérios eliminatórios) com versões —
   uma avaliação fica presa à versão do formulário em que foi feita.
