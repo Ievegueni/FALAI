@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle, PhoneMissed, PhoneOff, Clock, Timer, Zap, PhoneIncoming } from 'lucide-react';
+import { CheckCircle, PhoneMissed, PhoneOff, Clock, Timer, Zap, PhoneIncoming, Target } from 'lucide-react';
 import { reportsApi, type AttendanceFilters, type AttendanceReport, type CallLegOutcome } from '@/lib/api';
 import { Card, StatCard } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -69,7 +69,8 @@ function Overview({ r, filtered }: { r: AttendanceReport; filtered: boolean }) {
           <StatCard label={t('reports.att.rejected')} value={a.rejected} sub={pct(a.rejectRate)} icon={<PhoneOff className="h-5 w-5" />} />
         )}
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label={t('reports.att.sla')} value={pct(c.slaPct)} sub={t('reports.att.slaHint', { secs: r.slaSecs })} icon={<Target className="h-5 w-5" />} />
         <StatCard label={t('reports.att.tma')} value={dur(c.tmaSecs)} sub={t('reports.att.tmaHint')} icon={<Clock className="h-5 w-5" />} />
         <StatCard label={t('reports.att.tme')} value={dur(c.tmeSecs)} sub={t('reports.att.tmeHint')} icon={<Timer className="h-5 w-5" />} />
         {!r.limited && (
@@ -79,9 +80,10 @@ function Overview({ r, filtered }: { r: AttendanceReport; filtered: boolean }) {
       {filtered && (
         <Card>
           <h2 className="mb-3 text-sm font-semibold text-gray-900">{t('reports.att.vsTenant')}</h2>
-          <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-5">
             {[
               [t('reports.att.answerRate'), pct(c.answerRate), pct(r.tenant.calls.answerRate)],
+              [t('reports.att.sla'), pct(c.slaPct), pct(r.tenant.calls.slaPct)],
               [t('reports.att.tma'), dur(c.tmaSecs), dur(r.tenant.calls.tmaSecs)],
               [t('reports.att.tme'), dur(c.tmeSecs), dur(r.tenant.calls.tmeSecs)],
               [t('reports.att.response'), dur(a.responseSecs), dur(r.tenant.agents.responseSecs)],

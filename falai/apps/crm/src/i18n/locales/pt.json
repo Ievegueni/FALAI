@@ -839,7 +839,9 @@
       "campaignPaused": "Campanha pausada, manual ou automaticamente",
       "campaignCompleted": "Campanha terminou — com os totais finais",
       "ticketCreated": "Ticket criado (no CRM ou pela API)",
-      "ticketUpdated": "Ticket alterado — estado, prioridade, nível, responsável ou categoria"
+      "ticketUpdated": "Ticket alterado — estado, prioridade, nível, responsável ou categoria",
+      "alertOpened": "Alerta operacional aberto (espera, atendimento, agentes, SLA, abandono, TMA)",
+      "alertClosed": "Alerta operacional fechado, com o valor final"
     },
     "err": {
       "e400": "Payload inválido ou parâmetro em falta. Ver campo `error` na resposta.",
@@ -900,8 +902,8 @@
       "rejected": "Recusadas",
       "tma": "TMA",
       "tmaHint": "Tempo médio de atendimento",
-      "tme": "TME",
-      "tmeHint": "Tempo médio de espera",
+      "tme": "TME (ASA)",
+      "tmeHint": "Tempo médio de espera até ser atendida",
       "response": "Tempo de resposta",
       "responseHint": "Do toque ao atendimento, por agente",
       "limited": "O seu PBX é próprio (Yeastar): só há atendidas, perdidas, TMA e tempo de toque. Por agente, por grupo e recusas exigem o PBX da plataforma.",
@@ -938,7 +940,9 @@
       "typed": "Tipificadas",
       "untyped": "Não tipificadas",
       "typingTitle": "Chamadas por categoria",
-      "category": "Tipificação"
+      "category": "Tipificação",
+      "sla": "SLA",
+      "slaHint": "Atendidas em menos de {{secs}} s"
     },
     "exportPdf": "Exportar PDF",
     "vsPrevious": "vs. período anterior",
@@ -1531,5 +1535,52 @@
       "unlinked": "Desassociada {{what}}"
     },
     "take": "Pegar"
+  },
+  "alerts": {
+    "tab": "Alertas",
+    "openTitle_one": "{{count}} alerta activo",
+    "openTitle_other": "{{count}} alertas activos",
+    "typeLabel": "Tipo",
+    "allTypes": "Todos os tipos",
+    "empty": "Sem alertas neste período.",
+    "started": "Início",
+    "group": "Grupo",
+    "threshold": "Limite",
+    "value": "Valor (início → fim)",
+    "ended": "Fim",
+    "ongoing": "em curso",
+    "targetsTitle": "Metas e alertas",
+    "targetsHint": "Deixe vazio para desligar. Os alertas aparecem no ecrã de quem supervisiona, ficam no histórico e saem por webhook (alert.opened / alert.closed).",
+    "off": "desligado",
+    "unit": {
+      "s": "segundos",
+      "%": "%",
+      "n": "agentes"
+    },
+    "field": {
+      "slaThresholdSecs": "Limiar do SLA",
+      "slaTargetPct": "Meta de SLA do dia",
+      "maxWaitSecs": "Espera máxima",
+      "maxHandleSecs": "Atendimento máximo",
+      "minAvailableAgents": "Mínimo de agentes disponíveis por grupo",
+      "maxAbandonPct": "Abandono máximo do dia",
+      "maxTmaSecs": "TMA máximo do dia"
+    },
+    "name": {
+      "LONG_WAIT": "Espera elevada",
+      "LONG_HANDLE": "Atendimento longo",
+      "NO_AGENTS": "Sem agentes disponíveis",
+      "SLA_BELOW": "SLA abaixo da meta",
+      "ABANDON_ABOVE": "Abandono acima do limite",
+      "TMA_ABOVE": "TMA acima do limite"
+    },
+    "type": {
+      "LONG_WAIT": "Chamada em espera há {{value}} (limite {{threshold}})",
+      "LONG_HANDLE": "Chamada em curso há {{value}} (limite {{threshold}})",
+      "NO_AGENTS": "{{value}} agentes disponíveis (mínimo {{threshold}})",
+      "SLA_BELOW": "SLA do dia em {{value}} (meta {{threshold}})",
+      "ABANDON_ABOVE": "Abandono do dia em {{value}} (limite {{threshold}})",
+      "TMA_ABOVE": "TMA do dia em {{value}} (limite {{threshold}})"
+    }
   }
 }

@@ -1141,6 +1141,8 @@ export interface AttendanceCallKpis {
   answerRate: number | null;
   tmaSecs: number | null;
   tmeSecs: number | null;
+  /** % das terminadas atendidas abaixo do limiar (AttendanceReport.slaSecs). */
+  slaPct: number | null;
 }
 
 export interface AttendanceAgentKpis {
@@ -1166,6 +1168,7 @@ export interface AttendanceReport {
   from: string;
   to: string;
   limited: boolean;
+  slaSecs: number;
   tenant: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
   selection: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
   reasons: { reason: string; count: number; pct: number }[];
@@ -1336,4 +1339,38 @@ export const ticketsApi = {
   addNote: (id: string, body: string) => post<unknown>(`/tenant/tickets/${id}/notes`, { body }),
   unlink: (id: string, target: { callId?: string; conversationId?: string }) =>
     request<void>(`/tenant/tickets/${id}/links`, { method: 'DELETE', body: JSON.stringify(target) }),
+};
+
+// ─── Metas e alertas operacionais (fase 4) ──────────────────────────────────
+
+export type AlertType = 'LONG_WAIT' | 'LONG_HANDLE' | 'NO_AGENTS' | 'SLA_BELOW' | 'ABANDON_ABOVE' | 'TMA_ABOVE';
+
+export interface OpsAlert {
+  id: string;
+  type: AlertType;
+  ref: string;
+  groupId: string | null;
+  group?: string | null;
+  value: number;
+  threshold: number;
+  endValue: number | null;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export interface ServiceTargets {
+  slaThresholdSecs: number;
+  slaTargetPct: number | null;
+  maxWaitSecs: number | null;
+  maxHandleSecs: number | null;
+  minAvailableAgents: number | null;
+  maxAbandonPct: number | null;
+  maxTmaSecs: number | null;
+}
+
+export const alertsApi = {
+  settings: () => get<ServiceTargets>('/tenant/alerts/settings'),
+  saveSettings: (data: ServiceTargets) => put<ServiceTargets>('/tenant/alerts/settings', data),
+  list: (q: { open?: boolean; type?: AlertType; from?: string; to?: string; page?: number }) =>
+    get<Paginated<OpsAlert> & { byType: Partial<Record<AlertType, number>> }>(`/tenant/alerts${qs({ ...q, open: q.open === undefined ? undefined : String(q.open) })}`),
 };

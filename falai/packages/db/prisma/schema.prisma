@@ -260,6 +260,11 @@ model Tenant {
   // sequencial do próximo ticket (incremento atómico, sem corrida).
   ticketSeq            Int                 @default(0)
   tickets              Ticket[]
+  // Metas e limites de alerta (fase 4): { slaThresholdSecs, slaTargetPct,
+  // maxWaitSecs, maxHandleSecs, minAvailableAgents, maxAbandonPct, maxTmaSecs }.
+  // Validado em services/alerts.service.ts. Null = sem alertas.
+  serviceTargets       Json?
+  alerts               Alert[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -1398,4 +1403,37 @@ model TicketEvent {
   createdAt DateTime        @default(now())
 
   @@index([ticketId, createdAt])
+}
+
+// ============ ALERTAS OPERACIONAIS (centro de atendimento, fase 4) ============
+// Ver services/alerts.service.ts. Um alerta abre quando um limite é passado e
+// fecha quando deixa de o estar; o histórico é o relatório de desvios.
+
+enum AlertType {
+  LONG_WAIT // chamada em espera há mais de maxWaitSecs
+  LONG_HANDLE // chamada em curso há mais de maxHandleSecs
+  NO_AGENTS // grupo com menos agentes disponíveis do que minAvailableAgents
+  SLA_BELOW // SLA do dia abaixo da meta
+  ABANDON_ABOVE // taxa de abandono do dia acima do limite
+  TMA_ABOVE // TMA do dia acima do limite
+}
+
+model Alert {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  type      AlertType
+  ref       String // callId, groupId ou o dia (AAAA-MM-DD), conforme o tipo
+  groupId   String?
+  value     Float // valor quando abriu (segundos, % ou nº de agentes)
+  threshold Float
+  endValue  Float?
+  // Preenchido enquanto está aberto: impede duplicados mesmo com várias
+  // instâncias da API (o Postgres aceita vários NULL no unique).
+  openKey   String?   @unique
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  @@index([tenantId, startedAt])
+  @@index([tenantId, endedAt])
 }

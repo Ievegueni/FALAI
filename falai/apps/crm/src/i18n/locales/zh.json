@@ -839,7 +839,9 @@
       "campaignPaused": "活动已暂停（手动或自动）",
       "campaignCompleted": "活动已结束——含最终统计",
       "ticketCreated": "工单已创建（CRM 或 API）",
-      "ticketUpdated": "工单已更改——状态、优先级、级别、负责人或分类"
+      "ticketUpdated": "工单已更改——状态、优先级、级别、负责人或分类",
+      "alertOpened": "运营告警已打开（等待、通话、坐席、服务水平、放弃、处理时长）",
+      "alertClosed": "运营告警已关闭，附最终数值"
     },
     "err": {
       "e400": "载荷无效或缺少参数。请查看响应中的 `error` 字段。",
@@ -900,8 +902,8 @@
       "rejected": "已拒接",
       "tma": "平均处理时长",
       "tmaHint": "平均通话处理时间",
-      "tme": "平均等待时长",
-      "tmeHint": "平均等待时间",
+      "tme": "平均应答速度",
+      "tmeHint": "接听前的平均等待时间",
       "response": "响应时间",
       "responseHint": "从振铃到接听（按坐席）",
       "limited": "您使用自己的 PBX（Yeastar）：仅提供接听、未接、平均处理时长和振铃时间。按坐席、按组和拒接需要平台 PBX。",
@@ -938,7 +940,9 @@
       "typed": "已分类",
       "untyped": "未分类",
       "typingTitle": "按类别统计通话",
-      "category": "通话分类"
+      "category": "通话分类",
+      "sla": "服务水平",
+      "slaHint": "{{secs}} 秒内接听"
     },
     "exportPdf": "导出 PDF",
     "vsPrevious": "与上一时段相比",
@@ -1459,5 +1463,52 @@
       "unlinked": "已取消关联{{what}}"
     },
     "take": "领取"
+  },
+  "alerts": {
+    "tab": "告警",
+    "openTitle_one": "{{count}} 个活动告警",
+    "openTitle_other": "{{count}} 个活动告警",
+    "typeLabel": "类型",
+    "allTypes": "所有类型",
+    "empty": "此期间没有告警。",
+    "started": "开始",
+    "group": "组",
+    "threshold": "阈值",
+    "value": "数值（开始 → 结束）",
+    "ended": "结束",
+    "ongoing": "进行中",
+    "targetsTitle": "目标与告警",
+    "targetsHint": "留空即关闭。告警会显示在主管屏幕上，保存在历史记录中，并通过 webhook 发送（alert.opened / alert.closed）。",
+    "off": "关闭",
+    "unit": {
+      "s": "秒",
+      "%": "%",
+      "n": "坐席"
+    },
+    "field": {
+      "slaThresholdSecs": "服务水平阈值",
+      "slaTargetPct": "当日服务水平目标",
+      "maxWaitSecs": "最长等待",
+      "maxHandleSecs": "最长通话",
+      "minAvailableAgents": "每组最少可用坐席",
+      "maxAbandonPct": "当日最高放弃率",
+      "maxTmaSecs": "当日最长平均处理时长"
+    },
+    "name": {
+      "LONG_WAIT": "等待过长",
+      "LONG_HANDLE": "通话过长",
+      "NO_AGENTS": "无可用坐席",
+      "SLA_BELOW": "服务水平低于目标",
+      "ABANDON_ABOVE": "放弃率超限",
+      "TMA_ABOVE": "平均处理时长超限"
+    },
+    "type": {
+      "LONG_WAIT": "来电已等待 {{value}}（阈值 {{threshold}}）",
+      "LONG_HANDLE": "通话已进行 {{value}}（阈值 {{threshold}}）",
+      "NO_AGENTS": "可用坐席 {{value}}（最少 {{threshold}}）",
+      "SLA_BELOW": "当日服务水平 {{value}}（目标 {{threshold}}）",
+      "ABANDON_ABOVE": "当日放弃率 {{value}}（阈值 {{threshold}}）",
+      "TMA_ABOVE": "当日平均处理时长 {{value}}（阈值 {{threshold}}）"
+    }
   }
 }

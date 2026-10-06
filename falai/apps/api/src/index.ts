@@ -86,10 +86,12 @@ import { tenantConversationsRoutes } from "./routes/tenant/conversations.js";
 import { v1ConversationsRoutes } from "./routes/v1/conversations.js";
 import { tenantTicketsRoutes } from "./routes/tenant/tickets.js";
 import { v1TicketsRoutes } from "./routes/v1/tickets.js";
+import { tenantAlertsRoutes } from "./routes/tenant/alerts.js";
 import { publicChatRoutes } from "./routes/public/chat.js";
 import { publicWaRoutes } from "./routes/public/wa.js";
 import { startEmailPolling } from "./services/email.service.js";
 import { startWaHealthCheck } from "./services/waPool.service.js";
+import { startAlertEvaluator } from "./services/alerts.service.js";
 import { gateFeature, type FeatureKey } from "./services/features.js";
 
 /**
@@ -377,6 +379,7 @@ async function buildApp() {
   await gated(fastify, "webphone", tenantCallTypingRoutes);
   await gated(fastify, "webphone", tenantCallersRoutes);
   await gated(fastify, "webphone", tenantSupervisionRoutes);
+  await gated(fastify, "webphone", tenantAlertsRoutes);
   await fastify.register(tenantEventsRoutes);
   await gated(fastify, "reports", tenantReportsRoutes);
   await gated(fastify, "sms", tenantSmsRoutes);
@@ -431,6 +434,9 @@ async function buildApp() {
   // Pool WhatsApp Active/Standby: health check de cada número a cada minuto.
   const stopWaHealthCheck = startWaHealthCheck(fastify);
   fastify.addHook("onClose", async () => stopWaHealthCheck());
+  // Alertas operacionais e metas (fase 4): avaliação a cada 15 s.
+  const stopAlerts = startAlertEvaluator(fastify);
+  fastify.addHook("onClose", async () => stopAlerts());
 
   // ── Health ─────────────────────────────────────────────────────────────
   fastify.get("/health", async () => {

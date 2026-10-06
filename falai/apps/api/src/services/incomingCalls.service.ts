@@ -60,6 +60,8 @@ export class IncomingCallHub {
       ? `event: ${event}\ndata: ${JSON.stringify({ conversationId: d?.conversationId ?? d?.conversation?.id })}\n\n`
       : frame;
     for (const conn of set) {
+      // Alertas operacionais são para supervisão, não para o agente.
+      if (conn.idsOnly && event.startsWith("alert.")) continue;
       try {
         conn.reply.raw.write(conn.idsOnly ? idsFrame : frame);
       } catch {

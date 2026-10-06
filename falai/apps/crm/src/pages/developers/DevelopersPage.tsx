@@ -831,6 +831,37 @@ const WEBHOOK_EVENTS = [
   }
 }`,
   },
+  {
+    event: 'alert.opened',
+    descKey: 'developers.wh.alertOpened',
+    payload: `{
+  "event": "alert.opened",
+  "timestamp": "2026-10-06T10:15:00.000Z",
+  "data": {
+    "alertId": "alr_abc123",
+    "type": "LONG_WAIT",
+    "ref": "call_xyz789",
+    "groupId": "grp_suporte",
+    "value": 95,
+    "threshold": 60
+  }
+}`,
+  },
+  {
+    event: 'alert.closed',
+    descKey: 'developers.wh.alertClosed',
+    payload: `{
+  "event": "alert.closed",
+  "timestamp": "2026-10-06T10:16:30.000Z",
+  "data": {
+    "alertId": "alr_abc123",
+    "type": "LONG_WAIT",
+    "ref": "call_xyz789",
+    "groupId": "grp_suporte",
+    "endValue": 140
+  }
+}`,
+  },
 ];
 
 const ERROR_CODES = [

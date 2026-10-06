@@ -839,7 +839,9 @@
       "campaignPaused": "Campaign paused, manually or automatically",
       "campaignCompleted": "Campaign finished — with final totals",
       "ticketCreated": "Ticket created (in the CRM or via the API)",
-      "ticketUpdated": "Ticket changed — status, priority, level, assignee or category"
+      "ticketUpdated": "Ticket changed — status, priority, level, assignee or category",
+      "alertOpened": "Operational alert opened (wait, handling, agents, SLA, abandon, AHT)",
+      "alertClosed": "Operational alert closed, with the final value"
     },
     "err": {
       "e400": "Invalid payload or missing parameter. See the `error` field in the response.",
@@ -900,8 +902,8 @@
       "rejected": "Declined",
       "tma": "AHT",
       "tmaHint": "Average handling time",
-      "tme": "AWT",
-      "tmeHint": "Average waiting time",
+      "tme": "ASA",
+      "tmeHint": "Average wait until answered",
       "response": "Response time",
       "responseHint": "From ring to answer, per agent",
       "limited": "You use your own PBX (Yeastar): only answered, missed, AHT and ring time are available. Per agent, per group and declines require the platform PBX.",
@@ -938,7 +940,9 @@
       "typed": "Typed",
       "untyped": "Untyped",
       "typingTitle": "Calls by category",
-      "category": "Call type"
+      "category": "Call type",
+      "sla": "SLA",
+      "slaHint": "Answered within {{secs}} s"
     },
     "exportPdf": "Export PDF",
     "vsPrevious": "vs. previous period",
@@ -1531,5 +1535,52 @@
       "unlinked": "Unlinked {{what}}"
     },
     "take": "Take"
+  },
+  "alerts": {
+    "tab": "Alerts",
+    "openTitle_one": "{{count}} active alert",
+    "openTitle_other": "{{count}} active alerts",
+    "typeLabel": "Type",
+    "allTypes": "All types",
+    "empty": "No alerts in this period.",
+    "started": "Start",
+    "group": "Group",
+    "threshold": "Limit",
+    "value": "Value (start → end)",
+    "ended": "End",
+    "ongoing": "ongoing",
+    "targetsTitle": "Targets and alerts",
+    "targetsHint": "Leave empty to turn off. Alerts show on supervisors’ screens, are kept in the history and sent by webhook (alert.opened / alert.closed).",
+    "off": "off",
+    "unit": {
+      "s": "seconds",
+      "%": "%",
+      "n": "agents"
+    },
+    "field": {
+      "slaThresholdSecs": "SLA threshold",
+      "slaTargetPct": "Daily SLA target",
+      "maxWaitSecs": "Maximum wait",
+      "maxHandleSecs": "Maximum handling time",
+      "minAvailableAgents": "Minimum available agents per group",
+      "maxAbandonPct": "Maximum daily abandon rate",
+      "maxTmaSecs": "Maximum daily AHT"
+    },
+    "name": {
+      "LONG_WAIT": "Long wait",
+      "LONG_HANDLE": "Long call",
+      "NO_AGENTS": "No agents available",
+      "SLA_BELOW": "SLA below target",
+      "ABANDON_ABOVE": "Abandon rate above limit",
+      "TMA_ABOVE": "AHT above limit"
+    },
+    "type": {
+      "LONG_WAIT": "Call waiting for {{value}} (limit {{threshold}})",
+      "LONG_HANDLE": "Call in progress for {{value}} (limit {{threshold}})",
+      "NO_AGENTS": "{{value}} agents available (minimum {{threshold}})",
+      "SLA_BELOW": "Daily SLA at {{value}} (target {{threshold}})",
+      "ABANDON_ABOVE": "Daily abandon rate at {{value}} (limit {{threshold}})",
+      "TMA_ABOVE": "Daily AHT at {{value}} (limit {{threshold}})"
+    }
   }
 }

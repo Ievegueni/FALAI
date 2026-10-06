@@ -5,9 +5,10 @@
 > como projecto à medida: tudo o que entra aqui serve qualquer tenant e liga-se
 > por funcionalidade no backoffice.
 >
-> Criado em 06/10/2026. Estado: **fases 1 (tickets) e 2 (papéis) feitas em 06/10,
-> branch `feat/tickets`** — migrações `20261006090000_tickets` e
-> `20261006120000_manager_role` aplicadas só na BD local. Restantes fases por fazer.
+> Criado em 06/10/2026. Estado: **fases 1 (tickets), 2 (papéis) e 4 (alertas/SLA)
+> feitas em 06/10, branch `feat/tickets`** — migrações `20261006090000_tickets`,
+> `20261006120000_manager_role` e `20261006150000_service_alerts` aplicadas só na
+> BD local. Fase 3 (Freshdesk) à espera de conta de testes da MANO.
 
 ---
 
@@ -171,7 +172,21 @@ Freshchat:
 Cuidados: limites de pedidos por minuto do plano Freshdesk (fila com
 cadência); nunca bloquear o atendimento se o Freshdesk estiver em baixo.
 
-### Fase 4 — Alertas, SLA/ASA e metas (M)
+### Fase 4 — Alertas, SLA/ASA e metas (M) · ✅ feita 06/10
+
+Feito: `Tenant.serviceTargets` + tabela `Alert`; `services/alerts.service.ts`
+(avaliador a cada 15 s **na API**, não no worker — o estado ao vivo vive lá;
+duplicados entre instâncias impedidos por `openKey` único) + testes; SLA nos
+KPIs de atendimento (limiar configurável, 21 s por omissão); o TME existente
+é o ASA (rótulo "TME (ASA)"). Entrega: aviso no ecrã por SSE (só supervisão),
+painel de alertas abertos e histórico (relatório de desvios) na Supervisão,
+webhooks `alert.opened`/`alert.closed`. Metas em Supervisão → Definições.
+
+Ficou de fora: email/SMS directo (não há SMTP do sistema — o webhook serve
+para encaminhar); metas por grupo (só por cliente); alertas do produto
+CRM_BYO_PBX (não temos o estado ao vivo do PBX deles).
+
+Plano original:
 
 Por tenant (e opcionalmente por grupo): `maxWaitSecs`, `maxHandleSecs`,
 `minAvailableAgents`, `slaThresholdSecs` (21 por omissão), `slaTargetPct`,

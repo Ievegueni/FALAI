@@ -52,6 +52,18 @@ export function useIncomingCall(): { call: IncomingCall | null; dismiss: () => v
       }
     });
 
+    // Alertas operacionais (a API só os manda à supervisão): reenviados como
+    // evento da janela para o AlertToaster e quem mostra a lista se actualizar.
+    for (const name of ['alert.opened', 'alert.closed']) {
+      es.addEventListener(name, (ev: MessageEvent<string>) => {
+        try {
+          window.dispatchEvent(new CustomEvent('falai:alert', { detail: { name, data: JSON.parse(ev.data) } }));
+        } catch {
+          // payload inválido — ignora
+        }
+      });
+    }
+
     return () => {
       es.close();
       esRef.current = null;
