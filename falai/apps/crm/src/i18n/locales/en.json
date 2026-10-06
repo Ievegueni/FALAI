@@ -46,7 +46,8 @@
     "inbox": "Inbox",
     "supervision": "Supervision",
     "pin": "Pin menu",
-    "unpin": "Unpin menu"
+    "unpin": "Unpin menu",
+    "tickets": "Tickets"
   },
   "login": {
     "subtitle": "Sign in to your account",
@@ -773,7 +774,9 @@
       "agentsRead": "Read agents",
       "smsSend": "Send SMS",
       "conversationsRead": "Read conversations (chat/email/Telegram)",
-      "conversationsWrite": "Reply to conversations"
+      "conversationsWrite": "Reply to conversations",
+      "ticketsRead": "Read tickets",
+      "ticketsWrite": "Create and update tickets"
     },
     "groups": {
       "calls": "Calls",
@@ -831,7 +834,9 @@
       "callEnded": "The call finished — with outcome, duration, cost and recording",
       "callFailed": "The call could not be placed",
       "campaignPaused": "Campaign paused, manually or automatically",
-      "campaignCompleted": "Campaign finished — with final totals"
+      "campaignCompleted": "Campaign finished — with final totals",
+      "ticketCreated": "Ticket created (in the CRM or via the API)",
+      "ticketUpdated": "Ticket changed — status, priority, level, assignee or category"
     },
     "err": {
       "e400": "Invalid payload or missing parameter. See the `error` field in the response.",
@@ -1440,5 +1445,87 @@
     "mergeWarning": "{{other}} will be deleted. Calls, SMS, conversations, notes and campaigns move to {{keep}}; its number becomes an extra number. Who merged and when is recorded.",
     "merged_one": "Contacts merged ({{count}} call moved)",
     "merged_other": "Contacts merged ({{count}} calls moved)"
+  },
+  "tickets": {
+    "title": "Tickets",
+    "ticket": "Ticket",
+    "new": "New ticket",
+    "createFrom": "Create ticket",
+    "created": "Ticket #{{number}} created",
+    "subject": "Subject",
+    "description": "Description",
+    "statusLabel": "Status",
+    "priorityLabel": "Priority",
+    "level": "Support level",
+    "levelN": "Level {{n}}",
+    "group": "Team",
+    "assignee": "Assignee",
+    "unassigned": "Unassigned",
+    "category": "Category",
+    "subcategory": "Subcategory",
+    "dueAt": "Due date",
+    "contact": "Customer",
+    "updated": "Updated",
+    "searchPlaceholder": "Search by number or subject…",
+    "filterActive": "Open",
+    "filterAll": "All statuses",
+    "anyPriority": "Any priority",
+    "anyLevel": "Any level",
+    "anyAssignee": "Any assignee",
+    "anyGroup": "Any team",
+    "mine": "Assigned to me",
+    "emptyTitle": "No tickets",
+    "emptyDescription": "Create a ticket here, from a call, a conversation or the customer profile.",
+    "notFound": "Ticket not found.",
+    "timeline": "Timeline",
+    "note": "Internal note",
+    "notePlaceholder": "Write an internal note…",
+    "addNote": "Add note",
+    "system": "System",
+    "interactions": "Calls and conversations",
+    "noInteractions": "No linked calls or conversations.",
+    "unlink": "Unlink",
+    "edit": "Edit ticket",
+    "conflict": "The ticket was changed by someone else — the data has been refreshed.",
+    "reopened_one": "reopened {{count}} time",
+    "reopened_other": "reopened {{count}} times",
+    "none": "No tickets.",
+    "openTickets": "Open tickets",
+    "aCall": "a call",
+    "aConversation": "a conversation",
+    "status": {
+      "OPEN": "Open",
+      "PENDING": "Pending",
+      "ON_HOLD": "On hold",
+      "RESOLVED": "Resolved",
+      "CLOSED": "Closed"
+    },
+    "priority": {
+      "LOW": "Low",
+      "MEDIUM": "Medium",
+      "HIGH": "High",
+      "URGENT": "Urgent"
+    },
+    "source": {
+      "MANUAL": "Manual",
+      "CALL": "Call",
+      "WHATSAPP": "WhatsApp",
+      "WEBCHAT": "Website chat",
+      "EMAIL": "Email",
+      "TELEGRAM": "Telegram",
+      "API": "API"
+    },
+    "ev": {
+      "created": "Ticket created",
+      "status": "Status: {{from}} → {{to}}",
+      "priority": "Priority: {{from}} → {{to}}",
+      "level": "Level: {{from}} → {{to}}",
+      "assignee": "Assignee: {{to}}",
+      "group": "Team: {{to}}",
+      "category": "Category: {{to}}",
+      "subject": "Subject: {{to}}",
+      "linked": "Linked {{what}}",
+      "unlinked": "Unlinked {{what}}"
+    }
   }
 }

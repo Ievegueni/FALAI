@@ -14,6 +14,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { clsx, formatDate } from '@/lib/utils';
 import type { Channel, Conversation, ConversationDetail, ConversationStatus } from '@/types';
+import { TicketLinkOrCreate } from '@/components/tickets/TicketBits';
 
 const channelIcon: Record<Channel, typeof Mail> = { WEBCHAT: Globe, EMAIL: Mail, TELEGRAM: Send, WHATSAPP: MessageCircle };
 
@@ -190,6 +191,12 @@ function Thread({ id, onOpen }: { id: string; onOpen: (id: string) => void }) {
         {/* Barra de acções */}
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-2.5">
           <span className="mr-auto truncate text-sm font-semibold text-gray-900">{conv.subject || contactLabel(conv)}</span>
+          <TicketLinkOrCreate
+            ticket={conv.ticket}
+            contactId={conv.contact?.id ?? null}
+            conversationId={conv.id}
+            defaultSubject={conv.subject ?? ''}
+          />
           <Badge className={statusColor[conv.status]}>{t(`inbox.status.${conv.status}`)}</Badge>
           <Badge className={conv.mode === 'AI' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}>
             {conv.mode === 'AI' ? t('inbox.modeAi') : t('inbox.modeHuman')}

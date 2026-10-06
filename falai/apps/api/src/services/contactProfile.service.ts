@@ -231,9 +231,15 @@ export async function buildProfile(tenantId: string, contactId: string) {
   });
   if (!contact) return null;
 
-  const [calls, notes] = await Promise.all([
+  const [calls, notes, tickets] = await Promise.all([
     prisma.call.findMany({ where: { tenantId, contactId }, orderBy: { startedAt: "desc" }, take: MAX_STATS_CALLS, select: historySelect }),
     contactNotes(tenantId, contactId),
+    prisma.ticket.findMany({
+      where: { tenantId, contactId },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      select: { id: true, number: true, subject: true, status: true, priority: true, supportLevel: true, updatedAt: true },
+    }),
   ]);
   const stats = profileStats(calls);
   return {
@@ -252,6 +258,7 @@ export async function buildProfile(tenantId: string, contactId: string) {
     typings: { total: stats.typedTotal, distribution: stats.typings, timeline: stats.timeline },
     filters: { agents: stats.agents, categories: stats.categories },
     notes,
+    tickets,
   };
 }
 
@@ -332,13 +339,14 @@ export async function mergeContacts(tx: Tx, tenantId: string, keepId: string, dr
 
   const moved = { tenantId, contactId: dropId };
   const to = { contactId: keepId };
-  const [calls, sms, conversations, notes, supervision, phones] = await Promise.all([
+  const [calls, sms, conversations, notes, supervision, phones, tickets] = await Promise.all([
     tx.call.updateMany({ where: moved, data: to }),
     tx.smsMessage.updateMany({ where: moved, data: to }),
     tx.conversation.updateMany({ where: moved, data: to }),
     tx.contactNote.updateMany({ where: moved, data: to }),
     tx.supervisionEvent.updateMany({ where: moved, data: to }),
     tx.contactPhone.updateMany({ where: moved, data: to }),
+    tx.ticket.updateMany({ where: moved, data: to }),
   ]);
 
   // Campanhas: uma por contacto; se ambos estavam na mesma, fica a do que fica.
@@ -381,6 +389,7 @@ export async function mergeContacts(tx: Tx, tenantId: string, keepId: string, dr
       notes: notes.count,
       supervision: supervision.count,
       phones: phones.count,
+      tickets: tickets.count,
       campaigns: campaigns.count,
     },
   };

@@ -154,6 +154,7 @@ describe("mergeContacts (unir duplicados)", () => {
       contactNote: { updateMany: count(3) },
       supervisionEvent: { updateMany: count(0) },
       contactPhone: { updateMany: count(1), findFirst: vi.fn(async () => null), create: vi.fn(async () => ({})) },
+      ticket: { updateMany: count(2) },
       campaignContact: {
         findMany: vi.fn(async () => keepCampaigns.map((campaignId) => ({ campaignId }))),
         deleteMany: vi.fn(async () => ({ count: keepCampaigns.length })),
@@ -168,7 +169,7 @@ describe("mergeContacts (unir duplicados)", () => {
     const tx = fakeTx(keep, drop, ["camp_1"]);
     const res = await mergeContacts(tx as never, "t1", "k", "d");
 
-    for (const m of [tx.call, tx.smsMessage, tx.conversation, tx.contactNote, tx.supervisionEvent, tx.contactPhone]) {
+    for (const m of [tx.call, tx.smsMessage, tx.conversation, tx.contactNote, tx.supervisionEvent, tx.contactPhone, tx.ticket]) {
       expect(m.updateMany).toHaveBeenCalledWith({ where: { tenantId: "t1", contactId: "d" }, data: { contactId: "k" } });
     }
     // a mesma campanha nos dois: fica só a do que fica

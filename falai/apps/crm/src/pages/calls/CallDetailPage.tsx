@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { TypingModal } from './TypingPanel';
+import { TicketLinkOrCreate } from '@/components/tickets/TicketBits';
 import {
   callStatusLabel,
   callStatusColor,
@@ -137,6 +138,9 @@ export function CallDetailPage() {
                 </span>
               )}
             </div>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <TicketLinkOrCreate ticket={call.ticket} contactId={call.contactId} callId={call.id} />
           </div>
 
           <div className="mt-4 grid grid-cols-3 gap-4 pt-4 border-t border-gray-100">

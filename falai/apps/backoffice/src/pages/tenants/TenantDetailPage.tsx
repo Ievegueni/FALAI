@@ -48,6 +48,7 @@ const FEATURE_LABELS: { key: FeatureKey; label: string; hint?: string; needsAi?:
   { key: 'sms', label: 'SMS', hint: 'Envio de SMS avulso e campanhas (o plano tem de incluir SMS)' },
   { key: 'telephony', label: 'Telefonia', hint: 'Extensões, grupos, trunks e rotas' },
   { key: 'inbox', label: 'Caixa de entrada', hint: 'WhatsApp Business, chat no site, email e Telegram com IA e operadores' },
+  { key: 'tickets', label: 'Tickets', hint: 'Casos com estados, níveis de suporte e ligação a chamadas e conversas' },
 ];
 
 function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {

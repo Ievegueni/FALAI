@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/Badge';
 import { Input, Textarea } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
 import { clsx, formatDuration } from '@/lib/utils';
+import { TicketLinkOrCreate, TicketRefList, useTicketsEnabled } from '@/components/tickets/TicketBits';
+import { Ticket as TicketIcon } from 'lucide-react';
 
 /**
  * Painel do cliente (screen pop, melhoria 3). Abre no toque — antes de
@@ -73,6 +75,7 @@ export function CallerPanel({ legId, number, onClose }: { legId?: string | null;
 
   const contact = data?.contact ?? null;
   const caller = data?.caller;
+  const ticketsEnabled = useTicketsEnabled();
 
   const loadMore = useMutation({
     mutationFn: () => {
@@ -250,6 +253,17 @@ export function CallerPanel({ legId, number, onClose }: { legId?: string | null;
           <Button size="sm" variant="ghost" loading={loadMore.isPending} onClick={() => loadMore.mutate()}>{t('callerPanel.seeMore')}</Button>
         )}
       </div>
+
+      {/* Tickets em aberto do cliente + criar a partir desta chamada */}
+      {ticketsEnabled && (
+        <div>
+          <div className="mb-1 flex items-center justify-between">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-gray-500"><TicketIcon className="h-3.5 w-3.5" /> {t('tickets.openTickets')}</p>
+            <TicketLinkOrCreate ticket={null} contactId={contact.id} {...(data?.callId && { callId: data.callId })} />
+          </div>
+          <TicketRefList tickets={data?.openTickets ?? []} />
+        </div>
+      )}
 
       {/* Conversas dos canais de texto */}
       {(data?.conversations?.length ?? 0) > 0 && (

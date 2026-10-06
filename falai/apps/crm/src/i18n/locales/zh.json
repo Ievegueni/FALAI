@@ -46,7 +46,8 @@
     "inbox": "收件箱",
     "supervision": "监控",
     "pin": "固定菜单",
-    "unpin": "取消固定菜单"
+    "unpin": "取消固定菜单",
+    "tickets": "工单"
   },
   "login": {
     "subtitle": "登录您的账户",
@@ -773,7 +774,9 @@
       "agentsRead": "读取坐席",
       "smsSend": "发送短信",
       "conversationsRead": "读取会话",
-      "conversationsWrite": "回复会话"
+      "conversationsWrite": "回复会话",
+      "ticketsRead": "读取工单",
+      "ticketsWrite": "创建和更新工单"
     },
     "groups": {
       "calls": "通话",
@@ -831,7 +834,9 @@
       "callEnded": "通话已结束——含结果、时长、费用与录音",
       "callFailed": "无法发起通话",
       "campaignPaused": "活动已暂停（手动或自动）",
-      "campaignCompleted": "活动已结束——含最终统计"
+      "campaignCompleted": "活动已结束——含最终统计",
+      "ticketCreated": "工单已创建（CRM 或 API）",
+      "ticketUpdated": "工单已更改——状态、优先级、级别、负责人或分类"
     },
     "err": {
       "e400": "载荷无效或缺少参数。请查看响应中的 `error` 字段。",
@@ -1368,5 +1373,87 @@
     "mergeWarning": "{{other}} 将被删除。通话、短信、会话、备注和活动转移到 {{keep}}；其号码成为附加号码。合并人和时间会被记录。",
     "merged_one": "联系人已合并（转移 {{count}} 通通话）",
     "merged_other": "联系人已合并（转移 {{count}} 通通话）"
+  },
+  "tickets": {
+    "title": "工单",
+    "ticket": "工单",
+    "new": "新建工单",
+    "createFrom": "创建工单",
+    "created": "工单 #{{number}} 已创建",
+    "subject": "主题",
+    "description": "描述",
+    "statusLabel": "状态",
+    "priorityLabel": "优先级",
+    "level": "支持级别",
+    "levelN": "{{n}} 级",
+    "group": "团队",
+    "assignee": "负责人",
+    "unassigned": "未分配",
+    "category": "分类",
+    "subcategory": "子分类",
+    "dueAt": "截止时间",
+    "contact": "客户",
+    "updated": "更新时间",
+    "searchPlaceholder": "按编号或主题搜索…",
+    "filterActive": "未结",
+    "filterAll": "所有状态",
+    "anyPriority": "任意优先级",
+    "anyLevel": "任意级别",
+    "anyAssignee": "任意负责人",
+    "anyGroup": "任意团队",
+    "mine": "分配给我",
+    "emptyTitle": "暂无工单",
+    "emptyDescription": "可在此处、通话、会话或客户资料中创建工单。",
+    "notFound": "未找到工单。",
+    "timeline": "时间线",
+    "note": "内部备注",
+    "notePlaceholder": "输入内部备注…",
+    "addNote": "添加备注",
+    "system": "系统",
+    "interactions": "通话和会话",
+    "noInteractions": "没有关联的通话或会话。",
+    "unlink": "取消关联",
+    "edit": "编辑工单",
+    "conflict": "工单已被他人修改——数据已刷新。",
+    "reopened_one": "重新打开 {{count}} 次",
+    "reopened_other": "重新打开 {{count}} 次",
+    "none": "暂无工单。",
+    "openTickets": "未结工单",
+    "aCall": "一个通话",
+    "aConversation": "一个会话",
+    "status": {
+      "OPEN": "打开",
+      "PENDING": "待处理",
+      "ON_HOLD": "挂起",
+      "RESOLVED": "已解决",
+      "CLOSED": "已关闭"
+    },
+    "priority": {
+      "LOW": "低",
+      "MEDIUM": "中",
+      "HIGH": "高",
+      "URGENT": "紧急"
+    },
+    "source": {
+      "MANUAL": "手动",
+      "CALL": "通话",
+      "WHATSAPP": "WhatsApp",
+      "WEBCHAT": "网站聊天",
+      "EMAIL": "邮件",
+      "TELEGRAM": "Telegram",
+      "API": "API"
+    },
+    "ev": {
+      "created": "工单已创建",
+      "status": "状态：{{from}} → {{to}}",
+      "priority": "优先级：{{from}} → {{to}}",
+      "level": "级别：{{from}} → {{to}}",
+      "assignee": "负责人：{{to}}",
+      "group": "团队：{{to}}",
+      "category": "分类：{{to}}",
+      "subject": "主题：{{to}}",
+      "linked": "已关联{{what}}",
+      "unlinked": "已取消关联{{what}}"
+    }
   }
 }

@@ -255,6 +255,10 @@ model Tenant {
   supervisionNotifyListen Boolean          @default(false)
   monitoringNotice     Boolean             @default(false)
   supervisionEvents    SupervisionEvent[]
+  // Tickets — ver docs/PLANO-CENTRO-ATENDIMENTO.md. ticketSeq dá o número
+  // sequencial do próximo ticket (incremento atómico, sem corrida).
+  ticketSeq            Int                 @default(0)
+  tickets              Ticket[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -382,6 +386,7 @@ model ExtensionGroup {
   callLegs    CallLeg[]
   categories  CallCategoryGroup[]
   supervisors SupervisorGroup[]
+  tickets     Ticket[]
 
   @@unique([tenantId, name])
 }
@@ -542,6 +547,8 @@ model TenantUser {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   conversations   Conversation[]
+  assignedTickets Ticket[]       @relation("TicketAssignee")
+  ticketEvents    TicketEvent[]
 }
 
 // Perfil de acesso ao CRM, gerido pela Comunica no backoffice. A matriz diz,
@@ -761,9 +768,13 @@ model Call {
   turns             CallTurn[]
   legs              CallLeg[]
   notes             ContactNote[]
+  // Ticket a que a chamada pertence (um ticket junta várias interacções).
+  ticketId          String?
+  ticket            Ticket?    @relation(fields: [ticketId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, kind, startedAt])
   @@index([tenantId, contactId, startedAt]) // histórico do cliente (screen pop)
+  @@index([ticketId])
 }
 
 enum CallLegOutcome {
@@ -831,6 +842,8 @@ model CallCategory {
   groups    CallCategoryGroup[]
   legs      CallLeg[]           @relation("LegCategory")
   subLegs   CallLeg[]           @relation("LegSubcategory")
+  tickets    Ticket[]           @relation("TicketCategory")
+  subTickets Ticket[]           @relation("TicketSubcategory")
   createdAt DateTime            @default(now())
 
   @@index([tenantId])
@@ -976,6 +989,7 @@ model Contact {
   // Histórico do cliente na entrada (melhoria 3)
   phones           ContactPhone[]
   notes            ContactNote[]
+  tickets          Ticket[]
 
   @@unique([tenantId, phone])
   @@unique([tenantId, email])
@@ -1226,9 +1240,13 @@ model Conversation {
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
   messages      Message[]
+  // Ticket a que a conversa pertence (um ticket junta várias interacções).
+  ticketId      String?
+  ticket        Ticket?            @relation(fields: [ticketId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status, lastMessageAt])
   @@index([inboxId, externalRef])
+  @@index([ticketId])
 }
 
 model Message {
@@ -1288,4 +1306,95 @@ model ReportAnalysis {
 
   @@index([tenantId, filtersKey, createdAt])
   @@index([tenantId, createdAt])
+}
+
+// ============ TICKETS (centro de atendimento) ============
+// Ver docs/PLANO-CENTRO-ATENDIMENTO.md. Um só modelo para os dois modos: nos
+// tenants com helpdesk externo (Freshdesk) a linha é espelho e leva
+// externalSystem/externalId; nos outros vive só aqui.
+
+enum TicketStatus {
+  OPEN
+  PENDING // à espera do cliente
+  ON_HOLD // à espera de terceiros / outra equipa
+  RESOLVED // pode ser reaberto
+  CLOSED // final
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketEventType {
+  CREATED
+  STATUS
+  PRIORITY
+  LEVEL
+  ASSIGNEE
+  GROUP
+  CATEGORY
+  SUBJECT
+  NOTE
+  LINKED // chamada ou conversa associada
+  UNLINKED
+}
+
+model Ticket {
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  number         Int // sequencial por tenant (Tenant.ticketSeq)
+  subject        String
+  description    String?         @db.Text
+  status         TicketStatus    @default(OPEN)
+  priority       TicketPriority  @default(MEDIUM)
+  supportLevel   Int             @default(1) // 1º, 2º ou 3º nível
+  categoryId     String?
+  category       CallCategory?   @relation("TicketCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId  String?
+  subcategory    CallCategory?   @relation("TicketSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  contactId      String?
+  contact        Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  assigneeId     String?
+  assignee       TenantUser?     @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  groupId        String? // equipa responsável
+  group          ExtensionGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  source         String          @default("MANUAL") // MANUAL | CALL | WHATSAPP | WEB | EMAIL | TELEGRAM | API
+  dueAt          DateTime?
+  resolvedAt     DateTime?
+  closedAt       DateTime?
+  reopenCount    Int             @default(0)
+  externalSystem String? // "FRESHDESK" quando é espelho
+  externalId     String?
+  createdById    String? // TenantUser (null = API/sistema)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  events         TicketEvent[]
+  calls          Call[]
+  conversations  Conversation[]
+
+  @@unique([tenantId, number])
+  @@unique([tenantId, externalSystem, externalId])
+  @@index([tenantId, status, updatedAt])
+  @@index([tenantId, assigneeId, status])
+  @@index([tenantId, contactId])
+}
+
+// Linha do tempo do ticket: alterações (from → to) e notas internas.
+model TicketEvent {
+  id        String          @id @default(cuid())
+  ticketId  String
+  ticket    Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  type      TicketEventType
+  fromValue String?
+  toValue   String?
+  body      String?         @db.Text // nota
+  authorId  String? // null = API/sistema
+  author    TenantUser?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt DateTime        @default(now())
+
+  @@index([ticketId, createdAt])
 }

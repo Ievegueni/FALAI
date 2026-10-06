@@ -39,6 +39,7 @@ const conversationInclude = {
   inbox: { select: { id: true, name: true, channel: true } },
   contact: { select: { id: true, name: true, phone: true, email: true, telegramId: true } },
   assignee: { select: { id: true, name: true } },
+  ticket: { select: { id: true, number: true, subject: true, status: true } },
 } satisfies Prisma.ConversationInclude;
 
 export const tenantConversationsRoutes: FastifyPluginAsync = async (fastify) => {

@@ -27,6 +27,7 @@ export const FEATURE_KEYS = [
   "sms",
   "telephony",
   "inbox",
+  "tickets",
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -48,6 +49,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   sms: "SMS",
   telephony: "Telefonia (extensões, trunks, rotas)",
   inbox: "Caixa de entrada (WhatsApp, chat, email, Telegram)",
+  tickets: "Tickets",
 };
 
 export const FEATURE_HINTS: Record<FeatureKey, string> = {
@@ -65,6 +67,7 @@ export const FEATURE_HINTS: Record<FeatureKey, string> = {
   sms: "Envio de SMS avulso e campanhas (o plano tem de incluir SMS)",
   telephony: "Extensões, grupos, trunks e rotas",
   inbox: "WhatsApp Business, chat no site, email e Telegram, com IA e operadores",
+  tickets: "Casos com estados, níveis de suporte e ligação a chamadas e conversas",
 };
 
 export const DEFAULT_FEATURES: Features = {
@@ -84,6 +87,7 @@ export const DEFAULT_FEATURES: Features = {
   // Funcionalidades novas nascem desligadas: só aparecem a um cliente quando
   // a Comunica as activa no backoffice.
   inbox: false,
+  tickets: false,
 };
 
 /**

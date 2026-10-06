@@ -292,6 +292,7 @@ export interface ContactProfile {
   };
   filters: { agents: { extensionId: string; name: string }[]; categories: { id: string; name: string }[] };
   notes: { id: string; source: 'NOTE' | 'TYPING'; body: string; at: string; author: string | null; callId: string | null }[];
+  tickets: (import('@/types').TicketRef & { supportLevel: number; updatedAt: string })[];
 }
 
 export const contactsApi = {
@@ -552,6 +553,7 @@ export interface CallerPanelData {
   history?: { data: CallerHistoryItem[]; hasMore: boolean };
   highlights?: { callsLast7Days: number; lastTyping: { label: string; at: string; note: string | null } | null };
   conversations?: { id: string; status: string; lastMessageAt: string | null; inbox: { channel: string; name: string } }[];
+  openTickets?: import('@/types').TicketRef[];
   notes?: CallerNote[];
 }
 
@@ -1305,4 +1307,33 @@ export const cannedApi = {
   list: () => get<{ data: import('@/types').CannedResponse[] }>('/tenant/canned-responses').then((r) => r.data),
   create: (data: { shortcut: string; text: string }) => post<import('@/types').CannedResponse>('/tenant/canned-responses', data),
   remove: (id: string) => del<void>(`/tenant/canned-responses/${id}`),
+};
+
+// ─── Tickets ────────────────────────────────────────────────────────────────
+
+export type TicketInput = {
+  subject?: string;
+  description?: string | null;
+  priority?: import('@/types').TicketPriority;
+  supportLevel?: number;
+  contactId?: string | null;
+  assigneeId?: string | null;
+  groupId?: string | null;
+  categoryId?: string | null;
+  subcategoryId?: string | null;
+  dueAt?: string | null;
+};
+
+export const ticketsApi = {
+  meta: () => get<import('@/types').TicketMeta>('/tenant/tickets/meta'),
+  list: (params: { status?: string; priority?: string; supportLevel?: number; assignee?: string; groupId?: string; contactId?: string; q?: string; page?: number }) =>
+    get<Paginated<import('@/types').Ticket>>(`/tenant/tickets${qs(params)}`),
+  get: (id: string) => get<import('@/types').TicketDetail>(`/tenant/tickets/${id}`),
+  create: (data: TicketInput & { subject: string; callId?: string; conversationId?: string }) =>
+    post<import('@/types').Ticket>('/tenant/tickets', data),
+  update: (id: string, data: TicketInput & { status?: import('@/types').TicketStatus; updatedAt: string }) =>
+    patch<import('@/types').Ticket>(`/tenant/tickets/${id}`, data),
+  addNote: (id: string, body: string) => post<unknown>(`/tenant/tickets/${id}/notes`, { body }),
+  unlink: (id: string, target: { callId?: string; conversationId?: string }) =>
+    request<void>(`/tenant/tickets/${id}/links`, { method: 'DELETE', body: JSON.stringify(target) }),
 };

@@ -46,7 +46,8 @@
     "inbox": "Caixa de entrada",
     "supervision": "Supervisão",
     "pin": "Fixar menu",
-    "unpin": "Soltar menu"
+    "unpin": "Soltar menu",
+    "tickets": "Tickets"
   },
   "login": {
     "subtitle": "Inicie sessão na sua conta",
@@ -773,7 +774,9 @@
       "agentsRead": "Ler agentes",
       "smsSend": "Enviar SMS",
       "conversationsRead": "Ler conversas (chat/email/Telegram)",
-      "conversationsWrite": "Responder a conversas"
+      "conversationsWrite": "Responder a conversas",
+      "ticketsRead": "Ler tickets",
+      "ticketsWrite": "Criar e actualizar tickets"
     },
     "groups": {
       "calls": "Chamadas",
@@ -831,7 +834,9 @@
       "callEnded": "A chamada terminou — com desfecho, duração, custo e gravação",
       "callFailed": "Não foi possível marcar a chamada",
       "campaignPaused": "Campanha pausada, manual ou automaticamente",
-      "campaignCompleted": "Campanha terminou — com os totais finais"
+      "campaignCompleted": "Campanha terminou — com os totais finais",
+      "ticketCreated": "Ticket criado (no CRM ou pela API)",
+      "ticketUpdated": "Ticket alterado — estado, prioridade, nível, responsável ou categoria"
     },
     "err": {
       "e400": "Payload inválido ou parâmetro em falta. Ver campo `error` na resposta.",
@@ -1440,5 +1445,87 @@
     "mergeWarning": "{{other}} vai ser apagado. Chamadas, SMS, conversas, notas e campanhas passam para {{keep}}; o número dele fica como número extra. Fica registado quem uniu e quando.",
     "merged_one": "Contactos unidos ({{count}} chamada transferida)",
     "merged_other": "Contactos unidos ({{count}} chamadas transferidas)"
+  },
+  "tickets": {
+    "title": "Tickets",
+    "ticket": "Ticket",
+    "new": "Novo ticket",
+    "createFrom": "Criar ticket",
+    "created": "Ticket #{{number}} criado",
+    "subject": "Assunto",
+    "description": "Descrição",
+    "statusLabel": "Estado",
+    "priorityLabel": "Prioridade",
+    "level": "Nível de suporte",
+    "levelN": "{{n}}º nível",
+    "group": "Equipa",
+    "assignee": "Responsável",
+    "unassigned": "Sem responsável",
+    "category": "Categoria",
+    "subcategory": "Subcategoria",
+    "dueAt": "Prazo",
+    "contact": "Cliente",
+    "updated": "Actualizado",
+    "searchPlaceholder": "Pesquisar por número ou assunto…",
+    "filterActive": "Em aberto",
+    "filterAll": "Todos os estados",
+    "anyPriority": "Qualquer prioridade",
+    "anyLevel": "Qualquer nível",
+    "anyAssignee": "Qualquer responsável",
+    "anyGroup": "Qualquer equipa",
+    "mine": "Atribuídos a mim",
+    "emptyTitle": "Sem tickets",
+    "emptyDescription": "Crie um ticket aqui, a partir de uma chamada, de uma conversa ou do perfil do cliente.",
+    "notFound": "Ticket não encontrado.",
+    "timeline": "Linha do tempo",
+    "note": "Nota interna",
+    "notePlaceholder": "Escreva uma nota interna…",
+    "addNote": "Adicionar nota",
+    "system": "Sistema",
+    "interactions": "Chamadas e conversas",
+    "noInteractions": "Nenhuma chamada ou conversa associada.",
+    "unlink": "Desassociar",
+    "edit": "Editar ticket",
+    "conflict": "O ticket foi alterado por outra pessoa — os dados foram actualizados.",
+    "reopened_one": "reaberto {{count}} vez",
+    "reopened_other": "reaberto {{count}} vezes",
+    "none": "Sem tickets.",
+    "openTickets": "Tickets em aberto",
+    "aCall": "uma chamada",
+    "aConversation": "uma conversa",
+    "status": {
+      "OPEN": "Aberto",
+      "PENDING": "Pendente",
+      "ON_HOLD": "Em espera",
+      "RESOLVED": "Resolvido",
+      "CLOSED": "Fechado"
+    },
+    "priority": {
+      "LOW": "Baixa",
+      "MEDIUM": "Média",
+      "HIGH": "Alta",
+      "URGENT": "Urgente"
+    },
+    "source": {
+      "MANUAL": "Manual",
+      "CALL": "Chamada",
+      "WHATSAPP": "WhatsApp",
+      "WEBCHAT": "Chat do site",
+      "EMAIL": "Email",
+      "TELEGRAM": "Telegram",
+      "API": "API"
+    },
+    "ev": {
+      "created": "Ticket criado",
+      "status": "Estado: {{from}} → {{to}}",
+      "priority": "Prioridade: {{from}} → {{to}}",
+      "level": "Nível: {{from}}º → {{to}}º",
+      "assignee": "Responsável: {{to}}",
+      "group": "Equipa: {{to}}",
+      "category": "Categoria: {{to}}",
+      "subject": "Assunto: {{to}}",
+      "linked": "Associada {{what}}",
+      "unlinked": "Desassociada {{what}}"
+    }
   }
 }

@@ -22,6 +22,8 @@ const ALL_SCOPES = [
   { key: 'sms:send', labelKey: 'developers.scopes.smsSend' },
   { key: 'conversations:read', labelKey: 'developers.scopes.conversationsRead' },
   { key: 'conversations:write', labelKey: 'developers.scopes.conversationsWrite' },
+  { key: 'tickets:read', labelKey: 'developers.scopes.ticketsRead' },
+  { key: 'tickets:write', labelKey: 'developers.scopes.ticketsWrite' },
   { key: 'contacts:write', labelKey: 'developers.scopes.contactsWrite' },
   { key: 'contacts:read', labelKey: 'developers.scopes.contactsRead' },
   { key: 'campaigns:write', labelKey: 'developers.scopes.campaignsWrite' },
@@ -791,6 +793,33 @@ const WEBHOOK_EVENTS = [
     "campaignId": "cmp_001",
     "completed": 132,
     "failed": 18
+  }
+}`,
+  },
+  {
+    event: 'ticket.created',
+    descKey: 'developers.wh.ticketCreated',
+    payload: `{
+  "event": "ticket.created",
+  "timestamp": "2026-10-06T10:00:00.000Z",
+  "data": {
+    "ticketId": "tkt_abc123",
+    "number": 42,
+    "contactId": "cnt_001"
+  }
+}`,
+  },
+  {
+    event: 'ticket.updated',
+    descKey: 'developers.wh.ticketUpdated',
+    payload: `{
+  "event": "ticket.updated",
+  "timestamp": "2026-10-06T11:30:00.000Z",
+  "data": {
+    "ticketId": "tkt_abc123",
+    "number": 42,
+    "status": "RESOLVED",
+    "contactId": "cnt_001"
   }
 }`,
   },

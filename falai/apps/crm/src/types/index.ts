@@ -33,7 +33,8 @@ export type FeatureKey =
   | 'reports'
   | 'sms'
   | 'telephony'
-  | 'inbox';
+  | 'inbox'
+  | 'tickets';
 
 export type TenantFeatures = Record<FeatureKey, boolean>;
 
@@ -250,6 +251,8 @@ export interface Call {
   createdAt: string;
   agent: { name: string };
   contact: { name: string } | null;
+  /** Só no detalhe: ticket a que a chamada pertence. */
+  ticket?: TicketRef | null;
   /** Chamadas de entrada: a extensão que atendeu e a tipificação (melhorias 1–2). */
   handledBy?: { number: string; name: string | null } | null;
   typing?: string | null;
@@ -627,6 +630,7 @@ export interface Conversation {
   inbox: { id: string; name: string; channel: Channel };
   contact: { id: string; name: string | null; phone: string | null; email: string | null; telegramId: string | null } | null;
   assignee: { id: string; name: string } | null;
+  ticket?: TicketRef | null;
   lastMessage?: { role: ConversationMessage['role']; text: string; createdAt: string } | null;
 }
 
@@ -647,4 +651,59 @@ export interface CannedResponse {
   id: string;
   shortcut: string;
   text: string;
+}
+
+// ─── Tickets ────────────────────────────────────────────────────────────────
+
+export type TicketStatus = 'OPEN' | 'PENDING' | 'ON_HOLD' | 'RESOLVED' | 'CLOSED';
+export type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+/** Referência curta a um ticket (chamada, conversa, screen pop, perfil). */
+export interface TicketRef {
+  id: string;
+  number: number;
+  subject: string;
+  status: TicketStatus;
+  priority?: TicketPriority;
+}
+
+export interface Ticket extends TicketRef {
+  priority: TicketPriority;
+  description: string | null;
+  supportLevel: number;
+  source: string;
+  categoryId: string | null;
+  subcategoryId: string | null;
+  contactId: string | null;
+  assigneeId: string | null;
+  groupId: string | null;
+  dueAt: string | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  reopenCount: number;
+  externalSystem: string | null;
+  externalId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  contact: { id: string; name: string | null; phone: string | null; email: string | null } | null;
+  assignee: { id: string; name: string } | null;
+  group: { id: string; name: string } | null;
+  category: { id: string; name: string } | null;
+  subcategory: { id: string; name: string } | null;
+}
+
+export type TicketEventType =
+  | 'CREATED' | 'STATUS' | 'PRIORITY' | 'LEVEL' | 'ASSIGNEE' | 'GROUP'
+  | 'CATEGORY' | 'SUBJECT' | 'NOTE' | 'LINKED' | 'UNLINKED';
+
+export interface TicketDetail extends Ticket {
+  events: { id: string; type: TicketEventType; fromValue: string | null; toValue: string | null; body: string | null; createdAt: string; author: { id: string; name: string } | null }[];
+  calls: { id: string; kind: CallKind; status: CallStatus; fromNumber: string | null; toNumber: string; startedAt: string | null; durationSecs: number; createdAt: string }[];
+  conversations: { id: string; status: ConversationStatus; lastMessageAt: string; inbox: { name: string; channel: Channel } }[];
+}
+
+export interface TicketMeta {
+  users: { id: string; name: string }[];
+  groups: { id: string; name: string }[];
+  categories: { id: string; parentId: string | null; name: string }[];
 }

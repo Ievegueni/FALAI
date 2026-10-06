@@ -84,6 +84,8 @@ import { whatsappWebhookRoutes } from "./routes/webhooks/whatsapp.js";
 import { tenantInboxesRoutes } from "./routes/tenant/inboxes.js";
 import { tenantConversationsRoutes } from "./routes/tenant/conversations.js";
 import { v1ConversationsRoutes } from "./routes/v1/conversations.js";
+import { tenantTicketsRoutes } from "./routes/tenant/tickets.js";
+import { v1TicketsRoutes } from "./routes/v1/tickets.js";
 import { publicChatRoutes } from "./routes/public/chat.js";
 import { publicWaRoutes } from "./routes/public/wa.js";
 import { startEmailPolling } from "./services/email.service.js";
@@ -381,6 +383,7 @@ async function buildApp() {
   // Canais de texto — ver docs/PLANO-CANAIS-TEXTO.md
   await gated(fastify, "inbox", tenantInboxesRoutes, { prefix: "/tenant/inboxes" });
   await gated(fastify, "inbox", tenantConversationsRoutes);
+  await gated(fastify, "tickets", tenantTicketsRoutes);
   await fastify.register(publicChatRoutes, { prefix: "/public/chat" });
   await fastify.register(publicWaRoutes, { prefix: "/public/wa" });
 
@@ -410,6 +413,7 @@ async function buildApp() {
     await gated(v1, "agents", v1ModelsRoutes);
     await v1.register(v1UsageRoutes);
     await gated(v1, "inbox", v1ConversationsRoutes);
+    await gated(v1, "tickets", v1TicketsRoutes);
   });
 
   // ── Webhooks ────────────────────────────────────────────────────────────

@@ -57,6 +57,7 @@ type CallRow = {
   variables?: unknown;
   agent?: { name: string } | null;
   contact?: { name: string | null } | null;
+  ticket?: { id: string; number: number; subject: string; status: string } | null;
   // Chamadas de entrada: a perna que atendeu (quem atendeu e a tipificação).
   legs?: {
     extensionNumber: string;
@@ -122,6 +123,7 @@ function mapCall(c: CallRow) {
         : null,
     }),
     ...(c.variables !== undefined && { variables: c.variables }),
+    ...(c.ticket !== undefined && { ticket: c.ticket }),
     ...(c.turns && {
       turns: c.turns.map((t) => ({
         id: t.id,
@@ -255,6 +257,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
         startedAt: true, endedAt: true, createdAt: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
+        ticket: { select: { id: true, number: true, subject: true, status: true } },
         turns: {
           orderBy: { seq: "asc" },
           select: { id: true, seq: true, role: true, text: true, sttMs: true, llmMs: true, ttsMs: true, createdAt: true },

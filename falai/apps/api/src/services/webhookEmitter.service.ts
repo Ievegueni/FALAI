@@ -20,7 +20,9 @@ export type WebhookEventName =
   | "campaign.paused"
   | "conversation.created"
   | "conversation.message"
-  | "conversation.resolved";
+  | "conversation.resolved"
+  | "ticket.created"
+  | "ticket.updated";
 
 /** Todos os eventos que o cliente pode receber — exposto na documentação da API. */
 export const WEBHOOK_EVENTS: WebhookEventName[] = [
@@ -32,6 +34,8 @@ export const WEBHOOK_EVENTS: WebhookEventName[] = [
   "conversation.created",
   "conversation.message",
   "conversation.resolved",
+  "ticket.created",
+  "ticket.updated",
 ];
 
 let queue: Queue | null = null;
