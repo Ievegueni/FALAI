@@ -46,6 +46,7 @@ const envSchema = z.object({
   FUTURIX_SMS_API_KEY: z.string().optional(),
   FUTURIX_SMS_BASE_URL: z.string().optional(),
   FUTURIX_SMS_STUB_MODE: z.coerce.boolean().optional(),
+  FUTURIX_SMS_WEBHOOK_SECRET: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

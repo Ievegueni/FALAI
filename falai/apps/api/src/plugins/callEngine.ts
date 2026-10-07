@@ -3,7 +3,7 @@ import { Queue } from "bullmq";
 import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter } from "@falai/providers";
 import type { TtsProvider, LlmProvider } from "@falai/providers";
 import { TtsVoiceValidator } from "../services/ttsVoices.service.js";
-import { prisma } from "@falai/db";
+import { prisma, releaseOrphanReservations } from "@falai/db";
 import { config } from "../config.js";
 import { QUEUES, JOBS } from "@falai/shared";
 import { AudioCache } from "../services/AudioCache.js";
@@ -129,6 +129,16 @@ export default fp(async (fastify) => {
   fastify.onCallEvent(async (event) => {
     await callEngine.handleEvent(event);
   });
+
+  // As sessões vivem só em memória: o que ficou reservado antes deste arranque
+  // já não tem quem o acerte. Corre antes do dispatcher de campanhas registar
+  // chamadas novas (plugin registado depois deste).
+  try {
+    const orphans = await releaseOrphanReservations();
+    if (orphans.ids.length > 0) fastify.log.warn(orphans, "call_engine.orphan_reservations_released");
+  } catch (err) {
+    fastify.log.error({ err }, "call_engine.orphan_reservations_failed");
+  }
 
   // Warm up common audio prompts in background
   audioCache.warmUp().catch((err) => fastify.log.error({ err }, "audio_cache.warmup_failed"));

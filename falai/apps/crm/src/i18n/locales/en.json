@@ -702,7 +702,18 @@
     "secretRotated": "Webhook secret regenerated",
     "copySecretWarn": "Copy this secret now. It won't be shown again.",
     "copySecret": "Copy secret",
-    "adminOnly": "Only administrators can change these settings."
+    "adminOnly": "Only administrators can change these settings.",
+    "twoFaTitle": "Two-factor authentication (2FA)",
+    "twoFaEnabled": "2FA is enabled on your account. To disable it, enter the current code from your app.",
+    "twoFaDisabled": "Protect your account with a code from an authenticator app (Google Authenticator, Microsoft Authenticator…).",
+    "twoFaStart": "Enable 2FA",
+    "twoFaScan": "Scan the QR code with your authenticator app and enter the 6-digit code.",
+    "twoFaSecret": "Or enter this key manually:",
+    "twoFaCode": "Code",
+    "twoFaConfirm": "Confirm",
+    "twoFaDone": "2FA enabled",
+    "twoFaDisable": "Disable 2FA",
+    "twoFaOff": "2FA disabled"
   },
   "pbx": {
     "title": "PBX integration",
@@ -1115,7 +1126,8 @@
       "QUEUED": "Queued",
       "SENT": "Sent",
       "DELIVERED": "Delivered",
-      "FAILED": "Failed"
+      "FAILED": "Failed",
+      "SENDING": "Sending"
     },
     "newCampaign": "New campaign",
     "campaignName": "Campaign name",
@@ -1137,6 +1149,7 @@
     "title": "Webphone",
     "selectExtension": "Line",
     "noLine": "No extensions configured for this tenant.",
+    "noOwnExtension": "You have no extension assigned. Ask an administrator to assign one to you under Team.",
     "status": {
       "unregistered": "Not registered",
       "registering": "Registering…",

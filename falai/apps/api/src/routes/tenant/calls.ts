@@ -7,6 +7,7 @@ import { z } from "zod";
 import { recordingSettings } from "../../services/callRecording.service.js";
 import { YeastarAdapter } from "@falai/providers";
 import { reserveBalance, computeReservation, effectivePrice } from "../../services/billing.service.js";
+import { releaseCallReservation } from "@falai/db";
 import { getTenantTelephony, getTenantAsterisk } from "../../services/tenantTelephony.service.js";
 import {
   startAsteriskDirectCall,
@@ -448,6 +449,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
         toNumber: body.to,
         ...(body.variables !== undefined && { variables: body.variables as Prisma.InputJsonValue }),
         status: "DIALING",
+        reservedCents: estimatedCents,
         startedAt: new Date(),
       },
       select: {
@@ -470,7 +472,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       await prisma.call.update({ where: { id: call.id }, data: { yeastarCallId: providerCallId } });
     } catch (err) {
       await Promise.all([
-        prisma.$executeRaw`UPDATE "Tenant" SET "balanceCents" = "balanceCents" + ${estimatedCents} WHERE id = ${tenantId}`,
+        releaseCallReservation(call.id),
         prisma.call.update({ where: { id: call.id }, data: { status: "FAILED", failReason: "Dial error" } }),
       ]);
       fastify.log.error({ err }, "tenant.calls.dial_failed");
@@ -547,6 +549,9 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       select: { number: true, displayName: true },
     });
     if (exts.length > 0) return { extensions: exts.map((e) => ({ number: e.number, name: e.displayName ?? e.number })) };
+    // O motor Asterisk só origina a partir de uma Extension (startAsteriskDirectCall):
+    // mostrar-lhe linhas antigas (TenantLine) dava 422 ao ligar. Linhas só no PBX externo.
+    if (await getTenantAsterisk(fastify, tenantId)) return { extensions: [] };
     const lines = await prisma.tenantLine.findMany({
       where: { tenantId, isActive: true },
       orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],

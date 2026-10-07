@@ -159,6 +159,10 @@ export async function ingestTenantPbxEvent(
 }
 
 async function applyEvent(fastify: FastifyInstance, tenantId: string, ev: ParsedCallEvent): Promise<void> {
+  // Fecha o screen pop no CRM quando a chamada termina
+  if (ev.state === "ENDED" || ev.state === "FAILED") {
+    fastify.incomingCalls.broadcast(tenantId, "incoming-call.ended", { callId: ev.callId });
+  }
   switch (ev.state) {
     case "RINGING":
       if (ev.isOutbound || !ev.callerNumber) return;

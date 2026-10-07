@@ -5,7 +5,7 @@ import path from "node:path";
 import { prisma, type Inbox } from "@falai/db";
 import { z } from "zod";
 import { tenantHasFeature } from "../../services/features.js";
-import { ingestInbound, publicMessage, resolveContact, widgetKey } from "../../services/textChannels.service.js";
+import { appendMessage, ingestInbound, publicMessage, widgetKey } from "../../services/textChannels.service.js";
 
 /**
  * Widget de chat para o site do cliente. Sem login: a sessão é um token
@@ -105,17 +105,18 @@ export const publicChatRoutes: FastifyPluginAsync = async (fastify) => {
       const raw = typeof request.body === "string" ? JSON.parse(request.body || "{}") : request.body;
       const body = messageSchema.parse(raw);
       const token = body.token ?? randomBytes(24).toString("hex");
-      const identity = {
-        ...(body.name && { name: body.name }),
-        ...(body.email && { email: body.email }),
-        ...(body.phone && { phone: body.phone }),
-      };
+      // Email/telefone vindos do widget NÃO são verificados: qualquer visitante
+      // pode escrever os de outra pessoa. Ligar a conversa ao Contact existente
+      // dava à IA o histórico desse cliente (previousContext) — fuga de dados.
+      // Fica só o nome na identidade; o resto vai numa nota interna para o
+      // operador confirmar e associar à mão.
+      const identity = { ...(body.name && { name: body.name }) };
 
       const conv = await ingestInbound(fastify, ctx.inbox, { externalRef: token, text: body.text, identity });
-      // Visitante anónimo que deu email/telefone: funde com o Contact.
-      if (!conv.contactId && (body.email || body.phone)) {
-        const contactId = await resolveContact(ctx.inbox.tenantId, identity);
-        if (contactId) await prisma.conversation.update({ where: { id: conv.id }, data: { contactId } });
+      if (body.email || body.phone) {
+        const note = `Visitante indicou ${[body.email && `email ${body.email}`, body.phone && `telefone ${body.phone}`].filter(Boolean).join(" e ")} (não verificado — confirmar antes de associar a um contacto).`;
+        const already = await prisma.message.findFirst({ where: { conversationId: conv.id, role: "SYSTEM", text: note }, select: { id: true } });
+        if (!already) await appendMessage(fastify, conv, { role: "SYSTEM", text: note });
       }
       return reply.status(201).send({ token });
     }

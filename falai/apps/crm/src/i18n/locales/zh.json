@@ -702,7 +702,18 @@
     "secretRotated": "Webhook 密钥已重新生成",
     "copySecretWarn": "请立即复制此密钥。它将不会再次显示。",
     "copySecret": "复制密钥",
-    "adminOnly": "只有管理员可以修改这些设置。"
+    "adminOnly": "只有管理员可以修改这些设置。",
+    "twoFaTitle": "双重认证 (2FA)",
+    "twoFaEnabled": "您的账户已启用 2FA。如需停用，请输入应用中的当前验证码。",
+    "twoFaDisabled": "使用身份验证器应用（Google Authenticator、Microsoft Authenticator…）的验证码保护您的账户。",
+    "twoFaStart": "启用 2FA",
+    "twoFaScan": "用身份验证器应用扫描二维码并输入 6 位验证码。",
+    "twoFaSecret": "或手动输入此密钥：",
+    "twoFaCode": "验证码",
+    "twoFaConfirm": "确认",
+    "twoFaDone": "2FA 已启用",
+    "twoFaDisable": "停用 2FA",
+    "twoFaOff": "2FA 已停用"
   },
   "pbx": {
     "title": "PBX 集成",
@@ -1115,7 +1126,8 @@
       "QUEUED": "排队中",
       "SENT": "已发送",
       "DELIVERED": "已送达",
-      "FAILED": "失败"
+      "FAILED": "失败",
+      "SENDING": "发送中"
     },
     "newCampaign": "新活动",
     "campaignName": "活动名称",
@@ -1137,6 +1149,7 @@
     "title": "网络电话",
     "selectExtension": "线路",
     "noLine": "此租户未配置任何分机。",
+    "noOwnExtension": "您尚未分配分机。请联系管理员在团队中为您分配。",
     "status": {
       "unregistered": "未注册",
       "registering": "正在注册…",

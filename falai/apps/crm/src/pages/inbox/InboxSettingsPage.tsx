@@ -243,7 +243,7 @@ function CannedCard() {
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Erro'),
   });
-  const remove = useMutation({ mutationFn: cannedApi.remove, onSuccess: refresh });
+  const remove = useMutation({ mutationFn: cannedApi.remove, onSuccess: refresh, onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Erro') });
 
   return (
     <Card className="space-y-3">

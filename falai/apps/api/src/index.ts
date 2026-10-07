@@ -59,6 +59,7 @@ import { tenantCallTypingRoutes } from "./routes/tenant/callTyping.js";
 import { tenantCallersRoutes } from "./routes/tenant/callers.js";
 import { tenantSupervisionRoutes } from "./routes/tenant/supervision.js";
 import { SupervisionManager } from "./services/supervision.service.js";
+import { resumeRunningSmsCampaigns } from "./services/smsCampaign.service.js";
 import { tenantEventsRoutes } from "./routes/tenant/events.js";
 import { tenantReportsRoutes } from "./routes/tenant/reports.js";
 import { tenantSmsRoutes } from "./routes/tenant/sms.js";
@@ -503,6 +504,10 @@ async function main() {
       .sweepOrphans()
       .then((n) => n > 0 && app.log.info({ n }, "supervision.orphans_swept"))
       .catch((err) => app.log.warn({ err }, "supervision.sweep_failed"));
+    // Campanhas de SMS que o reinício deixou a meio (mensagens QUEUED presas).
+    void resumeRunningSmsCampaigns(app)
+      .then((n) => n > 0 && app.log.info({ n }, "sms_campaign.resumed"))
+      .catch((err) => app.log.warn({ err }, "sms_campaign.resume_failed"));
     void syncAllPbx()
       .then(() => app.log.info("pbx_sync.boot_complete"))
       .catch((err) => app.log.warn({ err }, "pbx_sync.boot_failed"));

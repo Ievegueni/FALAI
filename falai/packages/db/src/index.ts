@@ -16,5 +16,5 @@ if (process.env["NODE_ENV"] !== "production") globalForPrisma.prisma = prisma;
 export * from "@prisma/client";
 export { chargeMonthlyInvoice, runMonthlyBilling, currentPeriod } from "./billing.js";
 export type { BillingResult } from "./billing.js";
-export { reconcileStaleCalls } from "./calls.js";
+export { reconcileStaleCalls, releaseCallReservation, releaseOrphanReservations } from "./calls.js";
 export type { ReconcileStaleCallsResult } from "./calls.js";

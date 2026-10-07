@@ -4,7 +4,7 @@ import { Plus, Pencil, Trash2, CreditCard } from 'lucide-react';
 import { plansApi, productsApi } from '@/lib/api';
 import { Card, Button, PageSpinner, EmptyState, Modal, Input, Select, Badge } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
-import { formatAOA } from '@/lib/utils';
+import { formatAOA, parseKz } from '@/lib/utils';
 import { BASE_TYPE_LABELS as PRODUCT_LABELS, BASE_TYPE_BADGE as PRODUCT_BADGE } from '@/pages/products/ProductsPage';
 import type { Plan, Product, BillingMode } from '@/types';
 
@@ -55,11 +55,11 @@ function PlanModal({ plan, products, onClose }: { plan?: Plan; products: Product
         clinicEnabled,
         smsEnabled,
         billingMode,
-        pricePerMinCents: Math.round(parseFloat(pricePerMin || '0') * 100),
-        pricePerCallCents: Math.round(parseFloat(pricePerCall || '0') * 100),
-        pricePerTextMessageCents: Math.round(parseFloat(pricePerText || '0') * 100),
-        pricePerSmsCents: Math.round(parseFloat(pricePerSms || '0') * 100),
-        monthlyFeeCents: Math.round(parseFloat(monthlyFee) * 100),
+        pricePerMinCents: Math.round(parseKz(pricePerMin || '0') * 100),
+        pricePerCallCents: Math.round(parseKz(pricePerCall || '0') * 100),
+        pricePerTextMessageCents: Math.round(parseKz(pricePerText || '0') * 100),
+        pricePerSmsCents: Math.round(parseKz(pricePerSms || '0') * 100),
+        monthlyFeeCents: Math.round(parseKz(monthlyFee) * 100),
         maxConcurrentCalls: parseInt(maxConcurrent),
         maxAgents: parseInt(maxAgents),
       };
@@ -129,7 +129,7 @@ function PlanModal({ plan, products, onClose }: { plan?: Plan; products: Product
         {smsEnabled && (
           <Input
             label="Preço por segmento de SMS (Kz)"
-            type="number"
+            inputMode="decimal"
             value={pricePerSms}
             onChange={(e) => setPricePerSms(e.target.value)}
             hint="Default do plano; pode ser sobreposto por cliente. Definido pela Futurix."
@@ -142,7 +142,7 @@ function PlanModal({ plan, products, onClose }: { plan?: Plan; products: Product
         </Select>
         <Input
           label="Preço por resposta da IA em chat/email (Kz)"
-          type="number"
+          inputMode="decimal"
           value={pricePerText}
           onChange={(e) => setPricePerText(e.target.value)}
           hint="Canais de texto: cobrado por cada resposta da IA. As dos operadores não custam."
@@ -150,7 +150,7 @@ function PlanModal({ plan, products, onClose }: { plan?: Plan; products: Product
         {billingMode === 'PER_CALL' ? (
           <Input
             label="Preço por chamada (Kz)"
-            type="number"
+            inputMode="decimal"
             value={pricePerCall}
             onChange={(e) => setPricePerCall(e.target.value)}
             hint="Valor fixo cobrado por cada chamada, independente da duração."
@@ -159,14 +159,14 @@ function PlanModal({ plan, products, onClose }: { plan?: Plan; products: Product
         ) : (
           <Input
             label="Preço por minuto (Kz)"
-            type="number"
+            inputMode="decimal"
             value={pricePerMin}
             onChange={(e) => setPricePerMin(e.target.value)}
             hint={billingMode === 'PER_SECOND' ? 'Cobrado ao segundo: preço/min ÷ 60 por segundo.' : undefined}
             required
           />
         )}
-        <Input label="Fee mensal (Kz)" type="number" value={monthlyFee} onChange={(e) => setMonthlyFee(e.target.value)} required />
+        <Input label="Fee mensal (Kz)" inputMode="decimal" value={monthlyFee} onChange={(e) => setMonthlyFee(e.target.value)} required />
         <div className="grid grid-cols-2 gap-3">
           <Input label="Max. chamadas simult." type="number" value={maxConcurrent} onChange={(e) => setMaxConcurrent(e.target.value)} />
           <Input label="Max. agentes" type="number" value={maxAgents} onChange={(e) => setMaxAgents(e.target.value)} />
@@ -195,7 +195,7 @@ export function PlansPage() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => plansApi.delete(id),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['admin', 'plans'] }); toast.success('Plano removido.'); },
-    onError: () => toast.error('Não foi possível remover o plano.'),
+    onError: (e: Error) => toast.error(e.message || 'Não foi possível remover o plano.'),
   });
 
   if (isLoading) return <PageSpinner />;

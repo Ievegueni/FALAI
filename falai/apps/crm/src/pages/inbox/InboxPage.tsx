@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Bot, MessageCircle, Globe, Mail, Send, StickyNote, UserRound, Paperclip, AlertTriangle, Inbox as InboxIcon, Settings2 } from 'lucide-react';
-import { conversationsApi, inboxesApi, cannedApi, teamApi, apiBaseUrl, ApiError } from '@/lib/api';
+import { conversationsApi, inboxesApi, cannedApi, teamApi, ApiError } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -15,6 +15,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { clsx, formatDate } from '@/lib/utils';
 import type { Channel, Conversation, ConversationDetail, ConversationStatus } from '@/types';
 import { TicketLinkOrCreate } from '@/components/tickets/TicketBits';
+import { useTenantEvents } from '@/lib/tenantEvents';
 
 const channelIcon: Record<Channel, typeof Mail> = { WEBCHAT: Globe, EMAIL: Mail, TELEGRAM: Send, WHATSAPP: MessageCircle };
 
@@ -36,24 +37,13 @@ function contactLabel(c: Conversation): string {
  */
 function useConversationEvents() {
   const qc = useQueryClient();
-  useEffect(() => {
-    const token = localStorage.getItem('falai_token');
-    if (!token) return;
-    const es = new EventSource(`${apiBaseUrl}/tenant/events/stream?token=${encodeURIComponent(token)}`);
-    const onEvent = (ev: MessageEvent<string>) => {
+  useTenantEvents<{ conversationId?: string }>(
+    ['conversation.created', 'conversation.message', 'conversation.updated', 'conversation.deliveryFailed'],
+    ({ conversationId }) => {
       void qc.invalidateQueries({ queryKey: ['conversations'] });
-      try {
-        const { conversationId } = JSON.parse(ev.data) as { conversationId?: string };
-        if (conversationId) void qc.invalidateQueries({ queryKey: ['conversation', conversationId] });
-      } catch {
-        // payload inválido — ignora
-      }
-    };
-    for (const e of ['conversation.created', 'conversation.message', 'conversation.updated', 'conversation.deliveryFailed']) {
-      es.addEventListener(e, onEvent);
-    }
-    return () => es.close();
-  }, [qc]);
+      if (conversationId) void qc.invalidateQueries({ queryKey: ['conversation', conversationId] });
+    },
+  );
 }
 
 export function InboxPage() {

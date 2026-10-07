@@ -133,6 +133,7 @@ enum TxType {
 
 enum SmsStatus {
   QUEUED // aceite pela plataforma, a caminho do gateway
+  SENDING // reclamada para envio e saldo já reservado; órfã no arranque = interrompida
   SENT // entregue ao gateway (Futurix)
   DELIVERED // confirmado entregue ao destinatário (delivery report)
   FAILED // falhou no envio ou entrega
@@ -780,6 +781,10 @@ model Call {
   billedSecs        Int        @default(0)
   costCents         Int        @default(0)
   providerCostCents Int        @default(0)
+  // Saldo reservado no arranque e ainda não acertado (settleCall) nem devolvido
+  // (releaseCallReservation). Posto a 0 de forma atómica por quem o consome —
+  // é isso que impede reembolso duplo. >0 numa chamada terminada = órfã.
+  reservedCents     Int        @default(0)
   transcript        Json?
   summary           String?    @db.Text
   // Caminho do ficheiro de gravação RELATIVO à pasta de gravações (ver
@@ -982,6 +987,9 @@ model Campaign {
   ttsVoiceId        String?
   name              String
   status            CampaignStatus    @default(DRAFT)
+  // Porque está PAUSED: "LOW_BALANCE" (auto, o carregamento de saldo retoma);
+  // null = pausa manual ou outra causa (nunca retomada automaticamente).
+  pausedReason      String?
   scheduleJson      Json?
   retryPolicy       Json?
   throttlePerMinute Int               @default(2)

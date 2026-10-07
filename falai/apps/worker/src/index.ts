@@ -3,6 +3,7 @@ import { createHmac } from "crypto";
 import pino from "pino";
 import { prisma, type Prisma, runMonthlyBilling, reconcileStaleCalls } from "@falai/db";
 import { QUEUES, JOBS, normalizeAoPhone } from "@falai/shared";
+import { postWebhook } from "@falai/providers";
 
 const isDev = process.env["NODE_ENV"] === "development";
 const log = isDev
@@ -82,22 +83,24 @@ const webhooksOutWorker = new Worker(
       ? `sha256=${createHmac("sha256", tenant.webhookSecret).update(body).digest("hex")}`
       : undefined;
 
-    const res = await fetch(tenant.webhookUrl, {
-      method: "POST",
-      headers: {
+    // Anti-SSRF no ponto de envio: valida o URL e cada IP no momento da ligação
+    // (um URL gravado antes desta validação, ou um DNS que mudou, não passa).
+    const status = await postWebhook(
+      tenant.webhookUrl,
+      {
         "Content-Type": "application/json",
         "User-Agent": "Falai-Webhook/1.0",
         ...(signature && { "X-Falai-Signature": signature }),
       },
       body,
-      signal: AbortSignal.timeout(10_000),
-    });
+      10_000,
+    );
 
-    if (!res.ok) {
-      throw new Error(`Webhook delivery failed: HTTP ${res.status}`);
+    if (status < 200 || status >= 300) {
+      throw new Error(`Webhook delivery failed: HTTP ${status}`);
     }
 
-    log.info({ jobId: job.id, status: res.status }, "webhooks_out.delivered");
+    log.info({ jobId: job.id, status }, "webhooks_out.delivered");
   },
   { connection, concurrency: 20 }
 );

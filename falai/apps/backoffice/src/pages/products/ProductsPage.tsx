@@ -4,7 +4,7 @@ import { Plus, Pencil, Trash2, Package } from 'lucide-react';
 import { productsApi } from '@/lib/api';
 import { Card, Button, PageSpinner, EmptyState, Modal, Input, Textarea, Select, Badge } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
-import { formatAOA } from '@/lib/utils';
+import { formatAOA, parseKz } from '@/lib/utils';
 import type { Product, ProductInput, ProductType } from '@/types';
 
 // Os três tipos base: definem o comportamento (faturação, telefonia, CRM).
@@ -58,7 +58,7 @@ function ProductModal({ product, onClose }: { product?: Product; onClose: () => 
         aiAgentsEnabled,
         clinicEnabled,
         smsEnabled,
-        monthlyFeeCents: Math.round(parseFloat(monthlyFee || '0') * 100),
+        monthlyFeeCents: Math.round(parseKz(monthlyFee || '0') * 100),
         isActive,
       };
       return product ? productsApi.update(product.id, body) : productsApi.create(body);
@@ -108,7 +108,7 @@ function ProductModal({ product, onClose }: { product?: Product; onClose: () => 
         <Checkbox checked={aiAgentsEnabled} onChange={setAiAgentsEnabled}>Agentes de IA</Checkbox>
         <Checkbox checked={clinicEnabled} onChange={setClinicEnabled}>Módulo Clínica</Checkbox>
         <Checkbox checked={smsEnabled} onChange={setSmsEnabled}>SMS</Checkbox>
-        <Input label="Fee mensal base (Kz)" type="number" value={monthlyFee} onChange={(e) => setMonthlyFee(e.target.value)} />
+        <Input label="Fee mensal base (Kz)" inputMode="decimal" value={monthlyFee} onChange={(e) => setMonthlyFee(e.target.value)} />
         <Checkbox checked={isActive} onChange={setIsActive}>Activo (disponível para novos planos)</Checkbox>
       </div>
     </Modal>

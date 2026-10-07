@@ -121,4 +121,29 @@ export const adminPlansRoutes: FastifyPluginAsync = async (fastify) => {
 
     return { plan };
   });
+
+  // DELETE /admin/plans/:id — só sem tenants (Tenant.planId é obrigatório;
+  // conta também os apagados, que continuam a referenciar o plano).
+  fastify.delete<{ Params: { id: string } }>("/:id", { preHandler }, async (request, reply) => {
+    const admin = request.adminUser!;
+    const existing = await prisma.plan.findUnique({ where: { id: request.params.id }, include: { _count: { select: { tenants: true } } } });
+    if (!existing) return reply.status(404).send({ error: "Plano não encontrado" });
+    const n = existing._count.tenants;
+    if (n > 0) {
+      return reply.status(409).send({ error: `O plano tem ${n} cliente(s) associado(s). Mude-os de plano ou desactive-o.` });
+    }
+
+    const { _count, ...before } = existing;
+    await prisma.plan.delete({ where: { id: existing.id } });
+    await fastify.audit({
+      actorType: "ADMIN",
+      actorId: admin.sub,
+      action: "plan.deleted",
+      targetType: "Plan",
+      targetId: existing.id,
+      before: before as unknown as object,
+      ip: request.ip,
+    });
+    return reply.status(204).send();
+  });
 };

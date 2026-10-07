@@ -275,6 +275,9 @@ importers:
       '@falai/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@falai/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@falai/shared':
         specifier: workspace:*
         version: link:../../packages/shared

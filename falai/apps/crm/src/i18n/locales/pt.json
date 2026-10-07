@@ -702,7 +702,18 @@
     "secretRotated": "Secret do webhook regenerado",
     "copySecretWarn": "Copie este secret agora. Não será mostrado novamente.",
     "copySecret": "Copiar secret",
-    "adminOnly": "Só administradores podem alterar estas definições."
+    "adminOnly": "Só administradores podem alterar estas definições.",
+    "twoFaTitle": "Autenticação em dois passos (2FA)",
+    "twoFaEnabled": "A 2FA está activa na sua conta. Para a desactivar, introduza o código actual da aplicação.",
+    "twoFaDisabled": "Proteja a sua conta com um código de uma aplicação autenticadora (Google Authenticator, Microsoft Authenticator…).",
+    "twoFaStart": "Activar 2FA",
+    "twoFaScan": "Leia o código QR com a aplicação autenticadora e introduza o código de 6 dígitos.",
+    "twoFaSecret": "Ou introduza esta chave manualmente:",
+    "twoFaCode": "Código",
+    "twoFaConfirm": "Confirmar",
+    "twoFaDone": "2FA activada",
+    "twoFaDisable": "Desactivar 2FA",
+    "twoFaOff": "2FA desactivada"
   },
   "pbx": {
     "title": "Integração PBX",
@@ -1115,7 +1126,8 @@
       "QUEUED": "Na fila",
       "SENT": "Enviado",
       "DELIVERED": "Entregue",
-      "FAILED": "Falhou"
+      "FAILED": "Falhou",
+      "SENDING": "A enviar"
     },
     "newCampaign": "Nova campanha",
     "campaignName": "Nome da campanha",
@@ -1137,6 +1149,7 @@
     "title": "Webphone",
     "selectExtension": "Linha",
     "noLine": "Sem extensões configuradas para este tenant.",
+    "noOwnExtension": "Não tem nenhuma extensão atribuída. Peça a um administrador que lhe atribua uma em Equipa.",
     "status": {
       "unregistered": "Não registado",
       "registering": "A registar…",

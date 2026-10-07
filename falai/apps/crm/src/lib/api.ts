@@ -145,6 +145,8 @@ export const authApi = {
     const r = await post<{ ok: boolean }>('/tenant/auth/2fa/confirm', { code });
     return { success: r.ok };
   },
+
+  twoFaDisable: (code: string) => post<{ ok: boolean }>('/tenant/auth/2fa/disable', { code }),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

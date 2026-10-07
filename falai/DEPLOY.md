@@ -137,6 +137,8 @@ AZURE_TTS_KEY=
 AZURE_TTS_REGION=
 PROXYPAY_API_KEY=
 FUTURIX_SMS_API_KEY=
+# Recomendado: com isto, /webhooks/sms exige ?token=<segredo> (configurar o URL assim na Futurix)
+FUTURIX_SMS_WEBHOOK_SECRET=
 ```
 
 Gerar segredos rapidamente:

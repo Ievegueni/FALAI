@@ -202,7 +202,7 @@ export function blockedIpLiteralReason(host: string): string | null {
  * Valida o URL de inferência do cliente. Devolve o `URL` normalizado ou lança `Error`
  * com uma mensagem em português pronta a mostrar ao cliente no CRM/backoffice.
  */
-export function assertSafeEndpointUrl(rawUrl: string): URL {
+export function assertSafeEndpointUrl(rawUrl: string, opts: { allowHttp?: boolean } = {}): URL {
   const trimmed = (rawUrl ?? "").trim();
   if (!trimmed) {
     throw new Error("URL do modelo em falta.");
@@ -216,7 +216,7 @@ export function assertSafeEndpointUrl(rawUrl: string): URL {
   }
 
   // 1. Protocolo.
-  const allowHttp = insecureAllowed();
+  const allowHttp = opts.allowHttp ?? insecureAllowed();
   if (url.protocol !== DEFAULT_PROTOCOL && !(allowHttp && url.protocol === "http:")) {
     throw new Error(
       allowHttp

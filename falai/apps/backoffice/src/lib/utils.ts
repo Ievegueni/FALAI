@@ -12,6 +12,19 @@ export function formatAOA(cents: number): string {
   );
 }
 
+/**
+ * Montante em Kz como o utilizador o escreve (formato angolano: ponto nos
+ * milhares, vírgula nas décimas): "10.000" = 10000, "1.500,50" = 1500.5.
+ * Sem vírgula, um ponto que não separa grupos de 3 é decimal ("12.50", de
+ * valores pré-preenchidos). Inválido = NaN.
+ */
+export function parseKz(v: string): number {
+  let s = v.replace(/\s/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  return s === '' ? NaN : Number(s);
+}
+
 export function formatDate(iso: string): string {
   return formatInTimeZone(new Date(iso), TZ, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
 }
