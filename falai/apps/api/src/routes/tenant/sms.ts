@@ -10,6 +10,7 @@ import {
 } from "../../services/sms.service.js";
 import { countSegments } from "@falai/providers";
 import { prepareRecipients, startCampaign } from "../../services/smsCampaign.service.js";
+import { requireOpsManager } from "../../services/userScope.js";
 
 const sendSchema = z.object({
   to: z.string().min(5, "Número de destino obrigatório"),
@@ -27,6 +28,8 @@ const campaignSchema = z.object({
 
 export const tenantSmsRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
+  // Enviar e gerir campanhas gasta saldo: só OWNER/ADMIN/MANAGER. Leitura fica aberta.
+  const spendHandler = [fastify.verifyTenant, requireOpsManager];
 
   // GET /tenant/sms/config — estado da configuração de SMS (para a UI saber se pode enviar)
   fastify.get("/tenant/sms/config", { preHandler }, async (request) => {
@@ -78,7 +81,7 @@ export const tenantSmsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/sms — envia um SMS avulso
-  fastify.post("/tenant/sms", { preHandler }, async (request, reply) => {
+  fastify.post("/tenant/sms", { preHandler: spendHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = sendSchema.parse(request.body);
     if (body.contactId && !(await prisma.contact.findFirst({ where: { id: body.contactId, tenantId }, select: { id: true } }))) {
@@ -134,7 +137,7 @@ export const tenantSmsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/sms/campaigns — cria (DRAFT) e prepara destinatários
-  fastify.post("/tenant/sms/campaigns", { preHandler }, async (request, reply) => {
+  fastify.post("/tenant/sms/campaigns", { preHandler: spendHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = campaignSchema.parse(request.body);
 
@@ -162,7 +165,7 @@ export const tenantSmsRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /tenant/sms/campaigns/:id/contacts — adiciona destinatários
   fastify.post<{ Params: { id: string }; Body: { contactIds: string[] } }>(
     "/tenant/sms/campaigns/:id/contacts",
-    { preHandler },
+    { preHandler: spendHandler },
     async (request, reply) => {
       const { tenantId } = request.tenantUser!;
       const contactIds = request.body?.contactIds ?? [];
@@ -173,14 +176,14 @@ export const tenantSmsRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // POST /tenant/sms/campaigns/:id/start — inicia o envio
-  fastify.post<{ Params: { id: string } }>("/tenant/sms/campaigns/:id/start", { preHandler }, async (request, reply) => {
+  fastify.post<{ Params: { id: string } }>("/tenant/sms/campaigns/:id/start", { preHandler: spendHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     await startCampaign(fastify, tenantId, request.params.id);
     return reply.status(202).send({ ok: true });
   });
 
   // POST /tenant/sms/campaigns/:id/cancel — cancela (pára o despacho)
-  fastify.post<{ Params: { id: string } }>("/tenant/sms/campaigns/:id/cancel", { preHandler }, async (request) => {
+  fastify.post<{ Params: { id: string } }>("/tenant/sms/campaigns/:id/cancel", { preHandler: spendHandler }, async (request) => {
     const { tenantId } = request.tenantUser!;
     await prisma.smsCampaign.updateMany({
       where: { id: request.params.id, tenantId, status: { in: ["DRAFT", "RUNNING"] } },

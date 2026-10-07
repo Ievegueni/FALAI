@@ -46,7 +46,11 @@
     "inbox": "Caixa de entrada",
     "supervision": "Supervisão",
     "pin": "Fixar menu",
-    "unpin": "Soltar menu"
+    "unpin": "Soltar menu",
+    "tickets": "Tickets",
+    "quality": "Qualidade",
+    "knowledge": "Conhecimento",
+    "teamChat": "Chat da equipa"
   },
   "login": {
     "subtitle": "Inicie sessão na sua conta",
@@ -619,7 +623,7 @@
     "title": "Equipa",
     "roleOwner": "Proprietário",
     "roleAdmin": "Admin",
-    "roleMember": "Membro",
+    "roleMember": "Agente",
     "roleViewer": "Leitor",
     "email": "Email",
     "name": "Nome",
@@ -627,7 +631,7 @@
     "emailPlaceholder": "colega@empresa.ao",
     "namePlaceholder": "Nome do colega",
     "roleAdminOpt": "Admin — tudo excepto conta e OWNER",
-    "roleMemberOpt": "Membro — operar campanhas/contactos",
+    "roleMemberOpt": "Agente — só os seus casos, chamadas e relatórios",
     "roleViewerOpt": "Leitor — só leitura",
     "memberRemoved": "Membro removido",
     "legendOwner": "<0>OWNER</0> — acesso total, incluindo facturação e API keys.",
@@ -637,7 +641,7 @@
     "you": "(você)",
     "removeConfirm": "Remover {{name}} da equipa?",
     "roleSupervisor": "Supervisor",
-    "roleSupervisorOpt": "Supervisor — supervisiona as chamadas dos seus grupos",
+    "roleSupervisorOpt": "Supervisor — vê e gere a sua equipa e os grupos que supervisiona",
     "legendSupervisor": "<0>Supervisor</0> — como Membro, e supervisiona em tempo real os grupos que lhe atribuir.",
     "extension": "Extensão do utilizador",
     "extensionHint": "A extensão com que o utilizador atende e liga. Um supervisor ouve as chamadas por ela.",
@@ -653,7 +657,21 @@
     "passwordShort": "Mínimo 8 caracteres",
     "groups": "Grupos",
     "groupsHint": "Grupos onde a extensão do utilizador recebe chamadas.",
-    "groupsNeedExtension": "Escolha primeiro a extensão do utilizador."
+    "groupsNeedExtension": "Escolha primeiro a extensão do utilizador.",
+    "roleManager": "Gestor",
+    "roleManagerOpt": "Gestor — toda a operação (relatórios, equipa, supervisão), sem configuração técnica",
+    "shifts": "Turnos",
+    "shiftsTitle": "Turnos de {{name}}",
+    "shiftsHint": "Horário semanal, usado na aderência (relatório de tempo dos agentes). Não passa da meia-noite.",
+    "weekday": {
+      "0": "Domingo",
+      "1": "Segunda",
+      "2": "Terça",
+      "3": "Quarta",
+      "4": "Quinta",
+      "5": "Sexta",
+      "6": "Sábado"
+    }
   },
   "settings": {
     "title": "Definições",
@@ -683,7 +701,19 @@
     "saved": "Definições guardadas",
     "secretRotated": "Secret do webhook regenerado",
     "copySecretWarn": "Copie este secret agora. Não será mostrado novamente.",
-    "copySecret": "Copiar secret"
+    "copySecret": "Copiar secret",
+    "adminOnly": "Só administradores podem alterar estas definições.",
+    "twoFaTitle": "Autenticação em dois passos (2FA)",
+    "twoFaEnabled": "A 2FA está activa na sua conta. Para a desactivar, introduza o código actual da aplicação.",
+    "twoFaDisabled": "Proteja a sua conta com um código de uma aplicação autenticadora (Google Authenticator, Microsoft Authenticator…).",
+    "twoFaStart": "Activar 2FA",
+    "twoFaScan": "Leia o código QR com a aplicação autenticadora e introduza o código de 6 dígitos.",
+    "twoFaSecret": "Ou introduza esta chave manualmente:",
+    "twoFaCode": "Código",
+    "twoFaConfirm": "Confirmar",
+    "twoFaDone": "2FA activada",
+    "twoFaDisable": "Desactivar 2FA",
+    "twoFaOff": "2FA desactivada"
   },
   "pbx": {
     "title": "Integração PBX",
@@ -773,7 +803,10 @@
       "agentsRead": "Ler agentes",
       "smsSend": "Enviar SMS",
       "conversationsRead": "Ler conversas (chat/email/Telegram)",
-      "conversationsWrite": "Responder a conversas"
+      "conversationsWrite": "Responder a conversas",
+      "ticketsRead": "Ler tickets",
+      "ticketsWrite": "Criar e actualizar tickets",
+      "reportsRead": "Ler relatórios (Power BI / BI)"
     },
     "groups": {
       "calls": "Chamadas",
@@ -831,7 +864,12 @@
       "callEnded": "A chamada terminou — com desfecho, duração, custo e gravação",
       "callFailed": "Não foi possível marcar a chamada",
       "campaignPaused": "Campanha pausada, manual ou automaticamente",
-      "campaignCompleted": "Campanha terminou — com os totais finais"
+      "campaignCompleted": "Campanha terminou — com os totais finais",
+      "ticketCreated": "Ticket criado (no CRM ou pela API)",
+      "ticketUpdated": "Ticket alterado — estado, prioridade, nível, responsável ou categoria",
+      "alertOpened": "Alerta operacional aberto (espera, atendimento, agentes, SLA, abandono, TMA)",
+      "alertClosed": "Alerta operacional fechado, com o valor final",
+      "platformStatus": "Um componente da plataforma caiu ou recuperou (telefonia, operadora, base de dados, filas, o vosso peering)"
     },
     "err": {
       "e400": "Payload inválido ou parâmetro em falta. Ver campo `error` na resposta.",
@@ -875,7 +913,10 @@
       "reasons": "Recusas",
       "calls": "Chamadas",
       "typing": "Tipificação",
-      "analysis": "Análise IA"
+      "analysis": "Análise IA",
+      "agentTime": "Tempo dos agentes",
+      "csat": "Satisfação",
+      "consolidated": "Consolidado"
     },
     "period": "Período",
     "all": "Todos",
@@ -892,8 +933,8 @@
       "rejected": "Recusadas",
       "tma": "TMA",
       "tmaHint": "Tempo médio de atendimento",
-      "tme": "TME",
-      "tmeHint": "Tempo médio de espera",
+      "tme": "TME (ASA)",
+      "tmeHint": "Tempo médio de espera até ser atendida",
       "response": "Tempo de resposta",
       "responseHint": "Do toque ao atendimento, por agente",
       "limited": "O seu PBX é próprio (Yeastar): só há atendidas, perdidas, TMA e tempo de toque. Por agente, por grupo e recusas exigem o PBX da plataforma.",
@@ -930,7 +971,9 @@
       "typed": "Tipificadas",
       "untyped": "Não tipificadas",
       "typingTitle": "Chamadas por categoria",
-      "category": "Tipificação"
+      "category": "Tipificação",
+      "sla": "SLA",
+      "slaHint": "Atendidas em menos de {{secs}} s"
     },
     "exportPdf": "Exportar PDF",
     "vsPrevious": "vs. período anterior",
@@ -980,6 +1023,85 @@
       "typingTrends": "Tipificações em crescimento",
       "recommendations": "Recomendações",
       "disclaimer": "Interpretação automática dos números do relatório — confirme antes de decidir. Vai também nas exportações Excel e PDF destes filtros."
+    },
+    "agentTime": {
+      "agent": "Agente",
+      "scheduled": "Escalado",
+      "logged": "Ligado",
+      "inShift": "Ligado no turno",
+      "adherence": "Aderência",
+      "paused": "Em pausa",
+      "pauses": "Pausas por motivo",
+      "noReason": "Sem motivo",
+      "empty": "Sem utilizadores.",
+      "hint": "Ligado = tempo com o CRM aberto. Aderência = % do turno em que esteve ligado."
+    },
+    "csat": {
+      "settings": "Inquérito de satisfação",
+      "channelsHint": "Voz: quando o agente desliga, o cliente ouve a pergunta e carrega de 1 a 5 (não é cobrado). Texto: pergunta ao resolver a conversa. SMS: link no fim da chamada atendida (cada SMS é cobrado).",
+      "question": "Pergunta",
+      "thanks": "Agradecimento",
+      "avg": "CSAT médio",
+      "scale": "de 1 a 5",
+      "satisfied": "Satisfeitos",
+      "satisfiedHint": "notas 4 e 5",
+      "responses": "Respostas",
+      "responseRate": "de {{asked}} perguntados",
+      "distribution": "Distribuição",
+      "byChannel": "Por canal",
+      "byAgent": "Por agente",
+      "byGroup": "Por grupo",
+      "noAgent": "Sem agente",
+      "noGroup": "Sem grupo",
+      "channel": {
+        "VOICE": "Voz (tecla no fim da chamada)",
+        "TEXT": "Texto (chat, WhatsApp, email, Telegram)",
+        "SMS": "SMS (link)"
+      },
+      "col": {
+        "name": "Nome",
+        "responses": "Respostas",
+        "avg": "Média",
+        "satisfied": "% satisfeitos"
+      }
+    },
+    "cons": {
+      "contacts": "Contactos",
+      "contactsHint": "chamadas de entrada + conversas",
+      "callsIn": "Chamadas de entrada",
+      "answeredPct": "{{pct}} atendidas",
+      "conversations": "Conversas",
+      "firstResponse": "1.ª resposta em {{value}}",
+      "tickets": "Tickets criados",
+      "ticketsHint": "{{resolved}} resolvidos · resolução {{time}}",
+      "csatHint": "{{pct}} satisfeitos · {{n}} respostas",
+      "qa": "QA score",
+      "qaHint": "{{n}} avaliações",
+      "byChannel": "Contactos por canal",
+      "series": "Por período",
+      "bucket": {
+        "day": "Por dia",
+        "week": "Por semana",
+        "month": "Por mês"
+      },
+      "channel": {
+        "VOICE": "Voz",
+        "WHATSAPP": "WhatsApp",
+        "WEBCHAT": "Chat do site",
+        "EMAIL": "Email",
+        "TELEGRAM": "Telegram"
+      },
+      "col": {
+        "period": "Período",
+        "callsIn": "Entrada",
+        "callsAnswered": "Atendidas",
+        "callsMissed": "Perdidas",
+        "callsOut": "Saída",
+        "conversations": "Conversas",
+        "conversationsResolved": "Resolvidas",
+        "ticketsCreated": "Tickets",
+        "ticketsResolved": "Tickets resolvidos"
+      }
     }
   },
   "sms": {
@@ -1004,7 +1126,8 @@
       "QUEUED": "Na fila",
       "SENT": "Enviado",
       "DELIVERED": "Entregue",
-      "FAILED": "Falhou"
+      "FAILED": "Falhou",
+      "SENDING": "A enviar"
     },
     "newCampaign": "Nova campanha",
     "campaignName": "Nome da campanha",
@@ -1026,6 +1149,7 @@
     "title": "Webphone",
     "selectExtension": "Linha",
     "noLine": "Sem extensões configuradas para este tenant.",
+    "noOwnExtension": "Não tem nenhuma extensão atribuída. Peça a um administrador que lhe atribua uma em Equipa.",
     "status": {
       "unregistered": "Não registado",
       "registering": "A registar…",
@@ -1072,7 +1196,8 @@
       "LISTEN": "Um supervisor está a ouvir esta chamada.",
       "WHISPER": "Um supervisor está a falar consigo (o cliente não ouve).",
       "BARGE": "Um supervisor entrou na chamada (o cliente ouve-o)."
-    }
+    },
+    "pauseWithReason": "Pausar…"
   },
   "telephony": {
     "title": "Telefonia",
@@ -1186,7 +1311,11 @@
     "typingAddSub": "Subcategoria",
     "typingEmpty": "Sem categorias. Crie, por exemplo, \"Reclamação\" com a subcategoria \"Facturação\".",
     "typingGroups": "Grupos",
-    "typingGroupsHint": "Sem nenhum marcado, todos os agentes vêem esta categoria."
+    "typingGroupsHint": "Sem nenhum marcado, todos os agentes vêem esta categoria.",
+    "tabPauseReasons": "Motivos de pausa",
+    "pauseReasonsHint": "Motivos que o agente escolhe ao pausar no webphone (almoço, formação, ...). Entram no relatório de tempo dos agentes.",
+    "pauseReasonPlaceholder": "Novo motivo de pausa",
+    "noPauseReasons": "Sem motivos de pausa — o agente pausa sem motivo."
   },
   "inbox": {
     "waPool": "Pool WhatsApp (Active/Standby)",
@@ -1440,5 +1569,269 @@
     "mergeWarning": "{{other}} vai ser apagado. Chamadas, SMS, conversas, notas e campanhas passam para {{keep}}; o número dele fica como número extra. Fica registado quem uniu e quando.",
     "merged_one": "Contactos unidos ({{count}} chamada transferida)",
     "merged_other": "Contactos unidos ({{count}} chamadas transferidas)"
+  },
+  "tickets": {
+    "title": "Tickets",
+    "ticket": "Ticket",
+    "new": "Novo ticket",
+    "createFrom": "Criar ticket",
+    "created": "Ticket #{{number}} criado",
+    "subject": "Assunto",
+    "description": "Descrição",
+    "statusLabel": "Estado",
+    "priorityLabel": "Prioridade",
+    "level": "Nível de suporte",
+    "levelN": "{{n}}º nível",
+    "group": "Equipa",
+    "assignee": "Responsável",
+    "unassigned": "Sem responsável",
+    "category": "Categoria",
+    "subcategory": "Subcategoria",
+    "dueAt": "Prazo",
+    "contact": "Cliente",
+    "updated": "Actualizado",
+    "searchPlaceholder": "Pesquisar por número ou assunto…",
+    "filterActive": "Em aberto",
+    "filterAll": "Todos os estados",
+    "anyPriority": "Qualquer prioridade",
+    "anyLevel": "Qualquer nível",
+    "anyAssignee": "Qualquer responsável",
+    "anyGroup": "Qualquer equipa",
+    "mine": "Atribuídos a mim",
+    "emptyTitle": "Sem tickets",
+    "emptyDescription": "Crie um ticket aqui, a partir de uma chamada, de uma conversa ou do perfil do cliente.",
+    "notFound": "Ticket não encontrado.",
+    "timeline": "Linha do tempo",
+    "note": "Nota interna",
+    "notePlaceholder": "Escreva uma nota interna…",
+    "addNote": "Adicionar nota",
+    "system": "Sistema",
+    "interactions": "Chamadas e conversas",
+    "noInteractions": "Nenhuma chamada ou conversa associada.",
+    "unlink": "Desassociar",
+    "edit": "Editar ticket",
+    "conflict": "O ticket foi alterado por outra pessoa — os dados foram actualizados.",
+    "reopened_one": "reaberto {{count}} vez",
+    "reopened_other": "reaberto {{count}} vezes",
+    "none": "Sem tickets.",
+    "openTickets": "Tickets em aberto",
+    "aCall": "uma chamada",
+    "aConversation": "uma conversa",
+    "status": {
+      "OPEN": "Aberto",
+      "PENDING": "Pendente",
+      "ON_HOLD": "Em espera",
+      "RESOLVED": "Resolvido",
+      "CLOSED": "Fechado"
+    },
+    "priority": {
+      "LOW": "Baixa",
+      "MEDIUM": "Média",
+      "HIGH": "Alta",
+      "URGENT": "Urgente"
+    },
+    "source": {
+      "MANUAL": "Manual",
+      "CALL": "Chamada",
+      "WHATSAPP": "WhatsApp",
+      "WEBCHAT": "Chat do site",
+      "EMAIL": "Email",
+      "TELEGRAM": "Telegram",
+      "API": "API"
+    },
+    "ev": {
+      "created": "Ticket criado",
+      "status": "Estado: {{from}} → {{to}}",
+      "priority": "Prioridade: {{from}} → {{to}}",
+      "level": "Nível: {{from}}º → {{to}}º",
+      "assignee": "Responsável: {{to}}",
+      "group": "Equipa: {{to}}",
+      "category": "Categoria: {{to}}",
+      "subject": "Assunto: {{to}}",
+      "linked": "Associada {{what}}",
+      "unlinked": "Desassociada {{what}}"
+    },
+    "take": "Pegar"
+  },
+  "alerts": {
+    "tab": "Alertas",
+    "openTitle_one": "{{count}} alerta activo",
+    "openTitle_other": "{{count}} alertas activos",
+    "typeLabel": "Tipo",
+    "allTypes": "Todos os tipos",
+    "empty": "Sem alertas neste período.",
+    "started": "Início",
+    "group": "Grupo",
+    "threshold": "Limite",
+    "value": "Valor (início → fim)",
+    "ended": "Fim",
+    "ongoing": "em curso",
+    "targetsTitle": "Metas e alertas",
+    "targetsHint": "Deixe vazio para desligar. Os alertas aparecem no ecrã de quem supervisiona, ficam no histórico e saem por webhook (alert.opened / alert.closed).",
+    "off": "desligado",
+    "unit": {
+      "s": "segundos",
+      "%": "%",
+      "n": "agentes"
+    },
+    "field": {
+      "slaThresholdSecs": "Limiar do SLA",
+      "slaTargetPct": "Meta de SLA do dia",
+      "maxWaitSecs": "Espera máxima",
+      "maxHandleSecs": "Atendimento máximo",
+      "minAvailableAgents": "Mínimo de agentes disponíveis por grupo",
+      "maxAbandonPct": "Abandono máximo do dia",
+      "maxTmaSecs": "TMA máximo do dia"
+    },
+    "name": {
+      "LONG_WAIT": "Espera elevada",
+      "LONG_HANDLE": "Atendimento longo",
+      "NO_AGENTS": "Sem agentes disponíveis",
+      "SLA_BELOW": "SLA abaixo da meta",
+      "ABANDON_ABOVE": "Abandono acima do limite",
+      "TMA_ABOVE": "TMA acima do limite"
+    },
+    "type": {
+      "LONG_WAIT": "Chamada em espera há {{value}} (limite {{threshold}})",
+      "LONG_HANDLE": "Chamada em curso há {{value}} (limite {{threshold}})",
+      "NO_AGENTS": "{{value}} agentes disponíveis (mínimo {{threshold}})",
+      "SLA_BELOW": "SLA do dia em {{value}} (meta {{threshold}})",
+      "ABANDON_ABOVE": "Abandono do dia em {{value}} (limite {{threshold}})",
+      "TMA_ABOVE": "TMA do dia em {{value}} (limite {{threshold}})"
+    }
+  },
+  "quality": {
+    "title": "Qualidade",
+    "tabEvaluations": "Avaliações",
+    "tabSummary": "QA score",
+    "tabSample": "Por avaliar",
+    "tabForms": "Formulários",
+    "evaluate": "Avaliar",
+    "newTitle": "Nova avaliação",
+    "evaluation": "Avaliação",
+    "notFound": "Avaliação não encontrada.",
+    "noForms": "Ainda não há formulários de avaliação — um gestor cria-os em Qualidade → Formulários.",
+    "openCall": "Ver chamada",
+    "comment": "Comentário do avaliador",
+    "commentPlaceholder": "O que correu bem e o que melhorar…",
+    "submit": "Submeter avaliação",
+    "by": "por {{name}}",
+    "critical": "Eliminatório",
+    "criticalFail": "Critério eliminatório não cumprido — score 0.",
+    "agentComment": "Comentário do agente",
+    "resolution": "Resposta à contestação",
+    "agentNote": "Nota para o avaliador (obrigatória para contestar)",
+    "acknowledge": "Confirmar leitura",
+    "dispute": "Contestar",
+    "reviseAnswers": "Rever respostas",
+    "auditHint": "Cada revisão fica registada na auditoria (antes e depois).",
+    "allStatuses": "Todos os estados",
+    "empty": "Sem avaliações.",
+    "lastDays_one": "Último dia",
+    "lastDays_other": "Últimos {{count}} dias",
+    "reshuffle": "Outra amostra",
+    "sampleHint": "Duas chamadas ao acaso por agente, ainda por avaliar.",
+    "nothingToEvaluate": "Nada por avaliar neste período.",
+    "newForm": "Novo formulário",
+    "editForm": "Editar formulário",
+    "formName": "Nome do formulário",
+    "editHint": "As avaliações já feitas guardam o formulário como estava — mudar aqui só vale para as novas.",
+    "sectionTitle": "Título da secção",
+    "criterion": "Critério",
+    "weight": "Peso",
+    "addCriterion": "Critério",
+    "addSection": "Secção",
+    "criteriaCount_one": "{{count}} critério",
+    "criteriaCount_other": "{{count}} critérios",
+    "answer": {
+      "YES": "Conforme",
+      "NO": "Não conforme",
+      "NA": "N/A"
+    },
+    "status": {
+      "SUBMITTED": "Por confirmar",
+      "ACKNOWLEDGED": "Confirmada",
+      "DISPUTED": "Contestada",
+      "RESOLVED": "Revista"
+    },
+    "col": {
+      "date": "Data",
+      "agent": "Agente",
+      "form": "Formulário",
+      "evaluator": "Avaliador",
+      "score": "Score",
+      "statusLabel": "Estado",
+      "evaluations": "Avaliações",
+      "avgScore": "QA score médio",
+      "criticalFails": "Eliminatórios",
+      "disputed": "Contestadas"
+    }
+  },
+  "kb": {
+    "title": "Base de conhecimento",
+    "new": "Novo artigo",
+    "edit": "Editar artigo",
+    "articleTitle": "Título",
+    "category": "Categoria",
+    "body": "Texto",
+    "published": "Publicado (visível para os agentes)",
+    "aiEnabled": "A IA pode usar este artigo nas respostas",
+    "searchPlaceholder": "Pesquisar artigos…",
+    "allCategories": "Todas as categorias",
+    "noResults": "Nenhum artigo encontrado.",
+    "emptyTitle": "Ainda não há artigos",
+    "emptyDescription": "A supervisão escreve aqui respostas, procedimentos e políticas — os agentes consultam-nos durante o atendimento.",
+    "draft": "Rascunho",
+    "deleteConfirm": "Apagar este artigo?"
+  },
+  "helpdesk": {
+    "title": "Integração Freshdesk",
+    "intro": "Com o Freshdesk ligado, os tickets do Falaí passam a ser um espelho dos do Freshdesk: o que se cria ou altera cá segue para lá (sem fazer esperar o agente), e o que muda lá chega por webhook e por sincronização a cada 5 minutos. Na primeira ligação importam-se os tickets dos últimos 30 dias. Agentes e grupos correspondem-se pelo email e pelo nome.",
+    "domain": "Domínio do Freshdesk",
+    "apiKey": "API key",
+    "apiKeyKept": "guardada — deixe vazio para manter",
+    "apiKeyHint": "Freshdesk → o seu perfil → \"Your API Key\". Use um utilizador técnico dedicado (ex.: \"Falaí Integração\"). Fica guardada encriptada.",
+    "ticketOnCall": "Ticket no fim de cada chamada atendida",
+    "onCall": {
+      "AGENT_CHOICE": "Só quando o agente cria",
+      "ALWAYS": "Criar sempre",
+      "NEVER": "Nunca"
+    },
+    "recordingLink": "Incluir no ticket a ligação para a chamada e a gravação (no CRM)",
+    "enabled": "Ligação activa",
+    "test": "Testar ligação",
+    "testOk": "Ligação OK — utilizador {{name}}",
+    "syncNow": "Sincronizar agora",
+    "synced": "Sincronizado: {{created}} novos, {{updated}} actualizados",
+    "lastSync": "Última sincronização",
+    "lastError": "Último erro",
+    "webhookTitle": "Avisos do Freshdesk (webhook)",
+    "webhookBody": "Corpo (JSON)",
+    "webhookSteps": [
+      "No Freshdesk: Admin → Automations → Ticket updates → New rule.",
+      "Condição: \"When an action performed by… Anyone\" e \"Involves any of these events: Ticket is updated\" (ou estado, prioridade, responsável).",
+      "Acção: \"Trigger webhook\", pedido POST para o URL abaixo, conteúdo JSON com o corpo abaixo.",
+      "Guardar e activar a regra. Sem a regra, as alterações feitas no Freshdesk chegam na mesma na sincronização dos 5 minutos."
+    ]
+  },
+  "platform": {
+    "down": {
+      "telephony": "O motor de telefonia está em baixo — as chamadas podem falhar.",
+      "sipTrunk": "A ligação à operadora telefónica caiu — chamadas de e para fora podem falhar.",
+      "database": "A base de dados está com problemas — podem falhar gravações de dados.",
+      "redis": "O serviço de filas está com problemas — envios e campanhas podem atrasar.",
+      "peer": "A ligação à vossa central (peering) não responde.",
+      "other": "Há um componente da plataforma em baixo."
+    },
+    "notified": "A equipa técnica já foi avisada."
+  },
+  "chat": {
+    "title": "Chat da equipa",
+    "newDirect": "Nova conversa",
+    "newGroup": "Novo grupo",
+    "groupName": "Nome do grupo",
+    "placeholder": "Escreva uma mensagem… (Enter envia, Shift+Enter muda de linha)",
+    "empty": "Ainda não há conversas. Comece uma com um colega.",
+    "pick": "Escolha uma conversa à esquerda."
   }
 }

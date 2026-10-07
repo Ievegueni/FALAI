@@ -46,7 +46,11 @@
     "inbox": "收件箱",
     "supervision": "监控",
     "pin": "固定菜单",
-    "unpin": "取消固定菜单"
+    "unpin": "取消固定菜单",
+    "tickets": "工单",
+    "quality": "质量",
+    "knowledge": "知识库",
+    "teamChat": "团队聊天"
   },
   "login": {
     "subtitle": "登录您的账户",
@@ -619,7 +623,7 @@
     "title": "团队",
     "roleOwner": "所有者",
     "roleAdmin": "管理员",
-    "roleMember": "成员",
+    "roleMember": "坐席",
     "roleViewer": "只读者",
     "email": "邮箱",
     "name": "姓名",
@@ -627,7 +631,7 @@
     "emailPlaceholder": "colleague@company.ao",
     "namePlaceholder": "同事姓名",
     "roleAdminOpt": "管理员 — 除账户与 OWNER 外的所有权限",
-    "roleMemberOpt": "成员 — 操作活动/联系人",
+    "roleMemberOpt": "坐席 — 仅限自己的工单、通话和报表",
     "roleViewerOpt": "只读者 — 仅查看",
     "memberRemoved": "成员已移除",
     "legendOwner": "<0>OWNER</0> — 完全访问权限，包括计费与 API 密钥。",
@@ -637,7 +641,7 @@
     "you": "（您）",
     "removeConfirm": "将 {{name}} 从团队中移除？",
     "roleSupervisor": "主管",
-    "roleSupervisorOpt": "主管 — 监控其所属组的通话",
+    "roleSupervisorOpt": "主管 — 查看并管理其团队和所监控的组",
     "legendSupervisor": "<0>主管</0> — 与成员相同，并可实时监控分配给他的组。",
     "extension": "用户分机",
     "extensionHint": "用户接听和拨打电话使用的分机。主管通过它监听通话。",
@@ -653,7 +657,21 @@
     "passwordShort": "至少 8 个字符",
     "groups": "组",
     "groupsHint": "用户分机接听来电的组。",
-    "groupsNeedExtension": "请先选择用户的分机。"
+    "groupsNeedExtension": "请先选择用户的分机。",
+    "roleManager": "经理",
+    "roleManagerOpt": "经理 — 全部运营（报表、团队、监控），无技术配置",
+    "shifts": "班次",
+    "shiftsTitle": "{{name}} 的班次",
+    "shiftsHint": "每周排班，用于计算遵守率（坐席时间报表）。不跨越午夜。",
+    "weekday": {
+      "0": "星期日",
+      "1": "星期一",
+      "2": "星期二",
+      "3": "星期三",
+      "4": "星期四",
+      "5": "星期五",
+      "6": "星期六"
+    }
   },
   "settings": {
     "title": "设置",
@@ -683,7 +701,19 @@
     "saved": "设置已保存",
     "secretRotated": "Webhook 密钥已重新生成",
     "copySecretWarn": "请立即复制此密钥。它将不会再次显示。",
-    "copySecret": "复制密钥"
+    "copySecret": "复制密钥",
+    "adminOnly": "只有管理员可以修改这些设置。",
+    "twoFaTitle": "双重认证 (2FA)",
+    "twoFaEnabled": "您的账户已启用 2FA。如需停用，请输入应用中的当前验证码。",
+    "twoFaDisabled": "使用身份验证器应用（Google Authenticator、Microsoft Authenticator…）的验证码保护您的账户。",
+    "twoFaStart": "启用 2FA",
+    "twoFaScan": "用身份验证器应用扫描二维码并输入 6 位验证码。",
+    "twoFaSecret": "或手动输入此密钥：",
+    "twoFaCode": "验证码",
+    "twoFaConfirm": "确认",
+    "twoFaDone": "2FA 已启用",
+    "twoFaDisable": "停用 2FA",
+    "twoFaOff": "2FA 已停用"
   },
   "pbx": {
     "title": "PBX 集成",
@@ -773,7 +803,10 @@
       "agentsRead": "读取坐席",
       "smsSend": "发送短信",
       "conversationsRead": "读取会话",
-      "conversationsWrite": "回复会话"
+      "conversationsWrite": "回复会话",
+      "ticketsRead": "读取工单",
+      "ticketsWrite": "创建和更新工单",
+      "reportsRead": "读取报表（Power BI / BI）"
     },
     "groups": {
       "calls": "通话",
@@ -831,7 +864,12 @@
       "callEnded": "通话已结束——含结果、时长、费用与录音",
       "callFailed": "无法发起通话",
       "campaignPaused": "活动已暂停（手动或自动）",
-      "campaignCompleted": "活动已结束——含最终统计"
+      "campaignCompleted": "活动已结束——含最终统计",
+      "ticketCreated": "工单已创建（CRM 或 API）",
+      "ticketUpdated": "工单已更改——状态、优先级、级别、负责人或分类",
+      "alertOpened": "运营告警已打开（等待、通话、坐席、服务水平、放弃、处理时长）",
+      "alertClosed": "运营告警已关闭，附最终数值",
+      "platformStatus": "平台组件停止或恢复（电话、运营商、数据库、队列、贵方对接）"
     },
     "err": {
       "e400": "载荷无效或缺少参数。请查看响应中的 `error` 字段。",
@@ -875,7 +913,10 @@
       "reasons": "拒接",
       "calls": "通话",
       "typing": "通话分类",
-      "analysis": "AI 分析"
+      "analysis": "AI 分析",
+      "agentTime": "坐席时间",
+      "csat": "满意度",
+      "consolidated": "综合"
     },
     "period": "时间段",
     "all": "全部",
@@ -892,8 +933,8 @@
       "rejected": "已拒接",
       "tma": "平均处理时长",
       "tmaHint": "平均通话处理时间",
-      "tme": "平均等待时长",
-      "tmeHint": "平均等待时间",
+      "tme": "平均应答速度",
+      "tmeHint": "接听前的平均等待时间",
       "response": "响应时间",
       "responseHint": "从振铃到接听（按坐席）",
       "limited": "您使用自己的 PBX（Yeastar）：仅提供接听、未接、平均处理时长和振铃时间。按坐席、按组和拒接需要平台 PBX。",
@@ -930,7 +971,9 @@
       "typed": "已分类",
       "untyped": "未分类",
       "typingTitle": "按类别统计通话",
-      "category": "通话分类"
+      "category": "通话分类",
+      "sla": "服务水平",
+      "slaHint": "{{secs}} 秒内接听"
     },
     "exportPdf": "导出 PDF",
     "vsPrevious": "与上一时段相比",
@@ -980,6 +1023,85 @@
       "typingTrends": "增长中的分类",
       "recommendations": "建议",
       "disclaimer": "对报告数字的自动解读——决策前请核实。也会包含在这些筛选条件的 Excel 和 PDF 导出中。"
+    },
+    "agentTime": {
+      "agent": "坐席",
+      "scheduled": "排班",
+      "logged": "在线",
+      "inShift": "班次内在线",
+      "adherence": "遵守率",
+      "paused": "暂停",
+      "pauses": "按原因的暂停",
+      "noReason": "无原因",
+      "empty": "没有用户。",
+      "hint": "在线 = 打开 CRM 的时间。遵守率 = 班次内在线时间占比。"
+    },
+    "csat": {
+      "settings": "满意度调查",
+      "channelsHint": "语音：坐席挂断后，客户听到问题并按 1 到 5（不计费）。文字：会话解决时发送问题。短信：已接通话结束后发送链接（每条短信计费）。",
+      "question": "问题",
+      "thanks": "感谢语",
+      "avg": "平均满意度",
+      "scale": "1 到 5",
+      "satisfied": "满意",
+      "satisfiedHint": "4 分和 5 分",
+      "responses": "回复",
+      "responseRate": "共询问 {{asked}} 次",
+      "distribution": "分布",
+      "byChannel": "按渠道",
+      "byAgent": "按坐席",
+      "byGroup": "按组",
+      "noAgent": "无坐席",
+      "noGroup": "无组",
+      "channel": {
+        "VOICE": "语音（通话结束按键）",
+        "TEXT": "文字（聊天、WhatsApp、邮件、Telegram）",
+        "SMS": "短信（链接）"
+      },
+      "col": {
+        "name": "名称",
+        "responses": "回复",
+        "avg": "平均",
+        "satisfied": "满意率"
+      }
+    },
+    "cons": {
+      "contacts": "联络量",
+      "contactsHint": "呼入通话 + 会话",
+      "callsIn": "呼入通话",
+      "answeredPct": "接通率 {{pct}}",
+      "conversations": "会话",
+      "firstResponse": "首次回复 {{value}}",
+      "tickets": "新建工单",
+      "ticketsHint": "已解决 {{resolved}} · 解决时长 {{time}}",
+      "csatHint": "满意 {{pct}} · {{n}} 条回复",
+      "qa": "质检得分",
+      "qaHint": "{{n}} 次评估",
+      "byChannel": "按渠道的联络量",
+      "series": "按周期",
+      "bucket": {
+        "day": "按天",
+        "week": "按周",
+        "month": "按月"
+      },
+      "channel": {
+        "VOICE": "语音",
+        "WHATSAPP": "WhatsApp",
+        "WEBCHAT": "网站聊天",
+        "EMAIL": "邮件",
+        "TELEGRAM": "Telegram"
+      },
+      "col": {
+        "period": "周期",
+        "callsIn": "呼入",
+        "callsAnswered": "接通",
+        "callsMissed": "未接",
+        "callsOut": "呼出",
+        "conversations": "会话",
+        "conversationsResolved": "已解决",
+        "ticketsCreated": "工单",
+        "ticketsResolved": "已解决工单"
+      }
     }
   },
   "sms": {
@@ -1004,7 +1126,8 @@
       "QUEUED": "排队中",
       "SENT": "已发送",
       "DELIVERED": "已送达",
-      "FAILED": "失败"
+      "FAILED": "失败",
+      "SENDING": "发送中"
     },
     "newCampaign": "新活动",
     "campaignName": "活动名称",
@@ -1026,6 +1149,7 @@
     "title": "网络电话",
     "selectExtension": "线路",
     "noLine": "此租户未配置任何分机。",
+    "noOwnExtension": "您尚未分配分机。请联系管理员在团队中为您分配。",
     "status": {
       "unregistered": "未注册",
       "registering": "正在注册…",
@@ -1072,7 +1196,8 @@
       "LISTEN": "主管正在监听此通话。",
       "WHISPER": "主管正在与您说话（客户听不到）。",
       "BARGE": "主管已加入通话（客户能听到）。"
-    }
+    },
+    "pauseWithReason": "暂停…"
   },
   "telephony": {
     "title": "电话",
@@ -1186,7 +1311,11 @@
     "typingAddSub": "子类别",
     "typingEmpty": "暂无类别。例如创建\"投诉\"及子类别\"账单\"。",
     "typingGroups": "组",
-    "typingGroupsHint": "不勾选任何组时，所有坐席都可见此类别。"
+    "typingGroupsHint": "不勾选任何组时，所有坐席都可见此类别。",
+    "tabPauseReasons": "暂停原因",
+    "pauseReasonsHint": "坐席在网页电话中暂停时选择的原因（午餐、培训等），用于坐席时间报表。",
+    "pauseReasonPlaceholder": "新的暂停原因",
+    "noPauseReasons": "没有暂停原因——坐席暂停时无需选择。"
   },
   "callerPanel": {
     "loading": "正在查找来电者…",
@@ -1368,5 +1497,269 @@
     "mergeWarning": "{{other}} 将被删除。通话、短信、会话、备注和活动转移到 {{keep}}；其号码成为附加号码。合并人和时间会被记录。",
     "merged_one": "联系人已合并（转移 {{count}} 通通话）",
     "merged_other": "联系人已合并（转移 {{count}} 通通话）"
+  },
+  "tickets": {
+    "title": "工单",
+    "ticket": "工单",
+    "new": "新建工单",
+    "createFrom": "创建工单",
+    "created": "工单 #{{number}} 已创建",
+    "subject": "主题",
+    "description": "描述",
+    "statusLabel": "状态",
+    "priorityLabel": "优先级",
+    "level": "支持级别",
+    "levelN": "{{n}} 级",
+    "group": "团队",
+    "assignee": "负责人",
+    "unassigned": "未分配",
+    "category": "分类",
+    "subcategory": "子分类",
+    "dueAt": "截止时间",
+    "contact": "客户",
+    "updated": "更新时间",
+    "searchPlaceholder": "按编号或主题搜索…",
+    "filterActive": "未结",
+    "filterAll": "所有状态",
+    "anyPriority": "任意优先级",
+    "anyLevel": "任意级别",
+    "anyAssignee": "任意负责人",
+    "anyGroup": "任意团队",
+    "mine": "分配给我",
+    "emptyTitle": "暂无工单",
+    "emptyDescription": "可在此处、通话、会话或客户资料中创建工单。",
+    "notFound": "未找到工单。",
+    "timeline": "时间线",
+    "note": "内部备注",
+    "notePlaceholder": "输入内部备注…",
+    "addNote": "添加备注",
+    "system": "系统",
+    "interactions": "通话和会话",
+    "noInteractions": "没有关联的通话或会话。",
+    "unlink": "取消关联",
+    "edit": "编辑工单",
+    "conflict": "工单已被他人修改——数据已刷新。",
+    "reopened_one": "重新打开 {{count}} 次",
+    "reopened_other": "重新打开 {{count}} 次",
+    "none": "暂无工单。",
+    "openTickets": "未结工单",
+    "aCall": "一个通话",
+    "aConversation": "一个会话",
+    "status": {
+      "OPEN": "打开",
+      "PENDING": "待处理",
+      "ON_HOLD": "挂起",
+      "RESOLVED": "已解决",
+      "CLOSED": "已关闭"
+    },
+    "priority": {
+      "LOW": "低",
+      "MEDIUM": "中",
+      "HIGH": "高",
+      "URGENT": "紧急"
+    },
+    "source": {
+      "MANUAL": "手动",
+      "CALL": "通话",
+      "WHATSAPP": "WhatsApp",
+      "WEBCHAT": "网站聊天",
+      "EMAIL": "邮件",
+      "TELEGRAM": "Telegram",
+      "API": "API"
+    },
+    "ev": {
+      "created": "工单已创建",
+      "status": "状态：{{from}} → {{to}}",
+      "priority": "优先级：{{from}} → {{to}}",
+      "level": "级别：{{from}} → {{to}}",
+      "assignee": "负责人：{{to}}",
+      "group": "团队：{{to}}",
+      "category": "分类：{{to}}",
+      "subject": "主题：{{to}}",
+      "linked": "已关联{{what}}",
+      "unlinked": "已取消关联{{what}}"
+    },
+    "take": "领取"
+  },
+  "alerts": {
+    "tab": "告警",
+    "openTitle_one": "{{count}} 个活动告警",
+    "openTitle_other": "{{count}} 个活动告警",
+    "typeLabel": "类型",
+    "allTypes": "所有类型",
+    "empty": "此期间没有告警。",
+    "started": "开始",
+    "group": "组",
+    "threshold": "阈值",
+    "value": "数值（开始 → 结束）",
+    "ended": "结束",
+    "ongoing": "进行中",
+    "targetsTitle": "目标与告警",
+    "targetsHint": "留空即关闭。告警会显示在主管屏幕上，保存在历史记录中，并通过 webhook 发送（alert.opened / alert.closed）。",
+    "off": "关闭",
+    "unit": {
+      "s": "秒",
+      "%": "%",
+      "n": "坐席"
+    },
+    "field": {
+      "slaThresholdSecs": "服务水平阈值",
+      "slaTargetPct": "当日服务水平目标",
+      "maxWaitSecs": "最长等待",
+      "maxHandleSecs": "最长通话",
+      "minAvailableAgents": "每组最少可用坐席",
+      "maxAbandonPct": "当日最高放弃率",
+      "maxTmaSecs": "当日最长平均处理时长"
+    },
+    "name": {
+      "LONG_WAIT": "等待过长",
+      "LONG_HANDLE": "通话过长",
+      "NO_AGENTS": "无可用坐席",
+      "SLA_BELOW": "服务水平低于目标",
+      "ABANDON_ABOVE": "放弃率超限",
+      "TMA_ABOVE": "平均处理时长超限"
+    },
+    "type": {
+      "LONG_WAIT": "来电已等待 {{value}}（阈值 {{threshold}}）",
+      "LONG_HANDLE": "通话已进行 {{value}}（阈值 {{threshold}}）",
+      "NO_AGENTS": "可用坐席 {{value}}（最少 {{threshold}}）",
+      "SLA_BELOW": "当日服务水平 {{value}}（目标 {{threshold}}）",
+      "ABANDON_ABOVE": "当日放弃率 {{value}}（阈值 {{threshold}}）",
+      "TMA_ABOVE": "当日平均处理时长 {{value}}（阈值 {{threshold}}）"
+    }
+  },
+  "quality": {
+    "title": "质量",
+    "tabEvaluations": "评估",
+    "tabSummary": "质检得分",
+    "tabSample": "待评估",
+    "tabForms": "表单",
+    "evaluate": "评估",
+    "newTitle": "新建评估",
+    "evaluation": "评估",
+    "notFound": "未找到评估。",
+    "noForms": "尚无评估表单——由经理在 质量 → 表单 中创建。",
+    "openCall": "查看通话",
+    "comment": "评估人备注",
+    "commentPlaceholder": "做得好的地方和需要改进的地方…",
+    "submit": "提交评估",
+    "by": "评估人 {{name}}",
+    "critical": "否决项",
+    "criticalFail": "否决项未达标——得分为 0。",
+    "agentComment": "坐席备注",
+    "resolution": "申诉回复",
+    "agentNote": "给评估人的备注（申诉时必填）",
+    "acknowledge": "确认已读",
+    "dispute": "申诉",
+    "reviseAnswers": "修改答案",
+    "auditHint": "每次修改都会记入审计日志（修改前后）。",
+    "allStatuses": "所有状态",
+    "empty": "暂无评估。",
+    "lastDays_one": "最近一天",
+    "lastDays_other": "最近 {{count}} 天",
+    "reshuffle": "重新抽样",
+    "sampleHint": "每个坐席随机抽取两通尚未评估的通话。",
+    "nothingToEvaluate": "此期间没有待评估的内容。",
+    "newForm": "新建表单",
+    "editForm": "编辑表单",
+    "formName": "表单名称",
+    "editHint": "已完成的评估保留当时的表单——此处修改仅对新评估生效。",
+    "sectionTitle": "部分标题",
+    "criterion": "评估项",
+    "weight": "权重",
+    "addCriterion": "评估项",
+    "addSection": "部分",
+    "criteriaCount_one": "{{count}} 个评估项",
+    "criteriaCount_other": "{{count}} 个评估项",
+    "answer": {
+      "YES": "达标",
+      "NO": "未达标",
+      "NA": "不适用"
+    },
+    "status": {
+      "SUBMITTED": "待确认",
+      "ACKNOWLEDGED": "已确认",
+      "DISPUTED": "已申诉",
+      "RESOLVED": "已复核"
+    },
+    "col": {
+      "date": "日期",
+      "agent": "坐席",
+      "form": "表单",
+      "evaluator": "评估人",
+      "score": "得分",
+      "statusLabel": "状态",
+      "evaluations": "评估数",
+      "avgScore": "平均质检得分",
+      "criticalFails": "否决项",
+      "disputed": "申诉"
+    }
+  },
+  "kb": {
+    "title": "知识库",
+    "new": "新建文章",
+    "edit": "编辑文章",
+    "articleTitle": "标题",
+    "category": "分类",
+    "body": "正文",
+    "published": "已发布（坐席可见）",
+    "aiEnabled": "AI 可在回复中使用此文章",
+    "searchPlaceholder": "搜索文章…",
+    "allCategories": "所有分类",
+    "noResults": "未找到文章。",
+    "emptyTitle": "暂无文章",
+    "emptyDescription": "主管在此编写答案、流程和政策——坐席在服务时查阅。",
+    "draft": "草稿",
+    "deleteConfirm": "删除此文章？"
+  },
+  "helpdesk": {
+    "title": "Freshdesk 集成",
+    "intro": "连接 Freshdesk 后，Falaí 的工单成为 Freshdesk 工单的镜像：此处创建或修改的内容会同步过去（坐席无需等待），那边的修改通过 webhook 及每 5 分钟的同步传回。首次连接会导入最近 30 天的工单。坐席和组按邮箱和名称匹配。",
+    "domain": "Freshdesk 域名",
+    "apiKey": "API 密钥",
+    "apiKeyKept": "已保存——留空则保留",
+    "apiKeyHint": "Freshdesk → 个人资料 → \"Your API Key\"。请使用专用技术用户（如 \"Falaí Integração\"）。加密保存。",
+    "ticketOnCall": "每通已接通话结束时的工单",
+    "onCall": {
+      "AGENT_CHOICE": "仅在坐席创建时",
+      "ALWAYS": "始终创建",
+      "NEVER": "从不"
+    },
+    "recordingLink": "在工单中附上通话和录音的链接（CRM 中）",
+    "enabled": "启用连接",
+    "test": "测试连接",
+    "testOk": "连接正常——用户 {{name}}",
+    "syncNow": "立即同步",
+    "synced": "已同步：新增 {{created}}，更新 {{updated}}",
+    "lastSync": "上次同步",
+    "lastError": "上次错误",
+    "webhookTitle": "Freshdesk 通知（webhook）",
+    "webhookBody": "请求体（JSON）",
+    "webhookSteps": [
+      "在 Freshdesk：Admin → Automations → Ticket updates → New rule。",
+      "条件：\"When an action performed by… Anyone\" 且 \"Involves any of these events: Ticket is updated\"（或状态、优先级、负责人）。",
+      "操作：\"Trigger webhook\"，POST 到下方 URL，内容为 JSON，使用下方请求体。",
+      "保存并启用规则。即使没有该规则，Freshdesk 中的修改也会在 5 分钟同步时传回。"
+    ]
+  },
+  "platform": {
+    "down": {
+      "telephony": "电话引擎已停止——通话可能失败。",
+      "sipTrunk": "与电话运营商的连接已断开——外部通话可能失败。",
+      "database": "数据库出现问题——数据保存可能失败。",
+      "redis": "队列服务出现问题——发送和活动可能延迟。",
+      "peer": "与贵方交换机（对接）的连接无响应。",
+      "other": "平台某个组件已停止。"
+    },
+    "notified": "技术团队已收到通知。"
+  },
+  "chat": {
+    "title": "团队聊天",
+    "newDirect": "新对话",
+    "newGroup": "新群组",
+    "groupName": "群组名称",
+    "placeholder": "输入消息…（Enter 发送，Shift+Enter 换行）",
+    "empty": "暂无对话。与同事开始一个吧。",
+    "pick": "在左侧选择一个对话。"
   }
 }

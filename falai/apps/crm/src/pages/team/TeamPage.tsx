@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation, Trans } from 'react-i18next';
-import { Plus, UserCheck, Trash2, Shield } from 'lucide-react';
+import { Plus, UserCheck, Trash2, Shield, CalendarClock } from 'lucide-react';
 import { teamApi, telephonyApi } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/layout/Header';
@@ -13,11 +13,14 @@ import { Modal } from '@/components/ui/Modal';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { formatDate } from '@/lib/utils';
+import { isConfigAdmin, isOpsManager } from '@/lib/roles';
+import { ShiftsModal } from './ShiftsModal';
 import type { TenantRole, TenantUser } from '@/types';
 
 const ROLE_LABEL_KEYS: Record<TenantRole, string> = {
   OWNER: 'team.roleOwner',
   ADMIN: 'team.roleAdmin',
+  MANAGER: 'team.roleManager',
   SUPERVISOR: 'team.roleSupervisor',
   MEMBER: 'team.roleMember',
   VIEWER: 'team.roleViewer',
@@ -26,14 +29,18 @@ const ROLE_LABEL_KEYS: Record<TenantRole, string> = {
 const ROLE_COLORS: Record<TenantRole, string> = {
   OWNER: 'bg-purple-100 text-purple-700',
   ADMIN: 'bg-blue-100 text-blue-700',
+  MANAGER: 'bg-indigo-100 text-indigo-700',
   SUPERVISOR: 'bg-amber-100 text-amber-700',
   MEMBER: 'bg-gray-100 text-gray-700',
   VIEWER: 'bg-slate-100 text-slate-600',
 };
 
-const ROLE_OPTIONS: TenantRole[] = ['ADMIN', 'SUPERVISOR', 'MEMBER', 'VIEWER'];
+const ROLE_OPTIONS: TenantRole[] = ['ADMIN', 'MANAGER', 'SUPERVISOR', 'MEMBER', 'VIEWER'];
+// O gestor (MANAGER) só gere estes — administradores e gestores só um administrador.
+const MANAGER_ASSIGNABLE = new Set<TenantRole>(['SUPERVISOR', 'MEMBER', 'VIEWER']);
 const ROLE_OPT_KEYS: Record<string, string> = {
   ADMIN: 'team.roleAdminOpt',
+  MANAGER: 'team.roleManagerOpt',
   SUPERVISOR: 'team.roleSupervisorOpt',
   MEMBER: 'team.roleMemberOpt',
   VIEWER: 'team.roleViewerOpt',
@@ -72,6 +79,8 @@ function MemberModal({ open, member, onClose }: { open: boolean; member: TenantU
   const qc = useQueryClient();
   const { success, error } = useToast();
   const isNew = member === null;
+  const { user: me } = useAuth();
+  const roleOptions = isConfigAdmin(me?.role) ? ROLE_OPTIONS : ROLE_OPTIONS.filter((r) => MANAGER_ASSIGNABLE.has(r));
   const blank = { name: '', email: '', password: '', role: 'MEMBER' as TenantRole, extensionId: '', groupIds: [] as string[], supervisedGroupIds: [] as string[] };
   const [form, setForm] = useState(blank);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
@@ -156,9 +165,9 @@ function MemberModal({ open, member, onClose }: { open: boolean; member: TenantU
           error={form.password && form.password.length < 8 ? t('team.passwordShort') : undefined}
           required={isNew}
         />
-        {member?.role !== 'OWNER' && (
+        {member?.role !== 'OWNER' && member?.id !== me?.id && (
           <Select label={t('team.role')} value={form.role} onChange={(e) => set('role', e.target.value as TenantRole)}>
-            {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{t(ROLE_OPT_KEYS[r]!)}</option>)}
+            {roleOptions.map((r) => <option key={r} value={r}>{t(ROLE_OPT_KEYS[r]!)}</option>)}
           </Select>
         )}
         <Select label={t('team.extension')} hint={t('team.extensionHint')} value={form.extensionId} onChange={(e) => set('extensionId', e.target.value)}>
@@ -192,6 +201,7 @@ export function TeamPage() {
   const { success, error } = useToast();
   // null = fechado; 'new' = criar; um membro = editar
   const [editing, setEditing] = useState<TenantUser | 'new' | null>(null);
+  const [shiftsFor, setShiftsFor] = useState<TenantUser | null>(null);
 
   const { data: team, isLoading } = useQuery({
     queryKey: ['team'],
@@ -204,7 +214,9 @@ export function TeamPage() {
     onError: (e: Error) => error(e.message),
   });
 
-  const canManage = user?.role === 'OWNER' || user?.role === 'ADMIN';
+  const canManage = isOpsManager(user?.role);
+  // Gestor: só supervisores, agentes e consultas (e ele próprio, sem mudar o papel).
+  const canTouch = (m: TenantUser) => canManage && (isConfigAdmin(user?.role) || MANAGER_ASSIGNABLE.has(m.role) || m.id === user?.id);
 
   return (
     <>
@@ -255,10 +267,14 @@ export function TeamPage() {
                     {member.twoFaEnabled && (
                       <Badge className="bg-emerald-100 text-emerald-700">2FA</Badge>
                     )}
-                    {canManage && (
+                    {/* Turnos: gestor/admin de todos; supervisor da sua equipa (a API confirma) */}
+                    {(canManage || user?.role === 'SUPERVISOR') && !isConfigAdmin(member.role) && member.role !== 'MANAGER' && (
+                      <Button size="sm" variant="ghost" icon={<CalendarClock className="h-3.5 w-3.5" />} onClick={() => setShiftsFor(member)}>{t('team.shifts')}</Button>
+                    )}
+                    {canTouch(member) && (
                       <Button size="sm" variant="ghost" onClick={() => setEditing(member)}>{t('common.edit')}</Button>
                     )}
-                    {canManage && member.id !== user?.id && member.role !== 'OWNER' && (
+                    {canTouch(member) && member.id !== user?.id && member.role !== 'OWNER' && (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -278,6 +294,7 @@ export function TeamPage() {
       </div>
 
       <MemberModal open={editing !== null} member={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
+      <ShiftsModal user={shiftsFor} onClose={() => setShiftsFor(null)} />
     </>
   );
 }

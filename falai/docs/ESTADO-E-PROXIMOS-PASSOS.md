@@ -165,6 +165,39 @@ integração pronto a entregar: `docs/API-BYOM.md`.
 5. Endpoints nomeados pelo número colidiam → nomeados pelo **utilizador SIP**.
 6. Health check disparava reloads do motor → só confirma que o AMI responde.
 
+### 3.4 Varredura de segurança/dinheiro (07/10, `feat/tickets`, por commitar)
+
+- **Reservas de chamadas** persistidas em `Call.reservedCents`; `settleCall` e
+  `releaseCallReservation` (packages/db) zeram-na de forma atómica — nunca há
+  reembolso duplo. Devolvida no arranque da API (`releaseOrphanReservations`),
+  na reconciliação de chamadas presas e em falhas de marcação.
+- **Webhook do cliente (SSRF)**: só `https` (http fora de produção), sem
+  localhost/IPs privados/link-local/metadata. Validado ao gravar (com DNS) e no
+  envio (worker e `/webhook-test`, com o IP verificado no momento da ligação).
+- **Campanhas**: `Campaign.pausedReason`; o carregamento ProxyPay só retoma as
+  pausadas por `LOW_BALANCE`.
+- **Widget**: email/telefone do visitante já não ligam a conversa a um Contact
+  existente (ficam numa nota interna).
+- **JWT do CRM**: utilizador e papel revalidados na BD a cada pedido.
+- **SMS**: `SmsStatus.SENDING` (claim + reserva atómicos; órfãs no arranque →
+  FAILED com saldo devolvido, sem reenvio); destinatários deduplicados por
+  telefone; segmentos pelo GSM 03.38 real; 429/5xx/timeout com nova tentativa
+  nas campanhas; enviar/campanhas só OWNER/ADMIN/MANAGER.
+- **Webhook `/webhooks/sms`**: se `FUTURIX_SMS_WEBHOOK_SECRET` estiver definido
+  (.env ou SystemSetting), o URL configurado na Futurix tem de ser
+  `https://<api>/webhooks/sms?token=<segredo>`; sem ele aceita tudo como antes
+  e a API avisa no arranque (`sms.webhook.no_secret`).
+- **Migrações** `20260924130000_whatsapp_number_unique` e
+  `20260925115900_drop_legacy_ivr` passaram a abortar com mensagem clara (números
+  WhatsApp duplicados / tabelas IVR antigas com linhas). Nunca estiveram em
+  `main`; o checksum mudou — numa BD onde já correram, actualizar o checksum em
+  `_prisma_migrations` (sha256 do ficheiro) ou o `migrate dev` pede reset.
+  Verificação manual antes do deploy:
+  ```sql
+  SELECT config->>'phoneNumberId', count(*) FROM "Inbox"
+  WHERE channel='WHATSAPP' AND "deletedAt" IS NULL GROUP BY 1 HAVING count(*) > 1;
+  ```
+
 ---
 
 ## 4. O QUE FALTA FAZER

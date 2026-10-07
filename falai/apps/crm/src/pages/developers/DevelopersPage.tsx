@@ -13,6 +13,8 @@ import { Tabs } from '@/components/ui/Tabs';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { Pagination } from '@/components/ui/Pagination';
 import { useToast } from '@/contexts/ToastContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { isConfigAdmin } from '@/lib/roles';
 import { formatDate } from '@/lib/utils';
 
 const ALL_SCOPES = [
@@ -22,6 +24,9 @@ const ALL_SCOPES = [
   { key: 'sms:send', labelKey: 'developers.scopes.smsSend' },
   { key: 'conversations:read', labelKey: 'developers.scopes.conversationsRead' },
   { key: 'conversations:write', labelKey: 'developers.scopes.conversationsWrite' },
+  { key: 'tickets:read', labelKey: 'developers.scopes.ticketsRead' },
+  { key: 'tickets:write', labelKey: 'developers.scopes.ticketsWrite' },
+  { key: 'reports:read', labelKey: 'developers.scopes.reportsRead' },
   { key: 'contacts:write', labelKey: 'developers.scopes.contactsWrite' },
   { key: 'contacts:read', labelKey: 'developers.scopes.contactsRead' },
   { key: 'campaigns:write', labelKey: 'developers.scopes.campaignsWrite' },
@@ -156,6 +161,7 @@ function ApiKeysList() {
   const qc = useQueryClient();
   const { success, error } = useToast();
   const [showCreate, setShowCreate] = useState(false);
+  const canManage = isConfigAdmin(useAuth().user?.role); // chaves de API: só administradores
 
   const { data: keys, isLoading } = useQuery({
     queryKey: ['api-keys'],
@@ -174,9 +180,11 @@ function ApiKeysList() {
     <>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-gray-500">{t('developers.keysCount', { count: keys?.length ?? 0 })}</p>
-        <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>
-          {t('developers.newKey')}
-        </Button>
+        {canManage && (
+          <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>
+            {t('developers.newKey')}
+          </Button>
+        )}
       </div>
 
       {keys?.length === 0 ? (
@@ -207,13 +215,15 @@ function ApiKeysList() {
                   <p>{k.lastUsedAt ? t('developers.usedAt', { date: formatDate(k.lastUsedAt) }) : t('developers.neverUsed')}</p>
                   <p className="mt-0.5">{t('developers.createdLabel', { date: formatDate(k.createdAt) })}</p>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
-                  loading={del.isPending}
-                  onClick={() => { if (confirm(t('developers.revokeConfirm', { name: k.name }))) del.mutate(k.id); }}
-                />
+                {canManage && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
+                    loading={del.isPending}
+                    onClick={() => { if (confirm(t('developers.revokeConfirm', { name: k.name }))) del.mutate(k.id); }}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -227,6 +237,7 @@ function ApiKeysList() {
 function WebhookPanel() {
   const { t } = useTranslation();
   const { success, error } = useToast();
+  const canTest = isConfigAdmin(useAuth().user?.role);
   const { data: settings, isLoading } = useQuery({
     queryKey: ['settings'],
     queryFn: settingsApi.get,
@@ -265,7 +276,7 @@ function WebhookPanel() {
           )}
         </div>
         <p className="text-xs text-gray-500 mt-3"><Trans i18nKey="developers.webhookChangeHint" components={[<strong key="0" />]} /></p>
-        {settings?.webhookUrl && (
+        {canTest && settings?.webhookUrl && (
           <Button
             size="sm"
             variant="outline"
@@ -791,6 +802,77 @@ const WEBHOOK_EVENTS = [
     "campaignId": "cmp_001",
     "completed": 132,
     "failed": 18
+  }
+}`,
+  },
+  {
+    event: 'ticket.created',
+    descKey: 'developers.wh.ticketCreated',
+    payload: `{
+  "event": "ticket.created",
+  "timestamp": "2026-10-06T10:00:00.000Z",
+  "data": {
+    "ticketId": "tkt_abc123",
+    "number": 42,
+    "contactId": "cnt_001"
+  }
+}`,
+  },
+  {
+    event: 'ticket.updated',
+    descKey: 'developers.wh.ticketUpdated',
+    payload: `{
+  "event": "ticket.updated",
+  "timestamp": "2026-10-06T11:30:00.000Z",
+  "data": {
+    "ticketId": "tkt_abc123",
+    "number": 42,
+    "status": "RESOLVED",
+    "contactId": "cnt_001"
+  }
+}`,
+  },
+  {
+    event: 'alert.opened',
+    descKey: 'developers.wh.alertOpened',
+    payload: `{
+  "event": "alert.opened",
+  "timestamp": "2026-10-06T10:15:00.000Z",
+  "data": {
+    "alertId": "alr_abc123",
+    "type": "LONG_WAIT",
+    "ref": "call_xyz789",
+    "groupId": "grp_suporte",
+    "value": 95,
+    "threshold": 60
+  }
+}`,
+  },
+  {
+    event: 'alert.closed',
+    descKey: 'developers.wh.alertClosed',
+    payload: `{
+  "event": "alert.closed",
+  "timestamp": "2026-10-06T10:16:30.000Z",
+  "data": {
+    "alertId": "alr_abc123",
+    "type": "LONG_WAIT",
+    "ref": "call_xyz789",
+    "groupId": "grp_suporte",
+    "endValue": 140
+  }
+}`,
+  },
+  {
+    event: 'platform.status',
+    descKey: 'developers.wh.platformStatus',
+    payload: `{
+  "event": "platform.status",
+  "timestamp": "2026-10-07T09:12:00.000Z",
+  "data": {
+    "component": "telephony",
+    "up": false,
+    "at": "2026-10-07T09:12:00.000Z"
   }
 }`,
   },

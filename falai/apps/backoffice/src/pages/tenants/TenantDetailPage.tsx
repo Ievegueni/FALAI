@@ -12,7 +12,7 @@ import { TenantIvrTab } from './TenantIvrTab';
 import { TenantExtensionsTab } from './TenantExtensionsTab';
 import { TenantAccessProfilesTab } from './TenantAccessProfilesTab';
 import {
-  formatAOA, formatDate, formatDuration,
+  formatAOA, formatDate, formatDuration, parseKz,
   tenantStatusColor, tenantStatusLabel,
   callStatusColor, callStatusLabel, txTypeLabel,
   campaignStatusColor, campaignStatusLabel,
@@ -22,8 +22,9 @@ import type { TenantStatus, CallStatus, CampaignStatus, TransactionType, TenantL
 const ROLE_LABELS: Record<TenantRole, string> = {
   OWNER: 'Proprietário',
   ADMIN: 'Administrador',
+  MANAGER: 'Gestor',
   SUPERVISOR: 'Supervisor',
-  MEMBER: 'Membro',
+  MEMBER: 'Agente',
   VIEWER: 'Leitura',
 };
 
@@ -48,6 +49,10 @@ const FEATURE_LABELS: { key: FeatureKey; label: string; hint?: string; needsAi?:
   { key: 'sms', label: 'SMS', hint: 'Envio de SMS avulso e campanhas (o plano tem de incluir SMS)' },
   { key: 'telephony', label: 'Telefonia', hint: 'Extensões, grupos, trunks e rotas' },
   { key: 'inbox', label: 'Caixa de entrada', hint: 'WhatsApp Business, chat no site, email e Telegram com IA e operadores' },
+  { key: 'tickets', label: 'Tickets', hint: 'Casos com estados, níveis de suporte e ligação a chamadas e conversas' },
+  { key: 'quality', label: 'Qualidade (QA)', hint: 'Formulários de avaliação, QA score, feedback e contestação dos agentes' },
+  { key: 'knowledge', label: 'Base de conhecimento', hint: 'Artigos para os agentes consultarem; a IA dos canais de texto usa-os como contexto' },
+  { key: 'teamChat', label: 'Chat da equipa', hint: 'Conversas directas e grupos entre agentes, supervisores e gestores' },
 ];
 
 function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
@@ -156,7 +161,7 @@ export function TenantDetailPage() {
   });
 
   const adjustMut = useMutation({
-    mutationFn: () => tenantsApi.adjustBalance(id!, { amountCents: Math.round(parseFloat(adjustAmt) * 100), note: adjustNote }),
+    mutationFn: () => tenantsApi.adjustBalance(id!, { amountCents: Math.round(parseKz(adjustAmt) * 100), note: adjustNote }),
     onSuccess: () => {
       invalidateTenant();
       toast.success('Saldo ajustado.');
@@ -164,6 +169,7 @@ export function TenantDetailPage() {
       setAdjustAmt('');
       setAdjustNote('');
     },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao ajustar saldo.'),
   });
 
   const saveLineMut = useMutation({
@@ -442,17 +448,15 @@ export function TenantDetailPage() {
                   <dd className="flex items-center gap-2">
                     <Input
                       key={tenant.pricePerMinuteOverrideCents ?? 'plano'}
-                      type="number"
-                      min={0}
-                      step="0.01"
+                      inputMode="decimal"
                       className="w-28 text-right"
                       placeholder={tenant.plan ? String(tenant.plan.pricePerMinCents / 100) : ''}
                       defaultValue={tenant.pricePerMinuteOverrideCents != null ? String(tenant.pricePerMinuteOverrideCents / 100) : ''}
                       disabled={priceOverrideMut.isPending}
                       onBlur={(e) => {
-                        const raw = e.target.value.trim().replace(',', '.');
+                        const raw = e.target.value.trim();
                         // Vazio = volta ao preço do plano
-                        const cents = raw === '' ? null : Math.round(parseFloat(raw) * 100);
+                        const cents = raw === '' ? null : Math.round(parseKz(raw) * 100);
                         if (cents !== null && (Number.isNaN(cents) || cents < 0)) {
                           e.target.value = tenant.pricePerMinuteOverrideCents != null ? String(tenant.pricePerMinuteOverrideCents / 100) : '';
                           return;
@@ -1012,7 +1016,6 @@ export function TenantDetailPage() {
         <div className="space-y-4">
           <Input
             label="Valor (Kz)"
-            type="number"
             placeholder="ex: 5000 ou -2000"
             value={adjustAmt}
             onChange={(e) => setAdjustAmt(e.target.value)}
@@ -1086,7 +1089,9 @@ export function TenantDetailPage() {
           <Select label="Função" value={userForm.role} onChange={(e) => setUserForm((f) => ({ ...f, role: e.target.value as TenantRole }))}>
             <option value="OWNER">Proprietário</option>
             <option value="ADMIN">Administrador</option>
-            <option value="MEMBER">Membro</option>
+            <option value="MANAGER">Gestor (operação, sem configuração técnica)</option>
+            <option value="SUPERVISOR">Supervisor</option>
+            <option value="MEMBER">Agente</option>
             <option value="VIEWER">Leitura</option>
           </Select>
           {userForm.role !== 'OWNER' && (
@@ -1356,14 +1361,22 @@ function SmsConfigTab({ tenantId }: { tenantId: string }) {
       tenantsApi.saveSmsConfig(tenantId, {
         ...(apiKey ? { apiKey } : {}),
         senderId,
-        ...(price !== '' ? { priceSegmentCents: parseInt(price, 10) } : {}),
+        priceSegmentCents: price.trim() === '' ? null : parseInt(price, 10),
       }),
     onSuccess: () => {
       toast.success('Configuração de SMS guardada');
       setApiKey('');
       void qc.invalidateQueries({ queryKey: ['tenant-sms', tenantId] });
     },
-    onError: () => toast.error('Erro ao guardar'),
+    onError: (e: Error) => toast.error(e.message || 'Erro ao guardar'),
+  });
+  const removeKey = useMutation({
+    mutationFn: () => tenantsApi.saveSmsConfig(tenantId, { apiKey: '' }),
+    onSuccess: () => {
+      toast.success('API key removida');
+      void qc.invalidateQueries({ queryKey: ['tenant-sms', tenantId] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao remover'),
   });
 
   if (isLoading || !data) return <PageSpinner />;
@@ -1383,6 +1396,16 @@ function SmsConfigTab({ tenantId }: { tenantId: string }) {
           onChange={(e) => setApiKey(e.target.value)}
           placeholder={data.apiKeySet ? '•••••••• (definida — deixe vazio para manter)' : 'Cole a API key da Futurix'}
         />
+        {data.apiKeySet && (
+          <button
+            type="button"
+            className="mt-1 text-xs text-red-600 hover:underline disabled:opacity-50"
+            disabled={removeKey.isPending}
+            onClick={() => { if (confirm('Remover a API key da Futurix? O cliente deixa de poder enviar SMS.')) removeKey.mutate(); }}
+          >
+            Remover API key
+          </button>
+        )}
       </div>
       <Input label="Sender ID" value={senderId} onChange={(e) => setSenderId(e.target.value)} placeholder="ex.: COMUNICA" />
       <div>

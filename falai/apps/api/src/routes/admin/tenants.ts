@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { prisma, chargeMonthlyInvoice } from "@falai/db";
 import { z } from "zod";
+import { assertPublicWebhookUrl } from "@falai/providers";
 import { hashPassword } from "../../services/auth.service.js";
 import { pbxCallStatus } from "../../services/pbxCdr.service.js";
 import {
@@ -79,7 +80,8 @@ const smsConfigSchema = z.object({
   // apiKey: preenchida = grava nova; "" = remove; undefined = mantém
   apiKey: z.string().optional(),
   senderId: z.string().max(20).optional(),
-  priceSegmentCents: z.number().int().min(0).optional(),
+  // null = volta ao preço do plano
+  priceSegmentCents: z.number().int().min(0).nullable().optional(),
 });
 
 const adjustBalanceSchema = z.object({
@@ -95,7 +97,7 @@ const userCreateSchema = z.object({
   name: z.string().min(2).max(100),
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(["OWNER", "ADMIN", "MEMBER", "VIEWER"]).optional(),
+  role: z.enum(["OWNER", "ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER"]).optional(),
   accessProfileId: z.string().nullable().optional(),
 });
 
@@ -264,6 +266,13 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.patch<{ Params: { id: string } }>("/:id", { preHandler }, async (request, reply) => {
     const body = updateSchema.parse(request.body);
     const admin = request.adminUser!;
+    if (body.webhookUrl) {
+      try {
+        await assertPublicWebhookUrl(body.webhookUrl);
+      } catch (err) {
+        return reply.status(422).send({ error: err instanceof Error ? err.message : "URL do webhook inválido" });
+      }
+    }
 
     const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null } });
     if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
@@ -419,7 +428,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     await fastify.audit({
       actorType: "ADMIN", actorId: admin.sub, action: "tenant.sms_configured",
       targetType: "Tenant", targetId: request.params.id,
-      before: null, after: { senderId: body.senderId, priceSegmentCents: body.priceSegmentCents, apiKeyChanged: !!body.apiKey } as object,
+      before: null, after: { senderId: body.senderId, priceSegmentCents: body.priceSegmentCents, apiKeyChanged: body.apiKey !== undefined } as object,
       ip: request.ip,
     });
     return { ok: true };

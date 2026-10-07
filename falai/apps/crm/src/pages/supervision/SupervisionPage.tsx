@@ -19,6 +19,8 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { toTelephonyWav } from '@/lib/telephonyWav';
 import { clsx, formatDuration, formatPhone } from '@/lib/utils';
+import { isOpsManager } from '@/lib/roles';
+import { AlertsHistory, OpenAlerts, TargetsCard } from './AlertsPanels';
 
 /**
  * Supervisão em tempo real (melhoria 4). O painel pergunta à API de 2 em 2 s
@@ -172,7 +174,9 @@ function Live() {
                 <p className="truncate text-sm font-medium text-gray-900">{a.name ?? a.number}</p>
                 <p className="text-xs text-gray-400">{a.number}</p>
               </div>
-              <Badge className={STATE_CLASS[a.state]}>{t(`supervision.state.${a.state}`)}</Badge>
+              <Badge className={STATE_CLASS[a.state]}>
+                {t(`supervision.state.${a.state}`)}{a.pauseReason ? ` · ${a.pauseReason}` : ''}
+              </Badge>
               <span className="w-14 text-right text-xs tabular-nums text-gray-500">{elapsed(a.since, now)}</span>
             </div>
           ))}
@@ -292,26 +296,30 @@ function Settings() {
 export function SupervisionPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const isAdmin = user?.role === 'OWNER' || user?.role === 'ADMIN';
+  const isAdmin = isOpsManager(user?.role);
   const [tab, setTab] = useState('live');
   return (
     <>
       <Header title={t('nav.supervision')} />
       <div className={clsx('p-6 space-y-6')}>
-        {isAdmin && (
-          <Tabs
-            active={tab}
-            onChange={setTab}
-            tabs={[
-              { key: 'live', label: t('supervision.tabLive') },
-              { key: 'log', label: t('supervision.tabLog') },
-              { key: 'settings', label: t('supervision.tabSettings') },
-            ]}
-          />
-        )}
-        {tab === 'live' && <Live />}
+        <Tabs
+          active={tab}
+          onChange={setTab}
+          tabs={[
+            { key: 'live', label: t('supervision.tabLive') },
+            { key: 'alerts', label: t('alerts.tab') },
+            ...(isAdmin
+              ? [
+                  { key: 'log', label: t('supervision.tabLog') },
+                  { key: 'settings', label: t('supervision.tabSettings') },
+                ]
+              : []),
+          ]}
+        />
+        {tab === 'live' && <><OpenAlerts /><Live /></>}
+        {tab === 'alerts' && <AlertsHistory />}
         {tab === 'log' && isAdmin && <Log />}
-        {tab === 'settings' && isAdmin && <Settings />}
+        {tab === 'settings' && isAdmin && <><TargetsCard /><Settings /></>}
       </div>
     </>
   );

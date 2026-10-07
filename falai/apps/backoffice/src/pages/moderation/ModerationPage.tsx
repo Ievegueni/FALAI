@@ -36,6 +36,7 @@ export function ModerationPage() {
   const approveMut = useMutation({
     mutationFn: (id: string) => moderationApi.approve(id),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['admin', 'moderation'] }); toast.success('Agente aprovado.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao aprovar.'),
   });
 
   const rejectMut = useMutation({
@@ -47,6 +48,7 @@ export function ModerationPage() {
       setRejectModal(null);
       setReason('');
     },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao gravar.'),
   });
 
   if (isLoading && !data) return <PageSpinner />;

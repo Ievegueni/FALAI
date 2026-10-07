@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, KeyRound, Users, Shield, Copy, Check, Radio, Lock } from 'lucide-react';
-import { telephonyApi, rejectReasonsApi, callTypingApi, type RejectReason, type CallCategory } from '@/lib/api';
+import { telephonyApi, rejectReasonsApi, pauseReasonsApi, callTypingApi, type RejectReason, type CallCategory } from '@/lib/api';
+import { isConfigAdmin, isOpsManager } from '@/lib/roles';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -352,7 +353,12 @@ function RolesTab({ canManage }: { canManage: boolean }) {
 
 // ─── Motivos de recusa (relatórios de atendimento) ───────────────────────────
 // Não se apagam: desactivar tira-os do webphone e mantém o nome nos relatórios.
-function RejectReasonsTab({ canManage }: { canManage: boolean }) {
+type ReasonsApi = typeof rejectReasonsApi | typeof pauseReasonsApi;
+
+/** Lista de motivos (recusa ou pausa): criar, renomear, desactivar. Nunca se apagam (histórico). */
+function ReasonsTab({ canManage, api, queryKey, hintKey, placeholderKey, emptyKey }: {
+  canManage: boolean; api: ReasonsApi; queryKey: string; hintKey: string; placeholderKey: string; emptyKey: string;
+}) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { success, error } = useToast();
@@ -360,16 +366,16 @@ function RejectReasonsTab({ canManage }: { canManage: boolean }) {
   const [editing, setEditing] = useState<RejectReason | null>(null);
   const [editLabel, setEditLabel] = useState('');
 
-  const { data: reasons, isLoading } = useQuery({ queryKey: ['reject-reasons', 'all'], queryFn: () => rejectReasonsApi.list(true) });
-  const refresh = () => void qc.invalidateQueries({ queryKey: ['reject-reasons'] });
+  const { data: reasons, isLoading } = useQuery({ queryKey: [queryKey, 'all'], queryFn: () => api.list(true) });
+  const refresh = () => void qc.invalidateQueries({ queryKey: [queryKey] });
 
   const create = useMutation({
-    mutationFn: () => rejectReasonsApi.create({ label: label.trim(), sortOrder: reasons?.length ?? 0 }),
+    mutationFn: () => api.create({ label: label.trim(), sortOrder: reasons?.length ?? 0 }),
     onSuccess: () => { success(t('common.saved')); setLabel(''); refresh(); },
     onError: (e: Error) => error(e.message),
   });
   const update = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Pick<RejectReason, 'label' | 'isActive'>> }) => rejectReasonsApi.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<Pick<RejectReason, 'label' | 'isActive'>> }) => api.update(id, data),
     onSuccess: () => { success(t('common.saved')); setEditing(null); refresh(); },
     onError: (e: Error) => error(e.message),
   });
@@ -378,11 +384,11 @@ function RejectReasonsTab({ canManage }: { canManage: boolean }) {
 
   return (
     <>
-      <p className="text-sm text-gray-500 mb-3">{t('telephony.rejectReasonsHint')}</p>
+      <p className="text-sm text-gray-500 mb-3">{t(hintKey)}</p>
       {canManage && (
         <form className="flex gap-2 mb-3" onSubmit={(e) => { e.preventDefault(); if (label.trim()) create.mutate(); }}>
           <div className="flex-1">
-            <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t('telephony.rejectReasonPlaceholder')} maxLength={80} />
+            <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={t(placeholderKey)} maxLength={80} />
           </div>
           <Button type="submit" size="sm" icon={<Plus className="h-3.5 w-3.5" />} loading={create.isPending} disabled={!label.trim()}>
             {t('common.create')}
@@ -405,7 +411,7 @@ function RejectReasonsTab({ canManage }: { canManage: boolean }) {
               )}
             </div>
           ))}
-          {reasons?.length === 0 && <div className="px-5 py-8 text-center text-gray-400 text-sm">{t('telephony.noRejectReasons')}</div>}
+          {reasons?.length === 0 && <div className="px-5 py-8 text-center text-gray-400 text-sm">{t(emptyKey)}</div>}
         </div>
       </Card>
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={t('common.edit')}
@@ -607,7 +613,9 @@ export function TelephonyPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [tab, setTab] = useState('extensions');
-  const canManage = user?.role === 'OWNER' || user?.role === 'ADMIN';
+  const canManage = isConfigAdmin(user?.role);
+  // Motivos e tipificação são operação: também o gestor.
+  const canOps = isOpsManager(user?.role);
 
   const { data: roles } = useQuery({ queryKey: ['telephony', 'roles'], queryFn: telephonyApi.listRoles });
 
@@ -627,6 +635,7 @@ export function TelephonyPage() {
             { key: 'inbound', label: t('telephony.tabInbound') },
             { key: 'trunk', label: t('telephony.tabTrunk') },
             { key: 'rejectReasons', label: t('telephony.tabRejectReasons') },
+            { key: 'pauseReasons', label: t('telephony.tabPauseReasons') },
             { key: 'typing', label: t('telephony.tabTyping') },
           ]}
         />
@@ -635,8 +644,13 @@ export function TelephonyPage() {
         {tab === 'roles' && <RolesTab canManage={canManage} />}
         {tab === 'ivr' && <IvrTab canManage={canManage} />}
         {tab === 'inbound' && <InboundRoutesTab canManage={canManage} />}
-        {tab === 'rejectReasons' && <RejectReasonsTab canManage={canManage} />}
-        {tab === 'typing' && <TypingTab canManage={canManage} />}
+        {tab === 'rejectReasons' && (
+          <ReasonsTab canManage={canOps} api={rejectReasonsApi} queryKey="reject-reasons" hintKey="telephony.rejectReasonsHint" placeholderKey="telephony.rejectReasonPlaceholder" emptyKey="telephony.noRejectReasons" />
+        )}
+        {tab === 'pauseReasons' && (
+          <ReasonsTab canManage={canOps} api={pauseReasonsApi} queryKey="pause-reasons" hintKey="telephony.pauseReasonsHint" placeholderKey="telephony.pauseReasonPlaceholder" emptyKey="telephony.noPauseReasons" />
+        )}
+        {tab === 'typing' && <TypingTab canManage={canOps} />}
         {tab === 'trunk' && <TrunkTab />}
       </div>
     </>

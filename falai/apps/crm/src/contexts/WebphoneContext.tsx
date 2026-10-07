@@ -15,7 +15,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import type * as JsSIPType from 'jssip';
 import type { RTCSession } from 'jssip/lib/RTCSession';
 import type { RTCSessionEvent } from 'jssip/lib/UA';
-import { apiBaseUrl, webphoneApi, type SupervisionMode } from '@/lib/api';
+import { webphoneApi, type SupervisionMode } from '@/lib/api';
+import { useTenantEvents } from '@/lib/tenantEvents';
 import { startRingtone, stopRingtone, unlockRingtone } from '@/lib/ringtone';
 import { useToast } from '@/contexts/ToastContext';
 
@@ -104,12 +105,16 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
         pc?.getReceivers().forEach((r) => r.track && remoteStream.addTrack(r.track));
         if (remoteAudioRef.current) remoteAudioRef.current.srcObject = remoteStream;
       });
+      // Só a sessão corrente mexe no estado: o fim de uma sessão antiga não
+      // pode largar a referência da chamada em curso (ficava impossível desligar).
       session.on('ended', () => {
+        if (sessionRef.current !== session) return;
         setCallState('ended');
         sessionRef.current = null;
         setTimeout(() => setCallState((s) => (s === 'ended' ? 'idle' : s)), 1500);
       });
       session.on('failed', (e) => {
+        if (sessionRef.current !== session) return;
         setError(e.cause ?? 'Chamada falhou');
         setCallState('ended');
         sessionRef.current = null;
@@ -150,6 +155,12 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
 
         ua.on('newRTCSession', ({ session, originator, request }: RTCSessionEvent) => {
           if (originator !== 'remote') return;
+          // Já em chamada: 486 (o router conta-o como BUSY). Sem isto a sessão
+          // nova substituía a corrente e o botão Desligar deixava de a alcançar.
+          if (sessionRef.current) {
+            session.terminate({ status_code: 486, reason_phrase: 'Busy Here' });
+            return;
+          }
           // Supervisão (melhoria 4): a API liga para a extensão do supervisor
           // com X-Falai-Supervise — atende-se sozinha, sem toque nem painel.
           if (request.getHeader('X-Falai-Supervise')) {
@@ -221,22 +232,11 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
   useEffect(() => () => teardownUa(), [teardownUa]);
 
   // Aviso de supervisão para o agente (melhoria 4). O evento vem pelo SSE do
-  // tenant e só interessa à extensão escolhida aqui.
-  useEffect(() => {
-    setSupervisedMode(null);
-    const token = localStorage.getItem('falai_token');
-    if (!extensionId || !token) return;
-    const es = new EventSource(`${apiBaseUrl}/tenant/events/stream?token=${encodeURIComponent(token)}`);
-    es.addEventListener('supervision.agent', (ev: MessageEvent<string>) => {
-      try {
-        const d = JSON.parse(ev.data) as { extensionId: string; mode: SupervisionMode | null };
-        if (d.extensionId === extensionId) setSupervisedMode(d.mode);
-      } catch {
-        // payload inválido — ignora
-      }
-    });
-    return () => es.close();
-  }, [extensionId]);
+  // tenant (partilhado, lib/tenantEvents.ts) e só interessa à extensão escolhida aqui.
+  useEffect(() => setSupervisedMode(null), [extensionId]);
+  useTenantEvents<{ extensionId: string; mode: SupervisionMode | null }>(['supervision.agent'], (d) => {
+    if (d.extensionId === extensionId) setSupervisedMode(d.mode);
+  }, !!extensionId);
   // A supervisão acaba sempre com a chamada.
   useEffect(() => {
     if (callState === 'idle') setSupervisedMode(null);

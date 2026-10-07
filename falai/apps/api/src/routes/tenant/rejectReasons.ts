@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "@falai/db";
+import { isOpsManager } from "../../services/userScope.js";
 
 /**
  * Motivos de recusa de chamadas (relatórios de atendimento, Fase 2).
@@ -39,7 +40,7 @@ export const tenantRejectReasonsRoutes: FastifyPluginAsync = async (fastify) => 
 
   fastify.post("/tenant/reject-reasons", { preHandler }, async (request, reply) => {
     const { tenantId, role } = request.tenantUser!;
-    if (role !== "OWNER" && role !== "ADMIN") return reply.status(403).send({ error: "Apenas OWNER ou ADMIN" });
+    if (!isOpsManager(role)) return reply.status(403).send({ error: "Apenas administradores ou gestores" });
     const body = createSchema.parse(request.body);
     const row = await prisma.rejectReason
       .create({ data: { tenantId, label: body.label, ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }) } })
@@ -50,7 +51,7 @@ export const tenantRejectReasonsRoutes: FastifyPluginAsync = async (fastify) => 
 
   fastify.patch<{ Params: { id: string } }>("/tenant/reject-reasons/:id", { preHandler }, async (request, reply) => {
     const { tenantId, role } = request.tenantUser!;
-    if (role !== "OWNER" && role !== "ADMIN") return reply.status(403).send({ error: "Apenas OWNER ou ADMIN" });
+    if (!isOpsManager(role)) return reply.status(403).send({ error: "Apenas administradores ou gestores" });
     const body = updateSchema.parse(request.body);
     const res = await prisma.rejectReason
       .updateMany({

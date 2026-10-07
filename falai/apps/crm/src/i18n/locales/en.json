@@ -46,7 +46,11 @@
     "inbox": "Inbox",
     "supervision": "Supervision",
     "pin": "Pin menu",
-    "unpin": "Unpin menu"
+    "unpin": "Unpin menu",
+    "tickets": "Tickets",
+    "quality": "Quality",
+    "knowledge": "Knowledge",
+    "teamChat": "Team chat"
   },
   "login": {
     "subtitle": "Sign in to your account",
@@ -619,7 +623,7 @@
     "title": "Team",
     "roleOwner": "Owner",
     "roleAdmin": "Admin",
-    "roleMember": "Member",
+    "roleMember": "Agent",
     "roleViewer": "Viewer",
     "email": "Email",
     "name": "Name",
@@ -627,7 +631,7 @@
     "emailPlaceholder": "colleague@company.ao",
     "namePlaceholder": "Colleague's name",
     "roleAdminOpt": "Admin — everything except account and OWNER",
-    "roleMemberOpt": "Member — operate campaigns/contacts",
+    "roleMemberOpt": "Agent — only their own cases, calls and reports",
     "roleViewerOpt": "Viewer — read only",
     "memberRemoved": "Member removed",
     "legendOwner": "<0>OWNER</0> — full access, including billing and API keys.",
@@ -637,7 +641,7 @@
     "you": "(you)",
     "removeConfirm": "Remove {{name}} from the team?",
     "roleSupervisor": "Supervisor",
-    "roleSupervisorOpt": "Supervisor — supervises calls of their groups",
+    "roleSupervisorOpt": "Supervisor — sees and manages their team and supervised groups",
     "legendSupervisor": "<0>Supervisor</0> — like Member, and supervises the groups you assign in real time.",
     "extension": "User's extension",
     "extensionHint": "The extension the user answers and calls with. A supervisor listens to calls through it.",
@@ -653,7 +657,21 @@
     "passwordShort": "At least 8 characters",
     "groups": "Groups",
     "groupsHint": "Groups where the user's extension receives calls.",
-    "groupsNeedExtension": "Choose the user's extension first."
+    "groupsNeedExtension": "Choose the user's extension first.",
+    "roleManager": "Manager",
+    "roleManagerOpt": "Manager — all operations (reports, team, supervision), no technical settings",
+    "shifts": "Shifts",
+    "shiftsTitle": "Shifts for {{name}}",
+    "shiftsHint": "Weekly schedule, used for adherence (agent time report). Does not cross midnight.",
+    "weekday": {
+      "0": "Sunday",
+      "1": "Monday",
+      "2": "Tuesday",
+      "3": "Wednesday",
+      "4": "Thursday",
+      "5": "Friday",
+      "6": "Saturday"
+    }
   },
   "settings": {
     "title": "Settings",
@@ -683,7 +701,19 @@
     "saved": "Settings saved",
     "secretRotated": "Webhook secret regenerated",
     "copySecretWarn": "Copy this secret now. It won't be shown again.",
-    "copySecret": "Copy secret"
+    "copySecret": "Copy secret",
+    "adminOnly": "Only administrators can change these settings.",
+    "twoFaTitle": "Two-factor authentication (2FA)",
+    "twoFaEnabled": "2FA is enabled on your account. To disable it, enter the current code from your app.",
+    "twoFaDisabled": "Protect your account with a code from an authenticator app (Google Authenticator, Microsoft Authenticator…).",
+    "twoFaStart": "Enable 2FA",
+    "twoFaScan": "Scan the QR code with your authenticator app and enter the 6-digit code.",
+    "twoFaSecret": "Or enter this key manually:",
+    "twoFaCode": "Code",
+    "twoFaConfirm": "Confirm",
+    "twoFaDone": "2FA enabled",
+    "twoFaDisable": "Disable 2FA",
+    "twoFaOff": "2FA disabled"
   },
   "pbx": {
     "title": "PBX integration",
@@ -773,7 +803,10 @@
       "agentsRead": "Read agents",
       "smsSend": "Send SMS",
       "conversationsRead": "Read conversations (chat/email/Telegram)",
-      "conversationsWrite": "Reply to conversations"
+      "conversationsWrite": "Reply to conversations",
+      "ticketsRead": "Read tickets",
+      "ticketsWrite": "Create and update tickets",
+      "reportsRead": "Read reports (Power BI / BI)"
     },
     "groups": {
       "calls": "Calls",
@@ -831,7 +864,12 @@
       "callEnded": "The call finished — with outcome, duration, cost and recording",
       "callFailed": "The call could not be placed",
       "campaignPaused": "Campaign paused, manually or automatically",
-      "campaignCompleted": "Campaign finished — with final totals"
+      "campaignCompleted": "Campaign finished — with final totals",
+      "ticketCreated": "Ticket created (in the CRM or via the API)",
+      "ticketUpdated": "Ticket changed — status, priority, level, assignee or category",
+      "alertOpened": "Operational alert opened (wait, handling, agents, SLA, abandon, AHT)",
+      "alertClosed": "Operational alert closed, with the final value",
+      "platformStatus": "A platform component went down or recovered (telephony, carrier, database, queues, your peering)"
     },
     "err": {
       "e400": "Invalid payload or missing parameter. See the `error` field in the response.",
@@ -875,7 +913,10 @@
       "reasons": "Declines",
       "calls": "Calls",
       "typing": "Call types",
-      "analysis": "AI analysis"
+      "analysis": "AI analysis",
+      "agentTime": "Agent time",
+      "csat": "Satisfaction",
+      "consolidated": "Consolidated"
     },
     "period": "Period",
     "all": "All",
@@ -892,8 +933,8 @@
       "rejected": "Declined",
       "tma": "AHT",
       "tmaHint": "Average handling time",
-      "tme": "AWT",
-      "tmeHint": "Average waiting time",
+      "tme": "ASA",
+      "tmeHint": "Average wait until answered",
       "response": "Response time",
       "responseHint": "From ring to answer, per agent",
       "limited": "You use your own PBX (Yeastar): only answered, missed, AHT and ring time are available. Per agent, per group and declines require the platform PBX.",
@@ -930,7 +971,9 @@
       "typed": "Typed",
       "untyped": "Untyped",
       "typingTitle": "Calls by category",
-      "category": "Call type"
+      "category": "Call type",
+      "sla": "SLA",
+      "slaHint": "Answered within {{secs}} s"
     },
     "exportPdf": "Export PDF",
     "vsPrevious": "vs. previous period",
@@ -980,6 +1023,85 @@
       "typingTrends": "Growing typings",
       "recommendations": "Recommendations",
       "disclaimer": "Automatic interpretation of the report numbers — check before deciding. Also included in the Excel and PDF exports for these filters."
+    },
+    "agentTime": {
+      "agent": "Agent",
+      "scheduled": "Scheduled",
+      "logged": "Logged in",
+      "inShift": "Logged in during shift",
+      "adherence": "Adherence",
+      "paused": "Paused",
+      "pauses": "Pauses by reason",
+      "noReason": "No reason",
+      "empty": "No users.",
+      "hint": "Logged in = time with the CRM open. Adherence = % of the shift spent logged in."
+    },
+    "csat": {
+      "settings": "Satisfaction survey",
+      "channelsHint": "Voice: when the agent hangs up, the customer hears the question and presses 1 to 5 (not billed). Text: asked when the conversation is resolved. SMS: link after an answered call (each SMS is billed).",
+      "question": "Question",
+      "thanks": "Thank-you message",
+      "avg": "Average CSAT",
+      "scale": "from 1 to 5",
+      "satisfied": "Satisfied",
+      "satisfiedHint": "scores 4 and 5",
+      "responses": "Responses",
+      "responseRate": "out of {{asked}} asked",
+      "distribution": "Distribution",
+      "byChannel": "By channel",
+      "byAgent": "By agent",
+      "byGroup": "By group",
+      "noAgent": "No agent",
+      "noGroup": "No group",
+      "channel": {
+        "VOICE": "Voice (keypress after the call)",
+        "TEXT": "Text (chat, WhatsApp, email, Telegram)",
+        "SMS": "SMS (link)"
+      },
+      "col": {
+        "name": "Name",
+        "responses": "Responses",
+        "avg": "Average",
+        "satisfied": "% satisfied"
+      }
+    },
+    "cons": {
+      "contacts": "Contacts",
+      "contactsHint": "inbound calls + conversations",
+      "callsIn": "Inbound calls",
+      "answeredPct": "{{pct}} answered",
+      "conversations": "Conversations",
+      "firstResponse": "first reply in {{value}}",
+      "tickets": "Tickets created",
+      "ticketsHint": "{{resolved}} resolved · resolution {{time}}",
+      "csatHint": "{{pct}} satisfied · {{n}} responses",
+      "qa": "QA score",
+      "qaHint": "{{n}} evaluations",
+      "byChannel": "Contacts by channel",
+      "series": "By period",
+      "bucket": {
+        "day": "By day",
+        "week": "By week",
+        "month": "By month"
+      },
+      "channel": {
+        "VOICE": "Voice",
+        "WHATSAPP": "WhatsApp",
+        "WEBCHAT": "Website chat",
+        "EMAIL": "Email",
+        "TELEGRAM": "Telegram"
+      },
+      "col": {
+        "period": "Period",
+        "callsIn": "Inbound",
+        "callsAnswered": "Answered",
+        "callsMissed": "Missed",
+        "callsOut": "Outbound",
+        "conversations": "Conversations",
+        "conversationsResolved": "Resolved",
+        "ticketsCreated": "Tickets",
+        "ticketsResolved": "Tickets resolved"
+      }
     }
   },
   "sms": {
@@ -1004,7 +1126,8 @@
       "QUEUED": "Queued",
       "SENT": "Sent",
       "DELIVERED": "Delivered",
-      "FAILED": "Failed"
+      "FAILED": "Failed",
+      "SENDING": "Sending"
     },
     "newCampaign": "New campaign",
     "campaignName": "Campaign name",
@@ -1026,6 +1149,7 @@
     "title": "Webphone",
     "selectExtension": "Line",
     "noLine": "No extensions configured for this tenant.",
+    "noOwnExtension": "You have no extension assigned. Ask an administrator to assign one to you under Team.",
     "status": {
       "unregistered": "Not registered",
       "registering": "Registering…",
@@ -1072,7 +1196,8 @@
       "LISTEN": "A supervisor is listening to this call.",
       "WHISPER": "A supervisor is talking to you (the customer can't hear).",
       "BARGE": "A supervisor joined the call (the customer hears them)."
-    }
+    },
+    "pauseWithReason": "Pause…"
   },
   "telephony": {
     "title": "Telephony",
@@ -1186,7 +1311,11 @@
     "typingAddSub": "Subcategory",
     "typingEmpty": "No categories. Create, for example, \"Complaint\" with the subcategory \"Billing\".",
     "typingGroups": "Groups",
-    "typingGroupsHint": "With none ticked, every agent sees this category."
+    "typingGroupsHint": "With none ticked, every agent sees this category.",
+    "tabPauseReasons": "Pause reasons",
+    "pauseReasonsHint": "Reasons the agent picks when pausing in the webphone (lunch, training, ...). They feed the agent time report.",
+    "pauseReasonPlaceholder": "New pause reason",
+    "noPauseReasons": "No pause reasons — agents pause without a reason."
   },
   "inbox": {
     "waPool": "WhatsApp pool (Active/Standby)",
@@ -1440,5 +1569,269 @@
     "mergeWarning": "{{other}} will be deleted. Calls, SMS, conversations, notes and campaigns move to {{keep}}; its number becomes an extra number. Who merged and when is recorded.",
     "merged_one": "Contacts merged ({{count}} call moved)",
     "merged_other": "Contacts merged ({{count}} calls moved)"
+  },
+  "tickets": {
+    "title": "Tickets",
+    "ticket": "Ticket",
+    "new": "New ticket",
+    "createFrom": "Create ticket",
+    "created": "Ticket #{{number}} created",
+    "subject": "Subject",
+    "description": "Description",
+    "statusLabel": "Status",
+    "priorityLabel": "Priority",
+    "level": "Support level",
+    "levelN": "Level {{n}}",
+    "group": "Team",
+    "assignee": "Assignee",
+    "unassigned": "Unassigned",
+    "category": "Category",
+    "subcategory": "Subcategory",
+    "dueAt": "Due date",
+    "contact": "Customer",
+    "updated": "Updated",
+    "searchPlaceholder": "Search by number or subject…",
+    "filterActive": "Open",
+    "filterAll": "All statuses",
+    "anyPriority": "Any priority",
+    "anyLevel": "Any level",
+    "anyAssignee": "Any assignee",
+    "anyGroup": "Any team",
+    "mine": "Assigned to me",
+    "emptyTitle": "No tickets",
+    "emptyDescription": "Create a ticket here, from a call, a conversation or the customer profile.",
+    "notFound": "Ticket not found.",
+    "timeline": "Timeline",
+    "note": "Internal note",
+    "notePlaceholder": "Write an internal note…",
+    "addNote": "Add note",
+    "system": "System",
+    "interactions": "Calls and conversations",
+    "noInteractions": "No linked calls or conversations.",
+    "unlink": "Unlink",
+    "edit": "Edit ticket",
+    "conflict": "The ticket was changed by someone else — the data has been refreshed.",
+    "reopened_one": "reopened {{count}} time",
+    "reopened_other": "reopened {{count}} times",
+    "none": "No tickets.",
+    "openTickets": "Open tickets",
+    "aCall": "a call",
+    "aConversation": "a conversation",
+    "status": {
+      "OPEN": "Open",
+      "PENDING": "Pending",
+      "ON_HOLD": "On hold",
+      "RESOLVED": "Resolved",
+      "CLOSED": "Closed"
+    },
+    "priority": {
+      "LOW": "Low",
+      "MEDIUM": "Medium",
+      "HIGH": "High",
+      "URGENT": "Urgent"
+    },
+    "source": {
+      "MANUAL": "Manual",
+      "CALL": "Call",
+      "WHATSAPP": "WhatsApp",
+      "WEBCHAT": "Website chat",
+      "EMAIL": "Email",
+      "TELEGRAM": "Telegram",
+      "API": "API"
+    },
+    "ev": {
+      "created": "Ticket created",
+      "status": "Status: {{from}} → {{to}}",
+      "priority": "Priority: {{from}} → {{to}}",
+      "level": "Level: {{from}} → {{to}}",
+      "assignee": "Assignee: {{to}}",
+      "group": "Team: {{to}}",
+      "category": "Category: {{to}}",
+      "subject": "Subject: {{to}}",
+      "linked": "Linked {{what}}",
+      "unlinked": "Unlinked {{what}}"
+    },
+    "take": "Take"
+  },
+  "alerts": {
+    "tab": "Alerts",
+    "openTitle_one": "{{count}} active alert",
+    "openTitle_other": "{{count}} active alerts",
+    "typeLabel": "Type",
+    "allTypes": "All types",
+    "empty": "No alerts in this period.",
+    "started": "Start",
+    "group": "Group",
+    "threshold": "Limit",
+    "value": "Value (start → end)",
+    "ended": "End",
+    "ongoing": "ongoing",
+    "targetsTitle": "Targets and alerts",
+    "targetsHint": "Leave empty to turn off. Alerts show on supervisors’ screens, are kept in the history and sent by webhook (alert.opened / alert.closed).",
+    "off": "off",
+    "unit": {
+      "s": "seconds",
+      "%": "%",
+      "n": "agents"
+    },
+    "field": {
+      "slaThresholdSecs": "SLA threshold",
+      "slaTargetPct": "Daily SLA target",
+      "maxWaitSecs": "Maximum wait",
+      "maxHandleSecs": "Maximum handling time",
+      "minAvailableAgents": "Minimum available agents per group",
+      "maxAbandonPct": "Maximum daily abandon rate",
+      "maxTmaSecs": "Maximum daily AHT"
+    },
+    "name": {
+      "LONG_WAIT": "Long wait",
+      "LONG_HANDLE": "Long call",
+      "NO_AGENTS": "No agents available",
+      "SLA_BELOW": "SLA below target",
+      "ABANDON_ABOVE": "Abandon rate above limit",
+      "TMA_ABOVE": "AHT above limit"
+    },
+    "type": {
+      "LONG_WAIT": "Call waiting for {{value}} (limit {{threshold}})",
+      "LONG_HANDLE": "Call in progress for {{value}} (limit {{threshold}})",
+      "NO_AGENTS": "{{value}} agents available (minimum {{threshold}})",
+      "SLA_BELOW": "Daily SLA at {{value}} (target {{threshold}})",
+      "ABANDON_ABOVE": "Daily abandon rate at {{value}} (limit {{threshold}})",
+      "TMA_ABOVE": "Daily AHT at {{value}} (limit {{threshold}})"
+    }
+  },
+  "quality": {
+    "title": "Quality",
+    "tabEvaluations": "Evaluations",
+    "tabSummary": "QA score",
+    "tabSample": "To evaluate",
+    "tabForms": "Forms",
+    "evaluate": "Evaluate",
+    "newTitle": "New evaluation",
+    "evaluation": "Evaluation",
+    "notFound": "Evaluation not found.",
+    "noForms": "No evaluation forms yet — a manager creates them in Quality → Forms.",
+    "openCall": "Open call",
+    "comment": "Evaluator comment",
+    "commentPlaceholder": "What went well and what to improve…",
+    "submit": "Submit evaluation",
+    "by": "by {{name}}",
+    "critical": "Critical",
+    "criticalFail": "Critical criterion failed — score 0.",
+    "agentComment": "Agent comment",
+    "resolution": "Reply to the dispute",
+    "agentNote": "Note for the evaluator (required to dispute)",
+    "acknowledge": "Acknowledge",
+    "dispute": "Dispute",
+    "reviseAnswers": "Revise answers",
+    "auditHint": "Every revision is recorded in the audit log (before and after).",
+    "allStatuses": "All statuses",
+    "empty": "No evaluations.",
+    "lastDays_one": "Last day",
+    "lastDays_other": "Last {{count}} days",
+    "reshuffle": "New sample",
+    "sampleHint": "Two random calls per agent, not yet evaluated.",
+    "nothingToEvaluate": "Nothing to evaluate in this period.",
+    "newForm": "New form",
+    "editForm": "Edit form",
+    "formName": "Form name",
+    "editHint": "Existing evaluations keep the form as it was — changes here only apply to new ones.",
+    "sectionTitle": "Section title",
+    "criterion": "Criterion",
+    "weight": "Weight",
+    "addCriterion": "Criterion",
+    "addSection": "Section",
+    "criteriaCount_one": "{{count}} criterion",
+    "criteriaCount_other": "{{count}} criteria",
+    "answer": {
+      "YES": "Met",
+      "NO": "Not met",
+      "NA": "N/A"
+    },
+    "status": {
+      "SUBMITTED": "Pending",
+      "ACKNOWLEDGED": "Acknowledged",
+      "DISPUTED": "Disputed",
+      "RESOLVED": "Reviewed"
+    },
+    "col": {
+      "date": "Date",
+      "agent": "Agent",
+      "form": "Form",
+      "evaluator": "Evaluator",
+      "score": "Score",
+      "statusLabel": "Status",
+      "evaluations": "Evaluations",
+      "avgScore": "Average QA score",
+      "criticalFails": "Critical fails",
+      "disputed": "Disputed"
+    }
+  },
+  "kb": {
+    "title": "Knowledge base",
+    "new": "New article",
+    "edit": "Edit article",
+    "articleTitle": "Title",
+    "category": "Category",
+    "body": "Text",
+    "published": "Published (visible to agents)",
+    "aiEnabled": "AI may use this article in replies",
+    "searchPlaceholder": "Search articles…",
+    "allCategories": "All categories",
+    "noResults": "No articles found.",
+    "emptyTitle": "No articles yet",
+    "emptyDescription": "Supervisors write answers, procedures and policies here — agents look them up while serving customers.",
+    "draft": "Draft",
+    "deleteConfirm": "Delete this article?"
+  },
+  "helpdesk": {
+    "title": "Freshdesk integration",
+    "intro": "With Freshdesk connected, Falaí tickets mirror Freshdesk: what is created or changed here goes there (without making the agent wait), and changes there arrive by webhook and a sync every 5 minutes. The first connection imports tickets from the last 30 days. Agents and groups are matched by email and name.",
+    "domain": "Freshdesk domain",
+    "apiKey": "API key",
+    "apiKeyKept": "saved — leave empty to keep",
+    "apiKeyHint": "Freshdesk → your profile → \"Your API Key\". Use a dedicated technical user (e.g. \"Falaí Integration\"). Stored encrypted.",
+    "ticketOnCall": "Ticket at the end of each answered call",
+    "onCall": {
+      "AGENT_CHOICE": "Only when the agent creates one",
+      "ALWAYS": "Always create",
+      "NEVER": "Never"
+    },
+    "recordingLink": "Include a link to the call and recording (in the CRM) in the ticket",
+    "enabled": "Connection active",
+    "test": "Test connection",
+    "testOk": "Connection OK — user {{name}}",
+    "syncNow": "Sync now",
+    "synced": "Synced: {{created}} new, {{updated}} updated",
+    "lastSync": "Last sync",
+    "lastError": "Last error",
+    "webhookTitle": "Freshdesk notifications (webhook)",
+    "webhookBody": "Body (JSON)",
+    "webhookSteps": [
+      "In Freshdesk: Admin → Automations → Ticket updates → New rule.",
+      "Condition: \"When an action performed by… Anyone\" and \"Involves any of these events: Ticket is updated\" (or status, priority, agent).",
+      "Action: \"Trigger webhook\", POST request to the URL below, JSON content with the body below.",
+      "Save and enable the rule. Without it, changes made in Freshdesk still arrive in the 5-minute sync."
+    ]
+  },
+  "platform": {
+    "down": {
+      "telephony": "The telephony engine is down — calls may fail.",
+      "sipTrunk": "The connection to the phone carrier is down — external calls may fail.",
+      "database": "The database has problems — saving data may fail.",
+      "redis": "The queue service has problems — sends and campaigns may be delayed.",
+      "peer": "The connection to your PBX (peering) is not responding.",
+      "other": "A platform component is down."
+    },
+    "notified": "The technical team has been notified."
+  },
+  "chat": {
+    "title": "Team chat",
+    "newDirect": "New conversation",
+    "newGroup": "New group",
+    "groupName": "Group name",
+    "placeholder": "Write a message… (Enter sends, Shift+Enter new line)",
+    "empty": "No conversations yet. Start one with a colleague.",
+    "pick": "Pick a conversation on the left."
   }
 }

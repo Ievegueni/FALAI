@@ -217,7 +217,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/2fa/setup", { preHandler }, async (request) => {
     const user = request.tenantUser!;
     const secret = generateTotpSecret();
-    const qrCode = await generateTotpQrCode(user.email, secret);
+    const qrCode = await generateTotpQrCode(user.email, secret, "Falaí");
     await fastify.redis.set(`tenant:2fa:setup:${user.sub}`, secret, "EX", 10 * 60);
     return { secret, qrCode };
   });
@@ -246,12 +246,32 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
     return { ok: true };
   });
 
+  // POST /tenant/auth/2fa/disable — protected, exige o código actual
+  fastify.post<{ Body: { code: string } }>("/2fa/disable", { preHandler, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const user = request.tenantUser!;
+    const { code } = totpSchema.pick({ code: true }).parse(request.body);
+    const row = await prisma.tenantUser.findUnique({ where: { id: user.sub }, select: { twoFaSecret: true } });
+    if (!row?.twoFaSecret) return reply.status(400).send({ error: "A 2FA não está activa" });
+    if (!verifyTotp(row.twoFaSecret, code)) return reply.status(400).send({ error: "Código inválido" });
+
+    await prisma.tenantUser.update({ where: { id: user.sub }, data: { twoFaSecret: null } });
+    await fastify.audit({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "tenant.2fa.disabled",
+      targetType: "TenantUser",
+      targetId: user.sub,
+      ip: request.ip,
+    });
+    return { ok: true };
+  });
+
   // GET /tenant/auth/me — current session info
   fastify.get("/me", { preHandler }, async (request) => {
     const user = request.tenantUser!;
     const tenantUser = await prisma.tenantUser.findUniqueOrThrow({
       where: { id: user.sub },
-      include: { tenant: { select: tenantClientSelect }, accessProfile: accessProfileSelect },
+      include: { tenant: { select: tenantClientSelect }, accessProfile: accessProfileSelect, extension: { select: { number: true } } },
     });
     const accessProfile = profileOf(tenantUser);
     return {
@@ -262,6 +282,9 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
         role: tenantUser.role,
         twoFaEnabled: !!tenantUser.twoFaSecret,
         accessProfile,
+        // Webphone e screen pop usam a extensão do próprio utilizador.
+        extensionId: tenantUser.extensionId,
+        extensionNumber: tenantUser.extension?.number ?? null,
       },
       tenant: shapeTenant(tenantUser.tenant, accessProfile?.permissions ?? null),
     };

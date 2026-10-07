@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Phone, PhoneIncoming, Clock, DollarSign, XCircle, Play, Tag, Route, StickyNote, Pencil } from 'lucide-react';
+import { ClipboardCheck, ArrowLeft, Phone, PhoneIncoming, Clock, DollarSign, XCircle, Play, Tag, Route, StickyNote, Pencil } from 'lucide-react';
 import { callsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +11,9 @@ import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { TypingModal } from './TypingPanel';
+import { TicketLinkOrCreate } from '@/components/tickets/TicketBits';
+import { useAuth } from '@/contexts/AuthContext';
+import { isOpsManager } from '@/lib/roles';
 import {
   callStatusLabel,
   callStatusColor,
@@ -26,6 +29,9 @@ export function CallDetailPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { success, error } = useToast();
+  // Avaliar (QA, fase 7): supervisão, com a funcionalidade ligada.
+  const { user, tenant } = useAuth();
+  const canEvaluate = tenant?.features?.quality === true && (isOpsManager(user?.role) || user?.role === 'SUPERVISOR');
 
   // A gravação vem por uma rota autenticada, por isso chega como blob e
   // transforma-se num object URL — que tem de ser libertado ao sair.
@@ -137,6 +143,14 @@ export function CallDetailPage() {
                 </span>
               )}
             </div>
+          </div>
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            {canEvaluate && !isLive && (
+              <Button size="sm" variant="outline" icon={<ClipboardCheck className="h-3.5 w-3.5" />} onClick={() => navigate(`/quality/new?callId=${call.id}`)}>
+                {t('quality.evaluate')}
+              </Button>
+            )}
+            <TicketLinkOrCreate ticket={call.ticket} contactId={call.contactId} callId={call.id} />
           </div>
 
           <div className="mt-4 grid grid-cols-3 gap-4 pt-4 border-t border-gray-100">

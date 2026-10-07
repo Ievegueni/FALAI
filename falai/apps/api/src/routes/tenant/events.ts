@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import type { TenantJwtPayload } from "../../plugins/auth.js";
+import { sessionConnected, sessionDisconnected, sessionTouch } from "../../services/agentTime.service.js";
 
 const KEEPALIVE_MS = 25_000;
 
@@ -51,7 +52,12 @@ export const tenantEventsRoutes: FastifyPluginAsync = async (fastify) => {
     });
     reply.raw.write(`event: ready\ndata: ${JSON.stringify({ ok: true })}\n\n`);
 
-    const unsubscribe = fastify.incomingCalls.subscribe(payload.tenantId, reply);
+    const unsubscribe = fastify.incomingCalls.subscribe(payload.tenantId, reply, { idsOnly: payload.role === "MEMBER", userId: payload.sub });
+
+    // Tempo ligado do utilizador (fase 5): a sessão dura enquanto o CRM tem
+    // este canal aberto — ver services/agentTime.service.ts.
+    const log = (err: unknown) => fastify.log.warn({ err, userId: payload.sub }, "agent_session.error");
+    sessionConnected(payload.tenantId, payload.sub).catch(log);
 
     // Comentário de keep-alive para atravessar proxies/timeouts.
     const keepalive = setInterval(() => {
@@ -60,11 +66,16 @@ export const tenantEventsRoutes: FastifyPluginAsync = async (fastify) => {
       } catch {
         // socket fechado
       }
+      sessionTouch(payload.sub).catch(log);
     }, KEEPALIVE_MS);
 
+    let closed = false;
     const cleanup = () => {
+      if (closed) return; // "close" e "error" podem vir os dois
+      closed = true;
       clearInterval(keepalive);
       unsubscribe();
+      sessionDisconnected(payload.sub).catch(log);
     };
     request.raw.on("close", cleanup);
     reply.raw.on("error", cleanup);

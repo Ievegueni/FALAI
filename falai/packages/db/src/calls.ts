@@ -47,6 +47,18 @@ export async function reconcileStaleCalls(now: Date = new Date()): Promise<Recon
     select: { id: true, campaignId: true },
   });
 
+  // Chamadas já terminadas mas com reserva por acertar há mais de 10 min (o
+  // settle corre logo no fim): cancelada sem evento de fim, settle que falhou.
+  const unsettled = await prisma.call.findMany({
+    where: {
+      reservedCents: { gt: 0 },
+      status: { notIn: ["QUEUED", "DIALING", "RINGING", "IN_PROGRESS"] },
+      updatedAt: { lt: dialingCutoff },
+    },
+    select: { id: true },
+  });
+  for (const c of unsettled) await releaseCallReservation(c.id);
+
   if (stale.length === 0) return { closed: 0, ids: [], completedCampaigns: [] };
 
   const ids = stale.map((c) => c.id);
@@ -58,6 +70,9 @@ export async function reconcileStaleCalls(now: Date = new Date()): Promise<Recon
       failReason: "Reconciliação automática: sem actualização do motor de telefonia dentro do prazo esperado",
     },
   });
+
+  // A sessão que ia acertar o custo morreu com a chamada: devolver a reserva.
+  for (const id of ids) await releaseCallReservation(id);
 
   // Sem isto o CampaignContact ficava para sempre em IN_PROGRESS mesmo com a
   // Call já fechada acima — a campanha nunca via "remaining = 0", ficava presa
@@ -96,4 +111,40 @@ export async function reconcileStaleCalls(now: Date = new Date()): Promise<Recon
   }
 
   return { closed: ids.length, ids, completedCampaigns };
+}
+
+/**
+ * Devolve ao saldo do cliente a reserva ainda pendente de uma chamada.
+ * Atómico: lê e zera `Call.reservedCents` numa só instrução, por isso quem
+ * chegar em segundo (settleCall, reconciliação, varrimento no arranque) não
+ * encontra nada para devolver. Devolve o valor reembolsado (0 se não havia).
+ */
+export async function releaseCallReservation(callId: string): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ tenantId: string; amount: number }>>`
+      UPDATE "Call" c SET "reservedCents" = 0
+      FROM (SELECT id, "reservedCents" AS amount FROM "Call" WHERE id = ${callId} FOR UPDATE) old
+      WHERE c.id = old.id AND old.amount > 0
+      RETURNING c."tenantId" AS "tenantId", old.amount AS amount
+    `;
+    const row = rows[0];
+    if (!row) return 0;
+    await tx.$executeRaw`UPDATE "Tenant" SET "balanceCents" = "balanceCents" + ${row.amount} WHERE id = ${row.tenantId}`;
+    return row.amount;
+  });
+}
+
+/**
+ * Arranque da API: as sessões do motor de chamadas vivem só em memória, por
+ * isso qualquer chamada com reserva pendente neste momento ficou órfã (a API
+ * caiu a meio, ou o settle falhou). Devolve já a reserva; o estado da chamada
+ * (e do CampaignContact) continua a ser fechado pelo reconcileStaleCalls. ponytail: assume uma única instância da API; com várias,
+ * filtrar por instância antes de varrer.
+ */
+export async function releaseOrphanReservations(): Promise<{ released: number; ids: string[] }> {
+  const orphans = await prisma.call.findMany({ where: { reservedCents: { gt: 0 } }, select: { id: true } });
+  const ids = orphans.map((c) => c.id);
+  let released = 0;
+  for (const id of ids) released += await releaseCallReservation(id);
+  return { released, ids };
 }

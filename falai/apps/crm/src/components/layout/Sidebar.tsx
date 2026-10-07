@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { ChatUnreadBadge } from '@/components/chat/ChatBits';
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { LogOut, Pin, PinOff } from 'lucide-react';
@@ -81,7 +82,7 @@ export function Sidebar({ open, onClose, pinned, onTogglePin }: Props) {
                 title={wide ? undefined : t(labelKey)}
                 className={({ isActive }) =>
                   clsx(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                     isActive
                       ? 'bg-blue-600 text-white'
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white',
@@ -90,6 +91,7 @@ export function Sidebar({ open, onClose, pinned, onTogglePin }: Props) {
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
                 {wide && <span className="truncate">{t(labelKey)}</span>}
+                {to === '/chat' && <ChatUnreadBadge wide={wide} />}
               </NavLink>
             </li>
           ))}

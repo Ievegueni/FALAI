@@ -55,6 +55,7 @@ const prisma = {
   },
   conversation: { findMany: vi.fn(async () => []) },
   contactNote: { findMany: vi.fn(async () => []) },
+  ticket: { findMany: vi.fn(async () => [{ id: "tk_1", number: 7, subject: "Sem rede", status: "OPEN", priority: "HIGH" }]) },
   tenantUser: { findMany: vi.fn(async () => []) },
 };
 let currentFrom: string | null = "+244923456789";
@@ -117,6 +118,7 @@ describe("GET /tenant/callers/lookup", () => {
     const res = await (await app()).inject({ url: "/tenant/callers/lookup?legId=leg_1" });
     const body = res.json();
     expect(res.statusCode).toBe(200);
+    expect(body.openTickets).toEqual([{ id: "tk_1", number: 7, subject: "Sem rede", status: "OPEN", priority: "HIGH" }]);
     expect(body.caller).toMatchObject({ kind: "NUMBER", national: "923456789" });
     expect(body.contact).toMatchObject({ id: "ct_1", name: "Maria Silva", phone: "923456789" });
     expect(body.history.data[0]).toMatchObject({

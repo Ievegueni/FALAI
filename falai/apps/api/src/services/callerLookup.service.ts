@@ -146,7 +146,7 @@ export async function buildCallerPanel(tenantId: string, raw: string | null | un
   if (!contactId) return { caller, contact: null };
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-  const [contact, history, last7Days, lastTyped, conversations, notes] = await Promise.all([
+  const [contact, history, last7Days, lastTyped, conversations, notes, openTickets] = await Promise.all([
     prisma.contact.findFirstOrThrow({
       where: { id: contactId, tenantId },
       select: {
@@ -179,6 +179,13 @@ export async function buildCallerPanel(tenantId: string, raw: string | null | un
       take: 5,
       select: { id: true, body: true, createdAt: true, authorId: true, callId: true },
     }),
+    // Casos em aberto: o agente vê logo se o cliente já tem um ticket a correr.
+    prisma.ticket.findMany({
+      where: { tenantId, contactId, status: { in: ["OPEN", "PENDING", "ON_HOLD"] } },
+      orderBy: { updatedAt: "desc" },
+      take: 5,
+      select: { id: true, number: true, subject: true, status: true, priority: true },
+    }),
   ]);
 
   return {
@@ -199,6 +206,7 @@ export async function buildCallerPanel(tenantId: string, raw: string | null | un
         : null,
     },
     conversations,
+    openTickets,
     notes: await withAuthors(notes),
   };
 }

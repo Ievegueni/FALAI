@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "@falai/db";
 import { generateApiKey, VALID_SCOPES } from "../../services/apiKey.service.js";
 import { isValidCidr } from "../../services/ipAllowlist.js";
+import { requireConfigAdmin } from "../../services/userScope.js";
 
 /**
  * Valida a lista de origens permitidas de uma chave. Devolve a lista limpa ou
@@ -35,7 +36,7 @@ export async function tenantApiKeysRoutes(fastify: FastifyInstance): Promise<voi
   });
 
   // Create API key — raw key returned once
-  fastify.post("/tenant/api-keys", { preHandler: [fastify.verifyTenant] }, async (request, reply) => {
+  fastify.post("/tenant/api-keys", { preHandler: [fastify.verifyTenant, requireConfigAdmin] }, async (request, reply) => {
     const tenantId = request.tenantUser!.tenantId;
     const body = request.body as { label: string; scopes: string[]; allowedCidrs?: string[] };
 
@@ -77,7 +78,7 @@ export async function tenantApiKeysRoutes(fastify: FastifyInstance): Promise<voi
   });
 
   // Update scopes / allowed origins of an existing key (the key itself never changes)
-  fastify.patch("/tenant/api-keys/:id", { preHandler: [fastify.verifyTenant] }, async (request, reply) => {
+  fastify.patch("/tenant/api-keys/:id", { preHandler: [fastify.verifyTenant, requireConfigAdmin] }, async (request, reply) => {
     const tenantId = request.tenantUser!.tenantId;
     const { id } = request.params as { id: string };
     const body = request.body as { scopes?: string[]; allowedCidrs?: string[] };
@@ -140,7 +141,7 @@ export async function tenantApiKeysRoutes(fastify: FastifyInstance): Promise<voi
   });
 
   // Revoke API key
-  fastify.delete("/tenant/api-keys/:id", { preHandler: [fastify.verifyTenant] }, async (request, reply) => {
+  fastify.delete("/tenant/api-keys/:id", { preHandler: [fastify.verifyTenant, requireConfigAdmin] }, async (request, reply) => {
     const tenantId = request.tenantUser!.tenantId;
     const { id } = request.params as { id: string };
 

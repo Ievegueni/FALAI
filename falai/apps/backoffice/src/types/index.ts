@@ -81,7 +81,11 @@ export type FeatureKey =
   | 'reports'
   | 'sms'
   | 'telephony'
-  | 'inbox';
+  | 'inbox'
+  | 'tickets'
+  | 'quality'
+  | 'knowledge'
+  | 'teamChat';
 
 export type TenantFeatures = Record<FeatureKey, boolean>;
 
@@ -105,7 +109,7 @@ export interface TenantLineInput {
   isActive?: boolean;
 }
 
-export type TenantRole = 'OWNER' | 'ADMIN' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
+export type TenantRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
 
 export interface TenantUser {
   id: string;

@@ -19,6 +19,7 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { DonutCard } from '@/components/reports/charts';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import { ContactTicketsCard, useTicketsEnabled } from '@/components/tickets/TicketBits';
 import { formatDate, formatDuration, formatPhone } from '@/lib/utils';
 
 /**
@@ -46,7 +47,7 @@ const STATE_CLASS: Record<string, string> = {
   REJECTED: 'bg-red-100 text-red-700',
   IN_PROGRESS: 'bg-blue-100 text-blue-700',
 };
-const MERGE_ROLES = new Set(['OWNER', 'ADMIN', 'SUPERVISOR']);
+const MERGE_ROLES = new Set(['OWNER', 'ADMIN', 'MANAGER', 'SUPERVISOR']);
 const selectCls = 'rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700';
 
 function saveBlob({ blob, filename }: { blob: Blob; filename: string }) {
@@ -405,6 +406,7 @@ export function ContactDetailPage() {
   const [mergeOpen, setMergeOpen] = useState(false);
 
   const clinicEnabled = tenant?.plan?.clinicEnabled === true;
+  const ticketsEnabled = useTicketsEnabled();
   const canEdit = user?.role !== 'VIEWER';
   const canMerge = !!user && MERGE_ROLES.has(user.role);
 
@@ -471,6 +473,7 @@ export function ContactDetailPage() {
     { key: 'history', label: t('profile.tabHistory'), badge: s.total },
     { key: 'typings', label: t('profile.tabTypings') },
     { key: 'notes', label: t('profile.tabNotes'), badge: profile.notes.length },
+    ...(ticketsEnabled ? [{ key: 'tickets', label: t('tickets.title'), badge: profile.tickets.length }] : []),
     ...(clinicEnabled ? [{ key: 'clinic', label: t('contacts.clinicSheet') }] : []),
   ];
 
@@ -558,6 +561,7 @@ export function ContactDetailPage() {
         {tab === 'history' && <HistoryTab id={contact.id} profile={profile} />}
         {tab === 'typings' && <TypingsTab profile={profile} />}
         {tab === 'notes' && <NotesTab profile={profile} />}
+        {tab === 'tickets' && ticketsEnabled && <ContactTicketsCard contactId={contact.id} tickets={profile.tickets} />}
         {tab === 'clinic' && clinicEnabled && (
           <Card>
             <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-900">

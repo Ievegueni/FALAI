@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { PhoneCall, PhoneOff, Mic, MicOff, Delete, Pause, Play, Headphones } from 'lucide-react';
-import { telephonyApi, rejectReasonsApi, supervisionApi } from '@/lib/api';
+import { telephonyApi, rejectReasonsApi, supervisionApi, pauseReasonsApi } from '@/lib/api';
 import { useWebphone, type RegistrationState } from '@/contexts/WebphoneContext';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +13,9 @@ import { CallerPanel } from '@/components/calls/CallerPanel';
 import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { clsx } from '@/lib/utils';
+import { useToast } from '@/contexts/ToastContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { isConfigAdmin } from '@/lib/roles';
 
 const DIAL_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
 
@@ -131,15 +134,19 @@ export function WebphonePage() {
   const [muted, setMuted] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const qc = useQueryClient();
+  const { error: toastError } = useToast();
   // Pausa (melhoria 4): em pausa a extensão não recebe chamadas de entrada.
   const { data: pause } = useQuery({
     queryKey: ['agent-pause', extensionId],
     queryFn: () => supervisionApi.pause(extensionId!),
     enabled: extensionId !== null,
   });
+  // Motivos de pausa (fase 5): se o cliente os definiu, pausar pede o motivo.
+  const { data: pauseReasons = [] } = useQuery({ queryKey: ['pause-reasons'], queryFn: () => pauseReasonsApi.list(), retry: false });
   const togglePause = useMutation({
-    mutationFn: () => supervisionApi.setPause(extensionId!, !pause?.paused),
+    mutationFn: (reasonId?: string) => supervisionApi.setPause(extensionId!, !pause?.paused, reasonId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['agent-pause', extensionId] }),
+    onError: (e: Error) => toastError(e.message),
   });
   const [typingLegId, setTypingLegId] = useState<string | null>(null);
   // Chamada de entrada atendida aqui: quando acabar, abre a tipificação.
@@ -150,10 +157,17 @@ export function WebphonePage() {
     queryFn: telephonyApi.listExtensions,
   });
 
+  // Liga-se à extensão do utilizador. Só OWNER/ADMIN podem escolher outra
+  // (a API recusa as credenciais de extensões alheias aos restantes).
+  const { user } = useAuth();
+  const canPickAny = isConfigAdmin(user?.role);
+  const ownExtensionId = user?.extensionId ?? null;
   useEffect(() => {
-    const first = extensions?.[0];
-    if (!extensionId && first) selectExtension(first.id);
-  }, [extensions, extensionId, selectExtension]);
+    if (!extensionId && ownExtensionId && extensions?.some((e) => e.id === ownExtensionId)) {
+      void selectExtension(ownExtensionId);
+    }
+  }, [extensions, extensionId, ownExtensionId, selectExtension]);
+  const visibleExtensions = canPickAny ? extensions ?? [] : (extensions ?? []).filter((e) => e.id === ownExtensionId);
 
   const inCall = callState === 'in-call' || callState === 'calling' || callState === 'ringing';
   const incoming = callState === 'incoming';
@@ -187,17 +201,18 @@ export function WebphonePage() {
       <div className="w-full max-w-md space-y-6">
         <Card>
           <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('webphone.selectExtension')}</h2>
-          {(extensions?.length ?? 0) === 0 ? (
+          {visibleExtensions.length === 0 ? (
             <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
-              {t('webphone.noLine')}
+              {t(canPickAny ? 'webphone.noLine' : 'webphone.noOwnExtension')}
             </div>
           ) : (
             <Select
               value={extensionId ?? ''}
               onChange={(e) => selectExtension(e.target.value)}
-              disabled={inCall || incoming}
+              disabled={inCall || incoming || !canPickAny}
             >
-              {(extensions ?? []).map((ext) => (
+              {!extensionId && <option value="" disabled>—</option>}
+              {visibleExtensions.map((ext) => (
                 <option key={ext.id} value={ext.id}>
                   {ext.number}{ext.displayName && ext.displayName !== ext.number ? ` — ${ext.displayName}` : ''}
                 </option>
@@ -211,16 +226,32 @@ export function WebphonePage() {
           {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
           {extensionId && (
             <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
-              <p className="text-xs text-gray-500">{pause?.paused ? t('webphone.pausedHint') : t('webphone.availableHint')}</p>
-              <Button
-                size="sm"
-                variant={pause?.paused ? 'primary' : 'outline'}
-                icon={pause?.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-                loading={togglePause.isPending}
-                onClick={() => togglePause.mutate()}
-              >
-                {pause?.paused ? t('webphone.resume') : t('webphone.pause')}
-              </Button>
+              <p className="text-xs text-gray-500">
+                {pause?.paused ? t('webphone.pausedHint') : t('webphone.availableHint')}
+                {pause?.reason && <span className="font-medium text-gray-700"> · {pause.reason.label}</span>}
+              </p>
+              {!pause?.paused && pauseReasons.length > 0 ? (
+                <select
+                  className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-700"
+                  value=""
+                  disabled={togglePause.isPending}
+                  onChange={(e) => e.target.value && togglePause.mutate(e.target.value)}
+                  aria-label={t('webphone.pause')}
+                >
+                  <option value="">{t('webphone.pauseWithReason')}</option>
+                  {pauseReasons.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                </select>
+              ) : (
+                <Button
+                  size="sm"
+                  variant={pause?.paused ? 'primary' : 'outline'}
+                  icon={pause?.paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                  loading={togglePause.isPending}
+                  onClick={() => togglePause.mutate(undefined)}
+                >
+                  {pause?.paused ? t('webphone.resume') : t('webphone.pause')}
+                </Button>
+              )}
             </div>
           )}
         </Card>

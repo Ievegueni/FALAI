@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma, type Prisma } from "@falai/db";
 import { reserveBalance, computeReservation, effectivePrice } from "../../services/billing.service.js";
+import { releaseCallReservation } from "@falai/db";
 import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
 import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
 
@@ -72,6 +73,7 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
         toNumber: body.toNumber,
         ...(body.variables !== undefined && { variables: body.variables as Prisma.InputJsonValue }),
         status: "DIALING",
+        reservedCents: estimatedCents,
         ...(body.contactId !== undefined && { contactId: body.contactId }),
         startedAt: new Date(),
       },
@@ -91,7 +93,7 @@ export async function v1CallsRoutes(fastify: FastifyInstance): Promise<void> {
     } catch (err) {
       // Refund reserved balance and mark call as failed
       await Promise.all([
-        prisma.$executeRaw`UPDATE "Tenant" SET "balanceCents" = "balanceCents" + ${estimatedCents} WHERE id = ${tenantId}`,
+        releaseCallReservation(call.id),
         prisma.call.update({ where: { id: call.id }, data: { status: "FAILED", failReason: "Dial error" } }),
       ]);
       await enqueueWebhook({

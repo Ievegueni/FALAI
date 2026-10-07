@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import { prisma, type BillingMode, type CampaignContact, type Contact } from "@falai/db";
+import { prisma, releaseCallReservation, type BillingMode, type CampaignContact, type Contact } from "@falai/db";
 import type { TelephonyProvider } from "@falai/providers";
 import type { CallEngineService } from "./CallEngineService.js";
 import { reserveBalance, computeReservation, effectivePrice, type PriceConfig } from "./billing.service.js";
@@ -163,7 +163,7 @@ export class CampaignDispatcher {
       fromExtension = await resolveOutboundExtension(campaign.tenantId);
     } catch (err) {
       if (err instanceof NoOutboundLineError) {
-        await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
+        await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED", pausedReason: null } });
         await prisma.systemEvent.create({
           data: {
             severity: "WARNING",
@@ -192,7 +192,7 @@ export class CampaignDispatcher {
 
     // Auto-pause if balance insufficient for even one call
     if (tenant.balanceCents + tenant.creditLimitCents < estimatedCost && estimatedCost > 0) {
-      await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
+      await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED", pausedReason: "LOW_BALANCE" } });
       await prisma.systemEvent.create({
         data: {
           severity: "WARNING",
@@ -258,7 +258,7 @@ export class CampaignDispatcher {
         const failReason = err instanceof Error ? err.message : String(err);
         this.log.error({ err, campaignId: campaign.id, failReason }, "dispatcher.script_tts_failed");
         // Pausa a campanha para evitar retry em loop — o operador terá de corrigir a voz/credenciais TTS
-        await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
+        await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED", pausedReason: null } });
         await prisma.systemEvent.create({
           data: {
             severity: "ERROR",
@@ -281,7 +281,7 @@ export class CampaignDispatcher {
       const ttsVoiceId = agent?.ttsVoiceId;
       if (!agent || !ttsVoiceId) {
         // Agente só de texto (sem voz) não pode fazer chamadas.
-        await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
+        await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED", pausedReason: null } });
         await enqueueWebhook({
           tenantId: campaign.tenantId,
           event: "campaign.paused",
@@ -342,6 +342,8 @@ export class CampaignDispatcher {
     // Reserve balance atomically
     const reserved = await reserveBalance(campaign.tenantId, estimatedCost);
     if (!reserved) return;
+    // Depois de criada a Call, a reserva vive nela e devolve-se por ela (uma vez).
+    let createdCallId: string | null = null;
 
     try {
       const { providerCallId } = await this.telephony.dial({
@@ -359,11 +361,13 @@ export class CampaignDispatcher {
           contactId: contact.id,
           toNumber: contact.phone,
           status: "DIALING",
+          reservedCents: estimatedCost,
           yeastarCallId: providerCallId,
           variables: (contact.attributes as object) ?? {},
           startedAt: new Date(),
         },
       });
+      createdCallId = call.id;
 
       await enqueueWebhook({
         tenantId: campaign.tenantId,
@@ -426,11 +430,7 @@ export class CampaignDispatcher {
         });
       }
 
-      // Refund reserved balance
-      await prisma.tenant.update({
-        where: { id: campaign.tenantId },
-        data: { balanceCents: { increment: estimatedCost } },
-      });
+      await refundDispatchReservation(campaign.tenantId, estimatedCost, createdCallId);
 
       // Handle retry or mark as failed
       const retryPolicyRaw = campaign.retryPolicy as Record<string, unknown> | null;
@@ -474,6 +474,8 @@ export class CampaignDispatcher {
 
     const reserved = await reserveBalance(campaign.tenantId, estimatedCost);
     if (!reserved) return;
+    // Depois de criada a Call, a reserva vive nela e devolve-se por ela (uma vez).
+    let createdCallId: string | null = null;
 
     const now = new Date();
 
@@ -495,11 +497,13 @@ export class CampaignDispatcher {
           toNumber: contact.phone,
           kind: "FIXED_SCRIPT",
           status: "DIALING",
+          reservedCents: estimatedCost,
           yeastarCallId: providerCallId,
           variables: (contact.attributes as object) ?? {},
           startedAt: now,
         },
       });
+      createdCallId = call.id;
 
       // A duração real, a faturação, o estado do contacto e o webhook call.ended
       // chegam todos pelo CALL_ENDED do Asterisk, tratados no cleanupSession
@@ -553,10 +557,7 @@ export class CampaignDispatcher {
         });
       }
 
-      await prisma.tenant.update({
-        where: { id: campaign.tenantId },
-        data: { balanceCents: { increment: estimatedCost } },
-      });
+      await refundDispatchReservation(campaign.tenantId, estimatedCost, createdCallId);
 
       const retryPolicyRaw = campaign.retryPolicy as Record<string, unknown> | null;
       const maxAttempts = typeof retryPolicyRaw?.["maxAttempts"] === "number" ? retryPolicyRaw["maxAttempts"] : 0;
@@ -581,4 +582,13 @@ export class CampaignDispatcher {
       }
     }
   }
+}
+
+/** Devolve a reserva de um envio falhado — pela Call se já existir (atómico, sem duplicar com o settle), senão directamente. */
+async function refundDispatchReservation(tenantId: string, amountCents: number, callId: string | null): Promise<void> {
+  if (callId) {
+    await releaseCallReservation(callId);
+    return;
+  }
+  await prisma.tenant.update({ where: { id: tenantId }, data: { balanceCents: { increment: amountCents } } });
 }

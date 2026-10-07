@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Bot, MessageCircle, Globe, Mail, Send, StickyNote, UserRound, Paperclip, AlertTriangle, Inbox as InboxIcon, Settings2 } from 'lucide-react';
-import { conversationsApi, inboxesApi, cannedApi, teamApi, apiBaseUrl, ApiError } from '@/lib/api';
+import { conversationsApi, inboxesApi, cannedApi, teamApi, ApiError } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -14,6 +14,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { clsx, formatDate } from '@/lib/utils';
 import type { Channel, Conversation, ConversationDetail, ConversationStatus } from '@/types';
+import { TicketLinkOrCreate } from '@/components/tickets/TicketBits';
+import { useTenantEvents } from '@/lib/tenantEvents';
 
 const channelIcon: Record<Channel, typeof Mail> = { WEBCHAT: Globe, EMAIL: Mail, TELEGRAM: Send, WHATSAPP: MessageCircle };
 
@@ -35,24 +37,13 @@ function contactLabel(c: Conversation): string {
  */
 function useConversationEvents() {
   const qc = useQueryClient();
-  useEffect(() => {
-    const token = localStorage.getItem('falai_token');
-    if (!token) return;
-    const es = new EventSource(`${apiBaseUrl}/tenant/events/stream?token=${encodeURIComponent(token)}`);
-    const onEvent = (ev: MessageEvent<string>) => {
+  useTenantEvents<{ conversationId?: string }>(
+    ['conversation.created', 'conversation.message', 'conversation.updated', 'conversation.deliveryFailed'],
+    ({ conversationId }) => {
       void qc.invalidateQueries({ queryKey: ['conversations'] });
-      try {
-        const { conversationId } = JSON.parse(ev.data) as { conversationId?: string };
-        if (conversationId) void qc.invalidateQueries({ queryKey: ['conversation', conversationId] });
-      } catch {
-        // payload inválido — ignora
-      }
-    };
-    for (const e of ['conversation.created', 'conversation.message', 'conversation.updated', 'conversation.deliveryFailed']) {
-      es.addEventListener(e, onEvent);
-    }
-    return () => es.close();
-  }, [qc]);
+      if (conversationId) void qc.invalidateQueries({ queryKey: ['conversation', conversationId] });
+    },
+  );
 }
 
 export function InboxPage() {
@@ -190,6 +181,12 @@ function Thread({ id, onOpen }: { id: string; onOpen: (id: string) => void }) {
         {/* Barra de acções */}
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-4 py-2.5">
           <span className="mr-auto truncate text-sm font-semibold text-gray-900">{conv.subject || contactLabel(conv)}</span>
+          <TicketLinkOrCreate
+            ticket={conv.ticket}
+            contactId={conv.contact?.id ?? null}
+            conversationId={conv.id}
+            defaultSubject={conv.subject ?? ''}
+          />
           <Badge className={statusColor[conv.status]}>{t(`inbox.status.${conv.status}`)}</Badge>
           <Badge className={conv.mode === 'AI' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}>
             {conv.mode === 'AI' ? t('inbox.modeAi') : t('inbox.modeHuman')}
@@ -210,7 +207,8 @@ function Thread({ id, onOpen }: { id: string; onOpen: (id: string) => void }) {
             aria-label={t('inbox.assignee')}
           >
             <option value="">{t('inbox.unassigned')}</option>
-            {team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {/* Agente: só se atribui a si (ou devolve à fila) */}
+            {team.filter((m) => user?.role !== 'MEMBER' || m.id === user.id).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </Select>
           {conv.status !== 'RESOLVED' ? (
             <>

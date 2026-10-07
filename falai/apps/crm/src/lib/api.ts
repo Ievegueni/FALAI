@@ -145,6 +145,8 @@ export const authApi = {
     const r = await post<{ ok: boolean }>('/tenant/auth/2fa/confirm', { code });
     return { success: r.ok };
   },
+
+  twoFaDisable: (code: string) => post<{ ok: boolean }>('/tenant/auth/2fa/disable', { code }),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
@@ -292,6 +294,7 @@ export interface ContactProfile {
   };
   filters: { agents: { extensionId: string; name: string }[]; categories: { id: string; name: string }[] };
   notes: { id: string; source: 'NOTE' | 'TYPING'; body: string; at: string; author: string | null; callId: string | null }[];
+  tickets: (import('@/types').TicketRef & { supportLevel: number; updatedAt: string })[];
 }
 
 export const contactsApi = {
@@ -462,7 +465,7 @@ export type AgentLiveState = 'IN_CALL' | 'RINGING' | 'WRAP_UP' | 'PAUSED' | 'AVA
 
 export interface SupervisionLive {
   now: string;
-  agents: { extensionId: string; number: string; name: string | null; state: AgentLiveState; since: string | null }[];
+  agents: { extensionId: string; number: string; name: string | null; state: AgentLiveState; since: string | null; pauseReason?: string | null }[];
   calls: {
     callId: string;
     agent: string | null;
@@ -506,9 +509,10 @@ export const supervisionApi = {
     fd.append('file', wav, 'aviso.wav');
     return post<{ ok: true }>('/tenant/supervision/notice-audio', fd);
   },
-  pause: (extensionId: string) => get<{ paused: boolean; since: string | null }>(`/tenant/supervision/pause${qs({ extensionId })}`),
-  setPause: (extensionId: string, paused: boolean) =>
-    post<{ paused: boolean }>('/tenant/supervision/pause', { extensionId, paused }),
+  pause: (extensionId: string) =>
+    get<{ paused: boolean; since: string | null; reason: { id: string; label: string } | null }>(`/tenant/supervision/pause${qs({ extensionId })}`),
+  setPause: (extensionId: string, paused: boolean, reasonId?: string | null) =>
+    post<{ paused: boolean }>('/tenant/supervision/pause', { extensionId, paused, ...(reasonId && { reasonId }) }),
 };
 
 // ─── Painel do cliente na entrada (melhoria 3) ───────────────────────────────
@@ -552,6 +556,7 @@ export interface CallerPanelData {
   history?: { data: CallerHistoryItem[]; hasMore: boolean };
   highlights?: { callsLast7Days: number; lastTyping: { label: string; at: string; note: string | null } | null };
   conversations?: { id: string; status: string; lastMessageAt: string | null; inbox: { channel: string; name: string } }[];
+  openTickets?: import('@/types').TicketRef[];
   notes?: CallerNote[];
 }
 
@@ -1139,6 +1144,8 @@ export interface AttendanceCallKpis {
   answerRate: number | null;
   tmaSecs: number | null;
   tmeSecs: number | null;
+  /** % das terminadas atendidas abaixo do limiar (AttendanceReport.slaSecs). */
+  slaPct: number | null;
 }
 
 export interface AttendanceAgentKpis {
@@ -1164,6 +1171,7 @@ export interface AttendanceReport {
   from: string;
   to: string;
   limited: boolean;
+  slaSecs: number;
   tenant: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
   selection: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
   reasons: { reason: string; count: number; pct: number }[];
@@ -1305,4 +1313,254 @@ export const cannedApi = {
   list: () => get<{ data: import('@/types').CannedResponse[] }>('/tenant/canned-responses').then((r) => r.data),
   create: (data: { shortcut: string; text: string }) => post<import('@/types').CannedResponse>('/tenant/canned-responses', data),
   remove: (id: string) => del<void>(`/tenant/canned-responses/${id}`),
+};
+
+// ─── Tickets ────────────────────────────────────────────────────────────────
+
+export type TicketInput = {
+  subject?: string;
+  description?: string | null;
+  priority?: import('@/types').TicketPriority;
+  supportLevel?: number;
+  contactId?: string | null;
+  assigneeId?: string | null;
+  groupId?: string | null;
+  categoryId?: string | null;
+  subcategoryId?: string | null;
+  dueAt?: string | null;
+};
+
+export const ticketsApi = {
+  meta: () => get<import('@/types').TicketMeta>('/tenant/tickets/meta'),
+  list: (params: { status?: string; priority?: string; supportLevel?: number; assignee?: string; groupId?: string; contactId?: string; q?: string; page?: number }) =>
+    get<Paginated<import('@/types').Ticket>>(`/tenant/tickets${qs(params)}`),
+  get: (id: string) => get<import('@/types').TicketDetail>(`/tenant/tickets/${id}`),
+  create: (data: TicketInput & { subject: string; callId?: string; conversationId?: string }) =>
+    post<import('@/types').Ticket>('/tenant/tickets', data),
+  update: (id: string, data: TicketInput & { status?: import('@/types').TicketStatus; updatedAt: string }) =>
+    patch<import('@/types').Ticket>(`/tenant/tickets/${id}`, data),
+  addNote: (id: string, body: string) => post<unknown>(`/tenant/tickets/${id}/notes`, { body }),
+  unlink: (id: string, target: { callId?: string; conversationId?: string }) =>
+    request<void>(`/tenant/tickets/${id}/links`, { method: 'DELETE', body: JSON.stringify(target) }),
+};
+
+// ─── Metas e alertas operacionais (fase 4) ──────────────────────────────────
+
+export type AlertType = 'LONG_WAIT' | 'LONG_HANDLE' | 'NO_AGENTS' | 'SLA_BELOW' | 'ABANDON_ABOVE' | 'TMA_ABOVE';
+
+export interface OpsAlert {
+  id: string;
+  type: AlertType;
+  ref: string;
+  groupId: string | null;
+  group?: string | null;
+  value: number;
+  threshold: number;
+  endValue: number | null;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export interface ServiceTargets {
+  slaThresholdSecs: number;
+  slaTargetPct: number | null;
+  maxWaitSecs: number | null;
+  maxHandleSecs: number | null;
+  minAvailableAgents: number | null;
+  maxAbandonPct: number | null;
+  maxTmaSecs: number | null;
+}
+
+export const alertsApi = {
+  settings: () => get<ServiceTargets>('/tenant/alerts/settings'),
+  saveSettings: (data: ServiceTargets) => put<ServiceTargets>('/tenant/alerts/settings', data),
+  list: (q: { open?: boolean; type?: AlertType; from?: string; to?: string; page?: number }) =>
+    get<Paginated<OpsAlert> & { byType: Partial<Record<AlertType, number>> }>(`/tenant/alerts${qs({ ...q, open: q.open === undefined ? undefined : String(q.open) })}`),
+};
+
+// ─── Agentes: motivos de pausa, turnos, tempo (fase 5) ──────────────────────
+
+export const pauseReasonsApi = {
+  list: (all = false) => get<{ data: RejectReason[] }>(`/tenant/pause-reasons${all ? '?all=1' : ''}`).then((r) => r.data),
+  create: (data: { label: string; sortOrder?: number }) => post<RejectReason>('/tenant/pause-reasons', data),
+  update: (id: string, data: Partial<Pick<RejectReason, 'label' | 'isActive' | 'sortOrder'>>) =>
+    patch<{ ok: true }>(`/tenant/pause-reasons/${id}`, data),
+};
+
+export interface ShiftInput { weekday: number; start: string; end: string }
+
+export const shiftsApi = {
+  get: (userId: string) => get<{ data: ShiftInput[] }>(`/tenant/team/${userId}/shifts`).then((r) => r.data),
+  save: (userId: string, shifts: ShiftInput[]) => put<{ data: ShiftInput[] }>(`/tenant/team/${userId}/shifts`, shifts),
+};
+
+export interface AgentTimeRow {
+  userId: string;
+  name: string;
+  scheduledSecs: number;
+  loggedSecs: number;
+  loggedInShiftSecs: number;
+  adherencePct: number | null;
+  pausedSecs: number;
+  pauses: { reason: string | null; secs: number; count: number }[];
+}
+
+export const agentTimeApi = {
+  report: (q: { from?: string; to?: string }) => get<{ from: string; to: string; data: AgentTimeRow[] }>(`/tenant/reports/agent-time${qs(q)}`),
+};
+
+// ─── Qualidade (fase 7) ─────────────────────────────────────────────────────
+
+export type QaAnswer = 'YES' | 'NO' | 'NA';
+export type QaStatus = 'SUBMITTED' | 'ACKNOWLEDGED' | 'DISPUTED' | 'RESOLVED';
+export interface QaCriterion { id?: string; label: string; weight: number; critical: boolean }
+export interface QaDefinition { sections: { title: string; criteria: QaCriterion[] }[] }
+export interface QaForm { id: string; name: string; isActive: boolean; definition: QaDefinition; updatedAt: string }
+type Person = { id: string; name: string };
+export interface QaEvaluationRow {
+  id: string; score: number; criticalFail: boolean; status: QaStatus; createdAt: string;
+  callId: string | null; conversationId: string | null; ticketId: string | null;
+  form: { name: string } | null; agent: Person; evaluator: Person;
+}
+export interface QaEvaluationDetail extends QaEvaluationRow {
+  formSnapshot: QaDefinition & { name: string };
+  answers: Record<string, QaAnswer>;
+  comment: string | null; agentComment: string | null; resolution: string | null; acknowledgedAt: string | null;
+  canEdit: boolean; isMine: boolean;
+}
+export interface QaSummaryRow { agentId: string; agent: string; evaluations: number; avgScore: number | null; criticalFails: number; disputed: number }
+export interface QaSampleRow { agentId: string; agent: string; calls: { id: string; at: string; fromNumber: string | null; durationSecs: number }[] }
+
+export const qaApi = {
+  forms: (all = false) => get<{ data: QaForm[] }>(`/tenant/qa/forms${all ? '?all=1' : ''}`).then((r) => r.data),
+  createForm: (data: { name: string; definition: QaDefinition }) => post<QaForm>('/tenant/qa/forms', data),
+  updateForm: (id: string, data: { name: string; definition: QaDefinition; isActive?: boolean }) => put<QaForm>(`/tenant/qa/forms/${id}`, data),
+  list: (q: { agentId?: string; status?: QaStatus; from?: string; to?: string; page?: number }) =>
+    get<Paginated<QaEvaluationRow>>(`/tenant/qa/evaluations${qs(q)}`),
+  get: (id: string) => get<QaEvaluationDetail>(`/tenant/qa/evaluations/${id}`),
+  create: (data: { formId: string; callId?: string; conversationId?: string; ticketId?: string; answers: Record<string, QaAnswer>; comment?: string }) =>
+    post<{ id: string }>('/tenant/qa/evaluations', data),
+  revise: (id: string, data: { answers?: Record<string, QaAnswer>; comment?: string | null; resolution?: string }) =>
+    patch<QaEvaluationDetail>(`/tenant/qa/evaluations/${id}`, data),
+  acknowledge: (id: string, comment?: string) => post<unknown>(`/tenant/qa/evaluations/${id}/acknowledge`, comment ? { comment } : {}),
+  dispute: (id: string, comment: string) => post<unknown>(`/tenant/qa/evaluations/${id}/dispute`, { comment }),
+  summary: (q: { from?: string; to?: string }) => get<{ data: QaSummaryRow[] }>(`/tenant/qa/summary${qs(q)}`).then((r) => r.data),
+  sample: (q: { days?: number; perAgent?: number }) => get<{ data: QaSampleRow[] }>(`/tenant/qa/sample${qs(q)}`).then((r) => r.data),
+};
+
+// ─── Satisfação / CSAT (fase 8) ─────────────────────────────────────────────
+
+export interface CsatConfig { voice: boolean; text: boolean; sms: boolean; question: string; thanks: string }
+export interface CsatSummary { responses: number; avg: number | null; satisfiedPct: number | null; distribution: Record<'1' | '2' | '3' | '4' | '5', number> }
+export interface CsatReport {
+  overall: CsatSummary;
+  asked: number;
+  byChannel: (CsatSummary & { key: string })[];
+  byAgent: (CsatSummary & { key: string | null; name: string | null })[];
+  byGroup: (CsatSummary & { key: string | null; name: string | null })[];
+}
+
+export const csatApi = {
+  settings: () => get<CsatConfig>('/tenant/csat/settings'),
+  save: (data: CsatConfig) => put<CsatConfig>('/tenant/csat/settings', data),
+  report: (q: { from?: string; to?: string }) => get<CsatReport>(`/tenant/reports/csat${qs(q)}`),
+};
+
+// ─── Consolidado / painel de direcção (fase 9) ──────────────────────────────
+
+export type ConsolidatedBucket = 'day' | 'week' | 'month';
+export interface ConsolidatedReport {
+  bucket: ConsolidatedBucket;
+  kpis: {
+    contacts: number;
+    calls: AttendanceCallKpis;
+    slaSecs: number;
+    callsOut: number;
+    conversations: number;
+    conversationsResolved: number;
+    textFirstResponseSecs: number | null;
+    ticketsCreated: number;
+    ticketsResolved: number;
+    ticketResolutionSecs: number | null;
+    csat: CsatSummary;
+    qa: { evaluations: number; avgScore: number | null };
+  };
+  byChannel: { channel: string; contacts: number }[];
+  series: { period: string; callsIn: number; callsAnswered: number; callsMissed: number; callsOut: number; conversations: number; conversationsResolved: number; ticketsCreated: number; ticketsResolved: number }[];
+}
+
+export const consolidatedApi = {
+  get: (q: { from?: string; to?: string; bucket: ConsolidatedBucket }) => get<ConsolidatedReport>(`/tenant/reports/consolidated${qs(q)}`),
+};
+
+// ─── Base de conhecimento (fase 10) ─────────────────────────────────────────
+
+export interface KbSummary { id: string; title: string; category: string | null; isPublished: boolean; aiEnabled: boolean; updatedAt: string; excerpt: string }
+export interface KbArticle { id: string; title: string; body: string; category: string | null; isPublished: boolean; aiEnabled: boolean; updatedAt: string; canEdit: boolean }
+export type KbInput = { title: string; body: string; category: string | null; isPublished: boolean; aiEnabled: boolean };
+
+export const kbApi = {
+  list: (q: { q?: string; category?: string; limit?: number }) => get<{ data: KbSummary[]; categories: string[] }>(`/tenant/kb${qs(q)}`),
+  get: (id: string) => get<KbArticle>(`/tenant/kb/${id}`),
+  create: (data: KbInput) => post<KbArticle>('/tenant/kb', data),
+  update: (id: string, data: KbInput) => put<KbArticle>(`/tenant/kb/${id}`, data),
+  remove: (id: string) => del<void>(`/tenant/kb/${id}`),
+};
+
+// ─── Helpdesk externo / Freshdesk (fase 3) ──────────────────────────────────
+
+export type TicketOnCall = 'NEVER' | 'AGENT_CHOICE' | 'ALWAYS';
+export interface HelpdeskStatus {
+  configured: boolean;
+  canEdit: boolean;
+  enabled?: boolean;
+  domain?: string;
+  apiKeySet?: boolean;
+  ticketOnCall?: TicketOnCall;
+  includeRecordingLink?: boolean;
+  webhookUrl?: string;
+  webhookBody?: string;
+  lastSyncAt?: string | null;
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+}
+
+export const helpdeskApi = {
+  get: () => get<HelpdeskStatus>('/tenant/helpdesk'),
+  save: (data: { domain: string; apiKey?: string; enabled: boolean; ticketOnCall: TicketOnCall; includeRecordingLink: boolean }) => put<{ ok: true }>('/tenant/helpdesk', data),
+  test: () => post<{ ok: true; agent: string | null; email: string | null }>('/tenant/helpdesk/test'),
+  sync: () => post<{ ok: true; created: number; updated: number; skipped: number; unchanged: number }>('/tenant/helpdesk/sync'),
+};
+
+// ─── Estado da plataforma (fase 11) ─────────────────────────────────────────
+
+export const platformApi = {
+  status: () => get<{ ok: boolean; components: { key: string; up: boolean; since: string }[] }>('/tenant/platform-status'),
+};
+
+// ─── Chat interno da equipa ─────────────────────────────────────────────────
+
+export interface ChatRoomRow {
+  id: string;
+  kind: 'DIRECT' | 'GROUP';
+  name: string | null;
+  members: { id: string; name: string }[];
+  lastMessage: { body: string; at: string; author: string } | null;
+  lastMessageAt: string;
+  unread: number;
+  canManage: boolean;
+}
+export interface ChatMessageRow { id: string; body: string; createdAt: string; authorId: string; author: { name: string } }
+
+export const teamChatApi = {
+  rooms: () => get<{ data: ChatRoomRow[]; totalUnread: number }>('/tenant/chat/rooms'),
+  unread: () => get<{ total: number }>('/tenant/chat/unread'),
+  users: () => get<{ data: { id: string; name: string; role: string }[] }>('/tenant/chat/users').then((r) => r.data),
+  direct: (userId: string) => post<{ id: string }>('/tenant/chat/direct', { userId }),
+  createGroup: (data: { name: string; memberIds: string[] }) => post<{ id: string }>('/tenant/chat/rooms', data),
+  updateGroup: (id: string, data: { name?: string; memberIds?: string[] }) => patch<{ ok: true }>(`/tenant/chat/rooms/${id}`, data),
+  leave: (id: string) => del<void>(`/tenant/chat/rooms/${id}/me`),
+  messages: (id: string, before?: string) => get<{ data: ChatMessageRow[]; hasMore: boolean }>(`/tenant/chat/rooms/${id}/messages${qs({ before })}`),
+  send: (id: string, body: string) => post<ChatMessageRow>(`/tenant/chat/rooms/${id}/messages`, { body }),
+  read: (id: string) => post<void>(`/tenant/chat/rooms/${id}/read`),
 };

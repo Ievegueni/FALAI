@@ -10,8 +10,13 @@ import { Tabs } from '@/components/ui/Tabs';
 import { AttendanceTab, type AttendanceView } from './AttendanceTabs';
 import { SummaryTab } from './SummaryTab';
 import { AnalysisTab } from './AnalysisTab';
+import { AgentTimeTab } from './AgentTimeTab';
+import { CsatTab } from './CsatTab';
+import { ConsolidatedTab } from './ConsolidatedTab';
 import { useToast } from '@/contexts/ToastContext';
 import { clsx } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { seesWholeTenant } from '@/lib/roles';
 
 function isoDaysAgo(days: number): string {
   const d = new Date();
@@ -33,7 +38,7 @@ function periodRange(p: Exclude<Period, 'custom'>): { from: string; to: string }
   return { from: isoDaysAgo(days), to: new Date().toISOString().slice(0, 10) };
 }
 
-type ReportTab = 'summary' | AttendanceView | 'analysis';
+type ReportTab = 'summary' | AttendanceView | 'analysis' | 'agentTime' | 'csat' | 'consolidated';
 const EXPORTABLE: Partial<Record<ReportTab, 'agents' | 'groups' | 'reasons' | 'typing'>> = {
   agents: 'agents',
   groups: 'groups',
@@ -53,7 +58,12 @@ function saveBlob({ blob, filename }: { blob: Blob; filename: string }) {
 export function ReportsPage() {
   const { t } = useTranslation();
   const toast = useToast();
-  const [tab, setTab] = useState<ReportTab>('summary');
+  // Resumo = conta inteira: só quem vê tudo. Agente e supervisor ficam com o
+  // atendimento, já filtrado pela API ao que é seu / da sua equipa.
+  const { user } = useAuth();
+  const wholeTenant = seesWholeTenant(user?.role);
+  const isAgent = user?.role === 'MEMBER';
+  const [tab, setTab] = useState<ReportTab>(wholeTenant ? 'summary' : 'attendance');
   const [period, setPeriod] = useState<Period>('30d');
   const [from, setFrom] = useState(isoDaysAgo(29));
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
@@ -152,12 +162,12 @@ export function ReportsPage() {
         title={t('nav.reports')}
         actions={
           <>
-            {aiState?.canAnalyze && tab !== 'calls' && (
+            {aiState?.canAnalyze && tab !== 'calls' && tab !== 'agentTime' && tab !== 'csat' && tab !== 'consolidated' && (
               <Button variant="outline" size="sm" icon={<Sparkles className="h-4 w-4 text-blue-600" />} onClick={() => analyze.mutate()} loading={analyze.isPending}>
                 {analyze.isPending ? t('reports.ai.analyzing') : t('reports.ai.analyze')}
               </Button>
             )}
-            {(tab === 'summary' || tab === 'analysis') && (
+            {wholeTenant && (tab === 'summary' || tab === 'analysis') && (
               <>
                 <Button variant="outline" size="sm" icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => void exportXlsx()} disabled={downloading}>
                   {t('reports.exportExcel')}
@@ -181,14 +191,16 @@ export function ReportsPage() {
           active={tab}
           onChange={(k) => setTab(k as ReportTab)}
           tabs={[
-            { key: 'summary', label: t('reports.tabs.summary') },
+            ...(wholeTenant ? [{ key: 'summary', label: t('reports.tabs.summary') }, { key: 'consolidated', label: t('reports.tabs.consolidated') }] : []),
             { key: 'attendance', label: t('reports.tabs.attendance') },
             { key: 'agents', label: t('reports.tabs.agents') },
             { key: 'groups', label: t('reports.tabs.groups') },
             { key: 'reasons', label: t('reports.tabs.reasons') },
             { key: 'typing', label: t('reports.tabs.typing') },
             { key: 'calls', label: t('reports.tabs.calls') },
-            { key: 'analysis', label: t('reports.tabs.analysis') },
+            { key: 'agentTime', label: t('reports.tabs.agentTime') },
+            { key: 'csat', label: t('reports.tabs.csat') },
+            ...(isAgent ? [] : [{ key: 'analysis', label: t('reports.tabs.analysis') }]),
           ]}
         />
 
@@ -233,9 +245,9 @@ export function ReportsPage() {
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
           </div>
-          {tab !== 'summary' && (
+          {tab !== 'summary' && tab !== 'agentTime' && tab !== 'csat' && tab !== 'consolidated' && (
             <>
-              <div>
+              {!isAgent && <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{t('reports.att.agent')}</label>
                 <select value={extensionId} onChange={(e) => setExtensionId(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
                   <option value="">{t('reports.all')}</option>
@@ -243,7 +255,7 @@ export function ReportsPage() {
                     <option key={x.id} value={x.id}>{x.number}{x.displayName && x.displayName !== x.number ? ` — ${x.displayName}` : ''}</option>
                   ))}
                 </select>
-              </div>
+              </div>}
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">{t('reports.att.group')}</label>
                 <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
@@ -270,6 +282,12 @@ export function ReportsPage() {
 
         {tab === 'summary' ? (
           <SummaryTab from={from} to={to} />
+        ) : tab === 'agentTime' ? (
+          <AgentTimeTab from={from} to={to} />
+        ) : tab === 'csat' ? (
+          <CsatTab from={from} to={to} />
+        ) : tab === 'consolidated' ? (
+          <ConsolidatedTab from={from} to={to} />
         ) : tab === 'analysis' ? (
           <AnalysisTab state={aiState} analyzing={analyze.isPending} onAnalyze={() => analyze.mutate()} />
         ) : (

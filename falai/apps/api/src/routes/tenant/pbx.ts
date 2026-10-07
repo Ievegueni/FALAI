@@ -4,6 +4,7 @@ import { z } from "zod";
 import { randomBytes } from "crypto";
 import { encryptSecret } from "../../services/crypto.service.js";
 import { getTenantTelephony, invalidateTenantTelephony } from "../../services/tenantTelephony.service.js";
+import { requireConfigAdmin } from "../../services/userScope.js";
 
 const saveSchema = z.object({
   baseUrl: z.string().url("Base URL inválida"),
@@ -65,7 +66,7 @@ export const tenantPbxRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // PUT /tenant/pbx — guardar credenciais do PBX próprio
-  fastify.put("/", { preHandler }, async (request, reply) => {
+  fastify.put("/", { preHandler: [...preHandler, requireConfigAdmin] }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const t = await loadTenant(tenantId);
     if (t.plan.productType !== "CRM_BYO_PBX") {
@@ -103,7 +104,7 @@ export const tenantPbxRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /tenant/pbx/test — testar a ligação (auth + listar extensões)
-  fastify.post("/test", { preHandler }, async (request, reply) => {
+  fastify.post("/test", { preHandler: [...preHandler, requireConfigAdmin] }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const t = await loadTenant(tenantId);
     if (t.plan.productType !== "CRM_BYO_PBX") {

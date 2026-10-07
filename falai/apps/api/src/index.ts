@@ -59,6 +59,7 @@ import { tenantCallTypingRoutes } from "./routes/tenant/callTyping.js";
 import { tenantCallersRoutes } from "./routes/tenant/callers.js";
 import { tenantSupervisionRoutes } from "./routes/tenant/supervision.js";
 import { SupervisionManager } from "./services/supervision.service.js";
+import { resumeRunningSmsCampaigns } from "./services/smsCampaign.service.js";
 import { tenantEventsRoutes } from "./routes/tenant/events.js";
 import { tenantReportsRoutes } from "./routes/tenant/reports.js";
 import { tenantSmsRoutes } from "./routes/tenant/sms.js";
@@ -84,10 +85,24 @@ import { whatsappWebhookRoutes } from "./routes/webhooks/whatsapp.js";
 import { tenantInboxesRoutes } from "./routes/tenant/inboxes.js";
 import { tenantConversationsRoutes } from "./routes/tenant/conversations.js";
 import { v1ConversationsRoutes } from "./routes/v1/conversations.js";
+import { tenantTicketsRoutes } from "./routes/tenant/tickets.js";
+import { v1TicketsRoutes } from "./routes/v1/tickets.js";
+import { v1ReportsRoutes } from "./routes/v1/reports.js";
+import { tenantAlertsRoutes } from "./routes/tenant/alerts.js";
+import { tenantAgentTimeRoutes } from "./routes/tenant/agentTime.js";
+import { tenantQualityRoutes } from "./routes/tenant/quality.js";
+import { tenantCsatRoutes, publicCsatRoutes } from "./routes/tenant/csat.js";
+import { tenantKnowledgeRoutes } from "./routes/tenant/knowledge.js";
+import { tenantTeamChatRoutes } from "./routes/tenant/teamChat.js";
+import { tenantHelpdeskRoutes, helpdeskWebhookRoutes } from "./routes/tenant/helpdesk.js";
+import { startHelpdeskSync } from "./services/helpdesk/sync.js";
+import { platformStatus, startPlatformHealth } from "./services/platformHealth.service.js";
 import { publicChatRoutes } from "./routes/public/chat.js";
 import { publicWaRoutes } from "./routes/public/wa.js";
 import { startEmailPolling } from "./services/email.service.js";
 import { startWaHealthCheck } from "./services/waPool.service.js";
+import { startAlertEvaluator } from "./services/alerts.service.js";
+import { closeStaleSessions } from "./services/agentTime.service.js";
 import { gateFeature, type FeatureKey } from "./services/features.js";
 
 /**
@@ -375,14 +390,23 @@ async function buildApp() {
   await gated(fastify, "webphone", tenantCallTypingRoutes);
   await gated(fastify, "webphone", tenantCallersRoutes);
   await gated(fastify, "webphone", tenantSupervisionRoutes);
+  await gated(fastify, "webphone", tenantAlertsRoutes);
+  await gated(fastify, "webphone", tenantAgentTimeRoutes);
+  await gated(fastify, "quality", tenantQualityRoutes);
+  await gated(fastify, "reports", tenantCsatRoutes);
+  await gated(fastify, "knowledge", tenantKnowledgeRoutes);
+  await gated(fastify, "teamChat", tenantTeamChatRoutes);
+  await gated(fastify, "tickets", tenantHelpdeskRoutes);
   await fastify.register(tenantEventsRoutes);
   await gated(fastify, "reports", tenantReportsRoutes);
   await gated(fastify, "sms", tenantSmsRoutes);
   // Canais de texto — ver docs/PLANO-CANAIS-TEXTO.md
   await gated(fastify, "inbox", tenantInboxesRoutes, { prefix: "/tenant/inboxes" });
   await gated(fastify, "inbox", tenantConversationsRoutes);
+  await gated(fastify, "tickets", tenantTicketsRoutes);
   await fastify.register(publicChatRoutes, { prefix: "/public/chat" });
   await fastify.register(publicWaRoutes, { prefix: "/public/wa" });
+  await fastify.register(publicCsatRoutes);
 
   // ── Public API v1 (API key authenticated, per-key rate limiting) ─────────
   await fastify.register(async (v1) => {
@@ -410,6 +434,8 @@ async function buildApp() {
     await gated(v1, "agents", v1ModelsRoutes);
     await v1.register(v1UsageRoutes);
     await gated(v1, "inbox", v1ConversationsRoutes);
+    await gated(v1, "tickets", v1TicketsRoutes);
+    await gated(v1, "reports", v1ReportsRoutes);
   });
 
   // ── Webhooks ────────────────────────────────────────────────────────────
@@ -420,6 +446,7 @@ async function buildApp() {
   await fastify.register(proxypayWebhookRoutes, { prefix: "/webhooks/proxypay" });
   await fastify.register(telegramWebhookRoutes, { prefix: "/webhooks/telegram" });
   await fastify.register(whatsappWebhookRoutes, { prefix: "/webhooks/whatsapp" });
+  await fastify.register(helpdeskWebhookRoutes);
 
   // Canal de email: lê as caixas IMAP dos inboxes a cada minuto.
   const stopEmailPolling = startEmailPolling(fastify);
@@ -427,6 +454,29 @@ async function buildApp() {
   // Pool WhatsApp Active/Standby: health check de cada número a cada minuto.
   const stopWaHealthCheck = startWaHealthCheck(fastify);
   fastify.addHook("onClose", async () => stopWaHealthCheck());
+  // Alertas operacionais e metas (fase 4): avaliação a cada 15 s.
+  const stopAlerts = startAlertEvaluator(fastify);
+  fastify.addHook("onClose", async () => stopAlerts());
+  // Vigilância da plataforma (fase 11): BD, Redis, motor, registo SIP, peerings.
+  const stopHealth = startPlatformHealth(fastify);
+  fastify.addHook("onClose", async () => stopHealth());
+  // Helpdesk externo (Freshdesk) por cliente: fila de envio + reconciliação a cada 5 min.
+  const stopHelpdesk = startHelpdeskSync(fastify.log);
+  fastify.addHook("onClose", async () => stopHelpdesk());
+  // Sessões de agentes que ficaram abertas se a API caiu (fase 5).
+  await closeStaleSessions().catch((err) => fastify.log.warn({ err }, "agent_session.close_stale_error"));
+
+  // ── Estado da plataforma (fase 11) ─────────────────────────────────────
+  // Público e sem detalhes, para um monitor externo (UptimeRobot, etc.): 200
+  // com tudo bem, 503 com algo em baixo. Os peerings de clientes não aparecem.
+  fastify.get("/status", async (_request, reply) => {
+    const s = platformStatus();
+    const components = s.components.filter((c) => !c.key.startsWith("peer:")).map(({ key, up }) => ({ key, up }));
+    const ok = components.every((c) => c.up);
+    return reply.status(ok ? 200 : 503).send({ status: ok ? "ok" : "degraded", components });
+  });
+  // O mesmo para o CRM: os componentes gerais e os peerings do próprio cliente.
+  fastify.get("/tenant/platform-status", { preHandler: [fastify.verifyTenant] }, async (request) => platformStatus(request.tenantUser!.tenantId));
 
   // ── Health ─────────────────────────────────────────────────────────────
   fastify.get("/health", async () => {
@@ -454,6 +504,10 @@ async function main() {
       .sweepOrphans()
       .then((n) => n > 0 && app.log.info({ n }, "supervision.orphans_swept"))
       .catch((err) => app.log.warn({ err }, "supervision.sweep_failed"));
+    // Campanhas de SMS que o reinício deixou a meio (mensagens QUEUED presas).
+    void resumeRunningSmsCampaigns(app)
+      .then((n) => n > 0 && app.log.info({ n }, "sms_campaign.resumed"))
+      .catch((err) => app.log.warn({ err }, "sms_campaign.resume_failed"));
     void syncAllPbx()
       .then(() => app.log.info("pbx_sync.boot_complete"))
       .catch((err) => app.log.warn({ err }, "pbx_sync.boot_failed"));

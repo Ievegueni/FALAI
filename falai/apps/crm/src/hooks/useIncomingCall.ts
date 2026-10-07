@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { apiBaseUrl, callersApi } from '@/lib/api';
+import { useEffect, useState } from 'react';
+import { callersApi } from '@/lib/api';
+import { useTenantEvents } from '@/lib/tenantEvents';
 import { useAuth } from '@/contexts/AuthContext';
 
 export interface IncomingCall {
@@ -12,51 +13,44 @@ export interface IncomingCall {
 }
 
 /**
- * Liga-se ao stream SSE da API e devolve a chamada a entrar mais recente
- * (para o "screen pop"). Faz automaticamente a procura do contacto pelo número.
- *
- * O EventSource reconecta sozinho em caso de queda de rede. Fecha quando o
- * utilizador termina a sessão.
+ * Chamada a entrar mais recente para o "screen pop" (stream SSE partilhado,
+ * lib/tenantEvents.ts). Só aparece a quem a chamada está a tocar — a extensão
+ * do utilizador; supervisores acompanham pela Supervisão — e fecha quando a
+ * chamada termina. Faz automaticamente a procura do contacto pelo número.
  */
 export function useIncomingCall(): { call: IncomingCall | null; dismiss: () => void } {
   const { user } = useAuth();
   const [call, setCall] = useState<IncomingCall | null>(null);
-  const esRef = useRef<EventSource | null>(null);
+  const myNumber = user?.extensionNumber ?? null;
 
   useEffect(() => {
-    if (!user) {
-      esRef.current?.close();
-      esRef.current = null;
-      setCall(null);
-      return;
-    }
-
-    const token = localStorage.getItem('falai_token');
-    if (!token) return;
-
-    const url = `${apiBaseUrl}/tenant/events/stream?token=${encodeURIComponent(token)}`;
-    const es = new EventSource(url);
-    esRef.current = es;
-
-    es.addEventListener('incoming-call', (ev: MessageEvent<string>) => {
-      try {
-        const data = JSON.parse(ev.data) as IncomingCall;
-        setCall({ ...data, contact: undefined });
-        void resolveContact(data.callerNumber).then((contact) => {
-          setCall((cur) =>
-            cur && cur.callerNumber === data.callerNumber && cur.at === data.at ? { ...cur, contact } : cur,
-          );
-        });
-      } catch {
-        // payload inválido — ignora
-      }
-    });
-
-    return () => {
-      es.close();
-      esRef.current = null;
-    };
+    if (!user) setCall(null);
   }, [user]);
+
+  useTenantEvents<IncomingCall>(['incoming-call'], (data) => {
+    if (!myNumber || data.calleeNumber !== myNumber) return;
+    setCall({ ...data, contact: undefined });
+    void resolveContact(data.callerNumber).then((contact) => {
+      setCall((cur) =>
+        cur && cur.callerNumber === data.callerNumber && cur.at === data.at ? { ...cur, contact } : cur,
+      );
+    });
+  }, !!user);
+
+  // Fim da chamada (ou atendida noutra extensão): fecha o pop dessa chamada.
+  useTenantEvents<{ callId: string | null }>(['incoming-call.ended'], (data) => {
+    setCall((cur) => (cur && cur.callId === data.callId ? null : cur));
+  }, !!user);
+
+  // Alertas operacionais (a API só os manda à supervisão): reenviados como
+  // evento da janela para o AlertToaster e quem mostra a lista se actualizar.
+  // O estado da plataforma (fase 11) segue o mesmo caminho: a faixa de aviso escuta-o.
+  useTenantEvents(['platform.status'], () => window.dispatchEvent(new CustomEvent('falai:platform')), !!user);
+  // Chat interno: a API só manda aos membros da conversa.
+  useTenantEvents(['chat.message'], (data) => window.dispatchEvent(new CustomEvent('falai:chat', { detail: data })), !!user);
+  useTenantEvents(['alert.opened', 'alert.closed'], (data, name) => {
+    window.dispatchEvent(new CustomEvent('falai:alert', { detail: { name, data } }));
+  }, !!user);
 
   return { call, dismiss: () => setCall(null) };
 }

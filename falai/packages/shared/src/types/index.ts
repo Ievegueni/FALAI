@@ -1,5 +1,5 @@
 export type AdminRole = "SUPERADMIN" | "OPERATOR" | "FINANCE" | "SUPPORT";
-export type TenantRole = "OWNER" | "ADMIN" | "SUPERVISOR" | "MEMBER" | "VIEWER";
+export type TenantRole = "OWNER" | "ADMIN" | "MANAGER" | "SUPERVISOR" | "MEMBER" | "VIEWER";
 export type AgentStatus = "DRAFT" | "PENDING_REVIEW" | "ACTIVE" | "PAUSED" | "BLOCKED";
 export type CallStatus =
   | "QUEUED" | "DIALING" | "RINGING" | "IN_PROGRESS"

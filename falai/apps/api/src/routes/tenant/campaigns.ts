@@ -299,7 +299,7 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(400).send({ error: "Apenas campanhas RUNNING podem ser pausadas" });
     }
 
-    await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
+    await prisma.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED", pausedReason: null } });
 
     await fastify.audit({
       actorType: "TENANT_USER",

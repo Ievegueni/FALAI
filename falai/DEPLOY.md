@@ -116,6 +116,11 @@ ALLOWED_ORIGINS=https://crm.teu-dominio.com,https://admin.teu-dominio.com
 # NUNCA pôr um valor demasiado largo — quem estiver fora da lista pode forjar
 # X-Forwarded-For e contornar a allowlist com uma chave roubada.
 TRUSTED_PROXIES=127.0.0.1
+# endereços públicos: links que saem para fora (webhooks que o cliente
+# configura no PBX/Freshdesk, link do inquérito de satisfação por SMS, ligação
+# para a chamada/gravação nos tickets do Freshdesk)
+PUBLIC_API_URL=https://api.teu-dominio.com
+PUBLIC_CRM_URL=https://crm.teu-dominio.com
 
 # Motor de telefonia (Asterisk, ver infra/asterisk/README.md). OBRIGATÓRIO:
 # a API não arranca sem ASTERISK_ARI_URL. Ver .env.example para o resto.
@@ -132,6 +137,8 @@ AZURE_TTS_KEY=
 AZURE_TTS_REGION=
 PROXYPAY_API_KEY=
 FUTURIX_SMS_API_KEY=
+# Recomendado: com isto, /webhooks/sms exige ?token=<segredo> (configurar o URL assim na Futurix)
+FUTURIX_SMS_WEBHOOK_SECRET=
 ```
 
 Gerar segredos rapidamente:
@@ -363,6 +370,11 @@ gunzip -c /opt/backups/falai_2026-01-01.sql.gz | docker exec -i falai_postgres p
 ```
 
 Faz também backup seguro do `.env` (em especial `ENCRYPTION_KEY` e `JWT_SECRET`).
+
+Em produção usar `infra/backup/backup.sh` (dump comprimido com hash, retenção,
+ficheiros e cópia externa) e testar o restauro todos os meses com
+`infra/backup/restore-test.sh` — ver `docs/CONTINUIDADE-DO-SERVICO.md`. Pôr um
+monitor externo a vigiar `GET /status` (200 = ok, 503 = algo em baixo).
 
 ---
 

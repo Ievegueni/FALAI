@@ -59,6 +59,7 @@ enum TenantStatus {
 enum TenantRole {
   OWNER
   ADMIN
+  MANAGER // gestor operacional: toda a operação, sem configuração técnica (ver services/userScope.ts)
   SUPERVISOR // supervisão em tempo real dos grupos que lhe são atribuídos (melhoria 4)
   MEMBER
   VIEWER
@@ -132,6 +133,7 @@ enum TxType {
 
 enum SmsStatus {
   QUEUED // aceite pela plataforma, a caminho do gateway
+  SENDING // reclamada para envio e saldo já reservado; órfã no arranque = interrompida
   SENT // entregue ao gateway (Futurix)
   DELIVERED // confirmado entregue ao destinatário (delivery report)
   FAILED // falhou no envio ou entrega
@@ -255,6 +257,30 @@ model Tenant {
   supervisionNotifyListen Boolean          @default(false)
   monitoringNotice     Boolean             @default(false)
   supervisionEvents    SupervisionEvent[]
+  // Tickets — ver docs/PLANO-CENTRO-ATENDIMENTO.md. ticketSeq dá o número
+  // sequencial do próximo ticket (incremento atómico, sem corrida).
+  ticketSeq            Int                 @default(0)
+  tickets              Ticket[]
+  // Metas e limites de alerta (fase 4): { slaThresholdSecs, slaTargetPct,
+  // maxWaitSecs, maxHandleSecs, minAvailableAgents, maxAbandonPct, maxTmaSecs }.
+  // Validado em services/alerts.service.ts. Null = sem alertas.
+  serviceTargets       Json?
+  alerts               Alert[]
+  // Agentes (fase 5): motivos de pausa, pausas, sessões e turnos
+  pauseReasons         PauseReason[]
+  agentPauses          AgentPause[]
+  agentSessions        AgentSession[]
+  shifts               Shift[]
+  // Qualidade (fase 7)
+  qaForms              QaForm[]
+  qaEvaluations        QaEvaluation[]
+  // Satisfação (fase 8): { voice, text, sms, question, thanks } — validado em
+  // services/csat.service.ts. Null = sem inquéritos.
+  csatConfig           Json?
+  csatResponses        CsatResponse[]
+  kbArticles           KbArticle[]
+  helpdesk             HelpdeskConnection?
+  chatRooms            ChatRoom[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -362,6 +388,7 @@ model Extension {
   callLegs       CallLeg[]
   // Pausa do agente (melhoria 4): em pausa não recebe chamadas de entrada.
   pausedAt       DateTime?
+  pauses         AgentPause[]
   users          TenantUser[]
   createdAt      DateTime                  @default(now())
   updatedAt      DateTime                  @updatedAt
@@ -382,6 +409,7 @@ model ExtensionGroup {
   callLegs    CallLeg[]
   categories  CallCategoryGroup[]
   supervisors SupervisorGroup[]
+  tickets     Ticket[]
 
   @@unique([tenantId, name])
 }
@@ -542,6 +570,16 @@ model TenantUser {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   conversations   Conversation[]
+  assignedTickets Ticket[]       @relation("TicketAssignee")
+  ticketEvents    TicketEvent[]
+  pauses          AgentPause[]
+  sessions        AgentSession[]
+  shifts          Shift[]
+  qaEvaluated     QaEvaluation[] @relation("QaAgent")
+  qaEvaluations   QaEvaluation[] @relation("QaEvaluator")
+  csatResponses   CsatResponse[]
+  chatMemberships ChatMember[]
+  chatMessages    ChatMessage[]
 }
 
 // Perfil de acesso ao CRM, gerido pela Comunica no backoffice. A matriz diz,
@@ -743,6 +781,10 @@ model Call {
   billedSecs        Int        @default(0)
   costCents         Int        @default(0)
   providerCostCents Int        @default(0)
+  // Saldo reservado no arranque e ainda não acertado (settleCall) nem devolvido
+  // (releaseCallReservation). Posto a 0 de forma atómica por quem o consome —
+  // é isso que impede reembolso duplo. >0 numa chamada terminada = órfã.
+  reservedCents     Int        @default(0)
   transcript        Json?
   summary           String?    @db.Text
   // Caminho do ficheiro de gravação RELATIVO à pasta de gravações (ver
@@ -761,9 +803,13 @@ model Call {
   turns             CallTurn[]
   legs              CallLeg[]
   notes             ContactNote[]
+  // Ticket a que a chamada pertence (um ticket junta várias interacções).
+  ticketId          String?
+  ticket            Ticket?    @relation(fields: [ticketId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, kind, startedAt])
   @@index([tenantId, contactId, startedAt]) // histórico do cliente (screen pop)
+  @@index([ticketId])
 }
 
 enum CallLegOutcome {
@@ -831,6 +877,8 @@ model CallCategory {
   groups    CallCategoryGroup[]
   legs      CallLeg[]           @relation("LegCategory")
   subLegs   CallLeg[]           @relation("LegSubcategory")
+  tickets    Ticket[]           @relation("TicketCategory")
+  subTickets Ticket[]           @relation("TicketSubcategory")
   createdAt DateTime            @default(now())
 
   @@index([tenantId])
@@ -939,6 +987,9 @@ model Campaign {
   ttsVoiceId        String?
   name              String
   status            CampaignStatus    @default(DRAFT)
+  // Porque está PAUSED: "LOW_BALANCE" (auto, o carregamento de saldo retoma);
+  // null = pausa manual ou outra causa (nunca retomada automaticamente).
+  pausedReason      String?
   scheduleJson      Json?
   retryPolicy       Json?
   throttlePerMinute Int               @default(2)
@@ -976,6 +1027,7 @@ model Contact {
   // Histórico do cliente na entrada (melhoria 3)
   phones           ContactPhone[]
   notes            ContactNote[]
+  tickets          Ticket[]
 
   @@unique([tenantId, phone])
   @@unique([tenantId, email])
@@ -1226,9 +1278,13 @@ model Conversation {
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
   messages      Message[]
+  // Ticket a que a conversa pertence (um ticket junta várias interacções).
+  ticketId      String?
+  ticket        Ticket?            @relation(fields: [ticketId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, status, lastMessageAt])
   @@index([inboxId, externalRef])
+  @@index([ticketId])
 }
 
 model Message {
@@ -1288,4 +1344,374 @@ model ReportAnalysis {
 
   @@index([tenantId, filtersKey, createdAt])
   @@index([tenantId, createdAt])
+}
+
+// ============ TICKETS (centro de atendimento) ============
+// Ver docs/PLANO-CENTRO-ATENDIMENTO.md. Um só modelo para os dois modos: nos
+// tenants com helpdesk externo (Freshdesk) a linha é espelho e leva
+// externalSystem/externalId; nos outros vive só aqui.
+
+enum TicketStatus {
+  OPEN
+  PENDING // à espera do cliente
+  ON_HOLD // à espera de terceiros / outra equipa
+  RESOLVED // pode ser reaberto
+  CLOSED // final
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketEventType {
+  CREATED
+  STATUS
+  PRIORITY
+  LEVEL
+  ASSIGNEE
+  GROUP
+  CATEGORY
+  SUBJECT
+  NOTE
+  LINKED // chamada ou conversa associada
+  UNLINKED
+}
+
+model Ticket {
+  id             String          @id @default(cuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  number         Int // sequencial por tenant (Tenant.ticketSeq)
+  subject        String
+  description    String?         @db.Text
+  status         TicketStatus    @default(OPEN)
+  priority       TicketPriority  @default(MEDIUM)
+  supportLevel   Int             @default(1) // 1º, 2º ou 3º nível
+  categoryId     String?
+  category       CallCategory?   @relation("TicketCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId  String?
+  subcategory    CallCategory?   @relation("TicketSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  contactId      String?
+  contact        Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  assigneeId     String?
+  assignee       TenantUser?     @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  groupId        String? // equipa responsável
+  group          ExtensionGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  source         String          @default("MANUAL") // MANUAL | CALL | WHATSAPP | WEB | EMAIL | TELEGRAM | API
+  dueAt          DateTime?
+  resolvedAt     DateTime?
+  closedAt       DateTime?
+  reopenCount    Int             @default(0)
+  externalSystem String? // "FRESHDESK" quando é espelho
+  externalId     String?
+  // Última versão local (updatedAt) já enviada ao helpdesk externo. Se o
+  // ticket mudou depois disto há alterações por enviar — e a sincronização
+  // de lá para cá não as pisa.
+  externalSyncedAt DateTime?
+  createdById    String? // TenantUser (null = API/sistema)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  events         TicketEvent[]
+  calls          Call[]
+  conversations  Conversation[]
+
+  @@unique([tenantId, number])
+  @@unique([tenantId, externalSystem, externalId])
+  @@index([tenantId, status, updatedAt])
+  @@index([tenantId, assigneeId, status])
+  @@index([tenantId, contactId])
+}
+
+// Linha do tempo do ticket: alterações (from → to) e notas internas.
+model TicketEvent {
+  id        String          @id @default(cuid())
+  ticketId  String
+  ticket    Ticket          @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  type      TicketEventType
+  fromValue String?
+  toValue   String?
+  body      String?         @db.Text // nota
+  authorId  String? // null = API/sistema
+  author    TenantUser?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt DateTime        @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+// ============ ALERTAS OPERACIONAIS (centro de atendimento, fase 4) ============
+// Ver services/alerts.service.ts. Um alerta abre quando um limite é passado e
+// fecha quando deixa de o estar; o histórico é o relatório de desvios.
+
+enum AlertType {
+  LONG_WAIT // chamada em espera há mais de maxWaitSecs
+  LONG_HANDLE // chamada em curso há mais de maxHandleSecs
+  NO_AGENTS // grupo com menos agentes disponíveis do que minAvailableAgents
+  SLA_BELOW // SLA do dia abaixo da meta
+  ABANDON_ABOVE // taxa de abandono do dia acima do limite
+  TMA_ABOVE // TMA do dia acima do limite
+}
+
+model Alert {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  type      AlertType
+  ref       String // callId, groupId ou o dia (AAAA-MM-DD), conforme o tipo
+  groupId   String?
+  value     Float // valor quando abriu (segundos, % ou nº de agentes)
+  threshold Float
+  endValue  Float?
+  // Preenchido enquanto está aberto: impede duplicados mesmo com várias
+  // instâncias da API (o Postgres aceita vários NULL no unique).
+  openKey   String?   @unique
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  @@index([tenantId, startedAt])
+  @@index([tenantId, endedAt])
+}
+
+// ============ AGENTES: PAUSAS, SESSÕES, TURNOS (centro de atendimento, fase 5) ============
+// Ver services/agentTime.service.ts.
+
+// Motivos de pausa (almoço, formação, ...). Desactivam-se em vez de apagar.
+model PauseReason {
+  id        String       @id @default(cuid())
+  tenantId  String
+  tenant    Tenant       @relation(fields: [tenantId], references: [id])
+  label     String
+  isActive  Boolean      @default(true)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  pauses    AgentPause[]
+
+  @@unique([tenantId, label])
+}
+
+// Uma pausa da extensão (Extension.pausedAt diz se está em pausa agora).
+model AgentPause {
+  id          String       @id @default(cuid())
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  extensionId String
+  extension   Extension    @relation(fields: [extensionId], references: [id], onDelete: Cascade)
+  userId      String? // dono da extensão quando pausou
+  user        TenantUser?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  reasonId    String?
+  reason      PauseReason? @relation(fields: [reasonId], references: [id], onDelete: SetNull)
+  startedAt   DateTime     @default(now())
+  endedAt     DateTime?
+
+  @@index([tenantId, startedAt])
+  @@index([extensionId, endedAt])
+}
+
+// Tempo ligado ao CRM: abre quando o utilizador liga o canal em tempo real
+// (SSE) e fecha quando o fecha. lastSeenAt serve para fechar as que ficaram
+// abertas se a API cair.
+model AgentSession {
+  id         String     @id @default(cuid())
+  tenantId   String
+  tenant     Tenant     @relation(fields: [tenantId], references: [id])
+  userId     String
+  user       TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt  DateTime   @default(now())
+  lastSeenAt DateTime   @default(now())
+  endedAt    DateTime?
+
+  @@index([tenantId, startedAt])
+  @@index([userId, endedAt])
+}
+
+// Turno semanal: dia da semana (0 = domingo) e minutos desde a meia-noite.
+// ponytail: turnos não passam da meia-noite; partir em dois se for preciso.
+model Shift {
+  id        String     @id @default(cuid())
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  userId    String
+  user      TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekday   Int
+  startMin  Int
+  endMin    Int
+
+  @@index([tenantId, userId])
+}
+
+// ============ QUALIDADE (centro de atendimento, fase 7) ============
+// Ver services/quality.service.ts. Em vez de versões do formulário, cada
+// avaliação guarda a cópia do formulário com que foi feita (formSnapshot):
+// mudar o formulário não mexe nas avaliações já feitas.
+
+model QaForm {
+  id          String         @id @default(cuid())
+  tenantId    String
+  tenant      Tenant         @relation(fields: [tenantId], references: [id])
+  name        String
+  // { sections: [{ title, criteria: [{ id, label, weight, critical }] }] }
+  definition  Json
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  evaluations QaEvaluation[]
+
+  @@unique([tenantId, name])
+}
+
+enum QaStatus {
+  SUBMITTED // feita, à espera do agente
+  ACKNOWLEDGED // o agente leu
+  DISPUTED // o agente contestou
+  RESOLVED // contestação revista
+}
+
+model QaEvaluation {
+  id             String     @id @default(cuid())
+  tenantId       String
+  tenant         Tenant     @relation(fields: [tenantId], references: [id])
+  formId         String?
+  form           QaForm?    @relation(fields: [formId], references: [id], onDelete: SetNull)
+  formSnapshot   Json
+  callId         String?
+  conversationId String?
+  ticketId       String?
+  agentId        String // TenantUser avaliado
+  agent          TenantUser @relation("QaAgent", fields: [agentId], references: [id], onDelete: Cascade)
+  evaluatorId    String
+  evaluator      TenantUser @relation("QaEvaluator", fields: [evaluatorId], references: [id], onDelete: Cascade)
+  answers        Json // { [criterionId]: "YES" | "NO" | "NA" }
+  score          Float // 0–100, calculado no servidor
+  criticalFail   Boolean    @default(false)
+  comment        String?    @db.Text
+  status         QaStatus   @default(SUBMITTED)
+  agentComment   String?    @db.Text // contestação ou nota do agente
+  acknowledgedAt DateTime?
+  resolution     String?    @db.Text // resposta à contestação
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, agentId, createdAt])
+  @@index([callId])
+}
+
+// ============ SATISFAÇÃO / CSAT (centro de atendimento, fase 8) ============
+// Ver services/csat.service.ts. Texto e SMS criam a linha ao perguntar (score
+// a null) e preenchem-na com a resposta; a voz cria-a só quando há resposta.
+
+model CsatResponse {
+  id             String      @id @default(cuid())
+  tenantId       String
+  tenant         Tenant      @relation(fields: [tenantId], references: [id])
+  channel        String // VOICE | TEXT | SMS
+  score          Int? // 1–5; null = perguntado, ainda sem resposta
+  callId         String?
+  conversationId String?
+  ticketId       String?
+  agentId        String? // TenantUser que atendeu
+  agent          TenantUser? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  groupId        String?
+  contactId      String?
+  token          String?     @unique // link do SMS
+  createdAt      DateTime    @default(now())
+  answeredAt     DateTime?
+
+  @@index([tenantId, createdAt])
+  @@index([conversationId])
+  @@index([callId])
+}
+
+// ============ BASE DE CONHECIMENTO (centro de atendimento, fase 10) ============
+// Ver services/knowledge.service.ts. aiEnabled: a IA dos canais de texto pode
+// usar o artigo como contexto quando é relevante para a pergunta.
+
+model KbArticle {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  title       String
+  body        String   @db.Text
+  category    String?
+  isPublished Boolean  @default(true)
+  aiEnabled   Boolean  @default(true)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, isPublished])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "KbArticle_title_trgm_idx")
+}
+
+// ============ HELPDESK EXTERNO (centro de atendimento, fase 3) ============
+// Ver services/helpdesk/. Uma ligação por cliente; `provider` deixa entrar
+// outros helpdesks sem mudar o esquema (hoje só FRESHDESK).
+
+model HelpdeskConnection {
+  id             String    @id @default(cuid())
+  tenantId       String    @unique
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+  provider       String    @default("FRESHDESK")
+  enabled        Boolean   @default(false)
+  domain         String // ex.: "mano.freshdesk.com"
+  apiKey         String // encriptada (AES-256-GCM) via crypto.service
+  // Token do URL do webhook que o helpdesk chama (/webhooks/helpdesk/:token)
+  webhookToken   String    @unique
+  // NEVER | AGENT_CHOICE | ALWAYS — criar ticket no fim da chamada atendida
+  ticketOnCall   String    @default("AGENT_CHOICE")
+  includeRecordingLink Boolean @default(false)
+  lastSyncAt     DateTime? // última reconciliação bem-sucedida
+  lastError      String?
+  lastErrorAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+// ============ CHAT INTERNO DA EQUIPA ============
+// Ver services/teamChat.service.ts. Conversas directas (1:1) e grupos entre
+// utilizadores do mesmo cliente. Nada disto sai para os clientes finais.
+
+model ChatRoom {
+  id            String        @id @default(cuid())
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id])
+  kind          String // DIRECT | GROUP
+  name          String? // só nos grupos
+  // Conversas directas: os dois ids ordenados ("a:b") — uma só por par.
+  directKey     String?
+  createdById   String?
+  lastMessageAt DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  members       ChatMember[]
+  messages      ChatMessage[]
+
+  @@unique([tenantId, directKey])
+  @@index([tenantId, lastMessageAt])
+}
+
+model ChatMember {
+  roomId     String
+  room       ChatRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId     String
+  user       TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt DateTime   @default(now())
+  joinedAt   DateTime   @default(now())
+
+  @@id([roomId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id        String     @id @default(cuid())
+  roomId    String
+  room      ChatRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    TenantUser @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String     @db.Text
+  createdAt DateTime   @default(now())
+
+  @@index([roomId, createdAt])
 }

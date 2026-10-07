@@ -18,7 +18,8 @@ export interface ResolvedProviderConfig {
   anthropic: { apiKey: string };
   elevenlabs: { apiKey: string; defaultVoiceId: string };
   proxypay: { apiKey: string };
-  futurix: { apiKey: string; baseUrl: string; stubMode: boolean };
+  /** webhookSecret: se definido, /webhooks/sms exige ?token= igual. Vazio = aceita sem token (aviso no arranque). */
+  futurix: { apiKey: string; baseUrl: string; stubMode: boolean; webhookSecret: string };
   /** IA em modo de teste (STT/LLM/TTS sem chamar os provedores). Backoffice → .env AI_STUB_MODE. */
   aiStubMode: boolean;
 }
@@ -43,7 +44,7 @@ async function val(key: string, envFallback: string | undefined): Promise<string
 }
 
 export async function resolveProviderConfig(): Promise<ResolvedProviderConfig> {
-  const [dg, an, el, elVoice, pp, fx, fxBase, fxStub, aiStub] = await Promise.all([
+  const [dg, an, el, elVoice, pp, fx, fxBase, fxStub, aiStub, fxHook] = await Promise.all([
     val("DEEPGRAM_API_KEY", config.DEEPGRAM_API_KEY),
     val("ANTHROPIC_API_KEY", config.ANTHROPIC_API_KEY),
     val("ELEVENLABS_API_KEY", config.ELEVENLABS_API_KEY),
@@ -53,6 +54,7 @@ export async function resolveProviderConfig(): Promise<ResolvedProviderConfig> {
     val("FUTURIX_SMS_BASE_URL", config.FUTURIX_SMS_BASE_URL),
     val("FUTURIX_SMS_STUB_MODE", config.FUTURIX_SMS_STUB_MODE ? "true" : "false"),
     val("AI_STUB_MODE", config.AI_STUB_MODE ? "true" : "false"),
+    val("FUTURIX_SMS_WEBHOOK_SECRET", config.FUTURIX_SMS_WEBHOOK_SECRET),
   ]);
 
   return {
@@ -64,6 +66,7 @@ export async function resolveProviderConfig(): Promise<ResolvedProviderConfig> {
       apiKey: fx ?? "",
       baseUrl: fxBase ?? "https://sms-api.futurix.ao",
       stubMode: fxStub === "true",
+      webhookSecret: fxHook ?? "",
     },
     aiStubMode: aiStub === "true",
   };

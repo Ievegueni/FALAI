@@ -12,7 +12,7 @@ import { Modal } from '@/components/ui/Modal';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { Pagination } from '@/components/ui/Pagination';
 import { useToast } from '@/contexts/ToastContext';
-import { formatAOA, formatDate, transactionTypeLabel } from '@/lib/utils';
+import { formatAOA, formatDate, parseKz, transactionTypeLabel } from '@/lib/utils';
 import type { TransactionType } from '@/types';
 
 const TOPUP_AMOUNTS = [5000_00, 10000_00, 20000_00, 50000_00];
@@ -24,7 +24,7 @@ function TopupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [reference, setReference] = useState<{ reference: string; entity: string; expiresAt: string } | null>(null);
 
   const topup = useMutation({
-    mutationFn: () => walletApi.topup(Math.round(parseFloat(amount.replace(',', '.')) * 100)),
+    mutationFn: () => walletApi.topup(Math.round(parseKz(amount) * 100)),
     onSuccess: (res) => {
       setReference({ reference: res.reference, entity: res.entity, expiresAt: res.expiresAt });
     },
