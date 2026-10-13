@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { AlertTriangle, Save } from 'lucide-react';
 import { alertsApi, telephonyApi, type AlertType, type GroupTargets, type ServiceTargets } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
@@ -12,7 +13,7 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { alertText, alertValue } from '@/components/alerts/alertText';
 
-const TYPES: AlertType[] = ['LONG_WAIT', 'LONG_HANDLE', 'NO_AGENTS', 'SLA_BELOW', 'ABANDON_ABOVE', 'TMA_ABOVE'];
+const TYPES: AlertType[] = ['LONG_WAIT', 'LONG_HANDLE', 'NO_AGENTS', 'SLA_BELOW', 'ABANDON_ABOVE', 'TMA_ABOVE', 'TEXT_SLA_BELOW', 'TICKET_DUE_SOON', 'TICKET_OVERDUE'];
 
 /** Alertas abertos agora (topo do painel ao vivo). Some quando não há nenhum. */
 export function OpenAlerts() {
@@ -27,7 +28,11 @@ export function OpenAlerts() {
       <ul className="space-y-1 text-sm text-amber-900">
         {data.data.map((a) => (
           <li key={a.id} className="flex justify-between gap-3">
-            <span>{alertText(t, a)}</span>
+            {a.type.startsWith('TICKET_') ? (
+              <Link to={`/tickets/${a.ref}`} className="underline hover:text-amber-700">{alertText(t, a)}</Link>
+            ) : (
+              <span>{alertText(t, a)}</span>
+            )}
             <span className="shrink-0 text-xs text-amber-700">{new Date(a.startedAt).toLocaleTimeString()}</span>
           </li>
         ))}
@@ -111,20 +116,33 @@ export function AlertsHistory() {
   );
 }
 
-type Field = Exclude<keyof ServiceTargets, 'groups'>;
-const FIELDS: { key: Field; unit: 's' | '%' | 'n' }[] = [
-  { key: 'slaThresholdSecs', unit: 's' },
-  { key: 'slaTargetPct', unit: '%' },
-  { key: 'shortAbandonSecs', unit: 's' },
-  { key: 'maxWaitSecs', unit: 's' },
-  { key: 'maxHandleSecs', unit: 's' },
-  { key: 'minAvailableAgents', unit: 'n' },
-  { key: 'maxAbandonPct', unit: '%' },
-  { key: 'maxTmaSecs', unit: 's' },
+type Field = Exclude<keyof ServiceTargets, 'groups' | 'ticketHours'>;
+type Unit = 's' | '%' | 'n' | 'min';
+const SECTIONS: { title: string; fields: { key: Field; unit: Unit }[] }[] = [
+  {
+    title: 'voice',
+    fields: [
+      { key: 'slaThresholdSecs', unit: 's' },
+      { key: 'slaTargetPct', unit: '%' },
+      { key: 'shortAbandonSecs', unit: 's' },
+      { key: 'maxWaitSecs', unit: 's' },
+      { key: 'maxHandleSecs', unit: 's' },
+      { key: 'minAvailableAgents', unit: 'n' },
+      { key: 'maxAbandonPct', unit: '%' },
+      { key: 'maxTmaSecs', unit: 's' },
+    ],
+  },
+  { title: 'text', fields: [{ key: 'textSlaSecs', unit: 's' }, { key: 'textSlaTargetPct', unit: '%' }] },
+  { title: 'tickets', fields: [{ key: 'ticketSlaTargetPct', unit: '%' }, { key: 'ticketWarnMins', unit: 'min' }] },
 ];
+const FIELDS = SECTIONS.flatMap((x) => x.fields);
+const PRIORITIES = ['URGENT', 'HIGH', 'MEDIUM', 'LOW'] as const;
 
 /** Campos com valor por omissão (vazio volta a ele em vez de desligar). */
-const DEFAULTS: Partial<Record<Field, number>> = { slaThresholdSecs: 21, shortAbandonSecs: 5 };
+const DEFAULTS: Partial<Record<Field, number>> = { slaThresholdSecs: 21, shortAbandonSecs: 5, textSlaSecs: 300, ticketWarnMins: 60 };
+
+const str = (v: number | null | undefined) => (v === null || v === undefined ? '' : String(v));
+const num = (v: string | undefined) => (v?.trim() ? Number(v) : null);
 
 /** Metas e limites dos alertas (gestor/admin). Campo vazio = alerta desligado. */
 export function TargetsCard() {
@@ -134,21 +152,20 @@ export function TargetsCard() {
   const { data } = useQuery({ queryKey: ['alerts', 'settings'], queryFn: alertsApi.settings });
   const { data: groups } = useQuery({ queryKey: ['telephony', 'groups'], queryFn: telephonyApi.listGroups, retry: false });
   const [form, setForm] = useState<Record<Field, string>>({} as Record<Field, string>);
+  const [hours, setHours] = useState<Record<(typeof PRIORITIES)[number], string>>({ URGENT: '', HIGH: '', MEDIUM: '', LOW: '' });
   // Metas por grupo, em texto (vazio = usa a geral): { [groupId]: { slaThresholdSecs, slaTargetPct } }
   const [byGroup, setByGroup] = useState<Record<string, Record<keyof GroupTargets, string>>>({});
   useEffect(() => {
     if (!data) return;
-    setForm(Object.fromEntries(FIELDS.map(({ key }) => [key, data[key] === null ? '' : String(data[key])])) as Record<Field, string>);
-    setByGroup(Object.fromEntries(Object.entries(data.groups ?? {}).map(([gid, g]) => [gid, {
-      slaThresholdSecs: g.slaThresholdSecs === null ? '' : String(g.slaThresholdSecs),
-      slaTargetPct: g.slaTargetPct === null ? '' : String(g.slaTargetPct),
-    }])));
+    setForm(Object.fromEntries(FIELDS.map(({ key }) => [key, str(data[key])])) as Record<Field, string>);
+    setHours({ URGENT: str(data.ticketHours?.URGENT), HIGH: str(data.ticketHours?.HIGH), MEDIUM: str(data.ticketHours?.MEDIUM), LOW: str(data.ticketHours?.LOW) });
+    setByGroup(Object.fromEntries(Object.entries(data.groups ?? {}).map(([gid, g]) => [gid, { slaThresholdSecs: str(g.slaThresholdSecs), slaTargetPct: str(g.slaTargetPct) }])));
   }, [data]);
-  const num = (v: string | undefined) => (v?.trim() ? Number(v) : null);
   const save = useMutation({
     mutationFn: () =>
       alertsApi.saveSettings({
-        ...(Object.fromEntries(FIELDS.map(({ key }) => [key, num(form[key]) ?? DEFAULTS[key] ?? null])) as Omit<ServiceTargets, 'groups'>),
+        ...(Object.fromEntries(FIELDS.map(({ key }) => [key, num(form[key]) ?? DEFAULTS[key] ?? null])) as unknown as Omit<ServiceTargets, 'groups' | 'ticketHours'>),
+        ticketHours: { URGENT: num(hours.URGENT), HIGH: num(hours.HIGH), MEDIUM: num(hours.MEDIUM), LOW: num(hours.LOW) },
         groups: Object.fromEntries(Object.entries(byGroup).map(([gid, g]) => [gid, { slaThresholdSecs: num(g.slaThresholdSecs), slaTargetPct: num(g.slaTargetPct) }])),
       }),
     onSuccess: (d) => { success(t('common.saved')); qc.setQueryData(['alerts', 'settings'], d); },
@@ -156,24 +173,48 @@ export function TargetsCard() {
   });
   if (!data) return <PageSpinner />;
   return (
-    <Card className="space-y-4">
+    <Card className="space-y-5">
       <div>
         <h2 className="text-sm font-semibold text-gray-900">{t('alerts.targetsTitle')}</h2>
         <p className="text-xs text-gray-500">{t('alerts.targetsHint')}</p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {FIELDS.map(({ key, unit }) => (
-          <Input
-            key={key}
-            type="number"
-            min={0}
-            label={`${t(`alerts.field.${key}`)} (${t(`alerts.unit.${unit}`)})`}
-            value={form[key] ?? ''}
-            onChange={(e) => setForm((x) => ({ ...x, [key]: e.target.value }))}
-            placeholder={DEFAULTS[key] !== undefined ? String(DEFAULTS[key]) : t('alerts.off')}
-          />
-        ))}
-      </div>
+      {SECTIONS.map((sec) => (
+        <div key={sec.title}>
+          <h3 className="mb-2 text-sm font-semibold text-gray-900">{t(`alerts.section.${sec.title}`)}</h3>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {sec.fields.map(({ key, unit }) => (
+              <Input
+                key={key}
+                type="number"
+                min={0}
+                label={`${t(`alerts.field.${key}`)} (${t(`alerts.unit.${unit}`)})`}
+                value={form[key] ?? ''}
+                onChange={(e) => setForm((x) => ({ ...x, [key]: e.target.value }))}
+                placeholder={DEFAULTS[key] !== undefined ? String(DEFAULTS[key]) : t('alerts.off')}
+              />
+            ))}
+          </div>
+          {sec.title === 'tickets' && (
+            <div className="mt-3">
+              <p className="mb-2 text-xs text-gray-500">{t('alerts.ticketHoursHint')}</p>
+              <div className="grid gap-4 sm:grid-cols-4">
+                {PRIORITIES.map((p) => (
+                  <Input
+                    key={p}
+                    type="number"
+                    min={0}
+                    step="0.25"
+                    label={`${t(`tickets.priority.${p}`)} (${t('alerts.unit.h')})`}
+                    value={hours[p]}
+                    onChange={(e) => setHours((x) => ({ ...x, [p]: e.target.value }))}
+                    placeholder={t('alerts.noDeadline')}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
       {(groups?.length ?? 0) > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-gray-900">{t('alerts.groupTargetsTitle')}</h3>

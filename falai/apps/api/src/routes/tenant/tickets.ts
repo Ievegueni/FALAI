@@ -8,8 +8,10 @@ import {
   addTicketNote,
   createTicket,
   linkInteraction,
+  ticketSlaStatus,
   updateTicket,
 } from "../../services/tickets.service.js";
+import { tenantTargets } from "../../services/serviceTargets.js";
 import { emitWebhookAsync } from "../../services/webhookEmitter.service.js";
 import { agentAssignmentAllowed, canEditTicket, ticketScopeWhere, userScope } from "../../services/userScope.js";
 import type { TenantJwtPayload } from "../../plugins/auth.js";
@@ -60,6 +62,7 @@ const listQuery = z.object({
   groupId: z.string().optional(),
   contactId: z.string().optional(),
   q: z.string().trim().max(100).optional(), // número (#123 ou 123) ou parte do assunto
+  due: z.enum(["overdue"]).optional(), // em aberto com o prazo já passado
   page: z.coerce.number().int().min(1).default(1),
   perPage: z.coerce.number().int().min(1).max(100).default(25),
 });
@@ -92,6 +95,7 @@ export function ticketWhere(tenantId: string, userId: string | null, q: z.infer<
     ...(q.assignee && !["me", "none"].includes(q.assignee) && { assigneeId: q.assignee }),
     ...(q.groupId && { groupId: q.groupId }),
     ...(q.contactId && { contactId: q.contactId }),
+    ...(q.due === "overdue" && { status: { in: ["OPEN", "PENDING", "ON_HOLD"] }, dueAt: { lt: new Date() } }),
     ...(q.q && {
       OR: [
         ...(/^\d+$/.test(num!) ? [{ number: Number(num) }] : []),
@@ -152,17 +156,20 @@ export const tenantTicketsRoutes: FastifyPluginAsync = async (fastify) => {
     const { tenantId, sub } = request.tenantUser!;
     const q = listQuery.parse(request.query);
     const where = { AND: [ticketWhere(tenantId, sub, q), ticketScopeWhere(await userScope(request.tenantUser!))] };
-    const [data, total] = await Promise.all([
+    const [data, total, targets] = await Promise.all([
       prisma.ticket.findMany({
         where,
         include: ticketListInclude,
-        orderBy: { updatedAt: "desc" },
+        // Atrasados: o mais atrasado primeiro.
+        orderBy: q.due === "overdue" ? { dueAt: "asc" } : { updatedAt: "desc" },
         skip: (q.page - 1) * q.perPage,
         take: q.perPage,
       }),
       prisma.ticket.count({ where }),
+      tenantTargets(tenantId),
     ]);
-    return { data, total, page: q.page, perPage: q.perPage };
+    const now = new Date();
+    return { data: data.map((t) => ({ ...t, sla: ticketSlaStatus(t, now, targets.ticketWarnMins) })), total, page: q.page, perPage: q.perPage };
   });
 
   // GET /tenant/tickets/:id — ticket + linha do tempo + interacções ligadas
@@ -185,7 +192,8 @@ export const tenantTicketsRoutes: FastifyPluginAsync = async (fastify) => {
       },
     });
     if (!ticket) return reply.status(404).send({ error: "Ticket não encontrado" });
-    return { ...ticket, canEdit: ticket.status !== "CLOSED" && request.tenantUser!.role !== "VIEWER" && canEditTicket(scope, ticket) };
+    const sla = ticketSlaStatus(ticket, new Date(), (await tenantTargets(tenantId)).ticketWarnMins);
+    return { ...ticket, sla, canEdit: ticket.status !== "CLOSED" && request.tenantUser!.role !== "VIEWER" && canEditTicket(scope, ticket) };
   });
 
   // POST /tenant/tickets

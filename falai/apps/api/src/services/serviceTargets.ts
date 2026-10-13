@@ -10,10 +10,17 @@ import { prisma } from "@falai/db";
  *   shortAbandonSecs  quem desliga antes de X s não conta para o SLA nem para
  *                     o abandono (engano, desistência imediata) — 0 = conta tudo
  *   groups            meta própria de um grupo: { [groupId]: { slaThresholdSecs?, slaTargetPct? } }
+ *
+ * Canais de texto: textSlaSecs = a 1.ª resposta (IA ou operador) chegou em
+ * menos de X s; textSlaTargetPct = meta do dia.
+ * Tickets: ticketHours = prazo por prioridade (horas corridas) — o ticket
+ * criado sem prazo recebe-o; ticketSlaTargetPct = meta do período;
+ * ticketWarnMins = alerta antes de o prazo acabar.
  */
 
 export const DEFAULT_SLA_SECS = 21;
 export const DEFAULT_SHORT_ABANDON_SECS = 5;
+export const DEFAULT_TEXT_SLA_SECS = 300;
 
 const nullable = <T extends z.ZodTypeAny>(t: T) => t.nullable().default(null);
 
@@ -32,6 +39,18 @@ export const targetsSchema = z.object({
   minAvailableAgents: nullable(z.number().int().min(1).max(100)),
   maxAbandonPct: nullable(z.number().min(0).max(100)),
   maxTmaSecs: nullable(z.number().int().min(10).max(14_400)),
+  textSlaSecs: z.number().int().min(10).max(86_400).default(DEFAULT_TEXT_SLA_SECS),
+  textSlaTargetPct: nullable(z.number().min(1).max(100)),
+  ticketHours: z
+    .object({
+      LOW: nullable(z.number().min(0.25).max(2160)),
+      MEDIUM: nullable(z.number().min(0.25).max(2160)),
+      HIGH: nullable(z.number().min(0.25).max(2160)),
+      URGENT: nullable(z.number().min(0.25).max(2160)),
+    })
+    .default({}),
+  ticketSlaTargetPct: nullable(z.number().min(1).max(100)),
+  ticketWarnMins: z.number().int().min(0).max(1440).default(60),
 });
 export type ServiceTargets = z.infer<typeof targetsSchema>;
 

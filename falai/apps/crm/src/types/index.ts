@@ -672,6 +672,8 @@ export interface TicketRef {
   priority?: TicketPriority;
 }
 
+export type TicketSlaStatus = 'MET' | 'BREACHED' | 'AT_RISK' | 'ON_TRACK';
+
 export interface Ticket extends TicketRef {
   priority: TicketPriority;
   description: string | null;
@@ -683,6 +685,8 @@ export interface Ticket extends TicketRef {
   assigneeId: string | null;
   groupId: string | null;
   dueAt: string | null;
+  /** Estado do prazo (calculado pela API): null = sem prazo. */
+  sla?: TicketSlaStatus | null;
   resolvedAt: string | null;
   closedAt: string | null;
   reopenCount: number;

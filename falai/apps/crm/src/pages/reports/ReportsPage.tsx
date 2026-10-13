@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { FileSpreadsheet, FileText, Sparkles } from 'lucide-react';
-import { reportsApi, telephonyApi, callTypingApi, ApiError, type AttendanceFilters, type AttendanceExportView } from '@/lib/api';
+import { reportsApi, telephonyApi, callTypingApi, consolidatedApi, agentTimeApi, ApiError, type AttendanceFilters, type AttendanceExportView, type ConsolidatedBucket } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -73,6 +73,7 @@ export function ReportsPage() {
   const [groupId, setGroupId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [bucket, setBucket] = useState<ConsolidatedBucket>('day');
 
   const choosePeriod = (p: Period) => {
     setPeriod(p);
@@ -136,6 +137,19 @@ export function ReportsPage() {
     }
   };
 
+  /** Excel dos separadores com exportação própria (consolidado, tempo dos agentes, satisfação). */
+  const exportTab = async () => {
+    setDownloading(true);
+    try {
+      if (tab === 'consolidated') saveBlob(await consolidatedApi.download({ from, to, bucket }));
+      else if (tab === 'agentTime') saveBlob(await agentTimeApi.download({ from, to }));
+    } catch {
+      toast.error(t('reports.exportError'));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const exportPdf = async () => {
     setDownloading(true);
     try {
@@ -178,6 +192,11 @@ export function ReportsPage() {
                   {t('reports.exportPdf')}
                 </Button>
               </>
+            )}
+            {(tab === 'consolidated' || tab === 'agentTime') && (
+              <Button size="sm" icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => void exportTab()} loading={downloading}>
+                {t('reports.exportExcel')}
+              </Button>
             )}
             {EXPORTABLE[tab] && (
               <Button size="sm" icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => void exportAttendance('xlsx')} loading={downloading}>
@@ -289,7 +308,7 @@ export function ReportsPage() {
         ) : tab === 'csat' ? (
           <CsatTab from={from} to={to} />
         ) : tab === 'consolidated' ? (
-          <ConsolidatedTab from={from} to={to} />
+          <ConsolidatedTab from={from} to={to} bucket={bucket} onBucket={setBucket} />
         ) : tab === 'analysis' ? (
           <AnalysisTab state={aiState} analyzing={analyze.isPending} onAnalyze={() => analyze.mutate()} />
         ) : (

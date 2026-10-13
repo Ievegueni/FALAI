@@ -5,6 +5,8 @@ import { useToast } from '@/contexts/ToastContext';
 import type { OpsAlert } from '@/lib/api';
 import { alertText } from './alertText';
 
+let recent: number[] = [];
+
 /** Aviso no ecrã quando abre um alerta operacional; mantém as listas em dia. */
 export function AlertToaster() {
   const { t } = useTranslation();
@@ -14,7 +16,13 @@ export function AlertToaster() {
     const onAlert = (ev: Event) => {
       const { name, data } = (ev as CustomEvent<{ name: string; data: OpsAlert }>).detail;
       void qc.invalidateQueries({ queryKey: ['alerts'] });
-      if (name === 'alert.opened') toast.warning(alertText(t, data));
+      if (name !== 'alert.opened') return;
+      // Muitos de uma vez (ex.: ao ligar os prazos dos tickets): um aviso só.
+      const now = Date.now();
+      recent = recent.filter((x) => now - x < 10_000);
+      recent.push(now);
+      if (recent.length <= 3) toast.warning(alertText(t, data));
+      else if (recent.length === 4) toast.warning(t('alerts.many'));
     };
     window.addEventListener('falai:alert', onAlert);
     return () => window.removeEventListener('falai:alert', onAlert);

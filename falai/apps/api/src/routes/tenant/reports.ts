@@ -10,7 +10,7 @@ import {
 import { ensureCdrSynced } from "../../services/pbxCdr.service.js";
 import { buildOverview } from "../../services/reportsOverview.service.js";
 import { renderOverviewPdf } from "../../services/reportsPdf.service.js";
-import { attendanceWorkbook, overviewWorkbook } from "../../services/excelExport.service.js";
+import { attendanceWorkbook, consolidatedWorkbook, overviewWorkbook } from "../../services/excelExport.service.js";
 import { prisma } from "@falai/db";
 import { ClaudeAdapter } from "@falai/providers";
 import { config } from "../../config.js";
@@ -293,6 +293,21 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
     const q = rangeSchema.extend({ bucket: z.enum(["day", "week", "month"]).default("day") }).parse(request.query);
     const range = resolveRange(q);
     return buildConsolidated(request.tenantUser!.tenantId, range.from, range.to, q.bucket);
+  });
+
+  // GET /tenant/reports/consolidated.xlsx — o mesmo painel em Excel
+  fastify.get("/tenant/reports/consolidated.xlsx", { preHandler: [...preHandler, requireWholeTenant] }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    const q = rangeSchema.extend({ bucket: z.enum(["day", "week", "month"]).default("day") }).parse(request.query);
+    const range = resolveRange(q);
+    const [data, tenant] = await Promise.all([
+      buildConsolidated(tenantId, range.from, range.to, q.bucket),
+      prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
+    ]);
+    return reply
+      .header("Content-Type", XLSX_TYPE)
+      .header("Content-Disposition", `attachment; filename="consolidado_${range.from.toISOString().slice(0, 10)}_${range.to.toISOString().slice(0, 10)}.xlsx"`)
+      .send(await consolidatedWorkbook(data, tenant.name));
   });
 
   // ── Resumo (painel com comparação ao período anterior) ─────────────────────

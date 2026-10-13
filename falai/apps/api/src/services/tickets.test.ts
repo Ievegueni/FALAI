@@ -60,3 +60,32 @@ describe("planTicketUpdate", () => {
     expect(r.data).toEqual({ description: "mais detalhe" });
   });
 });
+
+describe("prazo dos tickets (SLA por prioridade)", async () => {
+  const { autoDueAt, ticketSlaStatus, reprioritizedDueAt } = await import("./tickets.service.js");
+  const hours = { LOW: 72, MEDIUM: 24, HIGH: 4, URGENT: 1 };
+  const T = new Date("2026-10-01T10:00:00Z");
+  const h = (n: number) => new Date(T.getTime() + n * 3600_000);
+
+  it("prazo automático pela prioridade; sem política, sem prazo", () => {
+    expect(autoDueAt(T, "HIGH", hours)).toEqual(h(4));
+    expect(autoDueAt(T, "HIGH", { ...hours, HIGH: null })).toBeNull();
+  });
+
+  it("cumprido, violado, em risco e dentro do prazo", () => {
+    expect(ticketSlaStatus({ dueAt: h(4), resolvedAt: h(3) })).toBe("MET");
+    expect(ticketSlaStatus({ dueAt: h(4), resolvedAt: h(5) })).toBe("BREACHED");
+    expect(ticketSlaStatus({ dueAt: h(4), resolvedAt: null }, h(5))).toBe("BREACHED");
+    expect(ticketSlaStatus({ dueAt: h(4), resolvedAt: null }, h(3.5), 60)).toBe("AT_RISK");
+    expect(ticketSlaStatus({ dueAt: h(4), resolvedAt: null }, h(1), 60)).toBe("ON_TRACK");
+    expect(ticketSlaStatus({ dueAt: null, resolvedAt: null })).toBeNull();
+  });
+
+  it("mudar a prioridade recalcula só o prazo automático", () => {
+    const auto = { createdAt: T, priority: "MEDIUM" as const, dueAt: h(24) };
+    expect(reprioritizedDueAt(auto, { priority: "URGENT" }, hours)).toEqual(h(1));
+    expect(reprioritizedDueAt({ ...auto, dueAt: h(10) }, { priority: "URGENT" }, hours)).toBeUndefined(); // escrito à mão
+    expect(reprioritizedDueAt(auto, { priority: "URGENT", dueAt: h(2) }, hours)).toBeUndefined(); // o pedido já traz prazo
+    expect(reprioritizedDueAt({ ...auto, dueAt: null }, { priority: "URGENT" }, { ...hours, MEDIUM: null })).toEqual(h(1));
+  });
+});

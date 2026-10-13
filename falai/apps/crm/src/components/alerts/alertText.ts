@@ -2,8 +2,8 @@ import type { TFunction } from 'i18next';
 import type { OpsAlert } from '@/lib/api';
 import { formatDuration } from '@/lib/utils';
 
-const SECS = new Set(['LONG_WAIT', 'LONG_HANDLE', 'TMA_ABOVE']);
-const PCT = new Set(['SLA_BELOW', 'ABANDON_ABOVE']);
+const SECS = new Set(['LONG_WAIT', 'LONG_HANDLE', 'TMA_ABOVE', 'TICKET_DUE_SOON', 'TICKET_OVERDUE']);
+const PCT = new Set(['SLA_BELOW', 'ABANDON_ABOVE', 'TEXT_SLA_BELOW']);
 
 /** Valor de um alerta no formato do seu tipo (duração, % ou nº de agentes). */
 export function alertValue(type: OpsAlert['type'], v: number | null): string {

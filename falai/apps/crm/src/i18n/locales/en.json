@@ -1127,7 +1127,31 @@
         "conversations": "Conversations",
         "conversationsResolved": "Resolved",
         "ticketsCreated": "Tickets",
-        "ticketsResolved": "Tickets resolved"
+        "ticketsResolved": "Tickets resolved",
+        "callsSlaPct": "Voice SLA",
+        "textSlaPct": "Text SLA",
+        "ticketsBreached": "Late",
+        "ticketSlaPct": "Ticket SLA"
+      },
+      "slaVoice": "Voice SLA",
+      "slaText": "Text SLA",
+      "slaTextHint": "First reply within {{min}} min",
+      "slaTickets": "Ticket SLA",
+      "slaTicketsHint": "{{breached}} past deadline",
+      "overdueNow": "Tickets overdue now",
+      "overdueNowHint": "Open and past the deadline (any date)",
+      "channelCol": "Channel",
+      "firstResponseCol": "First reply / ASA",
+      "byPriority": "Ticket SLA by priority",
+      "prio": {
+        "priority": "Priority",
+        "targetHours": "Deadline",
+        "created": "Created",
+        "met": "On time",
+        "breached": "Late",
+        "open": "Open",
+        "sla": "SLA",
+        "resolution": "Avg resolution"
       }
     }
   },
@@ -1678,7 +1702,15 @@
       "linked": "Linked {{what}}",
       "unlinked": "Unlinked {{what}}"
     },
-    "take": "Take"
+    "take": "Take",
+    "anyDue": "Any deadline",
+    "overdueOnly": "Overdue",
+    "sla": {
+      "BREACHED": "Overdue",
+      "AT_RISK": "Near deadline",
+      "ON_TRACK": "On time",
+      "MET": "Met"
+    }
   },
   "alerts": {
     "tab": "Alerts",
@@ -1699,7 +1731,9 @@
     "unit": {
       "s": "seconds",
       "%": "%",
-      "n": "agents"
+      "n": "agents",
+      "min": "minutes",
+      "h": "hours"
     },
     "field": {
       "slaThresholdSecs": "SLA threshold",
@@ -1709,7 +1743,11 @@
       "minAvailableAgents": "Minimum available agents per group",
       "maxAbandonPct": "Maximum daily abandon rate",
       "maxTmaSecs": "Maximum daily AHT",
-      "shortAbandonSecs": "Exclude from SLA callers who hang up before"
+      "shortAbandonSecs": "Exclude from SLA callers who hang up before",
+      "textSlaSecs": "First reply threshold",
+      "textSlaTargetPct": "Daily text SLA target",
+      "ticketSlaTargetPct": "Ticket SLA target",
+      "ticketWarnMins": "Warn before deadline"
     },
     "name": {
       "LONG_WAIT": "Long wait",
@@ -1717,7 +1755,10 @@
       "NO_AGENTS": "No agents available",
       "SLA_BELOW": "SLA below target",
       "ABANDON_ABOVE": "Abandon rate above limit",
-      "TMA_ABOVE": "AHT above limit"
+      "TMA_ABOVE": "AHT above limit",
+      "TEXT_SLA_BELOW": "Text SLA below target",
+      "TICKET_DUE_SOON": "Ticket near deadline",
+      "TICKET_OVERDUE": "Ticket overdue"
     },
     "type": {
       "LONG_WAIT": "Call waiting for {{value}} (limit {{threshold}})",
@@ -1725,11 +1766,22 @@
       "NO_AGENTS": "{{value}} agents available (minimum {{threshold}})",
       "SLA_BELOW": "Daily SLA at {{value}} (target {{threshold}})",
       "ABANDON_ABOVE": "Daily abandon rate at {{value}} (limit {{threshold}})",
-      "TMA_ABOVE": "Daily AHT at {{value}} (limit {{threshold}})"
+      "TMA_ABOVE": "Daily AHT at {{value}} (limit {{threshold}})",
+      "TEXT_SLA_BELOW": "Today's text SLA at {{value}} (target {{threshold}})",
+      "TICKET_DUE_SOON": "Ticket near deadline: {{value}} left",
+      "TICKET_OVERDUE": "Ticket overdue by {{value}}"
     },
     "groupTargetsTitle": "Targets per group",
     "groupTargetsHint": "Empty = uses the general target. A group with its own target gets its own SLA alert.",
-    "groupCol": "Group"
+    "groupCol": "Group",
+    "section": {
+      "voice": "Voice",
+      "text": "Text channels",
+      "tickets": "Tickets"
+    },
+    "ticketHoursHint": "Resolution deadline per priority (calendar hours). A ticket created without a deadline gets its priority's; changing priority recalculates it unless it was set by hand.",
+    "noDeadline": "no deadline",
+    "many": "Several alerts opened — see the supervision panel."
   },
   "quality": {
     "title": "Quality",

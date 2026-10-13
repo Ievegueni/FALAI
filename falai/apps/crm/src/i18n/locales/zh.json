@@ -1127,7 +1127,31 @@
         "conversations": "会话",
         "conversationsResolved": "已解决",
         "ticketsCreated": "工单",
-        "ticketsResolved": "已解决工单"
+        "ticketsResolved": "已解决工单",
+        "callsSlaPct": "语音 SLA",
+        "textSlaPct": "文字 SLA",
+        "ticketsBreached": "超期",
+        "ticketSlaPct": "工单 SLA"
+      },
+      "slaVoice": "语音 SLA",
+      "slaText": "文字 SLA",
+      "slaTextHint": "{{min}} 分钟内首次回复",
+      "slaTickets": "工单 SLA",
+      "slaTicketsHint": "{{breached}} 个超期",
+      "overdueNow": "当前超期工单",
+      "overdueNowHint": "未关闭且已过期限（任何日期）",
+      "channelCol": "渠道",
+      "firstResponseCol": "首次回复 / 平均应答",
+      "byPriority": "按优先级的工单 SLA",
+      "prio": {
+        "priority": "优先级",
+        "targetHours": "期限",
+        "created": "创建",
+        "met": "按时",
+        "breached": "超期",
+        "open": "处理中",
+        "sla": "SLA",
+        "resolution": "平均解决时间"
       }
     }
   },
@@ -1606,7 +1630,15 @@
       "linked": "已关联{{what}}",
       "unlinked": "已取消关联{{what}}"
     },
-    "take": "领取"
+    "take": "领取",
+    "anyDue": "任何期限",
+    "overdueOnly": "已超期",
+    "sla": {
+      "BREACHED": "已超期",
+      "AT_RISK": "即将到期",
+      "ON_TRACK": "按时",
+      "MET": "已达成"
+    }
   },
   "alerts": {
     "tab": "告警",
@@ -1627,7 +1659,9 @@
     "unit": {
       "s": "秒",
       "%": "%",
-      "n": "坐席"
+      "n": "坐席",
+      "min": "分钟",
+      "h": "小时"
     },
     "field": {
       "slaThresholdSecs": "服务水平阈值",
@@ -1637,7 +1671,11 @@
       "minAvailableAgents": "每组最少可用坐席",
       "maxAbandonPct": "当日最高放弃率",
       "maxTmaSecs": "当日最长平均处理时长",
-      "shortAbandonSecs": "SLA 不计入在此之前挂断的来电"
+      "shortAbandonSecs": "SLA 不计入在此之前挂断的来电",
+      "textSlaSecs": "首次回复阈值",
+      "textSlaTargetPct": "每日文字 SLA 目标",
+      "ticketSlaTargetPct": "工单 SLA 目标",
+      "ticketWarnMins": "期限前提醒"
     },
     "name": {
       "LONG_WAIT": "等待过长",
@@ -1645,7 +1683,10 @@
       "NO_AGENTS": "无可用坐席",
       "SLA_BELOW": "服务水平低于目标",
       "ABANDON_ABOVE": "放弃率超限",
-      "TMA_ABOVE": "平均处理时长超限"
+      "TMA_ABOVE": "平均处理时长超限",
+      "TEXT_SLA_BELOW": "文字 SLA 低于目标",
+      "TICKET_DUE_SOON": "工单即将到期",
+      "TICKET_OVERDUE": "工单已超期"
     },
     "type": {
       "LONG_WAIT": "来电已等待 {{value}}（阈值 {{threshold}}）",
@@ -1653,11 +1694,22 @@
       "NO_AGENTS": "可用坐席 {{value}}（最少 {{threshold}}）",
       "SLA_BELOW": "当日服务水平 {{value}}（目标 {{threshold}}）",
       "ABANDON_ABOVE": "当日放弃率 {{value}}（阈值 {{threshold}}）",
-      "TMA_ABOVE": "当日平均处理时长 {{value}}（阈值 {{threshold}}）"
+      "TMA_ABOVE": "当日平均处理时长 {{value}}（阈值 {{threshold}}）",
+      "TEXT_SLA_BELOW": "今日文字 SLA 为 {{value}}（目标 {{threshold}}）",
+      "TICKET_DUE_SOON": "工单即将到期：剩余 {{value}}",
+      "TICKET_OVERDUE": "工单已超期 {{value}}"
     },
     "groupTargetsTitle": "按组目标",
     "groupTargetsHint": "留空 = 使用总目标。有自己目标的组会单独触发 SLA 警报。",
-    "groupCol": "组"
+    "groupCol": "组",
+    "section": {
+      "voice": "语音",
+      "text": "文字渠道",
+      "tickets": "工单"
+    },
+    "ticketHoursHint": "按优先级的解决期限（自然小时）。未设期限的新工单使用其优先级的期限；更改优先级时会重新计算，手动设置的除外。",
+    "noDeadline": "无期限",
+    "many": "多个警报已触发 — 请查看监控面板。"
   },
   "quality": {
     "title": "质量",

@@ -5,7 +5,7 @@ vi.mock("@falai/providers", () => ({ extensionEndpointId: (s: string) => s, exte
 vi.mock("./inboundCallRouter.service.js", () => ({ activeInboundCalls: () => [] }));
 vi.mock("./webhookEmitter.service.js", () => ({ emitWebhookAsync: () => undefined }));
 vi.mock("./features.js", () => ({ tenantHasFeature: async () => true }));
-const { liveBreaches, dailyBreaches, diffAlerts, parseTargets } = await import("./alerts.service.js");
+const { liveBreaches, dailyBreaches, diffAlerts, parseTargets, textBreaches, ticketBreaches } = await import("./alerts.service.js");
 const { callKpis } = await import("./attendanceReport.service.js");
 
 /** Alertas operacionais: quando abrem, quando fecham, e o SLA. */
@@ -16,7 +16,7 @@ const targets = (o: Record<string, unknown> = {}) => parseTargets(o);
 
 describe("metas", () => {
   it("sem nada guardado: SLA a 21 s e nenhum alerta ligado", () => {
-    expect(targets()).toEqual({ slaThresholdSecs: 21, slaTargetPct: null, shortAbandonSecs: 5, groups: {}, maxWaitSecs: null, maxHandleSecs: null, minAvailableAgents: null, maxAbandonPct: null, maxTmaSecs: null });
+    expect(targets()).toEqual({ slaThresholdSecs: 21, slaTargetPct: null, shortAbandonSecs: 5, groups: {}, maxWaitSecs: null, maxHandleSecs: null, minAvailableAgents: null, maxAbandonPct: null, maxTmaSecs: null, textSlaSecs: 300, textSlaTargetPct: null, ticketHours: { LOW: null, MEDIUM: null, HIGH: null, URGENT: null }, ticketSlaTargetPct: null, ticketWarnMins: 60 });
     expect(parseTargets("lixo")).toEqual(targets());
   });
 });
@@ -116,5 +116,23 @@ describe("SLA nos KPIs", () => {
     const k = callKpis(calls, new Set());
     expect(k.asaP90Secs).toBe(10);
     expect(k.maxWaitSecs).toBe(150);
+  });
+});
+
+describe("texto e tickets", () => {
+  it("SLA de texto do dia abaixo da meta (com amostra mínima)", () => {
+    const t = targets({ textSlaTargetPct: 90 });
+    expect(textBreaches({ met: 8, missed: 4, pending: 3, slaPct: 66.7 }, "d", t).map((b) => [b.type, b.value])).toEqual([["TEXT_SLA_BELOW", 66.7]]);
+    expect(textBreaches({ met: 5, missed: 3, pending: 0, slaPct: 62.5 }, "d", t)).toEqual([]);
+  });
+
+  it("ticket perto do prazo e fora do prazo", () => {
+    const t = targets({ ticketWarnMins: 60 });
+    const b = ticketBreaches([
+      { id: "t1", groupId: null, dueAt: new Date(now.getTime() + 30 * 60_000) },
+      { id: "t2", groupId: "g", dueAt: new Date(now.getTime() - 10 * 60_000) },
+      { id: "t3", groupId: null, dueAt: new Date(now.getTime() + 5 * 3600_000) },
+    ], t, now);
+    expect(b.map((x) => [x.type, x.ref, x.value])).toEqual([["TICKET_DUE_SOON", "t1", 1800], ["TICKET_OVERDUE", "t2", 600]]);
   });
 });

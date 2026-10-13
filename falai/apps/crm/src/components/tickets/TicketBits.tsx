@@ -10,7 +10,7 @@ import { Input, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import type { TicketMeta, TicketPriority, TicketRef, TicketStatus } from '@/types';
+import type { TicketMeta, TicketPriority, TicketSlaStatus, TicketRef, TicketStatus } from '@/types';
 
 export const TICKET_STATUSES: TicketStatus[] = ['OPEN', 'PENDING', 'ON_HOLD', 'RESOLVED', 'CLOSED'];
 export const TICKET_PRIORITIES: TicketPriority[] = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
@@ -38,6 +38,20 @@ export function TicketStatusBadge({ status }: { status: TicketStatus }) {
 export function TicketPriorityBadge({ priority }: { priority: TicketPriority }) {
   const { t } = useTranslation();
   return <Badge className={priorityColor[priority]}>{t(`tickets.priority.${priority}`)}</Badge>;
+}
+
+const slaColor: Record<TicketSlaStatus, string> = {
+  BREACHED: 'bg-red-100 text-red-700',
+  AT_RISK: 'bg-amber-100 text-amber-800',
+  ON_TRACK: 'bg-gray-100 text-gray-600',
+  MET: 'bg-emerald-100 text-emerald-700',
+};
+
+/** Estado do prazo do ticket (atrasado, em risco, a tempo, cumprido). */
+export function TicketSlaBadge({ sla }: { sla: TicketSlaStatus | null | undefined }) {
+  const { t } = useTranslation();
+  if (!sla) return null;
+  return <Badge className={slaColor[sla]}>{t(`tickets.sla.${sla}`)}</Badge>;
 }
 
 export function useTicketsEnabled(): boolean {
@@ -176,7 +190,7 @@ export function CreateTicketModal({
   );
 }
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1 text-sm font-medium text-gray-700">
       {label}

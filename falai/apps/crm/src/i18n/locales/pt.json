@@ -1127,7 +1127,31 @@
         "conversations": "Conversas",
         "conversationsResolved": "Resolvidas",
         "ticketsCreated": "Tickets",
-        "ticketsResolved": "Tickets resolvidos"
+        "ticketsResolved": "Tickets resolvidos",
+        "callsSlaPct": "SLA voz",
+        "textSlaPct": "SLA texto",
+        "ticketsBreached": "Prazo violado",
+        "ticketSlaPct": "SLA tickets"
+      },
+      "slaVoice": "SLA voz",
+      "slaText": "SLA texto",
+      "slaTextHint": "1.ª resposta em menos de {{min}} min",
+      "slaTickets": "SLA tickets",
+      "slaTicketsHint": "{{breached}} com o prazo violado",
+      "overdueNow": "Tickets atrasados agora",
+      "overdueNowHint": "Em aberto e com o prazo passado (de qualquer data)",
+      "channelCol": "Canal",
+      "firstResponseCol": "1.ª resposta / ASA",
+      "byPriority": "SLA dos tickets por prioridade",
+      "prio": {
+        "priority": "Prioridade",
+        "targetHours": "Prazo",
+        "created": "Criados",
+        "met": "Dentro do prazo",
+        "breached": "Prazo violado",
+        "open": "Em aberto",
+        "sla": "SLA",
+        "resolution": "Resolução média"
       }
     }
   },
@@ -1678,7 +1702,15 @@
       "linked": "Associada {{what}}",
       "unlinked": "Desassociada {{what}}"
     },
-    "take": "Pegar"
+    "take": "Pegar",
+    "anyDue": "Qualquer prazo",
+    "overdueOnly": "Atrasados",
+    "sla": {
+      "BREACHED": "Atrasado",
+      "AT_RISK": "Perto do prazo",
+      "ON_TRACK": "A tempo",
+      "MET": "Cumprido"
+    }
   },
   "alerts": {
     "tab": "Alertas",
@@ -1699,7 +1731,9 @@
     "unit": {
       "s": "segundos",
       "%": "%",
-      "n": "agentes"
+      "n": "agentes",
+      "min": "minutos",
+      "h": "horas"
     },
     "field": {
       "slaThresholdSecs": "Limiar do SLA",
@@ -1709,7 +1743,11 @@
       "minAvailableAgents": "Mínimo de agentes disponíveis por grupo",
       "maxAbandonPct": "Abandono máximo do dia",
       "maxTmaSecs": "TMA máximo do dia",
-      "shortAbandonSecs": "Ignorar no SLA quem desliga antes de"
+      "shortAbandonSecs": "Ignorar no SLA quem desliga antes de",
+      "textSlaSecs": "Limiar da 1.ª resposta",
+      "textSlaTargetPct": "Meta de SLA de texto do dia",
+      "ticketSlaTargetPct": "Meta de SLA dos tickets",
+      "ticketWarnMins": "Avisar antes do prazo"
     },
     "name": {
       "LONG_WAIT": "Espera elevada",
@@ -1717,7 +1755,10 @@
       "NO_AGENTS": "Sem agentes disponíveis",
       "SLA_BELOW": "SLA abaixo da meta",
       "ABANDON_ABOVE": "Abandono acima do limite",
-      "TMA_ABOVE": "TMA acima do limite"
+      "TMA_ABOVE": "TMA acima do limite",
+      "TEXT_SLA_BELOW": "SLA de texto abaixo da meta",
+      "TICKET_DUE_SOON": "Ticket perto do prazo",
+      "TICKET_OVERDUE": "Ticket fora do prazo"
     },
     "type": {
       "LONG_WAIT": "Chamada em espera há {{value}} (limite {{threshold}})",
@@ -1725,11 +1766,22 @@
       "NO_AGENTS": "{{value}} agentes disponíveis (mínimo {{threshold}})",
       "SLA_BELOW": "SLA do dia em {{value}} (meta {{threshold}})",
       "ABANDON_ABOVE": "Abandono do dia em {{value}} (limite {{threshold}})",
-      "TMA_ABOVE": "TMA do dia em {{value}} (limite {{threshold}})"
+      "TMA_ABOVE": "TMA do dia em {{value}} (limite {{threshold}})",
+      "TEXT_SLA_BELOW": "SLA de texto do dia em {{value}} (meta {{threshold}})",
+      "TICKET_DUE_SOON": "Ticket perto do prazo: faltam {{value}}",
+      "TICKET_OVERDUE": "Ticket fora do prazo há {{value}}"
     },
     "groupTargetsTitle": "Metas por grupo",
     "groupTargetsHint": "Vazio = usa a meta geral. O alerta de SLA de um grupo com meta própria abre à parte.",
-    "groupCol": "Grupo"
+    "groupCol": "Grupo",
+    "section": {
+      "voice": "Voz",
+      "text": "Canais de texto",
+      "tickets": "Tickets"
+    },
+    "ticketHoursHint": "Prazo de resolução por prioridade (horas corridas). Um ticket criado sem prazo recebe o da sua prioridade; mudar a prioridade recalcula-o se não foi escrito à mão.",
+    "noDeadline": "sem prazo",
+    "many": "Vários alertas abertos — veja o painel de supervisão."
   },
   "quality": {
     "title": "Qualidade",

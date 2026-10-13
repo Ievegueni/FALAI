@@ -1334,6 +1334,15 @@ export const cannedApi = {
   remove: (id: string) => del<void>(`/tenant/canned-responses/${id}`),
 };
 
+/** Descarrega um ficheiro gerado pela API (Excel, PDF) com o nome que ela dá. */
+export async function downloadFile(path: string, fallbackName: string): Promise<{ blob: Blob; filename: string }> {
+  const token = localStorage.getItem('falai_token');
+  const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, 'Erro ao exportar');
+  const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+  return { blob: await res.blob(), filename: match?.[1] ?? fallbackName };
+}
+
 // ─── Tickets ────────────────────────────────────────────────────────────────
 
 export type TicketInput = {
@@ -1351,7 +1360,7 @@ export type TicketInput = {
 
 export const ticketsApi = {
   meta: () => get<import('@/types').TicketMeta>('/tenant/tickets/meta'),
-  list: (params: { status?: string; priority?: string; supportLevel?: number; assignee?: string; groupId?: string; contactId?: string; q?: string; page?: number }) =>
+  list: (params: { status?: string; priority?: string; supportLevel?: number; assignee?: string; groupId?: string; contactId?: string; q?: string; due?: string; page?: number }) =>
     get<Paginated<import('@/types').Ticket>>(`/tenant/tickets${qs(params)}`),
   get: (id: string) => get<import('@/types').TicketDetail>(`/tenant/tickets/${id}`),
   create: (data: TicketInput & { subject: string; callId?: string; conversationId?: string }) =>
@@ -1365,7 +1374,7 @@ export const ticketsApi = {
 
 // ─── Metas e alertas operacionais (fase 4) ──────────────────────────────────
 
-export type AlertType = 'LONG_WAIT' | 'LONG_HANDLE' | 'NO_AGENTS' | 'SLA_BELOW' | 'ABANDON_ABOVE' | 'TMA_ABOVE';
+export type AlertType = 'LONG_WAIT' | 'LONG_HANDLE' | 'NO_AGENTS' | 'SLA_BELOW' | 'ABANDON_ABOVE' | 'TMA_ABOVE' | 'TEXT_SLA_BELOW' | 'TICKET_DUE_SOON' | 'TICKET_OVERDUE';
 
 export interface OpsAlert {
   id: string;
@@ -1395,6 +1404,11 @@ export interface ServiceTargets {
   minAvailableAgents: number | null;
   maxAbandonPct: number | null;
   maxTmaSecs: number | null;
+  textSlaSecs: number;
+  textSlaTargetPct: number | null;
+  ticketHours: Record<import('@/types').TicketPriority, number | null>;
+  ticketSlaTargetPct: number | null;
+  ticketWarnMins: number;
 }
 
 export const alertsApi = {
@@ -1433,6 +1447,7 @@ export interface AgentTimeRow {
 
 export const agentTimeApi = {
   report: (q: { from?: string; to?: string }) => get<{ from: string; to: string; data: AgentTimeRow[] }>(`/tenant/reports/agent-time${qs(q)}`),
+  download: (q: { from?: string; to?: string }) => downloadFile(`/tenant/reports/agent-time.xlsx${qs(q)}`, 'tempo_agentes.xlsx'),
 };
 
 // ─── Qualidade (fase 7) ─────────────────────────────────────────────────────
@@ -1505,18 +1520,28 @@ export interface ConsolidatedReport {
     conversations: number;
     conversationsResolved: number;
     textFirstResponseSecs: number | null;
+    textSla: { met: number; missed: number; pending: number; slaPct: number | null };
     ticketsCreated: number;
     ticketsResolved: number;
     ticketResolutionSecs: number | null;
+    ticketSla: TicketSlaSummary;
+    ticketsOverdueNow: number;
     csat: CsatSummary;
     qa: { evaluations: number; avgScore: number | null };
   };
-  byChannel: { channel: string; contacts: number }[];
-  series: { period: string; callsIn: number; callsAnswered: number; callsMissed: number; callsOut: number; conversations: number; conversationsResolved: number; ticketsCreated: number; ticketsResolved: number }[];
+  targets: { slaSecs: number; slaTargetPct: number | null; textSlaSecs: number; textSlaTargetPct: number | null; ticketSlaTargetPct: number | null };
+  byChannel: { channel: string; contacts: number; firstResponseSecs: number | null; slaPct: number | null }[];
+  ticketsByPriority: (TicketSlaSummary & { priority: import('@/types').TicketPriority; targetHours: number | null })[];
+  series: {
+    period: string; callsIn: number; callsAnswered: number; callsMissed: number; callsOut: number; conversations: number; conversationsResolved: number;
+    ticketsCreated: number; ticketsResolved: number; callsSlaPct: number | null; textSlaPct: number | null; ticketsBreached: number; ticketSlaPct: number | null;
+  }[];
 }
+export interface TicketSlaSummary { created: number; withDue: number; met: number; breached: number; open: number; slaPct: number | null; resolutionSecs: number | null }
 
 export const consolidatedApi = {
   get: (q: { from?: string; to?: string; bucket: ConsolidatedBucket }) => get<ConsolidatedReport>(`/tenant/reports/consolidated${qs(q)}`),
+  download: (q: { from?: string; to?: string; bucket: ConsolidatedBucket }) => downloadFile(`/tenant/reports/consolidated.xlsx${qs(q)}`, 'consolidado.xlsx'),
 };
 
 // ─── Base de conhecimento (fase 10) ─────────────────────────────────────────

@@ -1452,6 +1452,9 @@ enum AlertType {
   SLA_BELOW // SLA do dia abaixo da meta
   ABANDON_ABOVE // taxa de abandono do dia acima do limite
   TMA_ABOVE // TMA do dia acima do limite
+  TEXT_SLA_BELOW // SLA dos canais de texto (1.ª resposta) do dia abaixo da meta
+  TICKET_DUE_SOON // ticket em aberto a menos de ticketWarnMins do prazo (ref = ticket)
+  TICKET_OVERDUE // ticket em aberto com o prazo ultrapassado (ref = ticket)
 }
 
 model Alert {

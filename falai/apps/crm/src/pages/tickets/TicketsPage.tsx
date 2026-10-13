@@ -19,6 +19,7 @@ import {
   TICKET_PRIORITIES,
   TICKET_STATUSES,
   TicketPriorityBadge,
+  TicketSlaBadge,
   TicketStatusBadge,
   selectCls,
   useTicketMeta,
@@ -28,7 +29,7 @@ export function TicketsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [f, setF] = useState({ status: 'active', priority: '', supportLevel: '', assignee: '', groupId: '', q: '', page: 1 });
+  const [f, setF] = useState({ status: 'active', priority: '', supportLevel: '', assignee: '', groupId: '', q: '', due: '', page: 1 });
   const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch, page: patch.page ?? 1 }));
   const [showCreate, setShowCreate] = useState(false);
   const { data: meta } = useTicketMeta();
@@ -43,6 +44,7 @@ export function TicketsPage() {
         ...(f.assignee && { assignee: f.assignee }),
         ...(f.groupId && { groupId: f.groupId }),
         ...(f.q && { q: f.q }),
+        ...(f.due && { due: f.due }),
         page: f.page,
       }),
   });
@@ -70,6 +72,10 @@ export function TicketsPage() {
             <option value="active">{t('tickets.filterActive')}</option>
             <option value="">{t('tickets.filterAll')}</option>
             {TICKET_STATUSES.map((s) => <option key={s} value={s}>{t(`tickets.status.${s}`)}</option>)}
+          </select>
+          <select className={selectCls} value={f.due} onChange={(e) => set({ due: e.target.value })} aria-label={t('tickets.dueAt')}>
+            <option value="">{t('tickets.anyDue')}</option>
+            <option value="overdue">{t('tickets.overdueOnly')}</option>
           </select>
           <select className={selectCls} value={f.priority} onChange={(e) => set({ priority: e.target.value })} aria-label={t('tickets.priorityLabel')}>
             <option value="">{t('tickets.anyPriority')}</option>
@@ -108,7 +114,7 @@ export function TicketsPage() {
               <table className="w-full min-w-[760px]">
                 <thead className="border-b border-gray-200 bg-gray-50">
                   <tr>
-                    {['#', t('tickets.subject'), t('tickets.contact'), t('tickets.statusLabel'), t('tickets.priorityLabel'), t('tickets.level'), t('tickets.assignee'), t('tickets.updated')].map((h, i) => (
+                    {['#', t('tickets.subject'), t('tickets.contact'), t('tickets.statusLabel'), t('tickets.priorityLabel'), t('tickets.dueAt'), t('tickets.level'), t('tickets.assignee'), t('tickets.updated')].map((h, i) => (
                       <th key={i} className="px-4 py-2.5 text-left text-xs font-medium text-gray-500">{h}</th>
                     ))}
                   </tr>
@@ -124,6 +130,10 @@ export function TicketsPage() {
                       <td className="px-4 py-3 text-sm text-gray-600">{tk.contact?.name || tk.contact?.phone || '—'}</td>
                       <td className="px-4 py-3"><TicketStatusBadge status={tk.status} /></td>
                       <td className="px-4 py-3"><TicketPriorityBadge priority={tk.priority} /></td>
+                      <td className="px-4 py-3 text-xs text-gray-600">
+                        {tk.dueAt ? <span className="block">{formatDate(tk.dueAt)}</span> : '—'}
+                        <TicketSlaBadge sla={tk.sla} />
+                      </td>
                       <td className="px-4 py-3 text-sm text-gray-600">{t('tickets.levelN', { n: tk.supportLevel })}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{tk.assignee?.name ?? <span className="text-gray-400">{t('tickets.unassigned')}</span>}</td>
                       <td className="px-4 py-3 text-xs text-gray-400">{formatDate(tk.updatedAt)}</td>

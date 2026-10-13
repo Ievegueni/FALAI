@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@falai/db", () => ({ prisma: {} }));
 vi.mock("./sms.service.js", () => ({ sendSms: vi.fn() }));
-const { bucketKey, bucketRows, volumeByChannel, textFirstResponseSecs } = await import("./consolidated.service.js");
+const { bucketKey, bucketRows, volumeByChannel, textFirstResponseSecs, textSla, ticketSlaRows } = await import("./consolidated.service.js");
 
 /** Consolidado: períodos, volume por canal e primeira resposta no texto. */
 
@@ -55,5 +55,36 @@ describe("canais e texto", () => {
 
   it("primeira resposta: média das conversas com pergunta e resposta", () => {
     expect(textFirstResponseSecs([conv("W", d(5, 10), d(5, 11)), conv("W", d(5, 10), null), conv("W", d(5, 10), new Date(d(5, 10).getTime() + 60_000))])).toBe(1830);
+  });
+});
+
+describe("SLA de texto", () => {
+  const conv = (human: number | null, reply: number | null) => ({
+    id: "c", createdAt: d(5), channel: "WHATSAPP", status: "OPEN",
+    firstHumanAt: human === null ? null : new Date(d(5).getTime() + human * 1000),
+    firstReplyAt: reply === null ? null : new Date(d(5).getTime() + reply * 1000),
+  });
+  it("a tempo, tarde, sem resposta e ainda à espera", () => {
+    const now = new Date(d(5).getTime() + 400 * 1000);
+    const k = textSla([conv(0, 60), conv(0, 400), conv(0, null), conv(300, null), conv(null, 10)], 300, now);
+    // 60 s a tempo; 400 s tarde; sem resposta há 400 s falha; há 100 s fica à espera; sem cliente não conta.
+    expect(k).toEqual({ met: 1, missed: 2, pending: 1, slaPct: 33.3 });
+  });
+});
+
+describe("SLA dos tickets", () => {
+  it("cumpridos, violados e em aberto, por prioridade", () => {
+    const h = (n: number) => new Date(d(5).getTime() + n * 3600_000);
+    const now = h(10);
+    const tickets = [
+      { createdAt: h(0), resolvedAt: h(2), dueAt: h(4), priority: "HIGH" as const }, // a tempo
+      { createdAt: h(0), resolvedAt: h(6), dueAt: h(4), priority: "HIGH" as const }, // tarde
+      { createdAt: h(0), resolvedAt: null, dueAt: h(8), priority: "HIGH" as const }, // em aberto e já passou
+      { createdAt: h(0), resolvedAt: null, dueAt: h(24), priority: "MEDIUM" as const }, // em aberto, a tempo
+      { createdAt: h(0), resolvedAt: null, dueAt: null, priority: "LOW" as const }, // sem prazo
+    ];
+    const r = ticketSlaRows(tickets, { LOW: null, MEDIUM: 24, HIGH: 4, URGENT: 1 }, now);
+    expect(r.total).toMatchObject({ created: 5, withDue: 4, met: 1, breached: 2, open: 1, slaPct: 33.3 });
+    expect(r.byPriority.find((p) => p.priority === "HIGH")).toMatchObject({ targetHours: 4, met: 1, breached: 2, slaPct: 33.3 });
   });
 });

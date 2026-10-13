@@ -12,6 +12,8 @@ import { analysisSections, type AnalysisResult } from "./reportAnalysis.service.
 import type { Overview } from "./reportsOverview.service.js";
 import type { AttendanceReport, ExportView, AttendanceCallRow, PeriodKpis } from "./attendanceReport.service.js";
 import type { ReportRow } from "./reports.service.js";
+import type { Consolidated } from "./consolidated.service.js";
+import type { AgentTimeRow } from "./agentTime.service.js";
 import { addCharts, colRef, type ChartSpec } from "./excelCharts.service.js";
 
 /** Gráfico à direita da tabela da folha (as linhas de dados começam na 5). */
@@ -659,4 +661,131 @@ export async function overviewWorkbook(o: Overview, rows: ReportRow[], tenant: s
   if (analysis) addAnalysisSheet(wb, analysis);
 
   return addCharts(Buffer.from(await wb.xlsx.writeBuffer()), wb.worksheets.map((w) => w.name), charts);
+}
+
+// ── Consolidado (painel de direcção) ─────────────────────────────────────────
+
+export const CHANNEL_LABEL: Record<string, string> = { VOICE: "Voz", WHATSAPP: "WhatsApp", WEBCHAT: "Chat do site", EMAIL: "Email", TELEGRAM: "Telegram" };
+const PRIORITY_LABEL: Record<string, string> = { URGENT: "Urgente", HIGH: "Alta", MEDIUM: "Média", LOW: "Baixa" };
+const BUCKET_LABEL: Record<string, string> = { day: "por dia", week: "por semana (começa à segunda)", month: "por mês" };
+
+/** O separador Consolidado: indicadores, por canal, tickets por prioridade e a série. */
+export async function consolidatedWorkbook(c: Consolidated, tenant: string): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Falaí";
+  const sub = subtitleOf(tenant, c.from, c.to);
+  const charts: ChartSpec[] = [];
+  const k = c.kpis;
+  const tg = c.targets;
+  addKpiSheet(wb, "Indicadores", "Painel de direcção — indicadores", sub, ["Valor", "Meta"], [
+    { label: "Contactos (chamadas de entrada + conversas)", fmt: "int", values: [k.contacts, null] },
+    { label: "Chamadas de entrada", fmt: "int", values: [k.calls.total, null] },
+    { label: "% chamadas atendidas", fmt: "pct", values: [k.calls.answerRate, null] },
+    { label: `SLA voz (atendidas em menos de ${tg.slaSecs} s)`, fmt: "pct", values: [k.calls.slaPct, tg.slaTargetPct], target: { value: tg.slaTargetPct, higherIsBetter: true } },
+    { label: "ASA — espera média até atender", fmt: "secs", values: [k.calls.tmeSecs, null] },
+    { label: "ASA 90%", fmt: "secs", values: [k.calls.asaP90Secs, null] },
+    { label: "TMA — tempo médio de atendimento", fmt: "secs", values: [k.calls.tmaSecs, null] },
+    { label: "Chamadas de saída", fmt: "int", values: [k.callsOut, null] },
+    { label: "Conversas", fmt: "int", values: [k.conversations, null] },
+    { label: "Conversas resolvidas", fmt: "int", values: [k.conversationsResolved, null] },
+    { label: "Texto — 1.ª resposta (média)", fmt: "secs", values: [k.textFirstResponseSecs, null] },
+    { label: `SLA texto (1.ª resposta em menos de ${Math.round(tg.textSlaSecs / 60)} min)`, fmt: "pct", values: [k.textSla.slaPct, tg.textSlaTargetPct], target: { value: tg.textSlaTargetPct, higherIsBetter: true } },
+    { label: "Texto — respondidas a tempo", fmt: "int", values: [k.textSla.met, null] },
+    { label: "Texto — fora do prazo ou sem resposta", fmt: "int", values: [k.textSla.missed, null] },
+    { label: "Tickets criados", fmt: "int", values: [k.ticketsCreated, null] },
+    { label: "Tickets resolvidos", fmt: "int", values: [k.ticketsResolved, null] },
+    { label: "Tempo médio de resolução", fmt: "secs", values: [k.ticketResolutionSecs, null] },
+    { label: "SLA tickets (resolvidos dentro do prazo)", fmt: "pct", values: [k.ticketSla.slaPct, tg.ticketSlaTargetPct], target: { value: tg.ticketSlaTargetPct, higherIsBetter: true } },
+    { label: "Tickets com prazo violado (criados no período)", fmt: "int", values: [k.ticketSla.breached, null] },
+    { label: "Tickets atrasados agora (em aberto, de qualquer data)", fmt: "int", values: [k.ticketsOverdueNow, null] },
+    { label: "Satisfação — média (1 a 5)", fmt: "dec", values: [k.csat.avg, null] },
+    { label: "Satisfação — % satisfeitos (4 e 5)", fmt: "pct", values: [k.csat.satisfiedPct, null] },
+    { label: "Satisfação — respostas", fmt: "int", values: [k.csat.responses, null] },
+    { label: "QA — nota média", fmt: "dec", values: [k.qa.avgScore, null] },
+    { label: "QA — avaliações", fmt: "int", values: [k.qa.evaluations, null] },
+  ]);
+
+  const n = c.byChannel.length;
+  if (n > 0) {
+    charts.push({
+      sheet: "Por canal", type: "bar", title: "Contactos por canal", ...beside(4),
+      catRef: colRef("Por canal", 0, 5, lastRow(n)), categories: c.byChannel.map((x) => CHANNEL_LABEL[x.channel] ?? x.channel),
+      series: [{ name: "Contactos", ref: colRef("Por canal", 1, 5, lastRow(n)), values: c.byChannel.map((x) => x.contacts) }],
+    });
+  }
+  addTableSheet(wb, "Por canal", "Contactos por canal", `${sub} · voz: espera até atender e SLA de voz; texto: 1.ª resposta e SLA de texto`, [
+    { header: "Canal", width: 16, fmt: "text" },
+    { header: "Contactos", width: 10, fmt: "int" },
+    { header: "1.ª resposta / ASA", width: 14, fmt: "secs" },
+    { header: "SLA", width: 9, fmt: "pct" },
+  ], c.byChannel.map((x) => [CHANNEL_LABEL[x.channel] ?? x.channel, x.contacts, x.firstResponseSecs, x.slaPct]));
+
+  const tws = addTableSheet(wb, "Tickets por prioridade", "SLA dos tickets por prioridade", `${sub} · tickets criados no período`, [
+    { header: "Prioridade", width: 12, fmt: "text" },
+    { header: "Prazo (horas)", width: 11, fmt: "dec" },
+    { header: "Criados", width: 9, fmt: "int" },
+    { header: "Com prazo", width: 10, fmt: "int" },
+    { header: "Dentro do prazo", width: 12, fmt: "int" },
+    { header: "Prazo violado", width: 12, fmt: "int" },
+    { header: "Em aberto (a tempo)", width: 14, fmt: "int" },
+    { header: "SLA", width: 9, fmt: "pct" },
+    { header: "Meta SLA", width: 9, fmt: "pct" },
+    { header: "Tempo médio de resolução", width: 16, fmt: "secs" },
+  ], c.ticketsByPriority.map((p) => [PRIORITY_LABEL[p.priority] ?? p.priority, p.targetHours, p.created, p.withDue, p.met, p.breached, p.open, p.slaPct, tg.ticketSlaTargetPct, p.resolutionSecs]));
+  c.ticketsByPriority.forEach((p, i) => markTarget(tws.getCell(5 + i, 8), p.slaPct, tg.ticketSlaTargetPct));
+
+  const sn = c.series.length;
+  if (sn > 0) {
+    charts.push({
+      sheet: "Por período", type: "line", title: "SLA por período (voz, texto, tickets)", ...beside(14), numFmt: "0%",
+      catRef: colRef("Por período", 0, 5, lastRow(sn)), categories: c.series.map((r) => r.period),
+      series: [
+        { name: "Voz", ref: colRef("Por período", 4, 5, lastRow(sn)), values: c.series.map((r) => (r.callsSlaPct === null ? null : r.callsSlaPct / 100)) },
+        { name: "Texto", ref: colRef("Por período", 8, 5, lastRow(sn)), values: c.series.map((r) => (r.textSlaPct === null ? null : r.textSlaPct / 100)) },
+        { name: "Tickets", ref: colRef("Por período", 12, 5, lastRow(sn)), values: c.series.map((r) => (r.ticketSlaPct === null ? null : r.ticketSlaPct / 100)) },
+      ],
+    });
+  }
+  addTableSheet(wb, "Por período", `Evolução ${BUCKET_LABEL[c.bucket] ?? ""}`, sub, [
+    { header: "Período", width: 12, fmt: "text" },
+    { header: "Chamadas de entrada", width: 11, fmt: "int" },
+    { header: "Atendidas", width: 10, fmt: "int" },
+    { header: "Perdidas", width: 10, fmt: "int" },
+    { header: "SLA voz", width: 9, fmt: "pct" },
+    { header: "Chamadas de saída", width: 10, fmt: "int" },
+    { header: "Conversas", width: 10, fmt: "int" },
+    { header: "Resolvidas", width: 10, fmt: "int" },
+    { header: "SLA texto", width: 9, fmt: "pct" },
+    { header: "Tickets criados", width: 10, fmt: "int" },
+    { header: "Tickets resolvidos", width: 10, fmt: "int" },
+    { header: "Prazo violado", width: 10, fmt: "int" },
+    { header: "SLA tickets", width: 10, fmt: "pct" },
+  ], c.series.map((r) => [r.period, r.callsIn, r.callsAnswered, r.callsMissed, r.callsSlaPct, r.callsOut, r.conversations, r.conversationsResolved, r.textSlaPct, r.ticketsCreated, r.ticketsResolved, r.ticketsBreached, r.ticketSlaPct]));
+
+  return addCharts(Buffer.from(await wb.xlsx.writeBuffer()), wb.worksheets.map((w) => w.name), charts);
+}
+
+// ── Tempo dos agentes ────────────────────────────────────────────────────────
+
+/** Separador Tempo dos agentes: um agente por linha e as pausas por motivo. */
+export async function agentTimeWorkbook(r: { from: string; to: string; data: AgentTimeRow[] }, tenant: string): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Falaí";
+  const sub = subtitleOf(tenant, r.from, r.to);
+  addTableSheet(wb, "Tempo dos agentes", "Tempo dos agentes", `${sub} · aderência = ligado dentro do turno ÷ escalado`, [
+    { header: "Agente", width: 24, fmt: "text" },
+    { header: "Escalado", width: 11, fmt: "secs" },
+    { header: "Ligado", width: 11, fmt: "secs" },
+    { header: "Ligado no turno", width: 13, fmt: "secs" },
+    { header: "Aderência", width: 10, fmt: "pct" },
+    { header: "Em pausa", width: 11, fmt: "secs" },
+    { header: "Pausas", width: 8, fmt: "int" },
+  ], r.data.map((a) => [a.name, a.scheduledSecs, a.loggedSecs, a.loggedInShiftSecs, a.adherencePct, a.pausedSecs, a.pauses.reduce((n, p) => n + p.count, 0)]));
+  addTableSheet(wb, "Pausas por motivo", "Pausas por motivo", sub, [
+    { header: "Agente", width: 24, fmt: "text" },
+    { header: "Motivo", width: 24, fmt: "text" },
+    { header: "Tempo", width: 11, fmt: "secs" },
+    { header: "Pausas", width: 8, fmt: "int" },
+  ], r.data.flatMap((a) => a.pauses.map((p) => [a.name, p.reason ?? "Sem motivo", p.secs, p.count])));
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }

@@ -18,6 +18,7 @@ import {
   TICKET_PRIORITIES,
   TICKET_STATUSES,
   TicketPriorityBadge,
+  TicketSlaBadge,
   TicketStatusBadge,
   categoryTree,
   selectCls,
@@ -185,7 +186,7 @@ export function TicketDetailPage() {
                   {subs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </Field>
-              <Field label={t('tickets.dueAt')}>
+              <Field label={<span className="flex items-center gap-2">{t('tickets.dueAt')} <TicketSlaBadge sla={ticket.sla} /></span>}>
                 <input
                   type="datetime-local"
                   className={selectCls}
