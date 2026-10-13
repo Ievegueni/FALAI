@@ -1,5 +1,6 @@
 import { prisma } from "@falai/db";
-import { abandonedIds, avg, callKpis, DEFAULT_SLA_SECS, type CallKpis } from "./attendanceReport.service.js";
+import { abandonedIds, avg, callKpis, type CallKpis } from "./attendanceReport.service.js";
+import { parseTargets, slaRuleOf } from "./serviceTargets.js";
 import { csatSummary } from "./csat.service.js";
 
 /**
@@ -123,7 +124,8 @@ export async function buildConsolidated(tenantId: string, from: Date, to: Date, 
     prisma.csatResponse.findMany({ where: { tenantId, createdAt: range, score: { not: null } }, select: { score: true } }),
     prisma.qaEvaluation.aggregate({ where: { tenantId, createdAt: range }, _avg: { score: true }, _count: { _all: true } }),
   ]);
-  const slaSecs = ((tenant?.serviceTargets as { slaThresholdSecs?: number } | null)?.slaThresholdSecs) ?? DEFAULT_SLA_SECS;
+  const targets = parseTargets(tenant?.serviceTargets);
+  const slaSecs = targets.slaThresholdSecs;
   const conversations: ConvRow[] = convs.map((c) => ({
     id: c.id,
     createdAt: c.createdAt,
@@ -134,7 +136,7 @@ export async function buildConsolidated(tenantId: string, from: Date, to: Date, 
   }));
   // Tickets criados no período (os resolvidos no período entram na série, não no total).
   const created = tickets.filter((t) => t.createdAt >= from && t.createdAt <= to);
-  const calls: CallKpis = callKpis(inbound.filter((c) => c.queuedAt), abandonedIds(legs), slaSecs);
+  const calls: CallKpis = callKpis(inbound.filter((c) => c.queuedAt), abandonedIds(legs), slaRuleOf(targets));
 
   return {
     from: from.toISOString(),

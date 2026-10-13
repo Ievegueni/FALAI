@@ -14,6 +14,9 @@ const {
   tableToCsv,
   typingBreakdown,
   scopeRows,
+  hourlyRows,
+  weekdayHourGrid,
+  percentile,
 } = await import("./attendanceReport.service.js");
 type CallRow = import("./attendanceReport.service.js").CallRow;
 type LegRow = import("./attendanceReport.service.js").LegRow;
@@ -232,5 +235,25 @@ describe("Âmbito (agente / supervisor)", () => {
     const r = scopeRows(calls, legs, { extensionIds: ["ext_1"], groupIds: ["g_b"] });
     expect(r.calls.map((c) => c.id)).toEqual(["c1", "c2", "c3"]);
     expect(scopeRows(calls, legs, { extensionIds: [], groupIds: ["g_a"] }).calls.map((c) => c.id)).toEqual(["c1"]);
+  });
+});
+
+describe("por hora e mapa de horas", () => {
+  it("24 horas sempre, cada chamada na hora local em que começou a tocar", () => {
+    const q = new Date(2026, 9, 5, 9, 30); // segunda, 09:30 local
+    const calls = [call("a", { queuedAt: q, answeredAt: new Date(q.getTime() + 5000), endedAt: new Date(q.getTime() + 60000) })];
+    const rows = hourlyRows(calls);
+    expect(rows).toHaveLength(24);
+    expect(rows[9]).toMatchObject({ hour: 9, total: 1, answered: 1, slaPct: 100 });
+    expect(rows[10]!.total).toBe(0);
+    const grid = weekdayHourGrid(calls);
+    expect(grid[0]![9]).toBe(1);
+    expect(grid.flat().reduce((x, y) => x + y, 0)).toBe(1);
+  });
+
+  it("percentil pelo posto mais próximo", () => {
+    expect(percentile([], 90)).toBeNull();
+    expect(percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 90)).toBe(9);
+    expect(percentile([7], 90)).toBe(7);
   });
 });

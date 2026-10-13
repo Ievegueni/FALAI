@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { FileSpreadsheet, FileText, Sparkles } from 'lucide-react';
-import { reportsApi, telephonyApi, callTypingApi, ApiError, type AttendanceFilters } from '@/lib/api';
+import { reportsApi, telephonyApi, callTypingApi, ApiError, type AttendanceFilters, type AttendanceExportView } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -39,7 +39,9 @@ function periodRange(p: Exclude<Period, 'custom'>): { from: string; to: string }
 }
 
 type ReportTab = 'summary' | AttendanceView | 'analysis' | 'agentTime' | 'csat' | 'consolidated';
-const EXPORTABLE: Partial<Record<ReportTab, 'agents' | 'groups' | 'reasons' | 'typing'>> = {
+const EXPORTABLE: Partial<Record<ReportTab, AttendanceExportView>> = {
+  attendance: 'attendance',
+  calls: 'calls',
   agents: 'agents',
   groups: 'groups',
   reasons: 'reasons',

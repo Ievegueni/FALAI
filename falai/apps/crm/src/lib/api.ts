@@ -1097,7 +1097,7 @@ export const reportsApi = {
     get<AttendanceCallsPage>(
       `/tenant/reports/attendance/calls${qs({ ...f, pageSize: f.pageSize ?? 25 })}`,
     ),
-  downloadAttendance: async (f: AttendanceFilters & { view: 'agents' | 'groups' | 'reasons' | 'typing'; format: 'csv' | 'xlsx' }) => {
+  downloadAttendance: async (f: AttendanceFilters & { view: AttendanceExportView; format: 'csv' | 'xlsx' }) => {
     const token = localStorage.getItem('falai_token');
     const res = await fetch(`${API_BASE}/tenant/reports/attendance/export${qs({ ...f })}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1136,16 +1136,27 @@ export interface AttendanceFilters {
   categoryId?: string;
 }
 
-export interface AttendanceCallKpis {
+export type AttendanceExportView = 'attendance' | 'agents' | 'groups' | 'reasons' | 'typing' | 'calls';
+
+/** Linha de um período (dia ou hora). */
+export interface AttendancePeriodKpis {
   total: number;
   answered: number;
   missed: number;
   abandoned: number;
+  shortAbandoned: number;
   answerRate: number | null;
-  tmaSecs: number | null;
-  tmeSecs: number | null;
-  /** % das terminadas atendidas abaixo do limiar (AttendanceReport.slaSecs). */
   slaPct: number | null;
+  tmaSecs: number | null;
+  /** ASA — espera média até atender. */
+  tmeSecs: number | null;
+  asaP90Secs: number | null;
+  maxWaitSecs: number | null;
+}
+
+export interface AttendanceCallKpis extends AttendancePeriodKpis {
+  abandonRate: number | null;
+  slaMet: number;
 }
 
 export interface AttendanceAgentKpis {
@@ -1172,6 +1183,8 @@ export interface AttendanceReport {
   to: string;
   limited: boolean;
   slaSecs: number;
+  slaTargetPct: number | null;
+  shortAbandonSecs: number;
   tenant: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
   selection: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
   reasons: { reason: string; count: number; pct: number }[];
@@ -1186,8 +1199,14 @@ export interface AttendanceReport {
     groupId: string | null;
     name: string;
     rejected: number;
-    vsTenant: { answerRate: number | null; tmaSecs: number | null; tmeSecs: number | null };
+    slaSecs: number;
+    slaTargetPct: number | null;
+    vsTenant: { answerRate: number | null; tmaSecs: number | null; tmeSecs: number | null; slaPct: number | null };
   })[];
+  byDay: (AttendancePeriodKpis & { date: string; responseSecs: number | null; wrapUpSecs: number | null })[];
+  byHour: (AttendancePeriodKpis & { hour: number })[];
+  /** [0] = segunda … [6] = domingo; 24 horas cada. */
+  byWeekdayHour: number[][];
 }
 
 export type CallLegOutcome = 'ANSWERED' | 'NO_ANSWER' | 'REJECTED' | 'BUSY' | 'CANCELLED' | 'FAILED';
@@ -1361,9 +1380,16 @@ export interface OpsAlert {
   endedAt: string | null;
 }
 
+export interface GroupTargets {
+  slaThresholdSecs: number | null;
+  slaTargetPct: number | null;
+}
+
 export interface ServiceTargets {
   slaThresholdSecs: number;
   slaTargetPct: number | null;
+  shortAbandonSecs: number;
+  groups: Record<string, GroupTargets>;
   maxWaitSecs: number | null;
   maxHandleSecs: number | null;
   minAvailableAgents: number | null;

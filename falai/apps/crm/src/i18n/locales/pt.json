@@ -933,8 +933,8 @@
       "rejected": "Recusadas",
       "tma": "TMA",
       "tmaHint": "Tempo médio de atendimento",
-      "tme": "TME (ASA)",
-      "tmeHint": "Tempo médio de espera até ser atendida",
+      "tme": "ASA",
+      "tmeHint": "Espera média até ser atendida",
       "response": "Tempo de resposta",
       "responseHint": "Do toque ao atendimento, por agente",
       "limited": "O seu PBX é próprio (Yeastar): só há atendidas, perdidas, TMA e tempo de toque. Por agente, por grupo e recusas exigem o PBX da plataforma.",
@@ -973,7 +973,34 @@
       "typingTitle": "Chamadas por categoria",
       "category": "Tipificação",
       "sla": "SLA",
-      "slaHint": "Atendidas em menos de {{secs}} s"
+      "slaHint": "Atendidas em menos de {{secs}} s",
+      "asaP90": "ASA 90%",
+      "asaP90Hint": "9 em cada 10 atendidas esperaram até este tempo",
+      "maxWait": "Maior espera",
+      "maxWaitHint": "Atendidas e perdidas",
+      "slaHintTarget": "Atendidas em menos de {{secs}} s · meta {{target}}%",
+      "shortAbandoned": "Desistências curtas",
+      "shortAbandonedHint": "Desligaram antes de {{secs}} s — não contam para o SLA",
+      "abandonRate": "% abandono",
+      "abandonRateHint": "{{count}} abandonadas, sem as desistências curtas",
+      "slaTarget": "Meta SLA",
+      "target": "Meta",
+      "slaTrend": "SLA por dia",
+      "slaTrendHint": "A linha tracejada é a meta",
+      "byHour": "Chamadas e SLA por hora",
+      "byHourHint": "Hora a que a chamada começou a tocar",
+      "heatmap": "Chamadas por dia da semana e hora",
+      "heatmapHint": "Mais escuro = mais chamadas. Mostra onde faltam agentes.",
+      "weekdays": [
+        "Seg",
+        "Ter",
+        "Qua",
+        "Qui",
+        "Sex",
+        "Sáb",
+        "Dom"
+      ],
+      "volume": "Chamadas"
     },
     "exportPdf": "Exportar PDF",
     "vsPrevious": "vs. período anterior",
@@ -984,13 +1011,13 @@
       "outbound": "Efectuadas",
       "newContacts": "Novos contactos",
       "tma": "TMA",
-      "tme": "TME",
+      "tme": "ASA",
       "response": "Tempo de resposta",
       "wrapUp": "Pós-chamada"
     },
     "tilesSub": {
       "tma": "Tempo médio de atendimento",
-      "tme": "Tempo médio de espera",
+      "tme": "Espera média até ser atendida",
       "response": "Do toque ao atendimento",
       "wrapUp": "Do fim da chamada até tipificar"
     },
@@ -1429,7 +1456,7 @@
     "tabSettings": "Definições",
     "kpi": {
       "queued": "Em fila agora",
-      "tme": "TME hoje",
+      "tme": "ASA hoje",
       "answered": "Atendidas hoje",
       "missed": "Perdidas hoje"
     },
@@ -1681,7 +1708,8 @@
       "maxHandleSecs": "Atendimento máximo",
       "minAvailableAgents": "Mínimo de agentes disponíveis por grupo",
       "maxAbandonPct": "Abandono máximo do dia",
-      "maxTmaSecs": "TMA máximo do dia"
+      "maxTmaSecs": "TMA máximo do dia",
+      "shortAbandonSecs": "Ignorar no SLA quem desliga antes de"
     },
     "name": {
       "LONG_WAIT": "Espera elevada",
@@ -1698,7 +1726,10 @@
       "SLA_BELOW": "SLA do dia em {{value}} (meta {{threshold}})",
       "ABANDON_ABOVE": "Abandono do dia em {{value}} (limite {{threshold}})",
       "TMA_ABOVE": "TMA do dia em {{value}} (limite {{threshold}})"
-    }
+    },
+    "groupTargetsTitle": "Metas por grupo",
+    "groupTargetsHint": "Vazio = usa a meta geral. O alerta de SLA de um grupo com meta própria abre à parte.",
+    "groupCol": "Grupo"
   },
   "quality": {
     "title": "Qualidade",

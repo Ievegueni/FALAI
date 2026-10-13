@@ -973,7 +973,34 @@
       "typingTitle": "Calls by category",
       "category": "Call type",
       "sla": "SLA",
-      "slaHint": "Answered within {{secs}} s"
+      "slaHint": "Answered within {{secs}} s",
+      "asaP90": "ASA 90%",
+      "asaP90Hint": "9 in 10 answered calls waited up to this",
+      "maxWait": "Longest wait",
+      "maxWaitHint": "Answered and missed",
+      "slaHintTarget": "Answered within {{secs}} s · target {{target}}%",
+      "shortAbandoned": "Short abandons",
+      "shortAbandonedHint": "Hung up before {{secs}} s — excluded from SLA",
+      "abandonRate": "Abandon rate",
+      "abandonRateHint": "{{count}} abandoned, excluding short abandons",
+      "slaTarget": "SLA target",
+      "target": "Target",
+      "slaTrend": "SLA by day",
+      "slaTrendHint": "The dashed line is the target",
+      "byHour": "Calls and SLA by hour",
+      "byHourHint": "Hour the call started ringing",
+      "heatmap": "Calls by weekday and hour",
+      "heatmapHint": "Darker = more calls. Shows where agents are short.",
+      "weekdays": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat",
+        "Sun"
+      ],
+      "volume": "Calls"
     },
     "exportPdf": "Export PDF",
     "vsPrevious": "vs. previous period",
@@ -984,13 +1011,13 @@
       "outbound": "Outbound",
       "newContacts": "New contacts",
       "tma": "AHT",
-      "tme": "AWT",
+      "tme": "ASA",
       "response": "Response time",
       "wrapUp": "Wrap-up"
     },
     "tilesSub": {
       "tma": "Average handling time",
-      "tme": "Average waiting time",
+      "tme": "Average wait until answered",
       "response": "From ring to answer",
       "wrapUp": "From call end to typing"
     },
@@ -1429,7 +1456,7 @@
     "tabSettings": "Settings",
     "kpi": {
       "queued": "Queued now",
-      "tme": "AWT today",
+      "tme": "ASA today",
       "answered": "Answered today",
       "missed": "Missed today"
     },
@@ -1681,7 +1708,8 @@
       "maxHandleSecs": "Maximum handling time",
       "minAvailableAgents": "Minimum available agents per group",
       "maxAbandonPct": "Maximum daily abandon rate",
-      "maxTmaSecs": "Maximum daily AHT"
+      "maxTmaSecs": "Maximum daily AHT",
+      "shortAbandonSecs": "Exclude from SLA callers who hang up before"
     },
     "name": {
       "LONG_WAIT": "Long wait",
@@ -1698,7 +1726,10 @@
       "SLA_BELOW": "Daily SLA at {{value}} (target {{threshold}})",
       "ABANDON_ABOVE": "Daily abandon rate at {{value}} (limit {{threshold}})",
       "TMA_ABOVE": "Daily AHT at {{value}} (limit {{threshold}})"
-    }
+    },
+    "groupTargetsTitle": "Targets per group",
+    "groupTargetsHint": "Empty = uses the general target. A group with its own target gets its own SLA alert.",
+    "groupCol": "Group"
   },
   "quality": {
     "title": "Quality",

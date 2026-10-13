@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
 import { prisma, Prisma, type AlertType } from "@falai/db";
 import { extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
-import { abandonedIds, callKpis, DEFAULT_SLA_SECS, type CallKpis } from "./attendanceReport.service.js";
+import { abandonedIds, callKpis, type CallKpis } from "./attendanceReport.service.js";
+import { parseTargets, slaRuleOf, type ServiceTargets } from "./serviceTargets.js";
 import { activeInboundCalls } from "./inboundCallRouter.service.js";
 import { emitWebhookAsync } from "./webhookEmitter.service.js";
 import { tenantHasFeature } from "./features.js";
@@ -25,23 +25,7 @@ const TICK_MS = 15_000;
 const DAILY_EVERY_MS = 60_000;
 const MIN_DAILY_SAMPLE = 10;
 
-const nullable = <T extends z.ZodTypeAny>(t: T) => t.nullable().default(null);
-export const targetsSchema = z.object({
-  slaThresholdSecs: z.number().int().min(5).max(600).default(DEFAULT_SLA_SECS),
-  slaTargetPct: nullable(z.number().min(1).max(100)),
-  maxWaitSecs: nullable(z.number().int().min(10).max(3600)),
-  maxHandleSecs: nullable(z.number().int().min(30).max(14_400)),
-  minAvailableAgents: nullable(z.number().int().min(1).max(100)),
-  maxAbandonPct: nullable(z.number().min(0).max(100)),
-  maxTmaSecs: nullable(z.number().int().min(10).max(14_400)),
-});
-export type ServiceTargets = z.infer<typeof targetsSchema>;
-
-/** Metas guardadas (ou as por omissão, sem alertas, se nada ou lixo). */
-export function parseTargets(raw: unknown): ServiceTargets {
-  const r = targetsSchema.safeParse(raw ?? {});
-  return r.success ? r.data : targetsSchema.parse({});
-}
+export { targetsSchema, parseTargets, type ServiceTargets } from "./serviceTargets.js";
 
 export interface Breach {
   type: AlertType;
@@ -87,14 +71,23 @@ export function liveBreaches(s: LiveSnapshot, t: ServiceTargets): Breach[] {
   return out;
 }
 
-export type DailyKpis = Pick<CallKpis, "answered" | "missed" | "abandoned" | "slaPct" | "tmaSecs">;
+export type DailyKpis = Pick<CallKpis, "answered" | "missed" | "abandoned" | "shortAbandoned" | "abandonRate" | "slaPct" | "tmaSecs">;
 
-/** Desvios do dia face às metas. Pura. `day` = AAAA-MM-DD (é a ref do alerta). */
-export function dailyBreaches(k: DailyKpis, day: string, t: ServiceTargets): Breach[] {
-  const finished = k.answered + k.missed;
-  if (finished < MIN_DAILY_SAMPLE) return [];
+/**
+ * Desvios do dia face às metas. Pura. `day` = AAAA-MM-DD (é a ref do alerta).
+ * `byGroup` = KPIs do dia dos grupos com meta de SLA própria: o alerta desses
+ * tem a ref `dia#grupo` (abre e fecha à parte do geral).
+ */
+export function dailyBreaches(k: DailyKpis, day: string, t: ServiceTargets, byGroup: Record<string, DailyKpis> = {}): Breach[] {
   const out: Breach[] = [];
-  const abandonPct = Math.round((k.abandoned / finished) * 1000) / 10;
+  for (const [gid, g] of Object.entries(byGroup)) {
+    const target = t.groups[gid]?.slaTargetPct ?? null;
+    if (target === null || g.answered + g.missed - g.shortAbandoned < MIN_DAILY_SAMPLE) continue;
+    if (g.slaPct !== null && g.slaPct < target) out.push({ type: "SLA_BELOW", ref: `${day}#${gid}`, groupId: gid, value: g.slaPct, threshold: target });
+  }
+  const finished = k.answered + k.missed - k.shortAbandoned;
+  if (finished < MIN_DAILY_SAMPLE) return out;
+  const abandonPct = k.abandonRate ?? 0;
   if (t.slaTargetPct !== null && k.slaPct !== null && k.slaPct < t.slaTargetPct) {
     out.push({ type: "SLA_BELOW", ref: day, groupId: null, value: k.slaPct, threshold: t.slaTargetPct });
   }
@@ -193,7 +186,7 @@ async function liveSnapshot(fastify: FastifyInstance, tenantId: string, t: Servi
   };
 }
 
-async function dailyKpis(tenantId: string, t: ServiceTargets, now: Date): Promise<DailyKpis> {
+async function dailyKpis(tenantId: string, t: ServiceTargets, now: Date): Promise<{ all: DailyKpis; byGroup: Record<string, DailyKpis> }> {
   const from = startOfDay(now);
   const [calls, legs] = await Promise.all([
     prisma.call.findMany({
@@ -202,11 +195,17 @@ async function dailyKpis(tenantId: string, t: ServiceTargets, now: Date): Promis
     }),
     prisma.callLeg.findMany({ where: { tenantId, ringStartedAt: { gte: from }, outcome: "CANCELLED" }, select: { callId: true, outcome: true } }),
   ]);
-  return callKpis(calls, abandonedIds(legs), t.slaThresholdSecs);
+  const abandoned = abandonedIds(legs);
+  const rule = slaRuleOf(t);
+  const byGroup: Record<string, DailyKpis> = {};
+  for (const [gid, g] of Object.entries(t.groups)) {
+    if (g.slaTargetPct !== null) byGroup[gid] = callKpis(calls.filter((c) => c.groupId === gid), abandoned, rule);
+  }
+  return { all: callKpis(calls, abandoned, rule), byGroup };
 }
 
 /** Valor final de um alerta que fecha (para o relatório de desvios). */
-async function endValueOf(a: { type: AlertType; ref: string }, now: Date, live: LiveSnapshot, daily: DailyKpis | null): Promise<number | null> {
+async function endValueOf(a: { type: AlertType; ref: string }, now: Date, live: LiveSnapshot, daily: Awaited<ReturnType<typeof dailyKpis>> | null): Promise<number | null> {
   if (a.type === "LONG_WAIT" || a.type === "LONG_HANDLE") {
     const c = await prisma.call.findUnique({ where: { id: a.ref }, select: { queuedAt: true, answeredAt: true, endedAt: true } });
     if (!c) return null;
@@ -215,10 +214,10 @@ async function endValueOf(a: { type: AlertType; ref: string }, now: Date, live: 
   }
   if (a.type === "NO_AGENTS") return live.groups.find((g) => g.id === a.ref)?.available ?? null;
   if (!daily) return null;
-  const finished = daily.answered + daily.missed;
-  if (a.type === "SLA_BELOW") return daily.slaPct;
-  if (a.type === "TMA_ABOVE") return daily.tmaSecs;
-  return finished ? Math.round((daily.abandoned / finished) * 1000) / 10 : null;
+  const gid = a.ref.split("#")[1];
+  if (a.type === "SLA_BELOW") return (gid ? daily.byGroup[gid]?.slaPct : daily.all.slaPct) ?? null;
+  if (a.type === "TMA_ABOVE") return daily.all.tmaSecs;
+  return daily.all.abandonRate;
 }
 
 const lastDaily = new Map<string, number>();
@@ -228,19 +227,20 @@ export async function evaluateTenant(fastify: FastifyInstance, tenantId: string,
   const evaluated = new Set<AlertType>(["LONG_WAIT", "LONG_HANDLE", "NO_AGENTS"]);
   const breaches = liveBreaches(live, t);
 
-  let daily: DailyKpis | null = null;
-  const wantsDaily = t.slaTargetPct !== null || t.maxAbandonPct !== null || t.maxTmaSecs !== null;
+  let daily: Awaited<ReturnType<typeof dailyKpis>> | null = null;
+  const wantsDaily =
+    t.slaTargetPct !== null || t.maxAbandonPct !== null || t.maxTmaSecs !== null || Object.values(t.groups).some((g) => g.slaTargetPct !== null);
   if (wantsDaily && now.getTime() - (lastDaily.get(tenantId) ?? 0) >= DAILY_EVERY_MS) {
     lastDaily.set(tenantId, now.getTime());
     daily = await dailyKpis(tenantId, t, now);
-    breaches.push(...dailyBreaches(daily, localDay(now), t));
+    breaches.push(...dailyBreaches(daily.all, localDay(now), t, daily.byGroup));
     DAILY.forEach((d) => evaluated.add(d));
   }
 
   const open = await prisma.alert.findMany({ where: { tenantId, endedAt: null }, select: { id: true, type: true, ref: true, groupId: true } });
   // Um alerta do dia de ontem fecha sempre (a ref é o dia).
   const today = localDay(now);
-  const stale = open.filter((a) => DAILY.includes(a.type) && a.ref !== today).map((a) => a.id);
+  const stale = open.filter((a) => DAILY.includes(a.type) && a.ref.split("#")[0] !== today).map((a) => a.id);
   const { toOpen, toClose } = diffAlerts(open, breaches, evaluated);
 
   for (const b of toOpen) {

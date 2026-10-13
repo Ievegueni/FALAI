@@ -13,9 +13,14 @@
  *   Perdida   = tocou em extensões e ninguém atendeu; "abandonada" quando quem
  *               ligou desligou a tocar. Quem desliga no IVR não entra (nunca tocou).
  *   Recusada  = perna REJECTED (o agente carregou em "Recusar").
- *   SLA       = % das chamadas terminadas (atendidas + perdidas) atendidas em
- *               menos de slaSecs (21 por omissão; meta do cliente em serviceTargets).
- *   ASA       = é o TME acima (velocidade média de atendimento).
+ *   SLA       = % das chamadas terminadas (atendidas + perdidas, sem as
+ *               desistências curtas) atendidas em menos do limiar — o do grupo
+ *               da chamada ou o geral (serviceTargets.ts; 21 s por omissão).
+ *   Desistência curta = perdida em que quem ligou desligou antes de
+ *               shortAbandonSecs (5 s por omissão): não conta para o SLA.
+ *   ASA       = é o TME acima (velocidade média de atendimento). asaP90Secs =
+ *               90 % das atendidas esperaram até este tempo; maxWaitSecs =
+ *               maior espera (atendidas e perdidas).
  *
  * Os cálculos são funções puras sobre as linhas do período (testadas em
  * attendanceReport.test.ts). As linhas carregam-se uma vez por pedido e
@@ -27,6 +32,9 @@
  */
 import { prisma, type CallLegOutcome } from "@falai/db";
 import { typingStatus, wrapUpSecs } from "./callTyping.service.js";
+import { DEFAULT_SLA_RULE, slaSecsFor, slaTargetFor, tenantTargets, slaRuleOf, type SlaRule, type ServiceTargets } from "./serviceTargets.js";
+
+export { DEFAULT_SLA_SECS } from "./serviceTargets.js";
 
 // ─── Linhas ──────────────────────────────────────────────────────────────────
 
@@ -72,36 +80,57 @@ export function avg(values: number[]): number | null {
 
 const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : null); // % com 1 casa
 
+/** Percentil pelo método do posto mais próximo, arredondado ao segundo; null sem amostras. */
+export function percentile(values: number[], p: number): number | null {
+  const v = values.filter((x) => Number.isFinite(x) && x >= 0).sort((a, b) => a - b);
+  if (!v.length) return null;
+  return Math.round(v[Math.max(0, Math.ceil((p / 100) * v.length) - 1)]!);
+}
+
 export interface CallKpis {
   total: number;
   answered: number;
   missed: number;
   abandoned: number; // perdidas em que quem ligou desligou a tocar
+  shortAbandoned: number; // dessas, as que desligaram antes de shortAbandonSecs
   answerRate: number | null;
+  abandonRate: number | null; // abandonadas (sem as curtas) / terminadas (sem as curtas)
   tmaSecs: number | null;
-  tmeSecs: number | null;
+  tmeSecs: number | null; // = ASA
+  asaP90Secs: number | null;
+  maxWaitSecs: number | null;
+  slaMet: number; // atendidas dentro do limiar
   slaPct: number | null;
 }
-
-export const DEFAULT_SLA_SECS = 21;
 
 /**
  * KPIs da chamada. `abandonedCallIds` = chamadas com alguma perna CANCELLED e
  * nenhuma atendida (quem ligou desistiu antes do timeout).
  */
-export function callKpis(calls: CallRow[], abandonedCallIds: Set<string>, slaSecs = DEFAULT_SLA_SECS): CallKpis {
+export function callKpis(calls: CallRow[], abandonedCallIds: Set<string>, sla: SlaRule | number = DEFAULT_SLA_RULE): CallKpis {
+  const rule: SlaRule = typeof sla === "number" ? { ...DEFAULT_SLA_RULE, secs: sla } : sla;
   const reached = calls.filter((c) => c.queuedAt);
   const answered = reached.filter((c) => c.answeredAt);
   const missed = reached.filter((c) => !c.answeredAt && c.endedAt);
+  const abandoned = missed.filter((c) => abandonedCallIds.has(c.id));
+  const short = abandoned.filter((c) => secs(c.queuedAt!, c.endedAt!) < rule.shortAbandonSecs).length;
+  const waits = answered.map((c) => secs(c.queuedAt!, c.answeredAt!));
+  const slaMet = answered.filter((c) => secs(c.queuedAt!, c.answeredAt!) < slaSecsFor(rule, c.groupId)).length;
+  const counted = answered.length + missed.length - short;
   return {
     total: reached.length,
     answered: answered.length,
     missed: missed.length,
-    abandoned: missed.filter((c) => abandonedCallIds.has(c.id)).length,
+    abandoned: abandoned.length,
+    shortAbandoned: short,
     answerRate: rate(answered.length, answered.length + missed.length),
+    abandonRate: rate(abandoned.length - short, counted),
     tmaSecs: avg(answered.filter((c) => c.endedAt).map((c) => secs(c.answeredAt!, c.endedAt!))),
-    tmeSecs: avg(answered.map((c) => secs(c.queuedAt!, c.answeredAt!))),
-    slaPct: rate(answered.filter((c) => secs(c.queuedAt!, c.answeredAt!) < slaSecs).length, answered.length + missed.length),
+    tmeSecs: avg(waits),
+    asaP90Secs: percentile(waits, 90),
+    maxWaitSecs: percentile([...waits, ...missed.map((c) => secs(c.queuedAt!, c.endedAt!))], 100),
+    slaMet,
+    slaPct: rate(slaMet, counted),
   };
 }
 
@@ -251,26 +280,76 @@ export interface AttendanceFilter {
   scope?: { extensionIds: string[]; groupIds: string[] } | undefined;
 }
 
-export interface DayRow {
-  date: string; // AAAA-MM-DD
+/** Linha de um período (dia ou hora): volume, SLA e tempos das chamadas. */
+export interface PeriodKpis {
+  total: number;
+  answered: number;
+  missed: number;
+  abandoned: number;
+  shortAbandoned: number;
+  answerRate: number | null;
+  slaPct: number | null;
   tmaSecs: number | null;
   tmeSecs: number | null;
+  asaP90Secs: number | null;
+  maxWaitSecs: number | null;
+}
+
+const periodOf = (k: CallKpis): PeriodKpis => ({
+  total: k.total,
+  answered: k.answered,
+  missed: k.missed,
+  abandoned: k.abandoned,
+  shortAbandoned: k.shortAbandoned,
+  answerRate: k.answerRate,
+  slaPct: k.slaPct,
+  tmaSecs: k.tmaSecs,
+  tmeSecs: k.tmeSecs,
+  asaP90Secs: k.asaP90Secs,
+  maxWaitSecs: k.maxWaitSecs,
+});
+
+export interface DayRow extends PeriodKpis {
+  date: string; // AAAA-MM-DD
   responseSecs: number | null;
   wrapUpSecs: number | null;
 }
 
-/** TMA/TME por dia da chamada e resposta/pós-chamada por dia da perna. */
-export function dailyRows(calls: CallRow[], legs: LegRow[], now = new Date()): DayRow[] {
+/** Chamadas/SLA/TMA/ASA por dia da chamada e resposta/pós-chamada por dia da perna. */
+export function dailyRows(calls: CallRow[], legs: LegRow[], now = new Date(), abandoned = new Set<string>(), sla: SlaRule = DEFAULT_SLA_RULE): DayRow[] {
   // Dia local (como os intervalos dos relatórios) — ver localDay em reportsOverview.
   const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const callsBy = groupByKey(calls.filter((c) => c.queuedAt), (c) => day(c.queuedAt!));
   const legsBy = groupByKey(legs, (l) => day(l.ringStartedAt));
   const days = [...new Set([...callsBy.keys(), ...legsBy.keys()])].sort();
   return days.map((date) => {
-    const c = callKpis(callsBy.get(date) ?? [], new Set());
+    const c = callKpis(callsBy.get(date) ?? [], abandoned, sla);
     const a = agentKpis(legsBy.get(date) ?? [], now);
-    return { date, tmaSecs: c.tmaSecs, tmeSecs: c.tmeSecs, responseSecs: a.responseSecs, wrapUpSecs: a.wrapUpSecs };
+    return { date, ...periodOf(c), responseSecs: a.responseSecs, wrapUpSecs: a.wrapUpSecs };
   });
+}
+
+export interface HourRow extends PeriodKpis {
+  hour: number; // 0–23, hora local em que a chamada começou a tocar
+}
+
+/** As 24 horas do dia (todas, mesmo sem chamadas — o gráfico fica completo). */
+export function hourlyRows(calls: CallRow[], abandoned = new Set<string>(), sla: SlaRule = DEFAULT_SLA_RULE): HourRow[] {
+  const by = groupByKey(calls.filter((c) => c.queuedAt), (c) => String(c.queuedAt!.getHours()));
+  return Array.from({ length: 24 }, (_, hour) => ({ hour, ...periodOf(callKpis(by.get(String(hour)) ?? [], abandoned, sla)) }));
+}
+
+/**
+ * Mapa de calor: chamadas por dia da semana × hora. [0] = segunda … [6] =
+ * domingo; cada linha tem 24 horas. Mostra onde faltam agentes.
+ */
+export function weekdayHourGrid(calls: CallRow[]): number[][] {
+  const grid = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+  for (const c of calls) {
+    if (!c.queuedAt) continue;
+    grid[(c.queuedAt.getDay() + 6) % 7]![c.queuedAt.getHours()]!++;
+  }
+  return grid;
 }
 
 export interface AgentRow extends AgentKpis {
@@ -284,7 +363,10 @@ export interface GroupRow extends CallKpis {
   groupId: string | null;
   name: string;
   rejected: number;
-  vsTenant: { answerRate: number | null; tmaSecs: number | null; tmeSecs: number | null };
+  /** Limiar e meta do SLA deste grupo (os do grupo ou os gerais). */
+  slaSecs: number;
+  slaTargetPct: number | null;
+  vsTenant: { answerRate: number | null; tmaSecs: number | null; tmeSecs: number | null; slaPct: number | null };
 }
 
 export interface AttendanceReport {
@@ -297,19 +379,20 @@ export interface AttendanceReport {
   selection: { calls: CallKpis; agents: AgentKpis };
   reasons: ReasonRow[];
   typing: TypingRow[];
-  /** Por dia (selecção): para as mini-tendências dos cartões do Resumo. */
+  /** Por dia (selecção): tendências (SLA, ASA, volume) e mini-tendências do Resumo. */
   byDay: DayRow[];
+  /** As 24 horas (selecção). */
+  byHour: HourRow[];
+  /** Chamadas por dia da semana (0 = segunda) × hora (selecção). */
+  byWeekdayHour: number[][];
   byAgent: AgentRow[];
   byGroup: GroupRow[];
-  /** Limiar do SLA usado (segundos). */
+  /** Limiar do SLA usado (segundos) — o do grupo filtrado, se tiver. */
   slaSecs: number;
-}
-
-/** Limiar do SLA do cliente (metas em Tenant.serviceTargets). */
-async function tenantSlaSecs(tenantId: string): Promise<number> {
-  const t = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { serviceTargets: true } });
-  const v = (t?.serviceTargets as { slaThresholdSecs?: unknown } | null)?.slaThresholdSecs;
-  return typeof v === "number" && v > 0 ? v : DEFAULT_SLA_SECS;
+  /** Meta do SLA (%) — a do grupo filtrado, se tiver; null = sem meta. */
+  slaTargetPct: number | null;
+  /** Desistências abaixo disto não contam para o SLA (0 = contam todas). */
+  shortAbandonSecs: number;
 }
 
 async function loadRows(tenantId: string, from: Date, to: Date): Promise<{ calls: CallRow[]; legs: LegRow[] }> {
@@ -384,10 +467,10 @@ export async function buildAttendanceReport(
 ): Promise<AttendanceReport> {
   if (opts.limited) return byoReport(tenantId, f);
 
-  const { calls, legs } = await loadRows(tenantId, f.from, f.to);
+  const [{ calls, legs }, targets] = await Promise.all([loadRows(tenantId, f.from, f.to), tenantTargets(tenantId)]);
   const abandoned = abandonedIds(legs);
-  const slaSecs = await tenantSlaSecs(tenantId);
-  const tenant = { calls: callKpis(calls, abandoned, slaSecs), agents: agentKpis(legs) };
+  const sla = slaRuleOf(targets);
+  const tenant = { calls: callKpis(calls, abandoned, sla), agents: agentKpis(legs) };
 
   // Selecção: um grupo filtra chamadas e pernas desse grupo; um agente filtra
   // as pernas dele e as chamadas em que tocou.
@@ -419,13 +502,17 @@ export async function buildAttendanceReport(
     to: f.to.toISOString(),
     limited: false,
     tenant,
-    selection: { calls: callKpis(selCalls, abandoned, slaSecs), agents: agentKpis(selLegs) },
+    selection: { calls: callKpis(selCalls, abandoned, sla), agents: agentKpis(selLegs) },
     reasons: reasonBreakdown(selLegs),
     typing: typingBreakdown(selLegs),
-    byDay: dailyRows(selCalls, selLegs),
+    byDay: dailyRows(selCalls, selLegs, new Date(), abandoned, sla),
+    byHour: hourlyRows(selCalls, abandoned, sla),
+    byWeekdayHour: weekdayHourGrid(selCalls),
     byAgent: agentRows(selLegs, tenant.agents),
-    byGroup: groupRows(selCalls, selLegs, groupNames, abandoned, tenant.calls, slaSecs),
-    slaSecs,
+    byGroup: groupRows(selCalls, selLegs, groupNames, abandoned, tenant.calls, sla, targets),
+    slaSecs: slaSecsFor(sla, f.groupId ?? null),
+    slaTargetPct: slaTargetFor(targets, f.groupId ?? null),
+    shortAbandonSecs: sla.shortAbandonSecs,
   };
 }
 
@@ -468,21 +555,25 @@ export function groupRows(
   names: Map<string, string>,
   abandoned: Set<string>,
   base: CallKpis,
-  slaSecs = DEFAULT_SLA_SECS
+  sla: SlaRule = DEFAULT_SLA_RULE,
+  targets?: ServiceTargets
 ): GroupRow[] {
   const legsByGroup = groupByKey(legs, (l) => l.groupId ?? "");
   return [...groupByKey(calls, (c) => c.groupId ?? "").entries()]
     .map(([gid, cs]) => {
-      const k = callKpis(cs, abandoned, slaSecs);
+      const k = callKpis(cs, abandoned, sla);
       return {
         groupId: gid || null,
         name: gid ? (names.get(gid) ?? "—") : "Directas",
         ...k,
         rejected: (legsByGroup.get(gid) ?? []).filter((l) => l.outcome === "REJECTED").length,
+        slaSecs: slaSecsFor(sla, gid || null),
+        slaTargetPct: targets ? slaTargetFor(targets, gid || null) : null,
         vsTenant: {
           answerRate: delta(k.answerRate, base.answerRate),
           tmaSecs: delta(k.tmaSecs, base.tmaSecs),
           tmeSecs: delta(k.tmeSecs, base.tmeSecs),
+          slaPct: delta(k.slaPct, base.slaPct),
         },
       };
     })
@@ -500,16 +591,23 @@ async function byoReport(tenantId: string, f: AttendanceFilter): Promise<Attenda
   });
   const answered = rows.filter((r) => r.disposition.toUpperCase() === "ANSWERED");
   const missed = rows.length - answered.length;
-  const slaSecs = await tenantSlaSecs(tenantId);
+  const targets = await tenantTargets(tenantId);
+  const slaSecs = targets.slaThresholdSecs;
+  const slaMet = answered.filter((r) => r.ringSecs < slaSecs).length;
   const calls: CallKpis = {
     total: rows.length,
     answered: answered.length,
     missed,
     abandoned: 0,
+    shortAbandoned: 0,
     answerRate: rate(answered.length, rows.length),
+    abandonRate: null,
     tmaSecs: avg(answered.map((r) => r.talkSecs)),
     tmeSecs: avg(answered.map((r) => r.ringSecs)),
-    slaPct: rate(answered.filter((r) => r.ringSecs < slaSecs).length, rows.length),
+    asaP90Secs: percentile(answered.map((r) => r.ringSecs), 90),
+    maxWaitSecs: percentile(answered.map((r) => r.ringSecs), 100),
+    slaMet,
+    slaPct: rate(slaMet, rows.length),
   };
   const agents = agentKpis([]);
   return {
@@ -521,9 +619,13 @@ async function byoReport(tenantId: string, f: AttendanceFilter): Promise<Attenda
     reasons: [],
     typing: [],
     byDay: [],
+    byHour: [],
+    byWeekdayHour: [],
     byAgent: [],
     byGroup: [],
     slaSecs,
+    slaTargetPct: targets.slaTargetPct,
+    shortAbandonSecs: 0,
   };
 }
 
@@ -617,13 +719,14 @@ export async function listAttendanceCalls(
 
 // ─── Exportação ──────────────────────────────────────────────────────────────
 
-export type ExportView = "agents" | "groups" | "reasons" | "typing";
+export type ExportView = "attendance" | "agents" | "groups" | "reasons" | "typing" | "calls";
+export type AttendanceCallRow = Awaited<ReturnType<typeof listAttendanceCalls>>["data"][number];
 
 /** Tabela (cabeçalho + linhas) de uma vista — serve o CSV e o Excel. */
-export function exportTable(report: AttendanceReport, view: ExportView): (string | number | null)[][] {
+export function exportTable(report: AttendanceReport, view: "agents" | "groups" | "reasons" | "typing"): (string | number | null)[][] {
   if (view === "agents") {
     return [
-      ["Extensão", "Nome", "Tocou", "Atendeu", "Recusou", "Não atendeu", "Ocupado", "% atendimento", "% recusa", "TMA (s)", "TME (s)", "Resposta (s)", "Δ TMA vs média", "Δ resposta vs média", "Tipificadas", "Não tipificadas", "% não tipificadas", "Pós-chamada (s)"],
+      ["Extensão", "Nome", "Tocou", "Atendeu", "Recusou", "Não atendeu", "Ocupado", "% atendimento", "% recusa", "TMA (s)", "ASA (s)", "Resposta (s)", "Δ TMA vs média", "Δ resposta vs média", "Tipificadas", "Não tipificadas", "% não tipificadas", "Pós-chamada (s)"],
       ...report.byAgent.map((r) => [
         r.number, r.name, r.offered, r.answered, r.rejected, r.noAnswer, r.busy, r.answerRate, r.rejectRate,
         r.tmaSecs, r.tmeSecs, r.responseSecs, r.vsTenant.tmaSecs, r.vsTenant.responseSecs,
@@ -633,9 +736,10 @@ export function exportTable(report: AttendanceReport, view: ExportView): (string
   }
   if (view === "groups") {
     return [
-      ["Grupo", "Chamadas", "Atendidas", "Perdidas", "Abandonadas", "Recusas", "% atendimento", "TMA (s)", "TME (s)", "Δ TMA vs média", "Δ TME vs média"],
+      ["Grupo", "Chamadas", "Atendidas", "Perdidas", "Abandonadas", "Desistências curtas", "Recusas", "SLA %", "Meta SLA %", "Limiar SLA (s)", "% atendimento", "% abandono", "TMA (s)", "ASA (s)", "ASA 90% (s)", "Maior espera (s)", "Δ TMA vs média", "Δ ASA vs média"],
       ...report.byGroup.map((r) => [
-        r.name, r.total, r.answered, r.missed, r.abandoned, r.rejected, r.answerRate, r.tmaSecs, r.tmeSecs, r.vsTenant.tmaSecs, r.vsTenant.tmeSecs,
+        r.name, r.total, r.answered, r.missed, r.abandoned, r.shortAbandoned, r.rejected, r.slaPct, r.slaTargetPct, r.slaSecs, r.answerRate, r.abandonRate,
+        r.tmaSecs, r.tmeSecs, r.asaP90Secs, r.maxWaitSecs, r.vsTenant.tmaSecs, r.vsTenant.tmeSecs,
       ]),
     ];
   }

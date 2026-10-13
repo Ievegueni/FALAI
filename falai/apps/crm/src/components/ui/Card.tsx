@@ -23,7 +23,7 @@ export function Card({ children, className, padding = true }: CardProps) {
 
 interface StatCardProps {
   label: string;
-  value: string | number;
+  value: React.ReactNode;
   sub?: string;
   icon?: ReactNode;
   trend?: { value: number; label: string };

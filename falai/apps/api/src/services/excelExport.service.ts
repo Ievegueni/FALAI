@@ -10,7 +10,7 @@
 import ExcelJS from "exceljs";
 import { analysisSections, type AnalysisResult } from "./reportAnalysis.service.js";
 import type { Overview } from "./reportsOverview.service.js";
-import type { AttendanceReport, ExportView } from "./attendanceReport.service.js";
+import type { AttendanceReport, ExportView, AttendanceCallRow, PeriodKpis } from "./attendanceReport.service.js";
 import type { ReportRow } from "./reports.service.js";
 import { addCharts, colRef, type ChartSpec } from "./excelCharts.service.js";
 
@@ -20,7 +20,7 @@ function beside(nCols: number, slot = 0, height = 18): Pick<ChartSpec, "from" | 
   return { from: { col: nCols + 1, row }, to: { col: nCols + 10, row: row + height } };
 }
 const lastRow = (n: number) => 4 + Math.max(n, 1);
-type Fmt = "text" | "int" | "pct" | "secs" | "date" | "datetime" | "money";
+type Fmt = "text" | "int" | "dec" | "pct" | "secs" | "date" | "datetime" | "money";
 
 export interface Column {
   header: string;
@@ -37,6 +37,7 @@ const INK_2 = "FF52514E";
 const NUM_FMT: Record<Fmt, string | undefined> = {
   text: undefined,
   int: "#,##0",
+  dec: "0.0",
   pct: "0.0%",
   secs: "[h]:mm:ss",
   date: "dd/mm/yyyy",
@@ -125,7 +126,7 @@ const TILE_LABEL: Record<string, string> = {
   answered: "Atendidas",
   missed: "Não atendidas",
   tma: "TMA — tempo médio de atendimento",
-  tme: "TME — tempo médio de espera",
+  tme: "ASA — tempo médio de espera até atender",
   response: "Tempo de resposta (do toque ao atendimento)",
   wrapUp: "Pós-chamada (do fim até tipificar)",
 };
@@ -163,15 +164,49 @@ function agentsSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, cha
     { header: "% atendimento", width: 13, fmt: "pct" },
     { header: "% recusa", width: 10, fmt: "pct" },
     { header: "TMA", width: 10, fmt: "secs" },
-    { header: "TME", width: 10, fmt: "secs" },
+    { header: "ASA (espera)", width: 12, fmt: "secs" },
     { header: "Resposta", width: 10, fmt: "secs" },
     { header: "Tipificadas", width: 11, fmt: "int" },
     { header: "% não tipificadas", width: 14, fmt: "pct" },
     { header: "Pós-chamada", width: 12, fmt: "secs" },
+    { header: "Δ % atendimento vs média (p.p.)", width: 16, fmt: "dec" },
+    { header: "Δ TMA vs média (s)", width: 12, fmt: "int" },
+    { header: "Δ resposta vs média (s)", width: 13, fmt: "int" },
   ], a.byAgent.map((r) => [
     r.number, r.name && r.name !== r.number ? r.name : null, r.offered, r.answered, r.rejected, r.noAnswer, r.busy,
     r.answerRate, r.rejectRate, r.tmaSecs, r.tmeSecs, r.responseSecs, r.typed, r.untypedRate, r.wrapUpSecs,
+    r.vsTenant.answerRate, r.vsTenant.tmaSecs, r.vsTenant.responseSecs,
   ]));
+}
+
+const GROUP_COLS: Column[] = [
+  { header: "Grupo", width: 22, fmt: "text" },
+  { header: "Chamadas", width: 10, fmt: "int" },
+  { header: "Atendidas", width: 10, fmt: "int" },
+  { header: "Perdidas", width: 10, fmt: "int" },
+  { header: "Abandonadas", width: 12, fmt: "int" },
+  { header: "Desistências curtas", width: 12, fmt: "int" },
+  { header: "Recusas", width: 9, fmt: "int" },
+  { header: "SLA", width: 9, fmt: "pct" },
+  { header: "Meta SLA", width: 9, fmt: "pct" },
+  { header: "Limiar SLA (s)", width: 10, fmt: "int" },
+  { header: "% atendimento", width: 13, fmt: "pct" },
+  { header: "% abandono", width: 11, fmt: "pct" },
+  { header: "TMA", width: 10, fmt: "secs" },
+  { header: "ASA (espera)", width: 12, fmt: "secs" },
+  { header: "ASA 90%", width: 10, fmt: "secs" },
+  { header: "Maior espera", width: 11, fmt: "secs" },
+  { header: "Δ % atendimento vs média (p.p.)", width: 16, fmt: "dec" },
+  { header: "Δ SLA vs média (p.p.)", width: 12, fmt: "dec" },
+  { header: "Δ TMA vs média (s)", width: 12, fmt: "int" },
+  { header: "Δ ASA vs média (s)", width: 12, fmt: "int" },
+];
+
+/** Verde/vermelho conforme cumpre a meta (só quando há meta). */
+function markTarget(cell: ExcelJS.Cell, value: number | null, target: number | null, higherIsBetter = true): void {
+  if (value === null || target === null) return;
+  const ok = higherIsBetter ? value >= target : value <= target;
+  cell.font = { bold: true, color: { argb: ok ? "FF006300" : "FFD03B3B" } };
 }
 
 function groupsSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, charts: ChartSpec[]): void {
@@ -188,17 +223,22 @@ function groupsSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, cha
       ],
     });
   }
-  addTableSheet(wb, S, "Atendimento por grupo", sub, [
-    { header: "Grupo", width: 22, fmt: "text" },
-    { header: "Chamadas", width: 10, fmt: "int" },
-    { header: "Atendidas", width: 10, fmt: "int" },
-    { header: "Perdidas", width: 10, fmt: "int" },
-    { header: "Abandonadas", width: 12, fmt: "int" },
-    { header: "Recusas", width: 9, fmt: "int" },
-    { header: "% atendimento", width: 13, fmt: "pct" },
-    { header: "TMA", width: 10, fmt: "secs" },
-    { header: "TME", width: 10, fmt: "secs" },
-  ], a.byGroup.map((g) => [g.groupId ? g.name : "Directas", g.total, g.answered, g.missed, g.abandoned, g.rejected, g.answerRate, g.tmaSecs, g.tmeSecs]));
+  if (n > 0) {
+    charts.push({
+      sheet: S, type: "column", title: "SLA por grupo vs meta", ...beside(GROUP_COLS.length, 1), numFmt: "0%",
+      catRef: colRef(S, 0, 5, lastRow(n)), categories: a.byGroup.map((g) => (g.groupId ? g.name : "Directas")),
+      series: [
+        { name: "SLA", ref: colRef(S, 7, 5, lastRow(n)), values: a.byGroup.map((g) => (g.slaPct ?? 0) / 100) },
+        { name: "Meta", ref: colRef(S, 8, 5, lastRow(n)), values: a.byGroup.map((g) => (g.slaTargetPct ?? 0) / 100) },
+      ],
+    });
+  }
+  const ws = addTableSheet(wb, S, "Atendimento por grupo", sub, GROUP_COLS, a.byGroup.map((g) => [
+    g.groupId ? g.name : "Directas", g.total, g.answered, g.missed, g.abandoned, g.shortAbandoned, g.rejected,
+    g.slaPct, g.slaTargetPct, g.slaSecs, g.answerRate, g.abandonRate, g.tmaSecs, g.tmeSecs, g.asaP90Secs, g.maxWaitSecs,
+    g.vsTenant.answerRate, g.vsTenant.slaPct, g.vsTenant.tmaSecs, g.vsTenant.tmeSecs,
+  ]));
+  a.byGroup.forEach((g, i) => markTarget(ws.getCell(5 + i, 8), g.slaPct, g.slaTargetPct));
 }
 
 function reasonsSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, charts: ChartSpec[]): void {
@@ -239,7 +279,202 @@ function typingSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, cha
   ], a.typing.map((r) => [label(r), r.category, r.subcategory, r.count, r.pct]));
 }
 
-const VIEW_SHEET: Record<ExportView, (wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, charts: ChartSpec[]) => void> = {
+/**
+ * Folha de indicadores: uma linha por indicador, cada uma com o seu formato
+ * (contagem, %, duração). `cols` = cabeçalhos das colunas de valores.
+ */
+export function addKpiSheet(
+  wb: ExcelJS.Workbook,
+  name: string,
+  title: string,
+  subtitle: string,
+  cols: string[],
+  rows: { label: string; fmt: Fmt; values: (number | null)[]; target?: { value: number | null; higherIsBetter: boolean } }[]
+): ExcelJS.Worksheet {
+  const ws = addTableSheet(wb, name, title, subtitle, [{ header: "Indicador", width: 40, fmt: "text" }, ...cols.map((h) => ({ header: h, width: 16, fmt: "text" as Fmt }))], []);
+  ws.autoFilter = undefined as never;
+  rows.forEach((r, i) => {
+    const row = ws.getRow(5 + i);
+    row.getCell(1).value = r.label;
+    r.values.forEach((v, j) => {
+      const c = row.getCell(2 + j);
+      c.value = toCell(v, r.fmt);
+      const nf = NUM_FMT[r.fmt];
+      if (nf) c.numFmt = nf;
+      c.alignment = { horizontal: "right" };
+      if (j === 0 && r.target) markTarget(c, v, r.target.value, r.target.higherIsBetter);
+    });
+    for (let c = 1; c <= cols.length + 1; c++) {
+      if (i % 2 === 1) row.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } };
+      row.getCell(c).border = { bottom: { style: "hair", color: { argb: HAIR } } };
+    }
+  });
+  return ws;
+}
+
+/** Os indicadores do separador Atendimento (os cartões e a comparação com a conta). */
+function indicatorsSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, filtered: boolean): void {
+  const c = a.selection.calls;
+  const g = a.selection.agents;
+  const tc = a.tenant.calls;
+  const ta = a.tenant.agents;
+  const both = (x: number | null, y: number | null) => (filtered ? [x, y] : [x]);
+  const rows: Parameters<typeof addKpiSheet>[5] = [
+    { label: "Chamadas", fmt: "int", values: both(c.total, tc.total) },
+    { label: "Atendidas", fmt: "int", values: both(c.answered, tc.answered) },
+    { label: "% atendimento", fmt: "pct", values: both(c.answerRate, tc.answerRate) },
+    { label: "Perdidas", fmt: "int", values: both(c.missed, tc.missed) },
+    { label: "Abandonadas (quem ligou desligou)", fmt: "int", values: both(c.abandoned, tc.abandoned) },
+    { label: `Desistências curtas (antes de ${a.shortAbandonSecs} s, fora do SLA)`, fmt: "int", values: both(c.shortAbandoned, tc.shortAbandoned) },
+    { label: "% abandono (sem as curtas)", fmt: "pct", values: both(c.abandonRate, tc.abandonRate) },
+    ...(a.limited ? [] : [
+      { label: "Recusadas", fmt: "int" as Fmt, values: both(g.rejected, ta.rejected) },
+      { label: "% recusa", fmt: "pct" as Fmt, values: both(g.rejectRate, ta.rejectRate) },
+    ]),
+    { label: `SLA (atendidas em menos de ${a.slaSecs} s)`, fmt: "pct", values: both(c.slaPct, tc.slaPct), target: { value: a.slaTargetPct, higherIsBetter: true } },
+    { label: "Meta do SLA", fmt: "pct", values: both(a.slaTargetPct, a.slaTargetPct) },
+    { label: "Atendidas dentro do SLA", fmt: "int", values: both(c.slaMet, tc.slaMet) },
+    { label: "TMA — tempo médio de atendimento", fmt: "secs", values: both(c.tmaSecs, tc.tmaSecs) },
+    { label: "ASA — tempo médio de espera até atender", fmt: "secs", values: both(c.tmeSecs, tc.tmeSecs) },
+    { label: "ASA 90% — 9 em cada 10 atendidas esperaram até", fmt: "secs", values: both(c.asaP90Secs, tc.asaP90Secs) },
+    { label: "Maior espera", fmt: "secs", values: both(c.maxWaitSecs, tc.maxWaitSecs) },
+    ...(a.limited ? [] : [
+      { label: "Tempo de resposta do agente", fmt: "secs" as Fmt, values: both(g.responseSecs, ta.responseSecs) },
+      { label: "Tipificadas", fmt: "int" as Fmt, values: both(g.typed, ta.typed) },
+      { label: "Não tipificadas", fmt: "int" as Fmt, values: both(g.untyped, ta.untyped) },
+      { label: "% não tipificadas", fmt: "pct" as Fmt, values: both(g.untypedRate, ta.untypedRate) },
+      { label: "Pós-chamada (do fim até tipificar)", fmt: "secs" as Fmt, values: both(g.wrapUpSecs, ta.wrapUpSecs) },
+    ]),
+  ];
+  addKpiSheet(wb, "Indicadores", "Indicadores de atendimento", sub, filtered ? ["Selecção", "Média da conta"] : ["Valor"], rows);
+}
+
+const PERIOD_COLS: Column[] = [
+  { header: "Chamadas", width: 10, fmt: "int" },
+  { header: "Atendidas", width: 10, fmt: "int" },
+  { header: "Perdidas", width: 10, fmt: "int" },
+  { header: "Abandonadas", width: 12, fmt: "int" },
+  { header: "Desistências curtas", width: 12, fmt: "int" },
+  { header: "% atendimento", width: 13, fmt: "pct" },
+  { header: "SLA", width: 9, fmt: "pct" },
+  { header: "Meta SLA", width: 9, fmt: "pct" },
+  { header: "TMA", width: 10, fmt: "secs" },
+  { header: "ASA (espera)", width: 12, fmt: "secs" },
+  { header: "ASA 90%", width: 10, fmt: "secs" },
+  { header: "Maior espera", width: 11, fmt: "secs" },
+];
+const periodCells = (r: PeriodKpis, target: number | null): Cell[] => [
+  r.total, r.answered, r.missed, r.abandoned, r.shortAbandoned, r.answerRate, r.slaPct, target, r.tmaSecs, r.tmeSecs, r.asaP90Secs, r.maxWaitSecs,
+];
+
+/** Por dia: volume, SLA (com a meta, para o gráfico) e tempos. */
+function daySheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, charts: ChartSpec[]): void {
+  const S = "Por dia";
+  const rows = a.byDay;
+  const n = rows.length;
+  const cols: Column[] = [{ header: "Dia", width: 12, fmt: "date" }, ...PERIOD_COLS, { header: "Resposta", width: 10, fmt: "secs" }, { header: "Pós-chamada", width: 12, fmt: "secs" }];
+  if (n > 0) {
+    const cat = {
+      catRef: colRef(S, 0, 5, lastRow(n)), categories: rows.map((d) => `${d.date.slice(8, 10)}/${d.date.slice(5, 7)}`), catDateFmt: "dd/mm",
+      catValues: rows.map((d) => Math.round((Date.UTC(+d.date.slice(0, 4), +d.date.slice(5, 7) - 1, +d.date.slice(8, 10)) - Date.UTC(1899, 11, 30)) / 86400000)),
+    };
+    charts.push({
+      sheet: S, type: "line", title: "SLA por dia vs meta", ...cat, ...beside(cols.length, 0), numFmt: "0%",
+      series: [
+        { name: "SLA", ref: colRef(S, 7, 5, lastRow(n)), values: rows.map((d) => (d.slaPct === null ? null : d.slaPct / 100)) },
+        ...(a.slaTargetPct !== null ? [{ name: "Meta", ref: colRef(S, 8, 5, lastRow(n)), values: rows.map(() => a.slaTargetPct! / 100) }] : []),
+      ],
+    });
+    charts.push({
+      sheet: S, type: "column", title: "Chamadas por dia", ...cat, ...beside(cols.length, 1),
+      series: [
+        { name: "Atendidas", ref: colRef(S, 2, 5, lastRow(n)), values: rows.map((d) => d.answered) },
+        { name: "Perdidas", ref: colRef(S, 3, 5, lastRow(n)), values: rows.map((d) => d.missed) },
+      ],
+    });
+  }
+  const ws = addTableSheet(wb, S, "Atendimento por dia", sub, cols, rows.map((d) => [new Date(`${d.date}T12:00:00`), ...periodCells(d, a.slaTargetPct), d.responseSecs, d.wrapUpSecs]));
+  rows.forEach((d, i) => markTarget(ws.getCell(5 + i, 8), d.slaPct, a.slaTargetPct));
+}
+
+const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
+
+/** As 24 horas: onde se concentram as chamadas e onde o SLA cai. */
+function hourSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, charts: ChartSpec[]): void {
+  const S = "Por hora";
+  const rows = a.byHour;
+  if (!rows.length) return;
+  const cols: Column[] = [{ header: "Hora", width: 8, fmt: "text" }, ...PERIOD_COLS];
+  const cat = { catRef: colRef(S, 0, 5, lastRow(24)), categories: rows.map((r) => hh(r.hour)) };
+  charts.push({
+    sheet: S, type: "column", title: "Chamadas por hora", ...cat, ...beside(cols.length, 0),
+    series: [
+      { name: "Atendidas", ref: colRef(S, 2, 5, lastRow(24)), values: rows.map((r) => r.answered) },
+      { name: "Perdidas", ref: colRef(S, 3, 5, lastRow(24)), values: rows.map((r) => r.missed) },
+    ],
+  });
+  charts.push({
+    sheet: S, type: "line", title: "SLA e ASA por hora — SLA", ...cat, ...beside(cols.length, 1), numFmt: "0%",
+    series: [{ name: "SLA", ref: colRef(S, 7, 5, lastRow(24)), values: rows.map((r) => (r.slaPct === null ? null : r.slaPct / 100)) }],
+  });
+  const ws = addTableSheet(wb, S, "Atendimento por hora do dia", `${sub} · hora a que a chamada começou a tocar`, cols, rows.map((r) => [hh(r.hour), ...periodCells(r, a.slaTargetPct)]));
+  rows.forEach((r, i) => markTarget(ws.getCell(5 + i, 8), r.slaPct, a.slaTargetPct));
+}
+
+export const WEEKDAYS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
+
+/** Mapa de calor dia da semana × hora (escala de cor do próprio Excel). */
+function heatmapSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string): void {
+  const grid = a.byWeekdayHour;
+  if (!grid.length) return;
+  const cols: Column[] = [{ header: "Dia", width: 11, fmt: "text" }, ...Array.from({ length: 24 }, (_, h) => ({ header: String(h).padStart(2, "0"), width: 3, fmt: "int" as Fmt })), { header: "Total", width: 8, fmt: "int" }];
+  const ws = addTableSheet(wb, "Mapa de horas", "Chamadas por dia da semana e hora", `${sub} · mais escuro = mais chamadas`, cols, grid.map((row, i) => [WEEKDAYS[i]!, ...row, row.reduce((x, y) => x + y, 0)]));
+  ws.autoFilter = undefined as never;
+  for (let r = 5; r <= 11; r++) for (let c = 2; c <= 25; c++) ws.getCell(r, c).fill = { type: "pattern", pattern: "none" };
+  ws.addConditionalFormatting({
+    ref: "B5:Y11",
+    rules: [{ type: "colorScale", priority: 1, cfvo: [{ type: "min" }, { type: "max" }], color: [{ argb: "FFFFFFFF" }, { argb: BLUE }] }],
+  });
+}
+
+const OUTCOME: Record<string, string> = {
+  ANSWERED: "Atendeu", REJECTED: "Recusou", NO_ANSWER: "Não atendeu", BUSY: "Ocupado", CANCELLED: "Cancelada", FAILED: "Falhou",
+};
+
+/** Lista das chamadas de entrada (separador Chamadas), com as extensões em que tocou. */
+function attendanceCallsSheet(wb: ExcelJS.Workbook, calls: AttendanceCallRow[], sub: string): void {
+  addTableSheet(wb, "Chamadas", "Chamadas de entrada", sub, [
+    { header: "Data", width: 17, fmt: "datetime" },
+    { header: "Número", width: 16, fmt: "text" },
+    { header: "Contacto", width: 24, fmt: "text" },
+    { header: "Grupo", width: 16, fmt: "text" },
+    { header: "Resultado", width: 11, fmt: "text" },
+    { header: "Espera", width: 9, fmt: "secs" },
+    { header: "Conversa", width: 9, fmt: "secs" },
+    { header: "Atendida por", width: 12, fmt: "text" },
+    { header: "Tipificação", width: 28, fmt: "text" },
+    { header: "Nota da tipificação", width: 28, fmt: "text" },
+    { header: "Extensões (resultado, motivo)", width: 50, fmt: "text" },
+  ], calls.map((c) => {
+    const ans = c.legs.find((l) => l.outcome === "ANSWERED");
+    return [
+      c.startedAt ? new Date(c.startedAt) : null, c.from, c.contactName, c.group, c.answered ? "Atendida" : "Perdida", c.waitSecs, c.talkSecs,
+      ans?.extension ?? null, ans?.typing ?? null, ans?.typingNote ?? null,
+      c.legs.map((l) => `${l.extension} ${OUTCOME[l.outcome ?? ""] ?? "A tocar"}${l.reason ? ` (${l.reason})` : ""}`).join(" · "),
+    ];
+  }));
+}
+
+/** Separador Atendimento: indicadores, por dia, por hora e mapa de horas. */
+function attendanceSheets(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, charts: ChartSpec[], filtered = false): void {
+  indicatorsSheet(wb, a, sub, filtered);
+  if (a.limited) return;
+  daySheet(wb, a, sub, charts);
+  hourSheet(wb, a, sub, charts);
+  heatmapSheet(wb, a, sub);
+}
+
+const VIEW_SHEET: Record<Exclude<ExportView, "attendance" | "calls">, (wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, charts: ChartSpec[]) => void> = {
   agents: agentsSheet,
   groups: groupsSheet,
   reasons: reasonsSheet,
@@ -274,11 +509,21 @@ export interface ExportAnalysis {
   createdAt: Date;
 }
 
-export async function attendanceWorkbook(report: AttendanceReport, view: ExportView, tenant: string, analysis?: ExportAnalysis | null): Promise<Buffer> {
+export async function attendanceWorkbook(
+  report: AttendanceReport,
+  view: ExportView,
+  tenant: string,
+  analysis?: ExportAnalysis | null,
+  extra: { calls?: AttendanceCallRow[]; filters?: string } = {}
+): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Falaí";
   const charts: ChartSpec[] = [];
-  VIEW_SHEET[view](wb, report, subtitleOf(tenant, report.from, report.to), charts);
+  // Os filtros activos (agente, grupo, tipificação) vão no subtítulo de cada folha.
+  const sub = subtitleOf(tenant, report.from, report.to) + (extra.filters ? ` · ${extra.filters}` : "");
+  if (view === "attendance") attendanceSheets(wb, report, sub, charts, Boolean(extra.filters));
+  else if (view === "calls") attendanceCallsSheet(wb, extra.calls ?? [], sub);
+  else VIEW_SHEET[view](wb, report, sub, charts);
   if (analysis) addAnalysisSheet(wb, analysis);
   return addCharts(Buffer.from(await wb.xlsx.writeBuffer()), wb.worksheets.map((w) => w.name), charts);
 }
@@ -380,6 +625,7 @@ export async function overviewWorkbook(o: Overview, rows: ReportRow[], tenant: s
     { header: "%", width: 9, fmt: "pct" },
   ], [...share("Grupo", o.donuts.byGroup), ...share("Estado", o.donuts.byState), ...share("Tipificação", o.donuts.byTyping)]);
 
+  attendanceSheets(wb, o.attendance, sub, charts);
   if (!o.limited) {
     agentsSheet(wb, o.attendance, sub, charts);
     groupsSheet(wb, o.attendance, sub, charts);

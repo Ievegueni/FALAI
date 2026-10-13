@@ -33,6 +33,11 @@ export const tenantAlertsRoutes: FastifyPluginAsync = async (fastify) => {
     const { tenantId, role, sub } = request.tenantUser!;
     if (!isOpsManager(role)) return reply.status(403).send({ error: "Apenas administradores ou gestores" });
     const targets = targetsSchema.parse(request.body);
+    // Metas por grupo: só grupos deste cliente e só os que têm alguma meta.
+    const own = new Set((await prisma.extensionGroup.findMany({ where: { tenantId }, select: { id: true } })).map((g) => g.id));
+    targets.groups = Object.fromEntries(
+      Object.entries(targets.groups).filter(([gid, g]) => own.has(gid) && (g.slaThresholdSecs !== null || g.slaTargetPct !== null))
+    );
     // Grava-se sempre um objecto (mesmo tudo desligado): assim o avaliador
     // continua a passar por este cliente e fecha os alertas que ficaram abertos.
     await prisma.tenant.update({ where: { id: tenantId }, data: { serviceTargets: targets } });

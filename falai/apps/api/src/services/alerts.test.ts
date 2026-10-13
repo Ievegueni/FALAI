@@ -16,7 +16,7 @@ const targets = (o: Record<string, unknown> = {}) => parseTargets(o);
 
 describe("metas", () => {
   it("sem nada guardado: SLA a 21 s e nenhum alerta ligado", () => {
-    expect(targets()).toEqual({ slaThresholdSecs: 21, slaTargetPct: null, maxWaitSecs: null, maxHandleSecs: null, minAvailableAgents: null, maxAbandonPct: null, maxTmaSecs: null });
+    expect(targets()).toEqual({ slaThresholdSecs: 21, slaTargetPct: null, shortAbandonSecs: 5, groups: {}, maxWaitSecs: null, maxHandleSecs: null, minAvailableAgents: null, maxAbandonPct: null, maxTmaSecs: null });
     expect(parseTargets("lixo")).toEqual(targets());
   });
 });
@@ -47,7 +47,7 @@ describe("alertas ao vivo", () => {
 });
 
 describe("desvios do dia", () => {
-  const k = { answered: 8, missed: 4, abandoned: 3, slaPct: 60, tmaSecs: 400 };
+  const k = { answered: 8, missed: 4, abandoned: 3, shortAbandoned: 0, abandonRate: 25, slaPct: 60, tmaSecs: 400 };
 
   it("SLA abaixo da meta, abandono e TMA acima", () => {
     const b = dailyBreaches(k, "2026-10-06", targets({ slaTargetPct: 80, maxAbandonPct: 20, maxTmaSecs: 300 }));
@@ -57,6 +57,17 @@ describe("desvios do dia", () => {
 
   it("com menos de 10 chamadas terminadas não alarma", () => {
     expect(dailyBreaches({ ...k, answered: 5, missed: 4 }, "d", targets({ slaTargetPct: 99 }))).toEqual([]);
+  });
+
+  it("as desistências curtas não contam para a amostra mínima", () => {
+    expect(dailyBreaches({ ...k, answered: 6, missed: 5, shortAbandoned: 2 }, "d", targets({ slaTargetPct: 99 }))).toEqual([]);
+  });
+
+  it("grupo com meta própria abre um alerta só dele (ref dia#grupo)", () => {
+    const g = { ...k, slaPct: 70 };
+    const t = targets({ slaTargetPct: 50, groups: { g1: { slaTargetPct: 90 }, g2: { slaTargetPct: 60 } } });
+    const b = dailyBreaches(k, "2026-10-06", t, { g1: g, g2: g });
+    expect(b.map((x) => [x.ref, x.groupId, x.value, x.threshold])).toEqual([["2026-10-06#g1", "g1", 70, 90]]);
   });
 });
 
@@ -84,5 +95,26 @@ describe("SLA nos KPIs", () => {
     const calls = [c("a", 5), c("b", 20), c("d", 30), c("e", null)];
     expect(callKpis(calls, new Set()).slaPct).toBe(50); // 2 de 4 abaixo de 21 s
     expect(callKpis(calls, new Set(), 40).slaPct).toBe(75);
+  });
+
+  it("quem desiste antes de 5 s não conta para o SLA nem para o abandono", () => {
+    const calls = [c("a", 5), c("b", 30), c("x", null, 3), c("y", null, 60)];
+    const k = callKpis(calls, new Set(["x", "y"]));
+    expect(k.shortAbandoned).toBe(1);
+    expect(k.slaPct).toBe(33.3); // 1 de 3 (x fica de fora)
+    expect(k.abandonRate).toBe(33.3); // y de 3
+    expect(k.answerRate).toBe(50); // a taxa de atendimento continua a contar tudo
+  });
+
+  it("cada grupo usa o seu limiar", () => {
+    const calls = [{ ...c("a", 30), groupId: "g1" }, { ...c("b", 30), groupId: "g2" }];
+    expect(callKpis(calls, new Set(), { secs: 21, shortAbandonSecs: 5, byGroup: { g1: 40 } }).slaPct).toBe(50);
+  });
+
+  it("ASA a 90 % e maior espera (inclui as perdidas)", () => {
+    const calls = [...Array.from({ length: 9 }, (_, i) => c(`a${i}`, 10)), c("z", 100, 200), c("p", null, 150)];
+    const k = callKpis(calls, new Set());
+    expect(k.asaP90Secs).toBe(10);
+    expect(k.maxWaitSecs).toBe(150);
   });
 });

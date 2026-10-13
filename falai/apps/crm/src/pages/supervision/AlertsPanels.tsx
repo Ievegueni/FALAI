@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Save } from 'lucide-react';
-import { alertsApi, type AlertType, type ServiceTargets } from '@/lib/api';
+import { alertsApi, telephonyApi, type AlertType, type GroupTargets, type ServiceTargets } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -111,10 +111,11 @@ export function AlertsHistory() {
   );
 }
 
-type Field = keyof ServiceTargets;
+type Field = Exclude<keyof ServiceTargets, 'groups'>;
 const FIELDS: { key: Field; unit: 's' | '%' | 'n' }[] = [
   { key: 'slaThresholdSecs', unit: 's' },
   { key: 'slaTargetPct', unit: '%' },
+  { key: 'shortAbandonSecs', unit: 's' },
   { key: 'maxWaitSecs', unit: 's' },
   { key: 'maxHandleSecs', unit: 's' },
   { key: 'minAvailableAgents', unit: 'n' },
@@ -122,21 +123,34 @@ const FIELDS: { key: Field; unit: 's' | '%' | 'n' }[] = [
   { key: 'maxTmaSecs', unit: 's' },
 ];
 
+/** Campos com valor por omissão (vazio volta a ele em vez de desligar). */
+const DEFAULTS: Partial<Record<Field, number>> = { slaThresholdSecs: 21, shortAbandonSecs: 5 };
+
 /** Metas e limites dos alertas (gestor/admin). Campo vazio = alerta desligado. */
 export function TargetsCard() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { success, error } = useToast();
   const { data } = useQuery({ queryKey: ['alerts', 'settings'], queryFn: alertsApi.settings });
+  const { data: groups } = useQuery({ queryKey: ['telephony', 'groups'], queryFn: telephonyApi.listGroups, retry: false });
   const [form, setForm] = useState<Record<Field, string>>({} as Record<Field, string>);
+  // Metas por grupo, em texto (vazio = usa a geral): { [groupId]: { slaThresholdSecs, slaTargetPct } }
+  const [byGroup, setByGroup] = useState<Record<string, Record<keyof GroupTargets, string>>>({});
   useEffect(() => {
-    if (data) setForm(Object.fromEntries(FIELDS.map(({ key }) => [key, data[key] === null ? '' : String(data[key])])) as Record<Field, string>);
+    if (!data) return;
+    setForm(Object.fromEntries(FIELDS.map(({ key }) => [key, data[key] === null ? '' : String(data[key])])) as Record<Field, string>);
+    setByGroup(Object.fromEntries(Object.entries(data.groups ?? {}).map(([gid, g]) => [gid, {
+      slaThresholdSecs: g.slaThresholdSecs === null ? '' : String(g.slaThresholdSecs),
+      slaTargetPct: g.slaTargetPct === null ? '' : String(g.slaTargetPct),
+    }])));
   }, [data]);
+  const num = (v: string | undefined) => (v?.trim() ? Number(v) : null);
   const save = useMutation({
     mutationFn: () =>
-      alertsApi.saveSettings(
-        Object.fromEntries(FIELDS.map(({ key }) => [key, form[key]?.trim() ? Number(form[key]) : key === 'slaThresholdSecs' ? 21 : null])) as unknown as ServiceTargets,
-      ),
+      alertsApi.saveSettings({
+        ...(Object.fromEntries(FIELDS.map(({ key }) => [key, num(form[key]) ?? DEFAULTS[key] ?? null])) as Omit<ServiceTargets, 'groups'>),
+        groups: Object.fromEntries(Object.entries(byGroup).map(([gid, g]) => [gid, { slaThresholdSecs: num(g.slaThresholdSecs), slaTargetPct: num(g.slaTargetPct) }])),
+      }),
     onSuccess: (d) => { success(t('common.saved')); qc.setQueryData(['alerts', 'settings'], d); },
     onError: (e: Error) => error(e.message),
   });
@@ -156,10 +170,45 @@ export function TargetsCard() {
             label={`${t(`alerts.field.${key}`)} (${t(`alerts.unit.${unit}`)})`}
             value={form[key] ?? ''}
             onChange={(e) => setForm((x) => ({ ...x, [key]: e.target.value }))}
-            placeholder={key === 'slaThresholdSecs' ? '21' : t('alerts.off')}
+            placeholder={DEFAULTS[key] !== undefined ? String(DEFAULTS[key]) : t('alerts.off')}
           />
         ))}
       </div>
+      {(groups?.length ?? 0) > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">{t('alerts.groupTargetsTitle')}</h3>
+          <p className="mb-2 text-xs text-gray-500">{t('alerts.groupTargetsHint')}</p>
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-gray-500">
+              <tr>
+                <th className="py-1.5 font-medium">{t('alerts.groupCol')}</th>
+                <th className="py-1.5 font-medium">{t('alerts.field.slaThresholdSecs')} ({t('alerts.unit.s')})</th>
+                <th className="py-1.5 font-medium">{t('alerts.field.slaTargetPct')} (%)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups!.map((g) => (
+                <tr key={g.id}>
+                  <td className="py-1 pr-3 text-gray-800">{g.name}</td>
+                  {(['slaThresholdSecs', 'slaTargetPct'] as const).map((k) => (
+                    <td key={k} className="py-1 pr-3">
+                      <input
+                        type="number"
+                        min={0}
+                        aria-label={`${g.name} — ${t(`alerts.field.${k}`)}`}
+                        value={byGroup[g.id]?.[k] ?? ''}
+                        placeholder={form[k] || (k === 'slaThresholdSecs' ? '21' : t('alerts.off'))}
+                        onChange={(e) => setByGroup((x) => ({ ...x, [g.id]: { slaThresholdSecs: '', slaTargetPct: '', ...x[g.id], [k]: e.target.value } }))}
+                        className="w-28 rounded-lg border border-gray-300 px-2 py-1.5 text-sm"
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <div className="flex justify-end">
         <Button size="sm" icon={<Save className="h-4 w-4" />} loading={save.isPending} onClick={() => save.mutate()}>{t('common.save')}</Button>
       </div>

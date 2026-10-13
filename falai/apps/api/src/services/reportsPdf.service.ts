@@ -25,7 +25,7 @@ const TILE_LABEL: Record<string, string> = {
   answered: "Atendidas",
   missed: "Não atendidas",
   tma: "TMA",
-  tme: "TME",
+  tme: "ASA",
   response: "Tempo de resposta",
   wrapUp: "Pós-chamada",
 };
@@ -117,7 +117,7 @@ export function renderOverviewPdf(o: Overview, tenantName: string, analysis?: { 
     let ty = 40;
     ty = table(doc, "Por agente", ["Agente", "Tocou", "Atendeu", "Recusou", "% atend.", "TMA", "Resposta", "% não tipif."], [130, 50, 55, 55, 55, 55, 55, 60],
       o.attendance.byAgent.map((a) => [`${a.number} ${a.name && a.name !== a.number ? a.name : ""}`.trim(), fmtInt(a.offered), fmtInt(a.answered), fmtInt(a.rejected), fmtPct(a.answerRate), fmtSecs(a.tmaSecs), fmtSecs(a.responseSecs), fmtPct(a.untypedRate)]), ty);
-    ty = table(doc, "Por grupo", ["Grupo", "Chamadas", "Atendidas", "Perdidas", "Abandonadas", "% atend.", "TMA", "TME"], [130, 55, 55, 55, 65, 50, 55, 50],
+    ty = table(doc, "Por grupo", ["Grupo", "Chamadas", "Atendidas", "Perdidas", "Abandonadas", "% atend.", "TMA", "ASA"], [130, 55, 55, 55, 65, 50, 55, 50],
       o.attendance.byGroup.map((g) => [g.groupId ? g.name : "Directas", fmtInt(g.total), fmtInt(g.answered), fmtInt(g.missed), fmtInt(g.abandoned), fmtPct(g.answerRate), fmtSecs(g.tmaSecs), fmtSecs(g.tmeSecs)]), ty + 8);
     ty = table(doc, "Motivos de recusa", ["Motivo", "Recusas", "%"], [300, 80, 80],
       o.attendance.reasons.map((r) => [r.reason, fmtInt(r.count), fmtPct(r.pct)]), ty + 8);

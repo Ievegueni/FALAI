@@ -973,7 +973,34 @@
       "typingTitle": "按类别统计通话",
       "category": "通话分类",
       "sla": "服务水平",
-      "slaHint": "{{secs}} 秒内接听"
+      "slaHint": "{{secs}} 秒内接听",
+      "asaP90": "90% 应答时间",
+      "asaP90Hint": "90% 的已接来电等待不超过此时间",
+      "maxWait": "最长等待",
+      "maxWaitHint": "包括已接和未接",
+      "slaHintTarget": "{{secs}} 秒内接听 · 目标 {{target}}%",
+      "shortAbandoned": "短时放弃",
+      "shortAbandonedHint": "{{secs}} 秒内挂断 — 不计入 SLA",
+      "abandonRate": "放弃率",
+      "abandonRateHint": "{{count}} 个放弃，不含短时放弃",
+      "slaTarget": "SLA 目标",
+      "target": "目标",
+      "slaTrend": "每日 SLA",
+      "slaTrendHint": "虚线为目标",
+      "byHour": "每小时来电与 SLA",
+      "byHourHint": "来电开始振铃的时间",
+      "heatmap": "按星期和小时的来电",
+      "heatmapHint": "颜色越深来电越多，可看出何时缺少坐席。",
+      "weekdays": [
+        "周一",
+        "周二",
+        "周三",
+        "周四",
+        "周五",
+        "周六",
+        "周日"
+      ],
+      "volume": "来电"
     },
     "exportPdf": "导出 PDF",
     "vsPrevious": "与上一时段相比",
@@ -984,13 +1011,13 @@
       "outbound": "呼出",
       "newContacts": "新联系人",
       "tma": "平均处理时长",
-      "tme": "平均等待时长",
+      "tme": "平均应答速度",
       "response": "响应时间",
       "wrapUp": "话后处理"
     },
     "tilesSub": {
       "tma": "平均通话处理时间",
-      "tme": "平均等待时间",
+      "tme": "接听前的平均等待时间",
       "response": "从振铃到接听",
       "wrapUp": "从通话结束到分类"
     },
@@ -1357,7 +1384,7 @@
     "tabSettings": "设置",
     "kpi": {
       "queued": "当前排队",
-      "tme": "今日平均等待",
+      "tme": "今日平均应答速度",
       "answered": "今日已接",
       "missed": "今日未接"
     },
@@ -1609,7 +1636,8 @@
       "maxHandleSecs": "最长通话",
       "minAvailableAgents": "每组最少可用坐席",
       "maxAbandonPct": "当日最高放弃率",
-      "maxTmaSecs": "当日最长平均处理时长"
+      "maxTmaSecs": "当日最长平均处理时长",
+      "shortAbandonSecs": "SLA 不计入在此之前挂断的来电"
     },
     "name": {
       "LONG_WAIT": "等待过长",
@@ -1626,7 +1654,10 @@
       "SLA_BELOW": "当日服务水平 {{value}}（目标 {{threshold}}）",
       "ABANDON_ABOVE": "当日放弃率 {{value}}（阈值 {{threshold}}）",
       "TMA_ABOVE": "当日平均处理时长 {{value}}（阈值 {{threshold}}）"
-    }
+    },
+    "groupTargetsTitle": "按组目标",
+    "groupTargetsHint": "留空 = 使用总目标。有自己目标的组会单独触发 SLA 警报。",
+    "groupCol": "组"
   },
   "quality": {
     "title": "质量",
