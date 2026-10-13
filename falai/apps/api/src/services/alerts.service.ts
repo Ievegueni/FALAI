@@ -1,11 +1,13 @@
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
 import { prisma, Prisma, type AlertType } from "@falai/db";
 import { extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
-import { abandonedIds, callKpis, DEFAULT_SLA_SECS, type CallKpis } from "./attendanceReport.service.js";
+import { abandonedIds, callKpis, type CallKpis } from "./attendanceReport.service.js";
+import { parseTargets, slaRuleOf, type ServiceTargets } from "./serviceTargets.js";
 import { activeInboundCalls } from "./inboundCallRouter.service.js";
 import { emitWebhookAsync } from "./webhookEmitter.service.js";
-import { tenantHasFeature } from "./features.js";
+import { tenantFeatures } from "./features.js";
+import { loadConversations, textSla, type TextSla } from "./consolidated.service.js";
+import { ticketSlaStatus } from "./tickets.service.js";
 
 /**
  * Alertas operacionais e metas (centro de atendimento, fase 4) — ver
@@ -15,7 +17,10 @@ import { tenantHasFeature } from "./features.js";
  *   ao vivo  — chamada em espera há muito (LONG_WAIT), em curso há muito
  *              (LONG_HANDLE), grupo sem agentes disponíveis (NO_AGENTS);
  *   do dia   — SLA abaixo da meta, abandono ou TMA acima do limite (só com
- *              MIN_DAILY_SAMPLE chamadas terminadas, para não alarmar à 1ª).
+ *              MIN_DAILY_SAMPLE chamadas terminadas, para não alarmar à 1ª);
+ *              SLA dos canais de texto abaixo da meta (TEXT_SLA_BELOW);
+ *   tickets  — em aberto a menos de ticketWarnMins do prazo (TICKET_DUE_SOON)
+ *              ou com o prazo passado (TICKET_OVERDUE); ref = ticket.
  * Um alerta abre quando o limite é passado e fecha sozinho quando deixa de o
  * estar. Corre na API e não no worker porque o estado ao vivo (quem está
  * online, quem está em chamada) vive aqui.
@@ -25,23 +30,7 @@ const TICK_MS = 15_000;
 const DAILY_EVERY_MS = 60_000;
 const MIN_DAILY_SAMPLE = 10;
 
-const nullable = <T extends z.ZodTypeAny>(t: T) => t.nullable().default(null);
-export const targetsSchema = z.object({
-  slaThresholdSecs: z.number().int().min(5).max(600).default(DEFAULT_SLA_SECS),
-  slaTargetPct: nullable(z.number().min(1).max(100)),
-  maxWaitSecs: nullable(z.number().int().min(10).max(3600)),
-  maxHandleSecs: nullable(z.number().int().min(30).max(14_400)),
-  minAvailableAgents: nullable(z.number().int().min(1).max(100)),
-  maxAbandonPct: nullable(z.number().min(0).max(100)),
-  maxTmaSecs: nullable(z.number().int().min(10).max(14_400)),
-});
-export type ServiceTargets = z.infer<typeof targetsSchema>;
-
-/** Metas guardadas (ou as por omissão, sem alertas, se nada ou lixo). */
-export function parseTargets(raw: unknown): ServiceTargets {
-  const r = targetsSchema.safeParse(raw ?? {});
-  return r.success ? r.data : targetsSchema.parse({});
-}
+export { targetsSchema, parseTargets, type ServiceTargets } from "./serviceTargets.js";
 
 export interface Breach {
   type: AlertType;
@@ -87,14 +76,23 @@ export function liveBreaches(s: LiveSnapshot, t: ServiceTargets): Breach[] {
   return out;
 }
 
-export type DailyKpis = Pick<CallKpis, "answered" | "missed" | "abandoned" | "slaPct" | "tmaSecs">;
+export type DailyKpis = Pick<CallKpis, "answered" | "missed" | "abandoned" | "shortAbandoned" | "abandonRate" | "slaPct" | "tmaSecs">;
 
-/** Desvios do dia face às metas. Pura. `day` = AAAA-MM-DD (é a ref do alerta). */
-export function dailyBreaches(k: DailyKpis, day: string, t: ServiceTargets): Breach[] {
-  const finished = k.answered + k.missed;
-  if (finished < MIN_DAILY_SAMPLE) return [];
+/**
+ * Desvios do dia face às metas. Pura. `day` = AAAA-MM-DD (é a ref do alerta).
+ * `byGroup` = KPIs do dia dos grupos com meta de SLA própria: o alerta desses
+ * tem a ref `dia#grupo` (abre e fecha à parte do geral).
+ */
+export function dailyBreaches(k: DailyKpis, day: string, t: ServiceTargets, byGroup: Record<string, DailyKpis> = {}): Breach[] {
   const out: Breach[] = [];
-  const abandonPct = Math.round((k.abandoned / finished) * 1000) / 10;
+  for (const [gid, g] of Object.entries(byGroup)) {
+    const target = t.groups[gid]?.slaTargetPct ?? null;
+    if (target === null || g.answered + g.missed - g.shortAbandoned < MIN_DAILY_SAMPLE) continue;
+    if (g.slaPct !== null && g.slaPct < target) out.push({ type: "SLA_BELOW", ref: `${day}#${gid}`, groupId: gid, value: g.slaPct, threshold: target });
+  }
+  const finished = k.answered + k.missed - k.shortAbandoned;
+  if (finished < MIN_DAILY_SAMPLE) return out;
+  const abandonPct = k.abandonRate ?? 0;
   if (t.slaTargetPct !== null && k.slaPct !== null && k.slaPct < t.slaTargetPct) {
     out.push({ type: "SLA_BELOW", ref: day, groupId: null, value: k.slaPct, threshold: t.slaTargetPct });
   }
@@ -107,8 +105,35 @@ export function dailyBreaches(k: DailyKpis, day: string, t: ServiceTargets): Bre
   return out;
 }
 
+/** SLA de texto do dia abaixo da meta (com a mesma amostra mínima). Pura. */
+export function textBreaches(k: TextSla, day: string, t: ServiceTargets): Breach[] {
+  if (t.textSlaTargetPct === null || k.slaPct === null || k.met + k.missed < MIN_DAILY_SAMPLE) return [];
+  return k.slaPct < t.textSlaTargetPct ? [{ type: "TEXT_SLA_BELOW", ref: day, groupId: null, value: k.slaPct, threshold: t.textSlaTargetPct }] : [];
+}
+
+/** Ticket ainda em aberto, com prazo. */
+export interface OpenTicket { id: string; groupId: string | null; dueAt: Date }
+
+/** Tickets perto do prazo (valor = segundos que faltam) ou fora dele (segundos de atraso). Pura. */
+export function ticketBreaches(tickets: OpenTicket[], t: ServiceTargets, now: Date): Breach[] {
+  const out: Breach[] = [];
+  for (const tk of tickets) {
+    const st = ticketSlaStatus({ dueAt: tk.dueAt, resolvedAt: null }, now, t.ticketWarnMins);
+    const left = Math.round((tk.dueAt.getTime() - now.getTime()) / 1000);
+    if (st === "BREACHED") out.push({ type: "TICKET_OVERDUE", ref: tk.id, groupId: tk.groupId, value: -left, threshold: 0 });
+    else if (st === "AT_RISK") out.push({ type: "TICKET_DUE_SOON", ref: tk.id, groupId: tk.groupId, value: left, threshold: t.ticketWarnMins * 60 });
+  }
+  return out;
+}
+
+/** O cliente quer alertas dos prazos dos tickets (tem política ou meta). */
+export const wantsTicketAlerts = (t: ServiceTargets) => Object.values(t.ticketHours).some((h) => h !== null) || t.ticketSlaTargetPct !== null;
+
 const key = (a: { type: string; ref: string }) => `${a.type}:${a.ref}`;
-const DAILY: AlertType[] = ["SLA_BELOW", "ABANDON_ABOVE", "TMA_ABOVE"];
+const DAILY: AlertType[] = ["SLA_BELOW", "ABANDON_ABOVE", "TMA_ABOVE", "TEXT_SLA_BELOW"];
+const TICKETS: AlertType[] = ["TICKET_DUE_SOON", "TICKET_OVERDUE"];
+// ponytail: no máximo isto de tickets por volta (os mais atrasados primeiro); paginar se um cliente acumular mais.
+const MAX_TICKET_ALERTS = 200;
 
 /**
  * O que abrir e o que fechar. `evaluated` = tipos avaliados nesta volta: um
@@ -193,7 +218,7 @@ async function liveSnapshot(fastify: FastifyInstance, tenantId: string, t: Servi
   };
 }
 
-async function dailyKpis(tenantId: string, t: ServiceTargets, now: Date): Promise<DailyKpis> {
+async function dailyKpis(tenantId: string, t: ServiceTargets, now: Date): Promise<{ all: DailyKpis; byGroup: Record<string, DailyKpis> }> {
   const from = startOfDay(now);
   const [calls, legs] = await Promise.all([
     prisma.call.findMany({
@@ -202,11 +227,23 @@ async function dailyKpis(tenantId: string, t: ServiceTargets, now: Date): Promis
     }),
     prisma.callLeg.findMany({ where: { tenantId, ringStartedAt: { gte: from }, outcome: "CANCELLED" }, select: { callId: true, outcome: true } }),
   ]);
-  return callKpis(calls, abandonedIds(legs), t.slaThresholdSecs);
+  const abandoned = abandonedIds(legs);
+  const rule = slaRuleOf(t);
+  const byGroup: Record<string, DailyKpis> = {};
+  for (const [gid, g] of Object.entries(t.groups)) {
+    if (g.slaTargetPct !== null) byGroup[gid] = callKpis(calls.filter((c) => c.groupId === gid), abandoned, rule);
+  }
+  return { all: callKpis(calls, abandoned, rule), byGroup };
 }
 
 /** Valor final de um alerta que fecha (para o relatório de desvios). */
-async function endValueOf(a: { type: AlertType; ref: string }, now: Date, live: LiveSnapshot, daily: DailyKpis | null): Promise<number | null> {
+async function endValueOf(a: { type: AlertType; ref: string }, now: Date, live: LiveSnapshot, daily: Awaited<ReturnType<typeof dailyKpis>> | null, text: TextSla | null): Promise<number | null> {
+  if (a.type === "TEXT_SLA_BELOW") return text?.slaPct ?? null;
+  if (TICKETS.includes(a.type)) {
+    const tk = await prisma.ticket.findUnique({ where: { id: a.ref }, select: { dueAt: true, resolvedAt: true } });
+    // Fecha com o atraso final (segundos; negativo = resolvido/fechado a tempo).
+    return tk?.dueAt ? Math.round(((tk.resolvedAt ?? now).getTime() - tk.dueAt.getTime()) / 1000) : null;
+  }
   if (a.type === "LONG_WAIT" || a.type === "LONG_HANDLE") {
     const c = await prisma.call.findUnique({ where: { id: a.ref }, select: { queuedAt: true, answeredAt: true, endedAt: true } });
     if (!c) return null;
@@ -215,32 +252,56 @@ async function endValueOf(a: { type: AlertType; ref: string }, now: Date, live: 
   }
   if (a.type === "NO_AGENTS") return live.groups.find((g) => g.id === a.ref)?.available ?? null;
   if (!daily) return null;
-  const finished = daily.answered + daily.missed;
-  if (a.type === "SLA_BELOW") return daily.slaPct;
-  if (a.type === "TMA_ABOVE") return daily.tmaSecs;
-  return finished ? Math.round((daily.abandoned / finished) * 1000) / 10 : null;
+  const gid = a.ref.split("#")[1];
+  if (a.type === "SLA_BELOW") return (gid ? daily.byGroup[gid]?.slaPct : daily.all.slaPct) ?? null;
+  if (a.type === "TMA_ABOVE") return daily.all.tmaSecs;
+  return daily.all.abandonRate;
 }
 
 const lastDaily = new Map<string, number>();
 
-export async function evaluateTenant(fastify: FastifyInstance, tenantId: string, t: ServiceTargets, now = new Date()) {
-  const live = await liveSnapshot(fastify, tenantId, t, now);
-  const evaluated = new Set<AlertType>(["LONG_WAIT", "LONG_HANDLE", "NO_AGENTS"]);
+/** Funcionalidades que decidem o que se avalia: voz (webphone), texto (inbox), tickets. */
+export interface AlertScope { voice: boolean; text: boolean; tickets: boolean }
+
+export async function evaluateTenant(fastify: FastifyInstance, tenantId: string, t: ServiceTargets, now = new Date(), scope: AlertScope = { voice: true, text: true, tickets: true }) {
+  const live: LiveSnapshot = scope.voice ? await liveSnapshot(fastify, tenantId, t, now) : { now, waiting: [], inCall: [], groups: [] };
+  const evaluated = new Set<AlertType>(scope.voice ? ["LONG_WAIT", "LONG_HANDLE", "NO_AGENTS"] : []);
   const breaches = liveBreaches(live, t);
 
-  let daily: DailyKpis | null = null;
-  const wantsDaily = t.slaTargetPct !== null || t.maxAbandonPct !== null || t.maxTmaSecs !== null;
-  if (wantsDaily && now.getTime() - (lastDaily.get(tenantId) ?? 0) >= DAILY_EVERY_MS) {
+  if (scope.tickets && wantsTicketAlerts(t)) {
+    const open = await prisma.ticket.findMany({
+      where: { tenantId, status: { in: ["OPEN", "PENDING", "ON_HOLD"] }, dueAt: { not: null, lte: new Date(now.getTime() + t.ticketWarnMins * 60_000) } },
+      select: { id: true, groupId: true, dueAt: true },
+      orderBy: { dueAt: "asc" },
+      take: MAX_TICKET_ALERTS,
+    });
+    breaches.push(...ticketBreaches(open.map((x) => ({ ...x, dueAt: x.dueAt! })), t, now));
+    TICKETS.forEach((d) => evaluated.add(d));
+  }
+
+  let daily: Awaited<ReturnType<typeof dailyKpis>> | null = null;
+  let text: TextSla | null = null;
+  const wantsDaily =
+    scope.voice && (t.slaTargetPct !== null || t.maxAbandonPct !== null || t.maxTmaSecs !== null || Object.values(t.groups).some((g) => g.slaTargetPct !== null));
+  const wantsText = scope.text && t.textSlaTargetPct !== null;
+  if ((wantsDaily || wantsText) && now.getTime() - (lastDaily.get(tenantId) ?? 0) >= DAILY_EVERY_MS) {
     lastDaily.set(tenantId, now.getTime());
-    daily = await dailyKpis(tenantId, t, now);
-    breaches.push(...dailyBreaches(daily, localDay(now), t));
+    if (wantsDaily) {
+      daily = await dailyKpis(tenantId, t, now);
+      breaches.push(...dailyBreaches(daily.all, localDay(now), t, daily.byGroup));
+    }
+    if (wantsText) {
+      text = textSla(await loadConversations(tenantId, { gte: startOfDay(now), lte: now }), t.textSlaSecs, now);
+      breaches.push(...textBreaches(text, localDay(now), t));
+    }
+    // Um tipo sem meta também se avalia: assim o alerta que ficou aberto fecha.
     DAILY.forEach((d) => evaluated.add(d));
   }
 
   const open = await prisma.alert.findMany({ where: { tenantId, endedAt: null }, select: { id: true, type: true, ref: true, groupId: true } });
   // Um alerta do dia de ontem fecha sempre (a ref é o dia).
   const today = localDay(now);
-  const stale = open.filter((a) => DAILY.includes(a.type) && a.ref !== today).map((a) => a.id);
+  const stale = open.filter((a) => DAILY.includes(a.type) && a.ref.split("#")[0] !== today).map((a) => a.id);
   const { toOpen, toClose } = diffAlerts(open, breaches, evaluated);
 
   for (const b of toOpen) {
@@ -257,7 +318,7 @@ export async function evaluateTenant(fastify: FastifyInstance, tenantId: string,
   }
   for (const id of new Set([...toClose, ...stale])) {
     const a = open.find((x) => x.id === id)!;
-    const endValue = await endValueOf(a, now, live, daily);
+    const endValue = await endValueOf(a, now, live, daily, text);
     const { count } = await prisma.alert.updateMany({ where: { id, endedAt: null }, data: { endedAt: now, endValue, openKey: null } });
     if (count) {
       fastify.incomingCalls.broadcast(tenantId, "alert.closed", { id, type: a.type, groupId: a.groupId });
@@ -278,8 +339,10 @@ export function startAlertEvaluator(fastify: FastifyInstance): () => void {
         select: { id: true, serviceTargets: true },
       });
       for (const tn of tenants) {
-        if (!(await tenantHasFeature(tn.id, "webphone"))) continue;
-        await evaluateTenant(fastify, tn.id, parseTargets(tn.serviceTargets)).catch((err) =>
+        const f = await tenantFeatures(tn.id);
+        const scope = { voice: f.webphone, text: f.inbox, tickets: f.tickets };
+        if (!scope.voice && !scope.text && !scope.tickets) continue;
+        await evaluateTenant(fastify, tn.id, parseTargets(tn.serviceTargets), new Date(), scope).catch((err) =>
           fastify.log.warn({ err, tenantId: tn.id }, "alerts.evaluate_error")
         );
       }

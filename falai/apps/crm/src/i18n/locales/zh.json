@@ -702,7 +702,18 @@
     "secretRotated": "Webhook 密钥已重新生成",
     "copySecretWarn": "请立即复制此密钥。它将不会再次显示。",
     "copySecret": "复制密钥",
-    "adminOnly": "只有管理员可以修改这些设置。"
+    "adminOnly": "只有管理员可以修改这些设置。",
+    "twoFaTitle": "双重认证 (2FA)",
+    "twoFaEnabled": "您的账户已启用 2FA。如需停用，请输入应用中的当前验证码。",
+    "twoFaDisabled": "使用身份验证器应用（Google Authenticator、Microsoft Authenticator…）的验证码保护您的账户。",
+    "twoFaStart": "启用 2FA",
+    "twoFaScan": "用身份验证器应用扫描二维码并输入 6 位验证码。",
+    "twoFaSecret": "或手动输入此密钥：",
+    "twoFaCode": "验证码",
+    "twoFaConfirm": "确认",
+    "twoFaDone": "2FA 已启用",
+    "twoFaDisable": "停用 2FA",
+    "twoFaOff": "2FA 已停用"
   },
   "pbx": {
     "title": "PBX 集成",
@@ -962,7 +973,38 @@
       "typingTitle": "按类别统计通话",
       "category": "通话分类",
       "sla": "服务水平",
-      "slaHint": "{{secs}} 秒内接听"
+      "slaHint": "{{secs}} 秒内接听",
+      "asaP90": "90% 应答时间",
+      "asaP90Hint": "90% 的已接来电等待不超过此时间",
+      "maxWait": "最长等待",
+      "maxWaitHint": "包括已接和未接",
+      "slaHintTarget": "{{secs}} 秒内接听 · 目标 {{target}}%",
+      "shortAbandoned": "短时放弃",
+      "shortAbandonedHint": "{{secs}} 秒内挂断 — 不计入 SLA",
+      "abandonRate": "放弃率",
+      "abandonRateHint": "{{count}} 个放弃，不含短时放弃",
+      "slaTarget": "SLA 目标",
+      "target": "目标",
+      "slaTrend": "每日 SLA",
+      "slaTrendHint": "虚线为目标",
+      "byHour": "每小时来电与 SLA",
+      "byHourHint": "来电开始振铃的时间",
+      "heatmap": "按星期和小时的来电",
+      "heatmapHint": "颜色越深来电越多，可看出何时缺少坐席。",
+      "weekdays": [
+        "周一",
+        "周二",
+        "周三",
+        "周四",
+        "周五",
+        "周六",
+        "周日"
+      ],
+      "volume": "来电",
+      "csat": "满意度",
+      "csatResponses": "{{count}} 条回复",
+      "vsPrevious": "较上一周期",
+      "noCompare": "无对比数据"
     },
     "exportPdf": "导出 PDF",
     "vsPrevious": "与上一时段相比",
@@ -973,13 +1015,13 @@
       "outbound": "呼出",
       "newContacts": "新联系人",
       "tma": "平均处理时长",
-      "tme": "平均等待时长",
+      "tme": "平均应答速度",
       "response": "响应时间",
       "wrapUp": "话后处理"
     },
     "tilesSub": {
       "tma": "平均通话处理时间",
-      "tme": "平均等待时间",
+      "tme": "接听前的平均等待时间",
       "response": "从振铃到接听",
       "wrapUp": "从通话结束到分类"
     },
@@ -1023,7 +1065,26 @@
       "pauses": "按原因的暂停",
       "noReason": "无原因",
       "empty": "没有用户。",
-      "hint": "在线 = 打开 CRM 的时间。遵守率 = 班次内在线时间占比。"
+      "hint": "登录 = 打开 CRM 的时间。遵从率 = 班次内登录时间的百分比。空闲 = 已登录且未暂停、未通话、未话后处理。",
+      "talk": "通话",
+      "wrapUp": "话后处理",
+      "available": "空闲",
+      "timeline": "{{name}} 的状态",
+      "timelineHint": "点击坐席查看状态时间线。",
+      "state": "状态",
+      "since": "开始",
+      "until": "结束",
+      "duration": "时长",
+      "detail": "详情",
+      "ongoing": "进行中",
+      "noStates": "该期间无记录。",
+      "states": {
+        "LOGGED_IN": "已登录",
+        "LOGGED_OUT": "已登出",
+        "PAUSED": "暂停",
+        "IN_CALL": "通话中",
+        "WRAP_UP": "话后处理"
+      }
     },
     "csat": {
       "settings": "满意度调查",
@@ -1052,6 +1113,33 @@
         "responses": "回复",
         "avg": "平均",
         "satisfied": "满意率"
+      },
+      "trend": "每日满意度",
+      "trendHint": "每天的平均评分（1 至 5）",
+      "satisfiedShort": "满意",
+      "negatives": "待处理的差评：{{count}}",
+      "negativesHint": "1 分和 2 分。客户可留言（短信和文字）；处理后请标记为已处理。",
+      "showOpen": "待处理",
+      "showAll": "全部",
+      "noNegatives": "此期间没有差评。",
+      "neg": {
+        "when": "日期",
+        "score": "评分",
+        "channel": "渠道",
+        "agent": "坐席",
+        "customer": "客户",
+        "comment": "留言",
+        "status": "状态",
+        "call": "通话",
+        "conversation": "会话",
+        "ticket": "工单",
+        "noComment": "无留言",
+        "open": "待处理",
+        "reviewedBy": "由 {{name}} 处理",
+        "review": "标记为已处理",
+        "reopen": "重新打开",
+        "reviewTitle": "处理差评",
+        "reviewNote": "处理说明（可选）"
       }
     },
     "cons": {
@@ -1089,7 +1177,31 @@
         "conversations": "会话",
         "conversationsResolved": "已解决",
         "ticketsCreated": "工单",
-        "ticketsResolved": "已解决工单"
+        "ticketsResolved": "已解决工单",
+        "callsSlaPct": "语音 SLA",
+        "textSlaPct": "文字 SLA",
+        "ticketsBreached": "超期",
+        "ticketSlaPct": "工单 SLA"
+      },
+      "slaVoice": "语音 SLA",
+      "slaText": "文字 SLA",
+      "slaTextHint": "{{min}} 分钟内首次回复",
+      "slaTickets": "工单 SLA",
+      "slaTicketsHint": "{{breached}} 个超期",
+      "overdueNow": "当前超期工单",
+      "overdueNowHint": "未关闭且已过期限（任何日期）",
+      "channelCol": "渠道",
+      "firstResponseCol": "首次回复 / 平均应答",
+      "byPriority": "按优先级的工单 SLA",
+      "prio": {
+        "priority": "优先级",
+        "targetHours": "期限",
+        "created": "创建",
+        "met": "按时",
+        "breached": "超期",
+        "open": "处理中",
+        "sla": "SLA",
+        "resolution": "平均解决时间"
       }
     }
   },
@@ -1115,7 +1227,8 @@
       "QUEUED": "排队中",
       "SENT": "已发送",
       "DELIVERED": "已送达",
-      "FAILED": "失败"
+      "FAILED": "失败",
+      "SENDING": "发送中"
     },
     "newCampaign": "新活动",
     "campaignName": "活动名称",
@@ -1137,6 +1250,7 @@
     "title": "网络电话",
     "selectExtension": "线路",
     "noLine": "此租户未配置任何分机。",
+    "noOwnExtension": "您尚未分配分机。请联系管理员在团队中为您分配。",
     "status": {
       "unregistered": "未注册",
       "registering": "正在注册…",
@@ -1184,7 +1298,8 @@
       "WHISPER": "主管正在与您说话（客户听不到）。",
       "BARGE": "主管已加入通话（客户能听到）。"
     },
-    "pauseWithReason": "暂停…"
+    "pauseWithReason": "暂停…",
+    "fromQueue": "来自排队 · 已等待 {{wait}}"
   },
   "telephony": {
     "title": "电话",
@@ -1344,7 +1459,7 @@
     "tabSettings": "设置",
     "kpi": {
       "queued": "当前排队",
-      "tme": "今日平均等待",
+      "tme": "今日平均应答速度",
       "answered": "今日已接",
       "missed": "今日未接"
     },
@@ -1567,7 +1682,15 @@
       "linked": "已关联{{what}}",
       "unlinked": "已取消关联{{what}}"
     },
-    "take": "领取"
+    "take": "领取",
+    "anyDue": "任何期限",
+    "overdueOnly": "已超期",
+    "sla": {
+      "BREACHED": "已超期",
+      "AT_RISK": "即将到期",
+      "ON_TRACK": "按时",
+      "MET": "已达成"
+    }
   },
   "alerts": {
     "tab": "告警",
@@ -1588,7 +1711,9 @@
     "unit": {
       "s": "秒",
       "%": "%",
-      "n": "坐席"
+      "n": "坐席",
+      "min": "分钟",
+      "h": "小时"
     },
     "field": {
       "slaThresholdSecs": "服务水平阈值",
@@ -1597,7 +1722,12 @@
       "maxHandleSecs": "最长通话",
       "minAvailableAgents": "每组最少可用坐席",
       "maxAbandonPct": "当日最高放弃率",
-      "maxTmaSecs": "当日最长平均处理时长"
+      "maxTmaSecs": "当日最长平均处理时长",
+      "shortAbandonSecs": "SLA 不计入在此之前挂断的来电",
+      "textSlaSecs": "首次回复阈值",
+      "textSlaTargetPct": "每日文字 SLA 目标",
+      "ticketSlaTargetPct": "工单 SLA 目标",
+      "ticketWarnMins": "期限前提醒"
     },
     "name": {
       "LONG_WAIT": "等待过长",
@@ -1605,7 +1735,10 @@
       "NO_AGENTS": "无可用坐席",
       "SLA_BELOW": "服务水平低于目标",
       "ABANDON_ABOVE": "放弃率超限",
-      "TMA_ABOVE": "平均处理时长超限"
+      "TMA_ABOVE": "平均处理时长超限",
+      "TEXT_SLA_BELOW": "文字 SLA 低于目标",
+      "TICKET_DUE_SOON": "工单即将到期",
+      "TICKET_OVERDUE": "工单已超期"
     },
     "type": {
       "LONG_WAIT": "来电已等待 {{value}}（阈值 {{threshold}}）",
@@ -1613,8 +1746,22 @@
       "NO_AGENTS": "可用坐席 {{value}}（最少 {{threshold}}）",
       "SLA_BELOW": "当日服务水平 {{value}}（目标 {{threshold}}）",
       "ABANDON_ABOVE": "当日放弃率 {{value}}（阈值 {{threshold}}）",
-      "TMA_ABOVE": "当日平均处理时长 {{value}}（阈值 {{threshold}}）"
-    }
+      "TMA_ABOVE": "当日平均处理时长 {{value}}（阈值 {{threshold}}）",
+      "TEXT_SLA_BELOW": "今日文字 SLA 为 {{value}}（目标 {{threshold}}）",
+      "TICKET_DUE_SOON": "工单即将到期：剩余 {{value}}",
+      "TICKET_OVERDUE": "工单已超期 {{value}}"
+    },
+    "groupTargetsTitle": "按组目标",
+    "groupTargetsHint": "留空 = 使用总目标。有自己目标的组会单独触发 SLA 警报。",
+    "groupCol": "组",
+    "section": {
+      "voice": "语音",
+      "text": "文字渠道",
+      "tickets": "工单"
+    },
+    "ticketHoursHint": "按优先级的解决期限（自然小时）。未设期限的新工单使用其优先级的期限；更改优先级时会重新计算，手动设置的除外。",
+    "noDeadline": "无期限",
+    "many": "多个警报已触发 — 请查看监控面板。"
   },
   "quality": {
     "title": "质量",
@@ -1749,5 +1896,73 @@
     "placeholder": "输入消息…（Enter 发送，Shift+Enter 换行）",
     "empty": "暂无对话。与同事开始一个吧。",
     "pick": "在左侧选择一个对话。"
+  },
+  "queue": {
+    "tab": "回拨",
+    "settings": {
+      "title": "排队与回拨",
+      "maxWait": "最长排队时间（分钟）",
+      "maxWaitHint": "没有空闲坐席时，来电者听等待音乐，电话会自动转给第一个空闲的坐席。0 = 不排队（提示无服务）。",
+      "callback": "向排队来电者提供回拨",
+      "callbackHint": "等待达到设定时间后，来电者会听到提示，按 1 即同意回拨。第一个空闲坐席收到请求，网页电话自动拨出。",
+      "callbackAfter": "多少秒后提供（秒）",
+      "offer": "提示语",
+      "thanks": "确认语"
+    },
+    "list": {
+      "all": "全部",
+      "requested": "请求时间",
+      "number": "号码",
+      "status": "状态",
+      "attempts": "尝试次数",
+      "agent": "坐席",
+      "empty": "没有回拨请求"
+    },
+    "status": {
+      "PENDING": "等待坐席",
+      "ASSIGNED": "拨打中",
+      "DONE": "已完成",
+      "FAILED": "失败",
+      "CANCELLED": "已取消"
+    },
+    "popup": {
+      "title": "排队中请求的回拨",
+      "requestedAt": "请求时间 {{time}}",
+      "attempt": "第 {{n}} 次尝试",
+      "autoDial": "{{secs}} 秒后自动拨打",
+      "waitingPhone": "等待网页电话空闲",
+      "paused": "已暂停自动拨打",
+      "callNow": "立即拨打",
+      "hold": "等待",
+      "done": "已与客户通话",
+      "noAnswer": "未接听",
+      "cancel": "取消"
+    }
+  },
+  "wallboard": {
+    "open": "电视模式",
+    "title": "呼叫中心",
+    "waiting": "排队中",
+    "longest": "最长 {{time}}",
+    "answered": "今日接听",
+    "missed": "今日未接",
+    "abandoned": "{{n}} 放弃",
+    "sla": "今日 SLA",
+    "target": "目标 {{pct}}%",
+    "asa": "平均等待",
+    "tma": "平均通话 {{time}}",
+    "callbacks": "回拨",
+    "agents": "坐席",
+    "noAgents": "没有坐席",
+    "queue": "当前排队",
+    "queueEmpty": "无人排队",
+    "unknownCustomer": "客户",
+    "more": "另有 {{n}} 人排队",
+    "ranking": "今日排名",
+    "rankingEmpty": "还没有接听的电话",
+    "rankingHint": "接听数 · 平均通话 · 满意度",
+    "offline": "连接中断",
+    "allGroups": "全部组",
+    "fullscreen": "全屏"
   }
 }

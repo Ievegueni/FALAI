@@ -702,7 +702,18 @@
     "secretRotated": "Secret do webhook regenerado",
     "copySecretWarn": "Copie este secret agora. Não será mostrado novamente.",
     "copySecret": "Copiar secret",
-    "adminOnly": "Só administradores podem alterar estas definições."
+    "adminOnly": "Só administradores podem alterar estas definições.",
+    "twoFaTitle": "Autenticação em dois passos (2FA)",
+    "twoFaEnabled": "A 2FA está activa na sua conta. Para a desactivar, introduza o código actual da aplicação.",
+    "twoFaDisabled": "Proteja a sua conta com um código de uma aplicação autenticadora (Google Authenticator, Microsoft Authenticator…).",
+    "twoFaStart": "Activar 2FA",
+    "twoFaScan": "Leia o código QR com a aplicação autenticadora e introduza o código de 6 dígitos.",
+    "twoFaSecret": "Ou introduza esta chave manualmente:",
+    "twoFaCode": "Código",
+    "twoFaConfirm": "Confirmar",
+    "twoFaDone": "2FA activada",
+    "twoFaDisable": "Desactivar 2FA",
+    "twoFaOff": "2FA desactivada"
   },
   "pbx": {
     "title": "Integração PBX",
@@ -922,8 +933,8 @@
       "rejected": "Recusadas",
       "tma": "TMA",
       "tmaHint": "Tempo médio de atendimento",
-      "tme": "TME (ASA)",
-      "tmeHint": "Tempo médio de espera até ser atendida",
+      "tme": "ASA",
+      "tmeHint": "Espera média até ser atendida",
       "response": "Tempo de resposta",
       "responseHint": "Do toque ao atendimento, por agente",
       "limited": "O seu PBX é próprio (Yeastar): só há atendidas, perdidas, TMA e tempo de toque. Por agente, por grupo e recusas exigem o PBX da plataforma.",
@@ -962,7 +973,38 @@
       "typingTitle": "Chamadas por categoria",
       "category": "Tipificação",
       "sla": "SLA",
-      "slaHint": "Atendidas em menos de {{secs}} s"
+      "slaHint": "Atendidas em menos de {{secs}} s",
+      "asaP90": "ASA 90%",
+      "asaP90Hint": "9 em cada 10 atendidas esperaram até este tempo",
+      "maxWait": "Maior espera",
+      "maxWaitHint": "Atendidas e perdidas",
+      "slaHintTarget": "Atendidas em menos de {{secs}} s · meta {{target}}%",
+      "shortAbandoned": "Desistências curtas",
+      "shortAbandonedHint": "Desligaram antes de {{secs}} s — não contam para o SLA",
+      "abandonRate": "% abandono",
+      "abandonRateHint": "{{count}} abandonadas, sem as desistências curtas",
+      "slaTarget": "Meta SLA",
+      "target": "Meta",
+      "slaTrend": "SLA por dia",
+      "slaTrendHint": "A linha tracejada é a meta",
+      "byHour": "Chamadas e SLA por hora",
+      "byHourHint": "Hora a que a chamada começou a tocar",
+      "heatmap": "Chamadas por dia da semana e hora",
+      "heatmapHint": "Mais escuro = mais chamadas. Mostra onde faltam agentes.",
+      "weekdays": [
+        "Seg",
+        "Ter",
+        "Qua",
+        "Qui",
+        "Sex",
+        "Sáb",
+        "Dom"
+      ],
+      "volume": "Chamadas",
+      "csat": "Satisfação",
+      "csatResponses": "{{count}} respostas",
+      "vsPrevious": "vs período anterior",
+      "noCompare": "sem base de comparação"
     },
     "exportPdf": "Exportar PDF",
     "vsPrevious": "vs. período anterior",
@@ -973,13 +1015,13 @@
       "outbound": "Efectuadas",
       "newContacts": "Novos contactos",
       "tma": "TMA",
-      "tme": "TME",
+      "tme": "ASA",
       "response": "Tempo de resposta",
       "wrapUp": "Pós-chamada"
     },
     "tilesSub": {
       "tma": "Tempo médio de atendimento",
-      "tme": "Tempo médio de espera",
+      "tme": "Espera média até ser atendida",
       "response": "Do toque ao atendimento",
       "wrapUp": "Do fim da chamada até tipificar"
     },
@@ -1023,7 +1065,26 @@
       "pauses": "Pausas por motivo",
       "noReason": "Sem motivo",
       "empty": "Sem utilizadores.",
-      "hint": "Ligado = tempo com o CRM aberto. Aderência = % do turno em que esteve ligado."
+      "hint": "Ligado = tempo com o CRM aberto. Aderência = % do turno em que esteve ligado. Disponível = ligado sem pausa, conversa nem pós-chamada.",
+      "talk": "Em conversa",
+      "wrapUp": "Pós-chamada",
+      "available": "Disponível",
+      "timeline": "Estados de {{name}}",
+      "timelineHint": "Clique num agente para ver a linha do tempo dos estados.",
+      "state": "Estado",
+      "since": "Início",
+      "until": "Fim",
+      "duration": "Duração",
+      "detail": "Detalhe",
+      "ongoing": "a decorrer",
+      "noStates": "Sem registos no período.",
+      "states": {
+        "LOGGED_IN": "Ligado",
+        "LOGGED_OUT": "Desligado",
+        "PAUSED": "Em pausa",
+        "IN_CALL": "Em chamada",
+        "WRAP_UP": "Pós-chamada"
+      }
     },
     "csat": {
       "settings": "Inquérito de satisfação",
@@ -1052,6 +1113,33 @@
         "responses": "Respostas",
         "avg": "Média",
         "satisfied": "% satisfeitos"
+      },
+      "trend": "Satisfação por dia",
+      "trendHint": "Média das notas (1 a 5) de cada dia",
+      "satisfiedShort": "satisfeitos",
+      "negatives": "Avaliações negativas por tratar: {{count}}",
+      "negativesHint": "Notas 1 e 2. O cliente pode deixar um comentário (SMS e texto); marque como tratada depois de agir.",
+      "showOpen": "Por tratar",
+      "showAll": "Todas",
+      "noNegatives": "Sem avaliações negativas neste período.",
+      "neg": {
+        "when": "Data",
+        "score": "Nota",
+        "channel": "Canal",
+        "agent": "Agente",
+        "customer": "Cliente",
+        "comment": "Comentário",
+        "status": "Estado",
+        "call": "chamada",
+        "conversation": "conversa",
+        "ticket": "ticket",
+        "noComment": "sem comentário",
+        "open": "Por tratar",
+        "reviewedBy": "Tratada por {{name}}",
+        "review": "Marcar como tratada",
+        "reopen": "Reabrir",
+        "reviewTitle": "Tratar avaliação negativa",
+        "reviewNote": "O que se fez (opcional)"
       }
     },
     "cons": {
@@ -1089,7 +1177,31 @@
         "conversations": "Conversas",
         "conversationsResolved": "Resolvidas",
         "ticketsCreated": "Tickets",
-        "ticketsResolved": "Tickets resolvidos"
+        "ticketsResolved": "Tickets resolvidos",
+        "callsSlaPct": "SLA voz",
+        "textSlaPct": "SLA texto",
+        "ticketsBreached": "Prazo violado",
+        "ticketSlaPct": "SLA tickets"
+      },
+      "slaVoice": "SLA voz",
+      "slaText": "SLA texto",
+      "slaTextHint": "1.ª resposta em menos de {{min}} min",
+      "slaTickets": "SLA tickets",
+      "slaTicketsHint": "{{breached}} com o prazo violado",
+      "overdueNow": "Tickets atrasados agora",
+      "overdueNowHint": "Em aberto e com o prazo passado (de qualquer data)",
+      "channelCol": "Canal",
+      "firstResponseCol": "1.ª resposta / ASA",
+      "byPriority": "SLA dos tickets por prioridade",
+      "prio": {
+        "priority": "Prioridade",
+        "targetHours": "Prazo",
+        "created": "Criados",
+        "met": "Dentro do prazo",
+        "breached": "Prazo violado",
+        "open": "Em aberto",
+        "sla": "SLA",
+        "resolution": "Resolução média"
       }
     }
   },
@@ -1115,7 +1227,8 @@
       "QUEUED": "Na fila",
       "SENT": "Enviado",
       "DELIVERED": "Entregue",
-      "FAILED": "Falhou"
+      "FAILED": "Falhou",
+      "SENDING": "A enviar"
     },
     "newCampaign": "Nova campanha",
     "campaignName": "Nome da campanha",
@@ -1137,6 +1250,7 @@
     "title": "Webphone",
     "selectExtension": "Linha",
     "noLine": "Sem extensões configuradas para este tenant.",
+    "noOwnExtension": "Não tem nenhuma extensão atribuída. Peça a um administrador que lhe atribua uma em Equipa.",
     "status": {
       "unregistered": "Não registado",
       "registering": "A registar…",
@@ -1184,7 +1298,8 @@
       "WHISPER": "Um supervisor está a falar consigo (o cliente não ouve).",
       "BARGE": "Um supervisor entrou na chamada (o cliente ouve-o)."
     },
-    "pauseWithReason": "Pausar…"
+    "pauseWithReason": "Pausar…",
+    "fromQueue": "Da fila · esperou {{wait}}"
   },
   "telephony": {
     "title": "Telefonia",
@@ -1416,7 +1531,7 @@
     "tabSettings": "Definições",
     "kpi": {
       "queued": "Em fila agora",
-      "tme": "TME hoje",
+      "tme": "ASA hoje",
       "answered": "Atendidas hoje",
       "missed": "Perdidas hoje"
     },
@@ -1639,7 +1754,15 @@
       "linked": "Associada {{what}}",
       "unlinked": "Desassociada {{what}}"
     },
-    "take": "Pegar"
+    "take": "Pegar",
+    "anyDue": "Qualquer prazo",
+    "overdueOnly": "Atrasados",
+    "sla": {
+      "BREACHED": "Atrasado",
+      "AT_RISK": "Perto do prazo",
+      "ON_TRACK": "A tempo",
+      "MET": "Cumprido"
+    }
   },
   "alerts": {
     "tab": "Alertas",
@@ -1660,7 +1783,9 @@
     "unit": {
       "s": "segundos",
       "%": "%",
-      "n": "agentes"
+      "n": "agentes",
+      "min": "minutos",
+      "h": "horas"
     },
     "field": {
       "slaThresholdSecs": "Limiar do SLA",
@@ -1669,7 +1794,12 @@
       "maxHandleSecs": "Atendimento máximo",
       "minAvailableAgents": "Mínimo de agentes disponíveis por grupo",
       "maxAbandonPct": "Abandono máximo do dia",
-      "maxTmaSecs": "TMA máximo do dia"
+      "maxTmaSecs": "TMA máximo do dia",
+      "shortAbandonSecs": "Ignorar no SLA quem desliga antes de",
+      "textSlaSecs": "Limiar da 1.ª resposta",
+      "textSlaTargetPct": "Meta de SLA de texto do dia",
+      "ticketSlaTargetPct": "Meta de SLA dos tickets",
+      "ticketWarnMins": "Avisar antes do prazo"
     },
     "name": {
       "LONG_WAIT": "Espera elevada",
@@ -1677,7 +1807,10 @@
       "NO_AGENTS": "Sem agentes disponíveis",
       "SLA_BELOW": "SLA abaixo da meta",
       "ABANDON_ABOVE": "Abandono acima do limite",
-      "TMA_ABOVE": "TMA acima do limite"
+      "TMA_ABOVE": "TMA acima do limite",
+      "TEXT_SLA_BELOW": "SLA de texto abaixo da meta",
+      "TICKET_DUE_SOON": "Ticket perto do prazo",
+      "TICKET_OVERDUE": "Ticket fora do prazo"
     },
     "type": {
       "LONG_WAIT": "Chamada em espera há {{value}} (limite {{threshold}})",
@@ -1685,8 +1818,22 @@
       "NO_AGENTS": "{{value}} agentes disponíveis (mínimo {{threshold}})",
       "SLA_BELOW": "SLA do dia em {{value}} (meta {{threshold}})",
       "ABANDON_ABOVE": "Abandono do dia em {{value}} (limite {{threshold}})",
-      "TMA_ABOVE": "TMA do dia em {{value}} (limite {{threshold}})"
-    }
+      "TMA_ABOVE": "TMA do dia em {{value}} (limite {{threshold}})",
+      "TEXT_SLA_BELOW": "SLA de texto do dia em {{value}} (meta {{threshold}})",
+      "TICKET_DUE_SOON": "Ticket perto do prazo: faltam {{value}}",
+      "TICKET_OVERDUE": "Ticket fora do prazo há {{value}}"
+    },
+    "groupTargetsTitle": "Metas por grupo",
+    "groupTargetsHint": "Vazio = usa a meta geral. O alerta de SLA de um grupo com meta própria abre à parte.",
+    "groupCol": "Grupo",
+    "section": {
+      "voice": "Voz",
+      "text": "Canais de texto",
+      "tickets": "Tickets"
+    },
+    "ticketHoursHint": "Prazo de resolução por prioridade (horas corridas). Um ticket criado sem prazo recebe o da sua prioridade; mudar a prioridade recalcula-o se não foi escrito à mão.",
+    "noDeadline": "sem prazo",
+    "many": "Vários alertas abertos — veja o painel de supervisão."
   },
   "quality": {
     "title": "Qualidade",
@@ -1821,5 +1968,73 @@
     "placeholder": "Escreva uma mensagem… (Enter envia, Shift+Enter muda de linha)",
     "empty": "Ainda não há conversas. Comece uma com um colega.",
     "pick": "Escolha uma conversa à esquerda."
+  },
+  "queue": {
+    "tab": "Callbacks",
+    "settings": {
+      "title": "Fila de espera e callback",
+      "maxWait": "Tempo máximo na fila (minutos)",
+      "maxWaitHint": "Sem agente livre, quem liga espera com música e a chamada toca sozinha no primeiro agente que ficar livre. 0 = sem fila (aviso de sem serviço).",
+      "callback": "Oferecer callback a quem espera",
+      "callbackHint": "Ao fim do tempo indicado, quem espera ouve a oferta e carrega 1 para lhe ligarmos de volta (é o consentimento). O primeiro agente livre recebe o pedido e o webphone liga sozinho.",
+      "callbackAfter": "Oferecer ao fim de (segundos)",
+      "offer": "Mensagem da oferta",
+      "thanks": "Mensagem de confirmação"
+    },
+    "list": {
+      "all": "Todos",
+      "requested": "Pedido",
+      "number": "Número",
+      "status": "Estado",
+      "attempts": "Tentativas",
+      "agent": "Agente",
+      "empty": "Sem pedidos de callback"
+    },
+    "status": {
+      "PENDING": "À espera de agente",
+      "ASSIGNED": "A ligar",
+      "DONE": "Feito",
+      "FAILED": "Falhou",
+      "CANCELLED": "Cancelado"
+    },
+    "popup": {
+      "title": "Callback pedido na fila",
+      "requestedAt": "Pedido às {{time}}",
+      "attempt": "tentativa {{n}}",
+      "autoDial": "Liga sozinho dentro de {{secs}} s",
+      "waitingPhone": "À espera de o webphone estar livre",
+      "paused": "Marcação automática parada",
+      "callNow": "Ligar agora",
+      "hold": "Esperar",
+      "done": "Falei com o cliente",
+      "noAnswer": "Não atendeu",
+      "cancel": "Cancelar"
+    }
+  },
+  "wallboard": {
+    "open": "Modo TV",
+    "title": "Centro de atendimento",
+    "waiting": "Em espera",
+    "longest": "maior espera {{time}}",
+    "answered": "Atendidas hoje",
+    "missed": "Perdidas hoje",
+    "abandoned": "{{n}} desistiram",
+    "sla": "SLA hoje",
+    "target": "meta {{pct}}%",
+    "asa": "Espera média",
+    "tma": "TMA {{time}}",
+    "callbacks": "Callbacks",
+    "agents": "Agentes",
+    "noAgents": "Sem agentes",
+    "queue": "Fila agora",
+    "queueEmpty": "Ninguém à espera",
+    "unknownCustomer": "Cliente",
+    "more": "+{{n}} à espera",
+    "ranking": "Ranking de hoje",
+    "rankingEmpty": "Ainda sem chamadas atendidas",
+    "rankingHint": "Atendidas · TMA · satisfação",
+    "offline": "Sem ligação",
+    "allGroups": "Todos os grupos",
+    "fullscreen": "Ecrã inteiro"
   }
 }

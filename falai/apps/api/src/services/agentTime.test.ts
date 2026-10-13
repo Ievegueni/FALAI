@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@falai/db", () => ({ prisma: {} }));
-const { mergeIntervals, overlapSecs, shiftIntervals, agentTimeRow, totalSecs } = await import("./agentTime.service.js");
+const { mergeIntervals, overlapSecs, shiftIntervals, agentTimeRow, totalSecs, agentStateTimeline } = await import("./agentTime.service.js");
 
 /** Tempo dos agentes: ligado, escalado, aderência e pausas. */
 
@@ -51,5 +51,48 @@ describe("linha do agente", () => {
 
   it("sem turno não há aderência", () => {
     expect(agentTimeRow({ id: "u", name: "x" }, { sessions: [], shifts: [], pauses: [] }, d(0), d(24)).adherencePct).toBeNull();
+  });
+});
+
+describe("conversa, pós-chamada e disponível", () => {
+  it("disponível = ligado sem pausa, conversa nem pós-chamada", () => {
+    const r = agentTimeRow(
+      { id: "u", name: "A" },
+      {
+        sessions: [[d(8), d(12)]],
+        shifts: [],
+        pauses: [{ reason: null, iv: [d(9), d(10)] }],
+        talk: [[d(10), d(10.5)], [d(13), d(14)]], // a segunda fora do tempo ligado (hardphone)
+        wrapUps: [[d(10.5), d(10.75)]],
+      },
+      d(0),
+      d(24)
+    );
+    expect(r.talkSecs).toBe(1.5 * 3600);
+    expect(r.wrapUpSecs).toBe(0.25 * 3600);
+    expect(r.availableSecs).toBe(4 * 3600 - 1 * 3600 - 0.5 * 3600 - 0.25 * 3600);
+  });
+});
+
+describe("linha do tempo dos estados", () => {
+  it("ordena, corta ao período e marca o que ainda decorre", () => {
+    const t = agentStateTimeline(
+      {
+        sessions: [[d(-2), d(10)], [d(14), d(18)]], // a 1ª começa antes do período
+        pauses: [{ iv: [d(9), d(9.5)], reason: "Break" }],
+        calls: [{ iv: [d(15), d(18)], number: "923" }], // em curso (fecha em now)
+        wrapUps: [],
+      },
+      d(0),
+      d(24),
+      d(18)
+    );
+    expect(t.map((s) => [s.state, s.from, s.to, s.detail])).toEqual([
+      ["LOGGED_IN", d(0), d(10), null],
+      ["PAUSED", d(9), d(9.5), "Break"],
+      ["LOGGED_OUT", d(10), d(14), null],
+      ["LOGGED_IN", d(14), null, null],
+      ["IN_CALL", d(15), null, "923"],
+    ]);
   });
 });

@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import { prisma } from "@falai/db";
 
 /**
@@ -8,6 +9,10 @@ import { prisma } from "@falai/db";
  * (submitted → delivered / failed / expired). O `message_id` é o id que
  * devolvemos no envio (guardado em SmsMessage.providerMsgId), pelo que um único
  * endpoint global resolve o tenant sem precisar de token.
+ *
+ * Autenticação: se FUTURIX_SMS_WEBHOOK_SECRET estiver definido (SystemSetting
+ * ou .env), o URL configurado na Futurix tem de levar ?token=<segredo>; sem
+ * ele, aceita-se como antes e fica um aviso no arranque.
  *
  * Deve responder sempre 2xx (o corpo é ignorado pela Futurix).
  */
@@ -37,8 +42,25 @@ function mapStatus(status: string | undefined): "SENT" | "DELIVERED" | "FAILED" 
   }
 }
 
+/** Comparação em tempo constante do ?token= com o segredo. Sem segredo configurado, aceita. */
+export function isAuthorizedSmsWebhook(secret: string, token: unknown): boolean {
+  if (!secret) return true;
+  if (typeof token !== "string") return false;
+  const a = Buffer.from(token);
+  const b = Buffer.from(secret);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export const smsWebhookRoutes: FastifyPluginAsync = async (fastify) => {
-  fastify.post<{ Body: DeliveryReport }>("/", async (request, reply) => {
+  const secret = fastify.providerConfig.futurix.webhookSecret;
+  if (!secret) {
+    fastify.log.warn("sms.webhook.no_secret — /webhooks/sms aceita pedidos sem autenticação; definir FUTURIX_SMS_WEBHOOK_SECRET");
+  }
+
+  fastify.post<{ Body: DeliveryReport; Querystring: { token?: string } }>("/", async (request, reply) => {
+    if (!isAuthorizedSmsWebhook(secret, request.query?.token)) {
+      return reply.status(401).send({ error: "unauthorized" });
+    }
     const source = request.headers["x-webhook-source"];
     const payload = request.body ?? {};
     fastify.log.info({ source, event: payload.event, status: payload.status, msgId: payload.message_id }, "sms.webhook.received");
@@ -59,13 +81,10 @@ export const smsWebhookRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(200).send({ ok: true });
     }
 
-    // Não regride um DELIVERED para SENT se chegarem eventos fora de ordem.
-    if (msg.status === "DELIVERED" && newStatus === "SENT") {
-      return reply.status(200).send({ ok: true });
-    }
-
-    await prisma.smsMessage.update({
-      where: { id: msg.id },
+    // DELIVERED e FAILED são finais: eventos repetidos ou fora de ordem não os
+    // regridem nem trocam um pelo outro (updateMany condicional = idempotente).
+    await prisma.smsMessage.updateMany({
+      where: { id: msg.id, status: { in: newStatus === "SENT" ? ["QUEUED", "SENDING"] : ["QUEUED", "SENDING", "SENT"] } },
       data: {
         status: newStatus,
         ...(newStatus === "FAILED" && payload.error_code ? { failReason: `Futurix: ${payload.error_code}` } : {}),

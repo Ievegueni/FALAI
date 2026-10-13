@@ -15,7 +15,7 @@ interface Props {
 
 export function Tabs({ tabs, active, onChange, className }: Props) {
   return (
-    <div className={clsx('scrollbar-thin flex gap-1 overflow-x-auto border-b border-gray-200', className)}>
+    <div className={clsx('flex flex-wrap gap-x-1 border-b border-gray-200', className)}>
       {tabs.map((tab) => (
         <button
           key={tab.key}

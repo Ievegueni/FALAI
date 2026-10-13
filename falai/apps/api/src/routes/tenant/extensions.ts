@@ -4,6 +4,7 @@ import { extensionWebEndpointId } from "@falai/providers";
 import { decryptSecret } from "../../services/crypto.service.js";
 import { config } from "../../config.js";
 import { registerExtensions } from "../shared/extensions.js";
+import { isConfigAdmin } from "../../services/userScope.js";
 
 export const tenantExtensionsRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
@@ -25,14 +26,17 @@ export const tenantExtensionsRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /tenant/extensions/:id/webphone-credentials — credenciais prontas a
-  // usar no JsSIP do CRM (endpoint WebRTC, não o hardphone). Sem
-  // requireManager: qualquer agente do tenant pode pedir a extensão que
-  // escolheu no dropdown do webphone, tal como já podia usá-la no
-  // click-to-call (DirectCallPage).
+  // usar no JsSIP do CRM (endpoint WebRTC, não o hardphone). Cada utilizador
+  // só recebe a senha SIP da sua própria extensão; OWNER/ADMIN, que gerem as
+  // extensões, podem registar-se em qualquer uma.
   fastify.get<{ Params: { extId: string } }>("/:extId/webphone-credentials", { preHandler, config: { feature: "webphone" } }, async (request, reply) => {
-    const { tenantId, sub } = request.tenantUser!;
+    const { tenantId, sub, role } = request.tenantUser!;
     const ext = await prisma.extension.findFirst({ where: { id: request.params.extId, tenantId } });
     if (!ext) return reply.status(404).send({ error: "Extensão não encontrada" });
+    if (!isConfigAdmin(role)) {
+      const me = await prisma.tenantUser.findUnique({ where: { id: sub }, select: { extensionId: true } });
+      if (me?.extensionId !== ext.id) return reply.status(403).send({ error: "Só pode usar a extensão atribuída a si" });
+    }
     if (!ext.isActive) return reply.status(400).send({ error: "Extensão inactiva" });
     if (!config.PUBLIC_WEBPHONE_WSS_URL || !config.PUBLIC_WEBPHONE_SIP_DOMAIN) {
       return reply.status(503).send({ error: "Webphone não configurado neste ambiente" });

@@ -15,6 +15,7 @@ import { prisma, type Prisma } from "@falai/db";
 import { normalizeAoPhone } from "@falai/shared";
 import { dayBounds } from "./callsFilter.service.js";
 import { phoneVariants } from "./callerLookup.service.js";
+import { SUB_PATH_SELECT, subPathName } from "./callTyping.service.js";
 
 export type CallState = "ANSWERED" | "MISSED" | "REJECTED" | "IN_PROGRESS";
 
@@ -79,7 +80,7 @@ export const historySelect = {
       typedAt: true,
       extension: { select: { displayName: true } },
       category: { select: { id: true, name: true } },
-      subcategory: { select: { id: true, name: true } },
+      subcategory: { select: { id: true, ...SUB_PATH_SELECT } },
     },
   },
 } satisfies Prisma.CallSelect;
@@ -90,8 +91,8 @@ const agentName = (l: { extensionNumber: string; extension: { displayName: strin
     ? `${l.extensionNumber} ${l.extension.displayName}`
     : l.extensionNumber;
 
-const typingLabel = (l: { category: { name: string } | null; subcategory: { name: string } | null }) =>
-  l.category ? [l.category.name, l.subcategory?.name].filter(Boolean).join(" › ") : null;
+const typingLabel = (l: { category: { name: string } | null; subcategory: Parameters<typeof subPathName>[0] }) =>
+  l.category ? [l.category.name, subPathName(l.subcategory)].filter(Boolean).join(" › ") : null;
 
 export function mapHistoryRow(c: HistoryCall) {
   const answered = c.legs.find((l) => l.outcome === "ANSWERED");

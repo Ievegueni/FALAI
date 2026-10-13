@@ -3,6 +3,8 @@ import { z } from "zod";
 import { prisma } from "@falai/db";
 import { isOpsManager } from "../../services/userScope.js";
 import {
+  categoryDepth,
+  MAX_CATEGORY_DEPTH,
   legGroupIds,
   loadCategories,
   typingStatus,
@@ -53,8 +55,11 @@ export const tenantCallTypingRoutes: FastifyPluginAsync = async (fastify) => {
     const body = categorySchema.parse(request.body);
     const parentId = body.parentId ?? null;
     if (parentId) {
-      const parent = await prisma.callCategory.findFirst({ where: { id: parentId, tenantId, parentId: null } });
-      if (!parent) return reply.status(400).send({ error: "Categoria-mãe inválida (só há 2 níveis)" });
+      const all = await prisma.callCategory.findMany({ where: { tenantId }, select: { id: true, parentId: true } });
+      if (!all.some((c) => c.id === parentId)) return reply.status(400).send({ error: "Categoria-mãe inválida" });
+      if (categoryDepth(all, parentId) >= MAX_CATEGORY_DEPTH) {
+        return reply.status(400).send({ error: `Máximo de ${MAX_CATEGORY_DEPTH} níveis (categoria + ${MAX_CATEGORY_DEPTH - 1} de subcategoria)` });
+      }
     }
     const dup = await prisma.callCategory.findFirst({ where: { tenantId, parentId, name: body.name } });
     if (dup) return reply.status(409).send({ error: "Já existe com esse nome" });

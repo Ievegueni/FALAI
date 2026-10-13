@@ -15,7 +15,19 @@ describe("filtros da lista de chamadas", () => {
     const w = callsWhere("t1", { extensionId: "e1", categoryId: "c1" });
     expect(w.AND).toEqual([
       { legs: { some: { extensionId: "e1", outcome: "ANSWERED" } } },
-      { legs: { some: { OR: [{ categoryId: "c1" }, { subcategoryId: "c1" }] } } },
+      // inclui o que está por baixo de c1 (subcategorias em vários níveis)
+      {
+        legs: {
+          some: {
+            OR: [
+              { categoryId: "c1" },
+              { subcategoryId: "c1" },
+              { subcategory: { parentId: "c1" } },
+              { subcategory: { parent: { parentId: "c1" } } },
+            ],
+          },
+        },
+      },
     ]);
   });
   it("pesquisa: número pelos últimos 9 dígitos (+244 ou não) e nome do contacto", () => {

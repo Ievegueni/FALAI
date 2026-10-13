@@ -281,6 +281,10 @@ export function registerDirectCallEvents(
     if (event.type !== "CALL_ENDED" && event.type !== "CALL_FAILED") return;
     const session = sessions.get(event.providerCallId);
     if (!session) return; // não é uma chamada directa nossa
+    // Perna do ring group que perdeu (desligada por nós quando a outra atendeu):
+    // fica no mapa para o CRM a poder usar, mas o fim dela não acaba a chamada.
+    // Sem isto, com softphone e webphone registados, atender num matava tudo.
+    if (!session.channels.has(event.providerCallId)) return;
 
     if (event.type === "CALL_ENDED") session.durationSecs = event.durationSecs;
     log.info(

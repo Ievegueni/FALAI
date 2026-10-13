@@ -20,7 +20,7 @@ import { deltaPct, type Overview } from "./reportsOverview.service.js";
 
 // ─── Prompt (versionado) ─────────────────────────────────────────────────────
 
-export const PROMPT_VERSION = "report-analysis/v2"; // v2: limites de tamanho (a v1 esgotava os tokens de saída)
+export const PROMPT_VERSION = "report-analysis/v3"; // v3: SLA com meta, ASA 90 %, abandono e satisfação; v2: limites de tamanho
 
 export const SYSTEM_PROMPT = `És um analista de operações de call center. Recebes o RESUMO AGREGADO de um relatório de atendimento (JSON) de uma empresa angolana.
 
@@ -29,7 +29,9 @@ Regras:
 - Interpreta os números que recebes; NÃO recalcules nem inventes valores. Usa as variações (deltaPct, em %) e diferenças (vsTenant, em pontos percentuais ou segundos) que já vêm calculadas.
 - "previous" é o período anterior com a mesma duração. Se não houver base de comparação (null), diz isso em vez de comparar.
 - Tempos vêm em segundos: apresenta-os como "1 min 20 s".
-- Taxas vêm em %. TME = tempo de espera até atender; TMA = tempo médio de conversa.
+- Taxas vêm em %. tmeSecs = ASA (tempo médio de espera até atender); asaP90Secs = 9 em cada 10 esperaram até este tempo; TMA = tempo médio de conversa.
+- slaPct = % atendidas dentro do limiar (targets.slaSecs); compara-a com targets.slaTargetPct quando existe. abandonRate já exclui as desistências curtas.
+- csat = satisfação dos clientes (1 a 5; satisfiedPct = notas 4 e 5); por agente em csatAvg. Com menos de 10 respostas, trata como indicativo.
 - Em "signals" vêm sinais já detectados no backend (picos, motivo dominante, tipificações a crescer); usa-os como ponto de partida das anomalias.
 - Refere os agentes exactamente pela etiqueta que recebes (ref).
 - Se houver poucos dados (ex.: menos de 20 chamadas), avisa que as conclusões são frágeis.
@@ -140,6 +142,8 @@ export function prepareAnalysisInput(cur: AttendanceReport, prev: AttendanceRepo
         tmaSecs: a.tmaSecs,
         responseSecs: a.responseSecs,
         untypedRate: a.untypedRate,
+        csatAvg: a.csatAvg,
+        csatResponses: a.csatResponses,
         vsTenant: a.vsTenant,
         previousAnswerRate: p?.answerRate ?? null,
         position: classify(a.vsTenant),
@@ -158,6 +162,8 @@ export function prepareAnalysisInput(cur: AttendanceReport, prev: AttendanceRepo
       answerRate: g.answerRate,
       tmeSecs: g.tmeSecs,
       tmaSecs: g.tmaSecs,
+      slaPct: g.slaPct,
+      slaTargetPct: g.slaTargetPct,
       vsTenant: g.vsTenant,
       previousTotal: p?.total ?? null,
       previousAnswerRate: p?.answerRate ?? null,
@@ -192,7 +198,7 @@ export function prepareAnalysisInput(cur: AttendanceReport, prev: AttendanceRepo
   const signals: string[] = [];
   const tmeDays = cur.byDay.filter((d) => d.tmeSecs !== null);
   const tmeAvg = tmeDays.length ? tmeDays.reduce((s, d) => s + d.tmeSecs!, 0) / tmeDays.length : null;
-  for (const d of tmeDays) if (tmeAvg && tmeDays.length >= 3 && d.tmeSecs! >= tmeAvg * 1.5 && d.tmeSecs! - tmeAvg >= 10) signals.push(`TME alto em ${d.date}: ${d.tmeSecs}s (média do período ${Math.round(tmeAvg)}s)`);
+  for (const d of tmeDays) if (tmeAvg && tmeDays.length >= 3 && d.tmeSecs! >= tmeAvg * 1.5 && d.tmeSecs! - tmeAvg >= 10) signals.push(`ASA alto em ${d.date}: ${d.tmeSecs}s (média do período ${Math.round(tmeAvg)}s)`);
   if (opts.overview) {
     const daily = opts.overview.daily.map((d) => ({ date: d.date, missed: d.total - d.answered }));
     const avg = daily.length ? daily.reduce((s, d) => s + d.missed, 0) / daily.length : 0;
@@ -203,6 +209,11 @@ export function prepareAnalysisInput(cur: AttendanceReport, prev: AttendanceRepo
   const top = rejectReasons[0];
   if (top && top.pct >= 40 && top.count >= 3) signals.push(`Motivo de recusa dominante: "${top.reason}" (${top.pct}% das recusas)`);
   for (const t of typings.filter((x) => x.trend === "up").slice(0, 3)) signals.push(`Tipificação a crescer: ${t.label} (${t.previousCount} → ${t.count})`);
+  if (cur.slaTargetPct !== null && sc.slaPct !== null && sc.slaPct < cur.slaTargetPct) signals.push(`SLA abaixo da meta: ${sc.slaPct}% (meta ${cur.slaTargetPct}%)`);
+  for (const g of groups) if (g.slaTargetPct !== null && g.slaPct !== null && g.slaPct < g.slaTargetPct && g.total >= 10) signals.push(`Grupo ${g.name} com SLA ${g.slaPct}% abaixo da meta de ${g.slaTargetPct}%`);
+  const worstHour = cur.byHour.filter((h) => h.total >= 10 && h.slaPct !== null).sort((a, b) => a.slaPct! - b.slaPct!)[0];
+  if (worstHour && sc.slaPct !== null && worstHour.slaPct! <= sc.slaPct - 15) signals.push(`Pior hora do SLA: ${String(worstHour.hour).padStart(2, "0")}h com ${worstHour.slaPct}% (${worstHour.total} chamadas)`);
+  if (cur.csat.avg !== null && prev.csat.avg !== null && cur.csat.responses >= 10 && cur.csat.avg <= prev.csat.avg - 0.3) signals.push(`Satisfação a descer: ${cur.csat.avg} (antes ${prev.csat.avg})`);
   const missDelta = pctDelta(sc.missed, pc.missed);
   if (missDelta !== null && missDelta >= 25 && sc.missed >= 5) signals.push(`Não atendidas a subir: ${sc.missed} (+${missDelta}%)`);
 
@@ -213,9 +224,11 @@ export function prepareAnalysisInput(cur: AttendanceReport, prev: AttendanceRepo
     tenantTotals: opts.overview
       ? opts.overview.tiles.map((t) => ({ key: t.key, unit: t.unit, current: t.value, previous: t.previous, deltaPct: t.deltaPct }))
       : null,
-    calls: kpi(sc as unknown as Record<string, number | null>, pc as unknown as Record<string, number | null>, ["total", "answered", "missed", "abandoned", "answerRate", "tmaSecs", "tmeSecs"]),
+    calls: kpi(sc as unknown as Record<string, number | null>, pc as unknown as Record<string, number | null>, ["total", "answered", "missed", "abandoned", "answerRate", "abandonRate", "slaPct", "tmaSecs", "tmeSecs", "asaP90Secs", "maxWaitSecs"]),
+    targets: { slaSecs: cur.slaSecs, slaTargetPct: cur.slaTargetPct, shortAbandonSecs: cur.shortAbandonSecs },
+    csat: { current: { avg: cur.csat.avg, satisfiedPct: cur.csat.satisfiedPct, responses: cur.csat.responses }, previous: { avg: prev.csat.avg, satisfiedPct: prev.csat.satisfiedPct, responses: prev.csat.responses } },
     agentsTotals: kpi(sa as unknown as Record<string, number | null>, pa as unknown as Record<string, number | null>, ["offered", "answered", "rejected", "answerRate", "rejectRate", "tmaSecs", "responseSecs", "untypedRate"]),
-    tenantAverage: { answerRate: cur.tenant.calls.answerRate, tmeSecs: cur.tenant.calls.tmeSecs, agentRejectRate: cur.tenant.agents.rejectRate },
+    tenantAverage: { answerRate: cur.tenant.calls.answerRate, tmeSecs: cur.tenant.calls.tmeSecs, slaPct: cur.tenant.calls.slaPct, agentRejectRate: cur.tenant.agents.rejectRate },
     agents,
     groups,
     rejectReasons,

@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "@falai/db";
 import { countSegments } from "@falai/providers";
+import { normalizeAoPhone } from "@falai/shared";
 import { getTenantSmsConfig } from "./sms.service.js";
-import { dispatchQueuedMessage } from "./sms.service.js";
+import { dispatchQueuedMessage, recoverInterruptedSms } from "./sms.service.js";
 
 /**
  * Campanhas de SMS em massa. Ao preparar, cria uma mensagem QUEUED por contacto
@@ -39,8 +40,11 @@ export async function prepareRecipients(
     select: { id: true, name: true, phone: true, attributes: true },
   });
 
+  const existing = await prisma.smsMessage.findMany({ where: { tenantId, campaignId }, select: { toNumber: true } });
+  const fresh = dedupeByPhone(contacts, existing.map((m) => m.toNumber));
+
   await prisma.smsMessage.createMany({
-    data: contacts.map((c) => {
+    data: fresh.map((c) => {
       const text = interpolate(campaign.body, c);
       const segments = countSegments(text);
       return {
@@ -59,7 +63,27 @@ export async function prepareRecipients(
 
   const total = await prisma.smsMessage.count({ where: { tenantId, campaignId } });
   await prisma.smsCampaign.update({ where: { id: campaignId }, data: { totalRecipients: total } });
-  return { added: contacts.length };
+  return { added: fresh.length };
+}
+
+/** Chave de deduplicação: nacional de 9 dígitos quando é número angolano, senão só os dígitos. */
+function phoneKey(raw: string): string {
+  return normalizeAoPhone(raw) ?? raw.replace(/\D/g, "");
+}
+
+/**
+ * Tira os contactos cujo telefone (normalizado) já está na campanha ou se
+ * repete no próprio lote — voltar a adicionar contactos não duplica mensagens.
+ */
+export function dedupeByPhone<T extends { phone: string | null }>(contacts: T[], alreadyInCampaign: string[]): T[] {
+  const seen = new Set(alreadyInCampaign.map(phoneKey));
+  return contacts.filter((c) => {
+    if (!c.phone) return false;
+    const k = phoneKey(c.phone);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 /**
@@ -67,26 +91,40 @@ export async function prepareRecipients(
  * respeitando o throttlePerMinute. Actualiza contadores e marca DONE no fim.
  */
 export async function startCampaign(fastify: FastifyInstance, tenantId: string, campaignId: string): Promise<void> {
-  const campaign = await prisma.smsCampaign.findFirst({
-    where: { id: campaignId, tenantId },
-    select: { status: true, throttlePerMinute: true },
-  });
-  if (!campaign) throw new Error("Campanha não encontrada");
-  if (campaign.status === "RUNNING") return;
-
-  await prisma.smsCampaign.update({
-    where: { id: campaignId },
+  // Arranque atómico: dois cliques (ou dois pedidos) já não lançam dois ciclos
+  // a despachar — e a cobrar — as mesmas mensagens em duplicado.
+  const claimed = await prisma.smsCampaign.updateMany({
+    where: { id: campaignId, tenantId, status: { not: "RUNNING" } },
     data: { status: "RUNNING", startedAt: new Date() },
   });
+  if (claimed.count === 0) {
+    const exists = await prisma.smsCampaign.findFirst({ where: { id: campaignId, tenantId }, select: { id: true } });
+    if (!exists) throw new Error("Campanha não encontrada");
+    return; // já a correr
+  }
+  runCampaign(fastify, tenantId, campaignId);
+}
 
-  const delayMs = Math.max(0, Math.floor(60_000 / Math.max(1, campaign.throttlePerMinute)));
+/**
+ * Retoma as campanhas que ficaram RUNNING com mensagens QUEUED: o despacho vive
+ * em memória e um reinício da API deixava-as presas (e o "Iniciar" não as
+ * relançava, por já estarem RUNNING). Chamar uma vez no arranque.
+ */
+export async function resumeRunningSmsCampaigns(fastify: FastifyInstance): Promise<number> {
+  // Primeiro as interrompidas a meio do envio (SENDING): saldo de volta, sem reenvio.
+  const recovered = await recoverInterruptedSms();
+  if (recovered > 0) fastify.log.warn({ recovered }, "sms.interrupted_recovered");
+  const running = await prisma.smsCampaign.findMany({ where: { status: "RUNNING" }, select: { id: true, tenantId: true } });
+  for (const c of running) runCampaign(fastify, c.tenantId, c.id);
+  return running.length;
+}
 
-  // Fire-and-forget: despacha sequencialmente com throttle.
+/** Despacha as mensagens QUEUED com throttle, em segundo plano. */
+function runCampaign(fastify: FastifyInstance, tenantId: string, campaignId: string): void {
   void (async () => {
-    let sent = 0;
-    let failed = 0;
-    let cost = 0;
     try {
+      const campaign = await prisma.smsCampaign.findUniqueOrThrow({ where: { id: campaignId }, select: { throttlePerMinute: true } });
+      const delayMs = Math.max(0, Math.floor(60_000 / Math.max(1, campaign.throttlePerMinute)));
       const queued = await prisma.smsMessage.findMany({
         where: { tenantId, campaignId, status: "QUEUED" },
         select: { id: true },
@@ -97,28 +135,24 @@ export async function startCampaign(fastify: FastifyInstance, tenantId: string, 
         if (!cur || cur.status !== "RUNNING") break;
 
         const r = await dispatchQueuedMessage(fastify, tenantId, m.id);
-        if (r.status === "SENT") {
-          sent++;
-          cost += r.costCents;
-        } else {
-          failed++;
-        }
+        if (r.status === "SKIPPED") continue; // já reclamada por outro ciclo
+        // increment e não set: retomar uma campanha (ou o arranque após um
+        // reinício) apagava os contadores da corrida anterior.
         await prisma.smsCampaign.update({
           where: { id: campaignId },
-          data: { sentCount: sent, failedCount: failed, costCents: cost },
+          data:
+            r.status === "SENT"
+              ? { sentCount: { increment: 1 }, costCents: { increment: r.costCents } }
+              : { failedCount: { increment: 1 } },
         });
         if (delayMs > 0) await sleep(delayMs);
       }
     } catch (err) {
       fastify.log.error({ err, campaignId, tenantId }, "sms_campaign.dispatch_failed");
     } finally {
-      const cur = await prisma.smsCampaign.findUnique({ where: { id: campaignId }, select: { status: true } });
-      if (cur?.status === "RUNNING") {
-        await prisma.smsCampaign.update({
-          where: { id: campaignId },
-          data: { status: "DONE", completedAt: new Date() },
-        });
-      }
+      await prisma.smsCampaign
+        .updateMany({ where: { id: campaignId, status: "RUNNING" }, data: { status: "DONE", completedAt: new Date() } })
+        .catch((err) => fastify.log.error({ err, campaignId }, "sms_campaign.finish_failed"));
     }
   })();
 }

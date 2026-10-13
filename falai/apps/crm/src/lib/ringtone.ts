@@ -53,3 +53,55 @@ export function stopRingtone(): void {
   gain?.disconnect();
   gain = null;
 }
+
+/** Bip curto e agudo (três notas a subir): "chamada da fila a entrar" — diferente do toque normal. */
+export function playQueueAlert(): void {
+  unlockRingtone();
+  if (!ctx) return;
+  const g = ctx.createGain();
+  g.gain.value = 0.2;
+  g.connect(ctx.destination);
+  const t0 = ctx.currentTime;
+  [880, 1175, 1568].forEach((freq, i) => {
+    const osc = ctx!.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    osc.connect(g);
+    osc.start(t0 + i * 0.15);
+    osc.stop(t0 + i * 0.15 + 0.12);
+  });
+}
+
+// ─── Sinal de chamada (chamada de saída) ────────────────────────────────────
+// O Asterisk não manda áudio antes de o cliente atender (Dial sem early media),
+// por isso o agente ouvia silêncio. Tom europeu, o de Angola: 425 Hz, 1 s ligado, 4 s desligado.
+let rbTimer: ReturnType<typeof setInterval> | null = null;
+let rbGain: GainNode | null = null;
+
+function ringbackOnce(): void {
+  if (!ctx || !rbGain) return;
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = 425;
+  osc.connect(rbGain);
+  osc.start(ctx.currentTime);
+  osc.stop(ctx.currentTime + 1);
+}
+
+export function startRingback(): void {
+  if (rbTimer) return;
+  unlockRingtone();
+  if (!ctx) return;
+  rbGain = ctx.createGain();
+  rbGain.gain.value = 0.1;
+  rbGain.connect(ctx.destination);
+  ringbackOnce();
+  rbTimer = setInterval(ringbackOnce, 5000);
+}
+
+export function stopRingback(): void {
+  if (rbTimer) clearInterval(rbTimer);
+  rbTimer = null;
+  rbGain?.disconnect();
+  rbGain = null;
+}

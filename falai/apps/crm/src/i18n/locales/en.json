@@ -702,7 +702,18 @@
     "secretRotated": "Webhook secret regenerated",
     "copySecretWarn": "Copy this secret now. It won't be shown again.",
     "copySecret": "Copy secret",
-    "adminOnly": "Only administrators can change these settings."
+    "adminOnly": "Only administrators can change these settings.",
+    "twoFaTitle": "Two-factor authentication (2FA)",
+    "twoFaEnabled": "2FA is enabled on your account. To disable it, enter the current code from your app.",
+    "twoFaDisabled": "Protect your account with a code from an authenticator app (Google Authenticator, Microsoft Authenticator…).",
+    "twoFaStart": "Enable 2FA",
+    "twoFaScan": "Scan the QR code with your authenticator app and enter the 6-digit code.",
+    "twoFaSecret": "Or enter this key manually:",
+    "twoFaCode": "Code",
+    "twoFaConfirm": "Confirm",
+    "twoFaDone": "2FA enabled",
+    "twoFaDisable": "Disable 2FA",
+    "twoFaOff": "2FA disabled"
   },
   "pbx": {
     "title": "PBX integration",
@@ -962,7 +973,38 @@
       "typingTitle": "Calls by category",
       "category": "Call type",
       "sla": "SLA",
-      "slaHint": "Answered within {{secs}} s"
+      "slaHint": "Answered within {{secs}} s",
+      "asaP90": "ASA 90%",
+      "asaP90Hint": "9 in 10 answered calls waited up to this",
+      "maxWait": "Longest wait",
+      "maxWaitHint": "Answered and missed",
+      "slaHintTarget": "Answered within {{secs}} s · target {{target}}%",
+      "shortAbandoned": "Short abandons",
+      "shortAbandonedHint": "Hung up before {{secs}} s — excluded from SLA",
+      "abandonRate": "Abandon rate",
+      "abandonRateHint": "{{count}} abandoned, excluding short abandons",
+      "slaTarget": "SLA target",
+      "target": "Target",
+      "slaTrend": "SLA by day",
+      "slaTrendHint": "The dashed line is the target",
+      "byHour": "Calls and SLA by hour",
+      "byHourHint": "Hour the call started ringing",
+      "heatmap": "Calls by weekday and hour",
+      "heatmapHint": "Darker = more calls. Shows where agents are short.",
+      "weekdays": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat",
+        "Sun"
+      ],
+      "volume": "Calls",
+      "csat": "Satisfaction",
+      "csatResponses": "{{count}} responses",
+      "vsPrevious": "vs previous period",
+      "noCompare": "no comparison"
     },
     "exportPdf": "Export PDF",
     "vsPrevious": "vs. previous period",
@@ -973,13 +1015,13 @@
       "outbound": "Outbound",
       "newContacts": "New contacts",
       "tma": "AHT",
-      "tme": "AWT",
+      "tme": "ASA",
       "response": "Response time",
       "wrapUp": "Wrap-up"
     },
     "tilesSub": {
       "tma": "Average handling time",
-      "tme": "Average waiting time",
+      "tme": "Average wait until answered",
       "response": "From ring to answer",
       "wrapUp": "From call end to typing"
     },
@@ -1023,7 +1065,26 @@
       "pauses": "Pauses by reason",
       "noReason": "No reason",
       "empty": "No users.",
-      "hint": "Logged in = time with the CRM open. Adherence = % of the shift spent logged in."
+      "hint": "Logged = time with the CRM open. Adherence = % of the shift spent logged in. Available = logged in, not paused, talking or in wrap-up.",
+      "talk": "Talk",
+      "wrapUp": "Wrap-up",
+      "available": "Available",
+      "timeline": "States of {{name}}",
+      "timelineHint": "Click an agent to see their state timeline.",
+      "state": "State",
+      "since": "Start",
+      "until": "End",
+      "duration": "Duration",
+      "detail": "Detail",
+      "ongoing": "ongoing",
+      "noStates": "No records in this period.",
+      "states": {
+        "LOGGED_IN": "Logged in",
+        "LOGGED_OUT": "Logged out",
+        "PAUSED": "Paused",
+        "IN_CALL": "In call",
+        "WRAP_UP": "Wrap-up"
+      }
     },
     "csat": {
       "settings": "Satisfaction survey",
@@ -1052,6 +1113,33 @@
         "responses": "Responses",
         "avg": "Average",
         "satisfied": "% satisfied"
+      },
+      "trend": "Satisfaction by day",
+      "trendHint": "Average score (1 to 5) per day",
+      "satisfiedShort": "satisfied",
+      "negatives": "Negative ratings to handle: {{count}}",
+      "negativesHint": "Scores 1 and 2. Customers can leave a comment (SMS and text); mark as handled once you have acted.",
+      "showOpen": "To handle",
+      "showAll": "All",
+      "noNegatives": "No negative ratings in this period.",
+      "neg": {
+        "when": "Date",
+        "score": "Score",
+        "channel": "Channel",
+        "agent": "Agent",
+        "customer": "Customer",
+        "comment": "Comment",
+        "status": "Status",
+        "call": "call",
+        "conversation": "conversation",
+        "ticket": "ticket",
+        "noComment": "no comment",
+        "open": "To handle",
+        "reviewedBy": "Handled by {{name}}",
+        "review": "Mark as handled",
+        "reopen": "Reopen",
+        "reviewTitle": "Handle negative rating",
+        "reviewNote": "What was done (optional)"
       }
     },
     "cons": {
@@ -1089,7 +1177,31 @@
         "conversations": "Conversations",
         "conversationsResolved": "Resolved",
         "ticketsCreated": "Tickets",
-        "ticketsResolved": "Tickets resolved"
+        "ticketsResolved": "Tickets resolved",
+        "callsSlaPct": "Voice SLA",
+        "textSlaPct": "Text SLA",
+        "ticketsBreached": "Late",
+        "ticketSlaPct": "Ticket SLA"
+      },
+      "slaVoice": "Voice SLA",
+      "slaText": "Text SLA",
+      "slaTextHint": "First reply within {{min}} min",
+      "slaTickets": "Ticket SLA",
+      "slaTicketsHint": "{{breached}} past deadline",
+      "overdueNow": "Tickets overdue now",
+      "overdueNowHint": "Open and past the deadline (any date)",
+      "channelCol": "Channel",
+      "firstResponseCol": "First reply / ASA",
+      "byPriority": "Ticket SLA by priority",
+      "prio": {
+        "priority": "Priority",
+        "targetHours": "Deadline",
+        "created": "Created",
+        "met": "On time",
+        "breached": "Late",
+        "open": "Open",
+        "sla": "SLA",
+        "resolution": "Avg resolution"
       }
     }
   },
@@ -1115,7 +1227,8 @@
       "QUEUED": "Queued",
       "SENT": "Sent",
       "DELIVERED": "Delivered",
-      "FAILED": "Failed"
+      "FAILED": "Failed",
+      "SENDING": "Sending"
     },
     "newCampaign": "New campaign",
     "campaignName": "Campaign name",
@@ -1137,6 +1250,7 @@
     "title": "Webphone",
     "selectExtension": "Line",
     "noLine": "No extensions configured for this tenant.",
+    "noOwnExtension": "You have no extension assigned. Ask an administrator to assign one to you under Team.",
     "status": {
       "unregistered": "Not registered",
       "registering": "Registering…",
@@ -1184,7 +1298,8 @@
       "WHISPER": "A supervisor is talking to you (the customer can't hear).",
       "BARGE": "A supervisor joined the call (the customer hears them)."
     },
-    "pauseWithReason": "Pause…"
+    "pauseWithReason": "Pause…",
+    "fromQueue": "From queue · waited {{wait}}"
   },
   "telephony": {
     "title": "Telephony",
@@ -1416,7 +1531,7 @@
     "tabSettings": "Settings",
     "kpi": {
       "queued": "Queued now",
-      "tme": "AWT today",
+      "tme": "ASA today",
       "answered": "Answered today",
       "missed": "Missed today"
     },
@@ -1639,7 +1754,15 @@
       "linked": "Linked {{what}}",
       "unlinked": "Unlinked {{what}}"
     },
-    "take": "Take"
+    "take": "Take",
+    "anyDue": "Any deadline",
+    "overdueOnly": "Overdue",
+    "sla": {
+      "BREACHED": "Overdue",
+      "AT_RISK": "Near deadline",
+      "ON_TRACK": "On time",
+      "MET": "Met"
+    }
   },
   "alerts": {
     "tab": "Alerts",
@@ -1660,7 +1783,9 @@
     "unit": {
       "s": "seconds",
       "%": "%",
-      "n": "agents"
+      "n": "agents",
+      "min": "minutes",
+      "h": "hours"
     },
     "field": {
       "slaThresholdSecs": "SLA threshold",
@@ -1669,7 +1794,12 @@
       "maxHandleSecs": "Maximum handling time",
       "minAvailableAgents": "Minimum available agents per group",
       "maxAbandonPct": "Maximum daily abandon rate",
-      "maxTmaSecs": "Maximum daily AHT"
+      "maxTmaSecs": "Maximum daily AHT",
+      "shortAbandonSecs": "Exclude from SLA callers who hang up before",
+      "textSlaSecs": "First reply threshold",
+      "textSlaTargetPct": "Daily text SLA target",
+      "ticketSlaTargetPct": "Ticket SLA target",
+      "ticketWarnMins": "Warn before deadline"
     },
     "name": {
       "LONG_WAIT": "Long wait",
@@ -1677,7 +1807,10 @@
       "NO_AGENTS": "No agents available",
       "SLA_BELOW": "SLA below target",
       "ABANDON_ABOVE": "Abandon rate above limit",
-      "TMA_ABOVE": "AHT above limit"
+      "TMA_ABOVE": "AHT above limit",
+      "TEXT_SLA_BELOW": "Text SLA below target",
+      "TICKET_DUE_SOON": "Ticket near deadline",
+      "TICKET_OVERDUE": "Ticket overdue"
     },
     "type": {
       "LONG_WAIT": "Call waiting for {{value}} (limit {{threshold}})",
@@ -1685,8 +1818,22 @@
       "NO_AGENTS": "{{value}} agents available (minimum {{threshold}})",
       "SLA_BELOW": "Daily SLA at {{value}} (target {{threshold}})",
       "ABANDON_ABOVE": "Daily abandon rate at {{value}} (limit {{threshold}})",
-      "TMA_ABOVE": "Daily AHT at {{value}} (limit {{threshold}})"
-    }
+      "TMA_ABOVE": "Daily AHT at {{value}} (limit {{threshold}})",
+      "TEXT_SLA_BELOW": "Today's text SLA at {{value}} (target {{threshold}})",
+      "TICKET_DUE_SOON": "Ticket near deadline: {{value}} left",
+      "TICKET_OVERDUE": "Ticket overdue by {{value}}"
+    },
+    "groupTargetsTitle": "Targets per group",
+    "groupTargetsHint": "Empty = uses the general target. A group with its own target gets its own SLA alert.",
+    "groupCol": "Group",
+    "section": {
+      "voice": "Voice",
+      "text": "Text channels",
+      "tickets": "Tickets"
+    },
+    "ticketHoursHint": "Resolution deadline per priority (calendar hours). A ticket created without a deadline gets its priority's; changing priority recalculates it unless it was set by hand.",
+    "noDeadline": "no deadline",
+    "many": "Several alerts opened — see the supervision panel."
   },
   "quality": {
     "title": "Quality",
@@ -1821,5 +1968,73 @@
     "placeholder": "Write a message… (Enter sends, Shift+Enter new line)",
     "empty": "No conversations yet. Start one with a colleague.",
     "pick": "Pick a conversation on the left."
+  },
+  "queue": {
+    "tab": "Callbacks",
+    "settings": {
+      "title": "Queue and callback",
+      "maxWait": "Maximum wait in queue (minutes)",
+      "maxWaitHint": "With no agent free, callers wait with music and the call rings the first agent who becomes free. 0 = no queue (out-of-service notice).",
+      "callback": "Offer callback to waiting callers",
+      "callbackHint": "After the set time, callers hear the offer and press 1 to be called back (this is their consent). The first free agent gets the request and the webphone dials automatically.",
+      "callbackAfter": "Offer after (seconds)",
+      "offer": "Offer message",
+      "thanks": "Confirmation message"
+    },
+    "list": {
+      "all": "All",
+      "requested": "Requested",
+      "number": "Number",
+      "status": "Status",
+      "attempts": "Attempts",
+      "agent": "Agent",
+      "empty": "No callback requests"
+    },
+    "status": {
+      "PENDING": "Waiting for agent",
+      "ASSIGNED": "Calling",
+      "DONE": "Done",
+      "FAILED": "Failed",
+      "CANCELLED": "Cancelled"
+    },
+    "popup": {
+      "title": "Callback requested from queue",
+      "requestedAt": "Requested at {{time}}",
+      "attempt": "attempt {{n}}",
+      "autoDial": "Dialling automatically in {{secs}} s",
+      "waitingPhone": "Waiting for the webphone to be free",
+      "paused": "Auto-dial paused",
+      "callNow": "Call now",
+      "hold": "Wait",
+      "done": "Spoke to the customer",
+      "noAnswer": "No answer",
+      "cancel": "Cancel"
+    }
+  },
+  "wallboard": {
+    "open": "TV mode",
+    "title": "Contact centre",
+    "waiting": "Waiting",
+    "longest": "longest {{time}}",
+    "answered": "Answered today",
+    "missed": "Missed today",
+    "abandoned": "{{n}} abandoned",
+    "sla": "SLA today",
+    "target": "target {{pct}}%",
+    "asa": "Avg. wait",
+    "tma": "AHT {{time}}",
+    "callbacks": "Callbacks",
+    "agents": "Agents",
+    "noAgents": "No agents",
+    "queue": "Queue now",
+    "queueEmpty": "Nobody waiting",
+    "unknownCustomer": "Customer",
+    "more": "+{{n}} waiting",
+    "ranking": "Today's ranking",
+    "rankingEmpty": "No answered calls yet",
+    "rankingHint": "Answered · AHT · satisfaction",
+    "offline": "Offline",
+    "allGroups": "All groups",
+    "fullscreen": "Full screen"
   }
 }

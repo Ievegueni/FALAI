@@ -117,10 +117,13 @@ export async function settleCall(params: {
   const providerCostCents = billedSecs > 0 ? await getProviderCostPerCallCents() : 0;
 
   await prisma.$transaction(async (tx) => {
-    await tx.call.update({
-      where: { id: callId },
-      data: { costCents: actualCents, billedSecs, providerCostCents },
+    // Reclama a reserva persistida: se outro caminho (reconciliação, arranque)
+    // já a devolveu, não se acerta de novo — seria reembolso duplo.
+    const claimed = await tx.call.updateMany({
+      where: { id: callId, reservedCents: reservedCents },
+      data: { reservedCents: 0, costCents: actualCents, billedSecs, providerCostCents },
     });
+    if (claimed.count === 0) return;
 
     if (delta !== 0) {
       await tx.tenant.update({

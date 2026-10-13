@@ -2,6 +2,7 @@ import { z } from "zod";
 import { buildCallReport, reportToCsv } from "../../services/reports.service.js";
 import {
   buildAttendanceReport,
+  buildAttendanceWithPrevious,
   exportTable,
   listAttendanceCalls,
   tableToCsv,
@@ -10,7 +11,7 @@ import {
 import { ensureCdrSynced } from "../../services/pbxCdr.service.js";
 import { buildOverview } from "../../services/reportsOverview.service.js";
 import { renderOverviewPdf } from "../../services/reportsPdf.service.js";
-import { attendanceWorkbook, overviewWorkbook } from "../../services/excelExport.service.js";
+import { attendanceWorkbook, consolidatedWorkbook, overviewWorkbook } from "../../services/excelExport.service.js";
 import { prisma } from "@falai/db";
 import { ClaudeAdapter } from "@falai/providers";
 import { config } from "../../config.js";
@@ -47,7 +48,7 @@ const callsListSchema = attendanceSchema.extend({
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 const exportSchema = attendanceSchema.extend({
-  view: z.enum(["agents", "groups", "reasons", "typing"]).default("agents"),
+  view: z.enum(["attendance", "agents", "groups", "reasons", "typing", "calls"]).default("agents"),
   format: z.enum(["csv", "xlsx"]).default("csv"),
 });
 
@@ -73,6 +74,21 @@ function analysisFilters(q: z.infer<typeof attendanceSchema>): AnalysisFilters {
 }
 
 const ANALYSIS_ADMINS = OPS_ROLES;
+const EXPORT_MAX_CALLS = 50_000;
+
+/** "Agente 1001 — Ana · Grupo Vendas · Tipificação Facturação" — o que está filtrado, para o Excel. */
+async function filtersLabel(tenantId: string, q: z.infer<typeof attendanceSchema>): Promise<string> {
+  const [ext, group, cat] = await Promise.all([
+    q.extensionId ? prisma.extension.findFirst({ where: { id: q.extensionId, tenantId }, select: { number: true, displayName: true } }) : null,
+    q.groupId ? prisma.extensionGroup.findFirst({ where: { id: q.groupId, tenantId }, select: { name: true } }) : null,
+    q.categoryId ? prisma.callCategory.findFirst({ where: { id: q.categoryId, tenantId }, select: { name: true } }) : null,
+  ]);
+  return [
+    ext && `Agente ${ext.number}${ext.displayName && ext.displayName !== ext.number ? ` — ${ext.displayName}` : ""}`,
+    group && `Grupo ${group.name}`,
+    cat && `Tipificação ${cat.name}`,
+  ].filter(Boolean).join(" · ");
+}
 
 /**
  * Relatórios de atendimento com o âmbito de quem pede (services/userScope.ts):
@@ -228,7 +244,7 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
     const f = await scopedAttendanceFilter(request, attendanceSchema.parse(request.query));
     if ("error" in f) return reply.status(403).send(f);
     const { isCrmPbx } = await ensureCdrSynced(fastify, tenantId);
-    return buildAttendanceReport(tenantId, f, { limited: isCrmPbx });
+    return buildAttendanceWithPrevious(tenantId, f, { limited: isCrmPbx });
   });
 
   // GET /tenant/reports/attendance/calls — chamadas de entrada com as pernas (paginado)
@@ -250,17 +266,21 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
     const name = `atendimento_${q.view}_${f.from.toISOString().slice(0, 10)}_${f.to.toISOString().slice(0, 10)}`;
     if (q.format === "xlsx") {
       // Excel já formatado (exceljs) — ver services/excelExport.service.ts.
-      const [report, tenant, analysis] = await Promise.all([
-        buildAttendanceReport(tenantId, f, { limited: isCrmPbx }),
+      const [report, tenant, analysis, calls, filters] = await Promise.all([
+        q.view === "attendance" ? buildAttendanceWithPrevious(tenantId, f, { limited: isCrmPbx }) : buildAttendanceReport(tenantId, f, { limited: isCrmPbx }),
         prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
         // A análise guardada é dos filtros, não do âmbito: só vai para quem vê tudo.
         f.scope ? null : latestAnalysis(tenantId, analysisFilters(q)),
+        // ponytail: a lista inteira numa folha, até EXPORT_MAX_CALLS; paginar em várias folhas se um cliente passar disto.
+        q.view === "calls" ? listAttendanceCalls(tenantId, f, 1, EXPORT_MAX_CALLS).then((r) => r.data) : undefined,
+        filtersLabel(tenantId, q),
       ]);
       return reply
         .header("Content-Type", XLSX_TYPE)
         .header("Content-Disposition", `attachment; filename="${name}.xlsx"`)
-        .send(await attendanceWorkbook(report, q.view, tenant.name, analysis));
+        .send(await attendanceWorkbook(report, q.view, tenant.name, analysis, { ...(calls && { calls }), ...(filters && { filters }) }));
     }
+    if (q.view === "attendance" || q.view === "calls") return reply.status(400).send({ error: "Este separador só se exporta em Excel" });
     const table = exportTable(await buildAttendanceReport(tenantId, f, { limited: isCrmPbx }), q.view);
     return reply
       .header("Content-Type", "text/csv; charset=utf-8")
@@ -274,6 +294,21 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
     const q = rangeSchema.extend({ bucket: z.enum(["day", "week", "month"]).default("day") }).parse(request.query);
     const range = resolveRange(q);
     return buildConsolidated(request.tenantUser!.tenantId, range.from, range.to, q.bucket);
+  });
+
+  // GET /tenant/reports/consolidated.xlsx — o mesmo painel em Excel
+  fastify.get("/tenant/reports/consolidated.xlsx", { preHandler: [...preHandler, requireWholeTenant] }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    const q = rangeSchema.extend({ bucket: z.enum(["day", "week", "month"]).default("day") }).parse(request.query);
+    const range = resolveRange(q);
+    const [data, tenant] = await Promise.all([
+      buildConsolidated(tenantId, range.from, range.to, q.bucket),
+      prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
+    ]);
+    return reply
+      .header("Content-Type", XLSX_TYPE)
+      .header("Content-Disposition", `attachment; filename="consolidado_${range.from.toISOString().slice(0, 10)}_${range.to.toISOString().slice(0, 10)}.xlsx"`)
+      .send(await consolidatedWorkbook(data, tenant.name));
   });
 
   // ── Resumo (painel com comparação ao período anterior) ─────────────────────

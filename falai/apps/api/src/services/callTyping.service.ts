@@ -58,23 +58,41 @@ export interface CategoryNode {
   groupIds: string[];
 }
 
-/**
- * Categorias que um agente pode usar: activas e sem restrição de grupo, ou
- * associadas a um dos grupos dele (ou ao grupo por onde a chamada tocou).
- * As subcategorias seguem a categoria.
- */
-export function visibleCategories(all: CategoryNode[], groupIds: Set<string>): CategoryNode[] {
-  const tops = all.filter(
-    (c) => c.parentId === null && c.isActive && (c.groupIds.length === 0 || c.groupIds.some((g) => groupIds.has(g)))
-  );
-  const topIds = new Set(tops.map((c) => c.id));
-  return [...tops, ...all.filter((c) => c.parentId !== null && c.isActive && topIds.has(c.parentId))];
+/** Níveis da árvore: categoria + até 3 níveis de subcategoria. */
+export const MAX_CATEGORY_DEPTH = 4;
+
+/** Nível de um nó (1 = categoria de topo). Pura. */
+export function categoryDepth(all: Pick<CategoryNode, "id" | "parentId">[], id: string): number {
+  const byId = new Map(all.map((c) => [c.id, c]));
+  let d = 0;
+  for (let cur = byId.get(id); cur && d <= MAX_CATEGORY_DEPTH + 1; cur = cur.parentId ? byId.get(cur.parentId) : undefined) d++;
+  return d;
 }
 
 /**
- * Valida a escolha do agente contra as categorias que ele pode ver. Uma
- * categoria com subcategorias activas exige subcategoria. Devolve a mensagem
- * de erro, ou null se estiver bem.
+ * Categorias que um agente pode usar: activas e sem restrição de grupo, ou
+ * associadas a um dos grupos dele (ou ao grupo por onde a chamada tocou).
+ * As subcategorias (todos os níveis) seguem a categoria; uma inactiva esconde
+ * também as que estão por baixo dela.
+ */
+export function visibleCategories(all: CategoryNode[], groupIds: Set<string>): CategoryNode[] {
+  const out = all.filter(
+    (c) => c.parentId === null && c.isActive && (c.groupIds.length === 0 || c.groupIds.some((g) => groupIds.has(g)))
+  );
+  const seen = new Set(out.map((c) => c.id));
+  for (let level = 1; level < MAX_CATEGORY_DEPTH; level++) {
+    const next = all.filter((c) => c.parentId !== null && c.isActive && !seen.has(c.id) && seen.has(c.parentId));
+    for (const c of next) seen.add(c.id);
+    out.push(...next);
+  }
+  return out;
+}
+
+/**
+ * Valida a escolha do agente contra as categorias que ele pode ver. Tem de
+ * descer até ao fim: um nível com subcategorias activas exige escolher uma
+ * delas. `subcategoryId` é o último nível escolhido (qualquer profundidade).
+ * Devolve a mensagem de erro, ou null se estiver bem.
  */
 export function validateTyping(
   visible: CategoryNode[],
@@ -83,9 +101,85 @@ export function validateTyping(
 ): string | null {
   const cat = visible.find((c) => c.id === categoryId && c.parentId === null);
   if (!cat) return "Categoria inválida";
-  const subs = visible.filter((c) => c.parentId === categoryId);
-  if (subcategoryId === null) return subs.length > 0 ? "Escolha a subcategoria" : null;
-  return subs.some((s) => s.id === subcategoryId) ? null : "Subcategoria inválida";
+  const hasChildren = (id: string) => visible.some((c) => c.parentId === id);
+  if (subcategoryId === null) return hasChildren(categoryId) ? "Escolha a subcategoria" : null;
+  const byId = new Map(visible.map((c) => [c.id, c]));
+  let cur = byId.get(subcategoryId);
+  if (!cur || cur.parentId === null) return "Subcategoria inválida";
+  // Tem de estar por baixo da categoria escolhida.
+  let top = cur;
+  while (top.parentId !== null) {
+    const up = byId.get(top.parentId);
+    if (!up) return "Subcategoria inválida";
+    top = up;
+  }
+  if (top.id !== categoryId) return "Subcategoria inválida";
+  return hasChildren(cur.id) ? "Escolha a subcategoria" : null;
+}
+
+/**
+ * Caminho de cada subcategoria abaixo da categoria de topo: "Sub › Sub-sub".
+ * É o que os relatórios mostram na coluna "Subcategoria". Pura.
+ */
+export function subcategoryPaths(all: Pick<CategoryNode, "id" | "parentId" | "name">[]): Map<string, string> {
+  const byId = new Map(all.map((c) => [c.id, c]));
+  const out = new Map<string, string>();
+  for (const c of all) {
+    if (c.parentId === null) continue;
+    const names: string[] = [];
+    for (let cur: typeof c | undefined = c; cur && cur.parentId !== null && names.length <= MAX_CATEGORY_DEPTH; cur = byId.get(cur.parentId)) names.unshift(cur.name);
+    out.set(c.id, names.join(" › "));
+  }
+  return out;
+}
+
+/** O nó e todos os seus antepassados (ids). Serve para filtrar por um nível do meio. Pura. */
+export function categoryLineage(all: Pick<CategoryNode, "id" | "parentId">[], id: string | null): string[] {
+  const byId = new Map(all.map((c) => [c.id, c]));
+  const out: string[] = [];
+  for (let cur = id ? byId.get(id) : undefined; cur && out.length <= MAX_CATEGORY_DEPTH; cur = cur.parentId ? byId.get(cur.parentId) : undefined) out.push(cur.id);
+  return out;
+}
+
+/**
+ * Filtro Prisma "tipificada nesta categoria ou em algo por baixo dela".
+ * A perna guarda a categoria de topo e o último nível; os do meio chegam-se
+ * pelos pais do último (profundidade fixa, MAX_CATEGORY_DEPTH).
+ */
+export function legUnderCategory(id: string) {
+  return {
+    OR: [
+      { categoryId: id },
+      { subcategoryId: id },
+      { subcategory: { parentId: id } },
+      { subcategory: { parent: { parentId: id } } },
+    ],
+  };
+}
+
+/**
+ * `select` da subcategoria com os pais até ao topo (MAX_CATEGORY_DEPTH) — para
+ * mostrar o caminho sem carregar a árvore toda. Usar com subPathName().
+ */
+export const SUB_PATH_SELECT = {
+  name: true,
+  parentId: true,
+  parent: { select: { name: true, parentId: true, parent: { select: { name: true, parentId: true } } } },
+} as const;
+
+type SubNode = { name: string; parentId: string | null; parent?: SubNode | null };
+
+/** "Sub › Sub-sub" a partir de um resultado com SUB_PATH_SELECT. Pura. */
+export function subPathName(s: SubNode | null | undefined): string | null {
+  if (!s) return null;
+  const names: string[] = [];
+  for (let cur: SubNode | null | undefined = s; cur && cur.parentId !== null; cur = cur.parent) names.unshift(cur.name);
+  return names.join(" › ") || s.name;
+}
+
+/** Mapa id → "Sub › Sub-sub" das subcategorias do tenant. */
+export async function loadSubcategoryPaths(tenantId: string): Promise<Map<string, string>> {
+  return subcategoryPaths(await prisma.callCategory.findMany({ where: { tenantId }, select: { id: true, parentId: true, name: true } }));
 }
 
 // ─── BD ──────────────────────────────────────────────────────────────────────

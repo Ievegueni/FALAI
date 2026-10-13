@@ -3,7 +3,7 @@
 > **Este é o ficheiro para ler no início de cada sessão.** Diz o que está feito,
 > o que falta e por onde continuar. Actualizar no fim de cada sessão.
 >
-> Última actualização: **22/09/2026**
+> Última actualização: **13/10/2026** (secção 3.5)
 > Branch actual: `docs/deploy-guide` · Último commit: `077daf0`
 > **Atenção: há trabalho não commitado** (ver secção 6).
 
@@ -165,7 +165,91 @@ integração pronto a entregar: `docs/API-BYOM.md`.
 5. Endpoints nomeados pelo número colidiam → nomeados pelo **utilizador SIP**.
 6. Health check disparava reloads do motor → só confirma que o AMI responde.
 
+### 3.4 Varredura de segurança/dinheiro (07/10, `feat/tickets`, por commitar)
+
+- **Reservas de chamadas** persistidas em `Call.reservedCents`; `settleCall` e
+  `releaseCallReservation` (packages/db) zeram-na de forma atómica — nunca há
+  reembolso duplo. Devolvida no arranque da API (`releaseOrphanReservations`),
+  na reconciliação de chamadas presas e em falhas de marcação.
+- **Webhook do cliente (SSRF)**: só `https` (http fora de produção), sem
+  localhost/IPs privados/link-local/metadata. Validado ao gravar (com DNS) e no
+  envio (worker e `/webhook-test`, com o IP verificado no momento da ligação).
+- **Campanhas**: `Campaign.pausedReason`; o carregamento ProxyPay só retoma as
+  pausadas por `LOW_BALANCE`.
+- **Widget**: email/telefone do visitante já não ligam a conversa a um Contact
+  existente (ficam numa nota interna).
+- **JWT do CRM**: utilizador e papel revalidados na BD a cada pedido.
+- **SMS**: `SmsStatus.SENDING` (claim + reserva atómicos; órfãs no arranque →
+  FAILED com saldo devolvido, sem reenvio); destinatários deduplicados por
+  telefone; segmentos pelo GSM 03.38 real; 429/5xx/timeout com nova tentativa
+  nas campanhas; enviar/campanhas só OWNER/ADMIN/MANAGER.
+- **Webhook `/webhooks/sms`**: se `FUTURIX_SMS_WEBHOOK_SECRET` estiver definido
+  (.env ou SystemSetting), o URL configurado na Futurix tem de ser
+  `https://<api>/webhooks/sms?token=<segredo>`; sem ele aceita tudo como antes
+  e a API avisa no arranque (`sms.webhook.no_secret`).
+- **Migrações** `20260924130000_whatsapp_number_unique` e
+  `20260925115900_drop_legacy_ivr` passaram a abortar com mensagem clara (números
+  WhatsApp duplicados / tabelas IVR antigas com linhas). Nunca estiveram em
+  `main`; o checksum mudou — numa BD onde já correram, actualizar o checksum em
+  `_prisma_migrations` (sha256 do ficheiro) ou o `migrate dev` pede reset.
+  Verificação manual antes do deploy:
+  ```sql
+  SELECT config->>'phoneNumberId', count(*) FROM "Inbox"
+  WHERE channel='WHATSAPP' AND "deletedAt" IS NULL GROUP BY 1 HAVING count(*) > 1;
+  ```
+
 ---
+
+### 3.5 Relatórios, ASA, SLA e satisfação (13/10, `feat/tickets`, 4 commits) — por testar
+
+- **SLA de voz**: limiar e meta por grupo; desistências curtas (5 s, configurável)
+  fora do SLA e do abandono; ASA (antes "TME"), ASA 90 %, maior espera, por hora,
+  mapa dia da semana × hora, SLA por dia contra a meta. Metas em
+  `services/serviceTargets.ts` (Tenant.serviceTargets, JSON — sem migração).
+- **Texto e tickets**: SLA da 1.ª resposta por canal; prazo dos tickets por
+  prioridade (automático, recalcula se não foi escrito à mão), filtro
+  "Atrasados", alertas `TEXT_SLA_BELOW`, `TICKET_DUE_SOON`, `TICKET_OVERDUE`.
+- **Satisfação**: comentário nas notas 1–2 (SMS e texto), lista de negativas
+  para a supervisão tratar, nota por agente, evolução diária, análise IA v3.
+- **Excel**: todos os separadores dos Relatórios exportam e espelham o ecrã
+  (Atendimento, Por agente, Por grupo, Recusas, Tipificação, Chamadas, Tempo
+  dos agentes, Satisfação, Consolidado, Resumo); comparação com o período anterior.
+- **Migrações novas (só aditivas)**: `20261013150000_sla_alert_types`,
+  `20261013160000_csat_comment_review`.
+- **Por fazer**: repor a BD de dev (ficou vazia a 13/10 — `migrate deploy` +
+  seeds), arrancar a API (a porta 3000 estava ocupada pelo projecto ARA) e testar
+  tudo no browser e no Excel. Página própria do agente não feita: o agente já vê
+  os seus números (âmbito SELF) no separador Atendimento.
+
+### 3.6 Fila de espera, callback e estados do agente (13–14/10, `feat/tickets`, commit 2966784) — por testar com chamadas reais
+
+- **Fila real** (`inboundCallRouter.service.ts`, secção "Fila"): sem agente livre
+  (em chamada, a tocar, pausa, pós-chamada, a tratar callback) quem liga espera
+  com música e a chamada toca sozinha no primeiro que ficar livre, por ordem de
+  chegada. `Tenant.queueConfig.maxWaitSecs` (0 = comportamento antigo).
+- **Callback** (`callQueue.service.ts`): oferta por TTS ao fim de N s, tecla 1 =
+  consentimento → `QueueCallback`. Despacho entrega ao primeiro agente livre
+  (CRM aberto) por SSE; o popup do CRM liga sozinho pelo webphone em 10 s.
+  "Não atendeu" volta à fila (5 min, máx. 3 tentativas).
+- **Sinal**: cabeçalho `X-Falai-Queue-Wait` no INVITE → bip próprio, notificação
+  do sistema e "Da fila · esperou m:ss" no webphone.
+- **Estados do agente**: relatório de tempo com conversa/pós-chamada/disponível
+  + linha do tempo por agente (`/tenant/reports/agent-states`). "PAUSE BREAK",
+  "REMUP" etc. são motivos de pausa configuráveis.
+- UI: Supervisão → separador Callbacks; Supervisão → Definições → Fila.
+- Migração `20261013170000_call_queue_callback` aplicada na BD dev (13/10); por aplicar em produção (com backup).
+- Limite: chamadas de saída do webphone não contam como "ocupado" nem como conversa.
+- **Sinal de chamada na saída** do webphone (tom 425 Hz gerado no browser, `lib/ringtone.ts`).
+- **TV da sala (`/wallboard`)**: ecrã inteiro escuro, 2 em 2 s — em espera/maior espera,
+  atendidas, perdidas, SLA vs meta, ASA/TMA, callbacks, grelha de agentes por estado,
+  fila ao vivo, ranking do dia (atendidas, TMA, CSAT), alertas. `?group=<id>` por sala.
+  Rota `GET /tenant/supervision/wallboard` — **nunca devolve números de clientes**, só o
+  nome do contacto. Entra com uma conta de supervisor da sala; fica fora do AppLayout
+  (sem SSE) para não contar como agente ligado. Botão "Modo TV" na Supervisão.
+- **Demo local**: `npx tsx --env-file=.env scripts/seed-atendimento.ts` (tenant Demo
+  Company; contas `sala@`, `ana@`, `bruno@`, `carla@`, `delcio@`, `edna@demo.com`,
+  password `Demo1234!`) + `DEMO_LIVE=1` no `.env` (só dev: `services/demoLive.ts` mostra
+  as chamadas `demo-*` como ao vivo). Reiniciar a API **antes** do seed (o arranque fecha sessões abertas).
 
 ## 4. O QUE FALTA FAZER
 

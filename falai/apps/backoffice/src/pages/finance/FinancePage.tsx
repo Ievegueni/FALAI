@@ -4,12 +4,12 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { financeApi } from '@/lib/api';
 import { Card, StatCard, PageSpinner, Tabs, Button, Input, Modal } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
-import { formatAOA, formatDateShort } from '@/lib/utils';
+import { formatAOA, formatDateShort, parseKz } from '@/lib/utils';
 import { TrendingUp, DollarSign, Percent, Phone, Wallet, Plus, Pencil } from 'lucide-react';
 
 /** Converte Kz (o que o utilizador digita) para cêntimos (o que a API guarda). */
 function kzToCents(v: string): number {
-  const n = Number(v.replace(',', '.'));
+  const n = parseKz(v);
   return Number.isFinite(n) ? Math.round(n * 100) : 0;
 }
 

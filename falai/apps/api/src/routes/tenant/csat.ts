@@ -1,8 +1,10 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma, type Prisma } from "@falai/db";
-import { csatConfigSchema, csatPrompt, csatSummary, csatThanksPrompt, tenantCsatConfig } from "../../services/csat.service.js";
+import { COMMENT_ASK, COMMENT_THANKS, LOW_SCORE, csatConfigSchema, csatPrompt, csatSummary, csatThanksPrompt, tenantCsatConfig } from "../../services/csat.service.js";
 import { isOpsManager, userScope } from "../../services/userScope.js";
+import { buildCsatReport, csatScopeWhere } from "../../services/csat.service.js";
+import { csatWorkbook } from "../../services/excelExport.service.js";
 
 /**
  * Satisfação (CSAT, fase 8) — ver services/csat.service.ts.
@@ -35,41 +37,48 @@ export const tenantCsatRoutes: FastifyPluginAsync = async (fastify) => {
     return cfg;
   });
 
-  // GET /tenant/reports/csat — média, % satisfeitos e distribuição, por canal, agente e grupo
-  fastify.get("/tenant/reports/csat", { preHandler, config: { feature: "reports" } }, async (request) => {
-    const { tenantId } = request.tenantUser!;
-    const q = rangeSchema.parse(request.query);
+  /** Período do pedido (dias locais AAAA-MM-DD); por omissão os últimos 30 dias. */
+  const range = (q: z.infer<typeof rangeSchema>) => {
     const to = q.to ? new Date(`${q.to}T23:59:59.999`) : new Date();
     const from = q.from ? new Date(`${q.from}T00:00:00`) : new Date(to.getTime() - 29 * 86_400_000);
     from.setHours(0, 0, 0, 0);
-    const scope = await userScope(request.tenantUser!);
-    const where: Prisma.CsatResponseWhereInput = {
-      tenantId,
-      createdAt: { gte: from, lte: to },
-      ...(scope.kind === "SELF" && { agentId: scope.userId }),
-      ...(scope.kind === "TEAM" && { OR: [{ agentId: { in: scope.userIds } }, { groupId: { in: scope.groupIds } }] }),
-    };
-    const rows = await prisma.csatResponse.findMany({ where, select: { channel: true, score: true, agentId: true, groupId: true } });
-    const answered = rows.filter((r): r is typeof r & { score: number } => r.score !== null);
-    const [users, groups] = await Promise.all([
-      prisma.tenantUser.findMany({ where: { tenantId, id: { in: [...new Set(answered.map((r) => r.agentId).filter((x): x is string => !!x))] } }, select: { id: true, name: true } }),
-      prisma.extensionGroup.findMany({ where: { tenantId }, select: { id: true, name: true } }),
+    return { from, to };
+  };
+
+  // GET /tenant/reports/csat — média, % satisfeitos, distribuição, por canal/agente/grupo/dia e as negativas
+  fastify.get("/tenant/reports/csat", { preHandler, config: { feature: "reports" } }, async (request) => {
+    const { from, to } = range(rangeSchema.parse(request.query));
+    return buildCsatReport(request.tenantUser!.tenantId, await userScope(request.tenantUser!), from, to);
+  });
+
+  // GET /tenant/reports/csat.xlsx — o mesmo, em Excel
+  fastify.get("/tenant/reports/csat.xlsx", { preHandler, config: { feature: "reports" } }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    const { from, to } = range(rangeSchema.parse(request.query));
+    const [report, tenant] = await Promise.all([
+      buildCsatReport(tenantId, await userScope(request.tenantUser!), from, to),
+      prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
     ]);
-    const by = (key: (r: (typeof answered)[number]) => string | null, names: Map<string, string>) =>
-      [...new Set(answered.map(key))].map((k) => ({
-        key: k,
-        name: k ? (names.get(k) ?? k) : null,
-        ...csatSummary(answered.filter((r) => key(r) === k).map((r) => r.score)),
-      })).sort((a, b) => b.responses - a.responses);
-    return {
-      from: from.toISOString(),
-      to: to.toISOString(),
-      overall: csatSummary(answered.map((r) => r.score)),
-      asked: rows.length,
-      byChannel: by((r) => r.channel, new Map()),
-      byAgent: by((r) => r.agentId, new Map(users.map((u) => [u.id, u.name]))),
-      byGroup: by((r) => r.groupId, new Map(groups.map((g) => [g.id, g.name]))),
-    };
+    return reply
+      .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .header("Content-Disposition", `attachment; filename="satisfacao_${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}.xlsx"`)
+      .send(await csatWorkbook(report, tenant.name));
+  });
+
+  // PUT /tenant/csat/:id/review — marcar uma avaliação negativa como tratada (ou reabrir), com nota
+  fastify.put<{ Params: { id: string } }>("/tenant/csat/:id/review", { preHandler }, async (request, reply) => {
+    const { tenantId, role, sub } = request.tenantUser!;
+    if (!isOpsManager(role) && role !== "SUPERVISOR") return reply.status(403).send({ error: "Só a supervisão trata avaliações" });
+    const body = z.object({ reviewed: z.boolean(), note: z.string().trim().max(2000).nullable().optional() }).parse(request.body);
+    const scope = await userScope(request.tenantUser!);
+    const r = await prisma.csatResponse.findFirst({ where: { id: request.params.id, tenantId, ...csatScopeWhere(scope) }, select: { id: true } });
+    if (!r) return reply.status(404).send({ error: "Avaliação não encontrada" });
+    const data = body.reviewed
+      ? { reviewedAt: new Date(), reviewedById: sub, reviewNote: body.note ?? null }
+      : { reviewedAt: null, reviewedById: null, reviewNote: null };
+    await prisma.csatResponse.update({ where: { id: r.id }, data });
+    await fastify.audit({ actorType: "TENANT_USER", actorId: sub, tenantId, action: body.reviewed ? "tenant.csat.reviewed" : "tenant.csat.reopened", targetType: "CsatResponse", targetId: r.id, after: data, ip: request.ip });
+    return { ok: true };
   });
 };
 
@@ -112,8 +121,31 @@ export const publicCsatRoutes: FastifyPluginAsync = async (fastify) => {
       const r = await prisma.csatResponse.findUnique({ where: { token: request.params.token }, select: { id: true, tenantId: true } });
       if (!r) return reply.status(404).send(page("<p>Link inválido.</p>"));
       // Só a primeira resposta conta.
-      await prisma.csatResponse.updateMany({ where: { id: r.id, score: null }, data: { score, answeredAt: new Date() } });
-      return page(`<p>${esc((await tenantCsatConfig(r.tenantId)).thanks)}</p>`);
+      const { count } = await prisma.csatResponse.updateMany({ where: { id: r.id, score: null }, data: { score, answeredAt: new Date() } });
+      const thanks = `<p>${esc((await tenantCsatConfig(r.tenantId)).thanks)}</p>`;
+      // Nota baixa: pede o comentário na mesma página.
+      if (!count || score > LOW_SCORE) return page(thanks);
+      return page(
+        `${thanks}<p>${esc(COMMENT_ASK)}</p><form method="post" action="/public/csat/${esc(request.params.token)}/comment" style="flex-direction:column">` +
+          `<textarea name="comment" rows="4" maxlength="2000" required style="width:100%;font:inherit;padding:.5rem;border-radius:.5rem;border:1px solid #ccc"></textarea>` +
+          `<button type="submit" style="width:auto;padding:0 1.5rem;font-size:1rem">Enviar</button></form>`
+      );
+    }
+  );
+
+  fastify.post<{ Params: { token: string } }>(
+    "/public/csat/:token/comment",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const comment = String((request.body as { comment?: unknown } | null)?.comment ?? "").trim().slice(0, 2000);
+      reply.type("text/html; charset=utf-8");
+      if (!comment) return reply.status(400).send(page("<p>Escreva o comentário.</p>"));
+      // Só numa avaliação baixa e uma vez.
+      const { count } = await prisma.csatResponse.updateMany({
+        where: { token: request.params.token, score: { lte: LOW_SCORE }, comment: null },
+        data: { comment },
+      });
+      return page(`<p>${count ? esc(COMMENT_THANKS) : "Link inválido ou comentário já enviado."}</p>`);
     }
   );
 };

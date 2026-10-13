@@ -19,16 +19,25 @@ export default fp(async (fastify) => {
           return reply.status(401).send({ error: "Not a tenant session" });
         }
 
-        const user = request.user as TenantJwtPayload;
+        const claims = request.user as TenantJwtPayload;
 
-        const tenant = await prisma.tenant.findUnique({
-          where: { id: user.tenantId },
-          select: { status: true, deletedAt: true },
+        // O JWT dura 8h: revalida o utilizador e o papel contra a BD em cada
+        // pedido — apagado deixa de entrar já, despromovido passa a ter o papel
+        // novo. Substitui a leitura do tenant que já se fazia (mesma 1 query).
+        const dbUser = await prisma.tenantUser.findUnique({
+          where: { id: claims.sub },
+          select: { tenantId: true, role: true, tenant: { select: { status: true, deletedAt: true } } },
         });
+        if (!dbUser || dbUser.tenantId !== claims.tenantId) {
+          return reply.status(401).send({ error: "Sessão inválida — utilizador já não existe" });
+        }
 
-        if (!tenant || tenant.deletedAt || tenant.status === "SUSPENDED" || tenant.status === "CLOSED") {
+        const { tenant } = dbUser;
+        if (tenant.deletedAt || tenant.status === "SUSPENDED" || tenant.status === "CLOSED") {
           return reply.status(403).send({ error: "Conta de tenant inactiva ou suspensa" });
         }
+
+        const user: TenantJwtPayload = { ...claims, role: dbUser.role };
 
         // VIEWER é só consulta, em todas as rotas — não depende de cada rota se
         // lembrar de verificar. Excepção: a própria sessão (2FA, password).

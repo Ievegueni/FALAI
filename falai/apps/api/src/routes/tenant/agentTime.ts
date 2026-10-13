@@ -1,7 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "@falai/db";
-import { buildAgentTimeReport } from "../../services/agentTime.service.js";
+import { buildAgentStates, buildAgentTimeReport } from "../../services/agentTime.service.js";
+import { agentTimeWorkbook } from "../../services/excelExport.service.js";
 import { isOpsManager, userScope } from "../../services/userScope.js";
 import type { TenantJwtPayload } from "../../plugins/auth.js";
 
@@ -100,5 +101,37 @@ export const tenantAgentTimeRoutes: FastifyPluginAsync = async (fastify) => {
     const from = q.from ? new Date(`${q.from}T00:00:00`) : new Date(to.getTime() - 6 * 86_400_000);
     from.setHours(0, 0, 0, 0);
     return buildAgentTimeReport(request.tenantUser!.tenantId, await userScope(request.tenantUser!), from, to);
+  });
+
+  // GET /tenant/reports/agent-states?userId — linha do tempo dos estados de um agente
+  fastify.get("/tenant/reports/agent-states", { preHandler, config: { feature: "reports" } }, async (request, reply) => {
+    const q = rangeSchema.extend({ userId: z.string().min(1) }).parse(request.query);
+    const scope = await userScope(request.tenantUser!);
+    if (scope.kind !== "ALL" && !scope.userIds.includes(q.userId) && scope.userId !== q.userId) {
+      return reply.status(403).send({ error: "Este agente não está no seu âmbito" });
+    }
+    const to = q.to ? new Date(`${q.to}T23:59:59.999`) : new Date();
+    const from = q.from ? new Date(`${q.from}T00:00:00`) : new Date(to.getTime() - 6 * 86_400_000);
+    from.setHours(0, 0, 0, 0);
+    const res = await buildAgentStates(request.tenantUser!.tenantId, q.userId, from, to);
+    if (!res) return reply.status(404).send({ error: "Utilizador não encontrado" });
+    return res;
+  });
+
+  // GET /tenant/reports/agent-time.xlsx — o mesmo, em Excel
+  fastify.get("/tenant/reports/agent-time.xlsx", { preHandler, config: { feature: "reports" } }, async (request, reply) => {
+    const q = rangeSchema.parse(request.query);
+    const to = q.to ? new Date(`${q.to}T23:59:59.999`) : new Date();
+    const from = q.from ? new Date(`${q.from}T00:00:00`) : new Date(to.getTime() - 6 * 86_400_000);
+    from.setHours(0, 0, 0, 0);
+    const { tenantId } = request.tenantUser!;
+    const [report, tenant] = await Promise.all([
+      buildAgentTimeReport(tenantId, await userScope(request.tenantUser!), from, to),
+      prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
+    ]);
+    return reply
+      .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .header("Content-Disposition", `attachment; filename="tempo_agentes_${q.from ?? ""}_${q.to ?? ""}.xlsx"`)
+      .send(await agentTimeWorkbook(report, tenant.name));
   });
 };

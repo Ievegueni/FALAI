@@ -118,10 +118,11 @@ export const proxypayWebhookRoutes: FastifyPluginAsync = async (fastify) => {
       });
     });
 
-    // Resume any campaigns that were paused due to low balance
+    // Retoma só as campanhas que o dispatcher pausou por falta de saldo —
+    // as pausadas à mão (ou por outra causa) ficam como estão.
     await prisma.campaign.updateMany({
-      where: { tenantId: tenantId!, status: "PAUSED" },
-      data: { status: "RUNNING" },
+      where: { tenantId: tenantId!, status: "PAUSED", pausedReason: "LOW_BALANCE" },
+      data: { status: "RUNNING", pausedReason: null },
     });
 
     await fastify.redis.del(`proxypay:ref:${payment.id}`);

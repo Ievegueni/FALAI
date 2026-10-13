@@ -1,5 +1,6 @@
 import { prisma, type Prisma, type TicketEventType, type TicketPriority, type TicketStatus } from "@falai/db";
 import { enqueueNotePush, enqueueTicketPush } from "./helpdesk/sync.js";
+import { tenantTargets, type ServiceTargets } from "./serviceTargets.js";
 
 /**
  * Tickets (centro de atendimento, fase 1) — ver docs/PLANO-CENTRO-ATENDIMENTO.md.
@@ -16,6 +17,46 @@ import { enqueueNotePush, enqueueTicketPush } from "./helpdesk/sync.js";
 
 export const TICKET_STATUSES = ["OPEN", "PENDING", "ON_HOLD", "RESOLVED", "CLOSED"] as const;
 export const TICKET_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
+
+// ─── SLA (prazo por prioridade) ──────────────────────────────────────────────
+// ponytail: horas corridas (24/7); horário de funcionamento e feriados ficam
+// para quando um cliente o pedir.
+
+type TicketHours = ServiceTargets["ticketHours"];
+
+/** Prazo automático de um ticket desta prioridade, ou null sem política. Pura. */
+export function autoDueAt(createdAt: Date, priority: TicketPriority, hours: TicketHours): Date | null {
+  const h = hours[priority];
+  return h === null ? null : new Date(createdAt.getTime() + h * 3600_000);
+}
+
+export type TicketSlaStatus = "MET" | "BREACHED" | "AT_RISK" | "ON_TRACK";
+
+/**
+ * Estado do prazo: resolvido a tempo (MET) ou fora (BREACHED); em aberto,
+ * já passou (BREACHED), falta menos de warnMins (AT_RISK) ou ON_TRACK. Sem
+ * prazo = null. Pura.
+ */
+export function ticketSlaStatus(t: { dueAt: Date | null; resolvedAt: Date | null }, now = new Date(), warnMins = 60): TicketSlaStatus | null {
+  if (!t.dueAt) return null;
+  if (t.resolvedAt) return t.resolvedAt <= t.dueAt ? "MET" : "BREACHED";
+  if (now > t.dueAt) return "BREACHED";
+  return t.dueAt.getTime() - now.getTime() <= warnMins * 60_000 ? "AT_RISK" : "ON_TRACK";
+}
+
+/**
+ * Mudou a prioridade e o prazo era o automático da prioridade antiga: passa
+ * para o da nova. Um prazo escrito à mão fica como está. Pura.
+ */
+export function reprioritizedDueAt(
+  before: { createdAt: Date; priority: TicketPriority; dueAt: Date | null },
+  patch: TicketPatch,
+  hours: TicketHours
+): Date | null | undefined {
+  if (!patch.priority || patch.priority === before.priority || patch.dueAt !== undefined) return undefined;
+  const wasAuto = before.dueAt === null ? hours[before.priority] === null : autoDueAt(before.createdAt, before.priority, hours)?.getTime() === before.dueAt.getTime();
+  return wasAuto ? autoDueAt(before.createdAt, patch.priority, hours) : undefined;
+}
 
 export class TicketError extends Error {
   constructor(public status: number, message: string) {
@@ -163,6 +204,9 @@ export async function createTicket(tenantId: string, authorId: string | null, in
     contactId ??= conv.contactId;
   }
   await validateRefs(tenantId, { ...input, contactId });
+  // Sem prazo indicado: o da política da prioridade (metas do cliente), se houver.
+  const now = new Date();
+  const dueAt = input.dueAt ?? autoDueAt(now, input.priority ?? "MEDIUM", (await tenantTargets(tenantId)).ticketHours);
 
   return prisma.$transaction(async (tx) => {
     const { ticketSeq } = await tx.tenant.update({ where: { id: tenantId }, data: { ticketSeq: { increment: 1 } }, select: { ticketSeq: true } });
@@ -179,7 +223,8 @@ export async function createTicket(tenantId: string, authorId: string | null, in
         groupId: input.groupId ?? null,
         categoryId: input.categoryId ?? null,
         subcategoryId: input.subcategoryId ?? null,
-        dueAt: input.dueAt ?? null,
+        dueAt,
+        createdAt: now,
         source: input.source ?? (input.callId ? "CALL" : "MANUAL"),
         createdById: authorId,
         events: { create: { type: "CREATED", authorId } },
@@ -221,6 +266,9 @@ export async function updateTicket(tenantId: string, id: string, authorId: strin
     ...(patch.categoryId !== undefined && { categoryId: patch.categoryId }),
     ...(patch.subcategoryId !== undefined && { subcategoryId: patch.subcategoryId, categoryId }),
   });
+
+  const due = reprioritizedDueAt(before, patch, (await tenantTargets(tenantId)).ticketHours);
+  if (due !== undefined) patch = { ...patch, dueAt: due };
 
   const { data, events, reopened } = planTicketUpdate(before, patch);
   if (events.length === 0 && Object.keys(data).length === 0) return { ticket: before, changed: false, reopened };

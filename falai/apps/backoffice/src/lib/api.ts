@@ -228,7 +228,7 @@ export const tenantsApi = {
       `/admin/tenants/${id}/sms`,
     ),
 
-  saveSmsConfig: (id: string, data: { apiKey?: string; senderId?: string; priceSegmentCents?: number }) =>
+  saveSmsConfig: (id: string, data: { apiKey?: string; senderId?: string; priceSegmentCents?: number | null }) =>
     put<{ ok: boolean }>(`/admin/tenants/${id}/sms`, data),
 
   // Chaves de API — no produto API_BYOM é aqui que se provisiona o acesso do cliente

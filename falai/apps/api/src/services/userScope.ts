@@ -161,3 +161,11 @@ export async function requireConfigAdmin(request: Req, reply: Rep) {
   }
   return undefined;
 }
+
+/** Depois de verifyTenant: só OWNER/ADMIN/MANAGER (acções que gastam saldo, ex.: enviar SMS). */
+export async function requireOpsManager(request: Req, reply: Rep) {
+  if (!request.tenantUser || !isOpsManager(request.tenantUser.role)) {
+    return reply.status(403).send({ error: "Apenas administradores ou gestores" });
+  }
+  return undefined;
+}

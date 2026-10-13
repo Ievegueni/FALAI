@@ -14,6 +14,8 @@ import { CallerPanel } from '@/components/calls/CallerPanel';
 import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { clsx } from '@/lib/utils';
+import { useToast } from '@/contexts/ToastContext';
+import { isConfigAdmin } from '@/lib/roles';
 
 const DIAL_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
 
@@ -116,6 +118,7 @@ export function WebphonePage() {
     callState,
     remoteIdentity,
     incomingLegId,
+    incomingQueueWaitSecs,
     error,
     selectExtension,
     call,
@@ -133,6 +136,7 @@ export function WebphonePage() {
   const [muted, setMuted] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const qc = useQueryClient();
+  const { error: toastError } = useToast();
   // Pausa (melhoria 4): em pausa a extensão não recebe chamadas de entrada.
   const { data: pause } = useQuery({
     queryKey: ['agent-pause', extensionId],
@@ -144,6 +148,7 @@ export function WebphonePage() {
   const togglePause = useMutation({
     mutationFn: (reasonId?: string) => supervisionApi.setPause(extensionId!, !pause?.paused, reasonId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['agent-pause', extensionId] }),
+    onError: (e: Error) => toastError(e.message),
   });
   const [typingLegId, setTypingLegId] = useState<string | null>(null);
   // Chamada de entrada atendida aqui: quando acabar, abre a tipificação.
@@ -154,11 +159,16 @@ export function WebphonePage() {
     queryFn: telephonyApi.listExtensions,
   });
 
-  // Abre na linha do utilizador (Equipa); sem linha associada, na primeira.
+  // Liga-se à extensão do utilizador. Só OWNER/ADMIN podem escolher outra
+  // (a API recusa as credenciais de extensões alheias aos restantes).
+  const canPickAny = isConfigAdmin(user?.role);
+  const ownExtensionId = user?.extensionId ?? null;
   useEffect(() => {
-    const preferred = extensions?.find((e) => e.id === user?.extensionId) ?? extensions?.[0];
-    if (!extensionId && preferred) selectExtension(preferred.id);
-  }, [extensions, extensionId, selectExtension, user?.extensionId]);
+    if (!extensionId && ownExtensionId && extensions?.some((e) => e.id === ownExtensionId)) {
+      void selectExtension(ownExtensionId);
+    }
+  }, [extensions, extensionId, ownExtensionId, selectExtension]);
+  const visibleExtensions = canPickAny ? extensions ?? [] : (extensions ?? []).filter((e) => e.id === ownExtensionId);
 
   const inCall = callState === 'in-call' || callState === 'calling' || callState === 'ringing';
   const incoming = callState === 'incoming';
@@ -192,17 +202,18 @@ export function WebphonePage() {
       <div className="w-full max-w-md space-y-6">
         <Card>
           <h2 className="text-sm font-semibold text-gray-900 mb-4">{t('webphone.selectExtension')}</h2>
-          {(extensions?.length ?? 0) === 0 ? (
+          {visibleExtensions.length === 0 ? (
             <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
-              {t('webphone.noLine')}
+              {t(canPickAny ? 'webphone.noLine' : 'webphone.noOwnExtension')}
             </div>
           ) : (
             <Select
               value={extensionId ?? ''}
               onChange={(e) => selectExtension(e.target.value)}
-              disabled={inCall || incoming}
+              disabled={inCall || incoming || !canPickAny}
             >
-              {(extensions ?? []).map((ext) => (
+              {!extensionId && <option value="" disabled>—</option>}
+              {visibleExtensions.map((ext) => (
                 <option key={ext.id} value={ext.id}>
                   {ext.number}{ext.displayName && ext.displayName !== ext.number ? ` — ${ext.displayName}` : ''}
                 </option>
@@ -258,6 +269,11 @@ export function WebphonePage() {
             <div className="flex flex-col items-center gap-4 py-4">
               <p className="text-sm text-gray-600">{t('webphone.incomingCall')}</p>
               <p className="text-lg font-semibold text-gray-900">{remoteIdentity}</p>
+              {incomingQueueWaitSecs !== null && (
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
+                  {t('webphone.fromQueue', { wait: `${Math.floor(incomingQueueWaitSecs / 60)}:${String(incomingQueueWaitSecs % 60).padStart(2, '0')}` })}
+                </span>
+              )}
               <div className="flex gap-3">
                 <Button variant="danger" icon={<PhoneOff className="h-4 w-4" />} onClick={() => setRejecting(true)}>
                   {t('webphone.reject')}

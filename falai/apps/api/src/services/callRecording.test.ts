@@ -56,13 +56,23 @@ vi.mock("./settings.service.js", () => ({
 
 const resolveInboundForTenant = vi.fn();
 const resolveInboundGlobal = vi.fn();
+// A fila tem o seu próprio teste (inboundQueue.test.ts); aqui fica desligada,
+// como antes: sem ninguém livre, "sem serviço".
+vi.mock("./callQueue.service.js", () => ({
+  tenantQueueConfig: vi.fn(async () => ({ maxWaitSecs: 0, callback: false, callbackAfterSecs: 60, offer: "", thanks: "" })),
+  callbackBusyExtensionIds: vi.fn(async () => new Set()),
+  dispatchCallbacks: vi.fn(async () => {}),
+  requestCallback: vi.fn(async () => ({ id: "cb1" })),
+  queueOfferPrompt: (t: string) => `queue_cb_${t}`,
+  queueThanksPrompt: (t: string) => `queue_cb_${t}_thanks`,
+}));
 vi.mock("./callRouting.service.js", () => ({ resolveInboundForTenant, resolveInboundGlobal }));
 // O SMS de chamada não atendida tem os seus próprios testes; aqui só interessa
 // que não arraste o gateway nem a configuração real para dentro destes.
 vi.mock("./missedCallSms.service.js", () => ({ notifyMissedCall: vi.fn(async () => {}) }));
 
 
-const { registerInboundCallRouter } = await import("./inboundCallRouter.service.js");
+const { registerInboundCallRouter, resetInboundRouterState } = await import("./inboundCallRouter.service.js");
 const { recordingSettings, DEFAULT_RECORDING_FORMAT, DEFAULT_ANNOUNCE_PROMPT } =
   await import("./callRecording.service.js");
 
@@ -101,6 +111,7 @@ const START: CallEvent = {
 };
 
 beforeEach(() => {
+  resetInboundRouterState();
   vi.clearAllMocks();
   tenant = { recordCalls: true, recordingAnnounce: false };
   settings = {

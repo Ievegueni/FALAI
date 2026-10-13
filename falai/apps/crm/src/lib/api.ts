@@ -145,6 +145,8 @@ export const authApi = {
     const r = await post<{ ok: boolean }>('/tenant/auth/2fa/confirm', { code });
     return { success: r.ok };
   },
+
+  twoFaDisable: (code: string) => post<{ ok: boolean }>('/tenant/auth/2fa/disable', { code }),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
@@ -492,8 +494,30 @@ export interface SupervisionLogEntry {
   modes: { mode: SupervisionMode; at: string }[];
 }
 
+export interface Wallboard {
+  now: string;
+  group: string | null;
+  kpis: {
+    waiting: number;
+    longestWaitSince: string | null;
+    answered: number;
+    missed: number;
+    abandoned: number;
+    slaPct: number | null;
+    slaTargetPct: number | null;
+    maxWaitTargetSecs: number | null;
+    tmeSecs: number | null;
+    tmaSecs: number | null;
+    pendingCallbacks: number;
+  };
+  queue: { since: string; group: string | null; customer: string | null }[];
+  agents: { extensionId: string; name: string; state: AgentLiveState; since: string | null; pauseReason: string | null; customer: string | null; group: string | null }[];
+  ranking: { extensionId: string; name: string; answered: number; tmaSecs: number | null; csatAvg: number | null }[];
+}
+
 export const supervisionApi = {
   live: () => get<SupervisionLive>('/tenant/supervision/live'),
+  wallboard: (groupId?: string) => get<Wallboard>(`/tenant/supervision/wallboard${qs({ groupId })}`),
   start: (callId: string, mode: SupervisionMode) =>
     post<{ sessionId: string; status: string; mode: SupervisionMode }>(`/tenant/supervision/calls/${callId}`, { mode }),
   setMode: (sessionId: string, mode: SupervisionMode) =>
@@ -1097,7 +1121,7 @@ export const reportsApi = {
     get<AttendanceCallsPage>(
       `/tenant/reports/attendance/calls${qs({ ...f, pageSize: f.pageSize ?? 25 })}`,
     ),
-  downloadAttendance: async (f: AttendanceFilters & { view: 'agents' | 'groups' | 'reasons' | 'typing'; format: 'csv' | 'xlsx' }) => {
+  downloadAttendance: async (f: AttendanceFilters & { view: AttendanceExportView; format: 'csv' | 'xlsx' }) => {
     const token = localStorage.getItem('falai_token');
     const res = await fetch(`${API_BASE}/tenant/reports/attendance/export${qs({ ...f })}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1136,16 +1160,27 @@ export interface AttendanceFilters {
   categoryId?: string;
 }
 
-export interface AttendanceCallKpis {
+export type AttendanceExportView = 'attendance' | 'agents' | 'groups' | 'reasons' | 'typing' | 'calls';
+
+/** Linha de um período (dia ou hora). */
+export interface AttendancePeriodKpis {
   total: number;
   answered: number;
   missed: number;
   abandoned: number;
+  shortAbandoned: number;
   answerRate: number | null;
-  tmaSecs: number | null;
-  tmeSecs: number | null;
-  /** % das terminadas atendidas abaixo do limiar (AttendanceReport.slaSecs). */
   slaPct: number | null;
+  tmaSecs: number | null;
+  /** ASA — espera média até atender. */
+  tmeSecs: number | null;
+  asaP90Secs: number | null;
+  maxWaitSecs: number | null;
+}
+
+export interface AttendanceCallKpis extends AttendancePeriodKpis {
+  abandonRate: number | null;
+  slaMet: number;
 }
 
 export interface AttendanceAgentKpis {
@@ -1172,6 +1207,8 @@ export interface AttendanceReport {
   to: string;
   limited: boolean;
   slaSecs: number;
+  slaTargetPct: number | null;
+  shortAbandonSecs: number;
   tenant: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
   selection: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
   reasons: { reason: string; count: number; pct: number }[];
@@ -1180,14 +1217,26 @@ export interface AttendanceReport {
     extensionId: string | null;
     number: string;
     name: string | null;
+    csatAvg: number | null;
+    csatResponses: number;
     vsTenant: { answerRate: number | null; rejectRate: number | null; tmaSecs: number | null; responseSecs: number | null };
   })[];
   byGroup: (AttendanceCallKpis & {
     groupId: string | null;
     name: string;
     rejected: number;
-    vsTenant: { answerRate: number | null; tmaSecs: number | null; tmeSecs: number | null };
+    slaSecs: number;
+    slaTargetPct: number | null;
+    vsTenant: { answerRate: number | null; tmaSecs: number | null; tmeSecs: number | null; slaPct: number | null };
   })[];
+  byDay: (AttendancePeriodKpis & { date: string; responseSecs: number | null; wrapUpSecs: number | null })[];
+  byHour: (AttendancePeriodKpis & { hour: number })[];
+  /** [0] = segunda … [6] = domingo; 24 horas cada. */
+  byWeekdayHour: number[][];
+  /** Satisfação da selecção (todos os canais). */
+  csat: CsatSummary;
+  /** A mesma selecção no período anterior (para as variações). */
+  previous?: { from: string; to: string; calls: AttendanceCallKpis; agents: AttendanceAgentKpis; csat: CsatSummary };
 }
 
 export type CallLegOutcome = 'ANSWERED' | 'NO_ANSWER' | 'REJECTED' | 'BUSY' | 'CANCELLED' | 'FAILED';
@@ -1315,6 +1364,15 @@ export const cannedApi = {
   remove: (id: string) => del<void>(`/tenant/canned-responses/${id}`),
 };
 
+/** Descarrega um ficheiro gerado pela API (Excel, PDF) com o nome que ela dá. */
+export async function downloadFile(path: string, fallbackName: string): Promise<{ blob: Blob; filename: string }> {
+  const token = localStorage.getItem('falai_token');
+  const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, 'Erro ao exportar');
+  const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+  return { blob: await res.blob(), filename: match?.[1] ?? fallbackName };
+}
+
 // ─── Tickets ────────────────────────────────────────────────────────────────
 
 export type TicketInput = {
@@ -1332,7 +1390,7 @@ export type TicketInput = {
 
 export const ticketsApi = {
   meta: () => get<import('@/types').TicketMeta>('/tenant/tickets/meta'),
-  list: (params: { status?: string; priority?: string; supportLevel?: number; assignee?: string; groupId?: string; contactId?: string; q?: string; page?: number }) =>
+  list: (params: { status?: string; priority?: string; supportLevel?: number; assignee?: string; groupId?: string; contactId?: string; q?: string; due?: string; page?: number }) =>
     get<Paginated<import('@/types').Ticket>>(`/tenant/tickets${qs(params)}`),
   get: (id: string) => get<import('@/types').TicketDetail>(`/tenant/tickets/${id}`),
   create: (data: TicketInput & { subject: string; callId?: string; conversationId?: string }) =>
@@ -1346,7 +1404,7 @@ export const ticketsApi = {
 
 // ─── Metas e alertas operacionais (fase 4) ──────────────────────────────────
 
-export type AlertType = 'LONG_WAIT' | 'LONG_HANDLE' | 'NO_AGENTS' | 'SLA_BELOW' | 'ABANDON_ABOVE' | 'TMA_ABOVE';
+export type AlertType = 'LONG_WAIT' | 'LONG_HANDLE' | 'NO_AGENTS' | 'SLA_BELOW' | 'ABANDON_ABOVE' | 'TMA_ABOVE' | 'TEXT_SLA_BELOW' | 'TICKET_DUE_SOON' | 'TICKET_OVERDUE';
 
 export interface OpsAlert {
   id: string;
@@ -1361,14 +1419,26 @@ export interface OpsAlert {
   endedAt: string | null;
 }
 
+export interface GroupTargets {
+  slaThresholdSecs: number | null;
+  slaTargetPct: number | null;
+}
+
 export interface ServiceTargets {
   slaThresholdSecs: number;
   slaTargetPct: number | null;
+  shortAbandonSecs: number;
+  groups: Record<string, GroupTargets>;
   maxWaitSecs: number | null;
   maxHandleSecs: number | null;
   minAvailableAgents: number | null;
   maxAbandonPct: number | null;
   maxTmaSecs: number | null;
+  textSlaSecs: number;
+  textSlaTargetPct: number | null;
+  ticketHours: Record<import('@/types').TicketPriority, number | null>;
+  ticketSlaTargetPct: number | null;
+  ticketWarnMins: number;
 }
 
 export const alertsApi = {
@@ -1403,10 +1473,18 @@ export interface AgentTimeRow {
   adherencePct: number | null;
   pausedSecs: number;
   pauses: { reason: string | null; secs: number; count: number }[];
+  talkSecs: number;
+  wrapUpSecs: number;
+  availableSecs: number;
 }
+export type AgentState = 'LOGGED_IN' | 'LOGGED_OUT' | 'PAUSED' | 'IN_CALL' | 'WRAP_UP';
+export interface AgentStateSegment { state: AgentState; from: string; to: string | null; detail: string | null }
 
 export const agentTimeApi = {
   report: (q: { from?: string; to?: string }) => get<{ from: string; to: string; data: AgentTimeRow[] }>(`/tenant/reports/agent-time${qs(q)}`),
+  states: (q: { userId: string; from?: string; to?: string }) =>
+    get<{ user: { id: string; name: string }; from: string; to: string; data: AgentStateSegment[] }>(`/tenant/reports/agent-states${qs(q)}`),
+  download: (q: { from?: string; to?: string }) => downloadFile(`/tenant/reports/agent-time.xlsx${qs(q)}`, 'tempo_agentes.xlsx'),
 };
 
 // ─── Qualidade (fase 7) ─────────────────────────────────────────────────────
@@ -1458,12 +1536,64 @@ export interface CsatReport {
   byChannel: (CsatSummary & { key: string })[];
   byAgent: (CsatSummary & { key: string | null; name: string | null })[];
   byGroup: (CsatSummary & { key: string | null; name: string | null })[];
+  byDay: (CsatSummary & { key: string })[];
+  negatives: CsatNegative[];
+}
+export interface CsatNegative {
+  id: string;
+  at: string;
+  score: number;
+  channel: 'VOICE' | 'TEXT' | 'SMS';
+  agent: string | null;
+  group: string | null;
+  contact: { id: string; name: string | null; phone: string | null } | null;
+  comment: string | null;
+  callId: string | null;
+  conversationId: string | null;
+  ticketId: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
 }
 
 export const csatApi = {
   settings: () => get<CsatConfig>('/tenant/csat/settings'),
   save: (data: CsatConfig) => put<CsatConfig>('/tenant/csat/settings', data),
   report: (q: { from?: string; to?: string }) => get<CsatReport>(`/tenant/reports/csat${qs(q)}`),
+  download: (q: { from?: string; to?: string }) => downloadFile(`/tenant/reports/csat.xlsx${qs(q)}`, 'satisfacao.xlsx'),
+  review: (id: string, data: { reviewed: boolean; note?: string | null }) => put<{ ok: true }>(`/tenant/csat/${id}/review`, data),
+};
+
+// ─── Fila de espera + callback ──────────────────────────────────────────────
+
+export interface QueueConfig {
+  maxWaitSecs: number;
+  callback: boolean;
+  callbackAfterSecs: number;
+  offer: string;
+  thanks: string;
+}
+export type QueueCallbackStatus = 'PENDING' | 'ASSIGNED' | 'DONE' | 'FAILED' | 'CANCELLED';
+export interface QueueCallback {
+  id: string;
+  number: string;
+  status: QueueCallbackStatus;
+  attempts: number;
+  createdAt: string;
+  assignedAt: string | null;
+  closedAt?: string | null;
+  groupId: string | null;
+  assignedTo: { name: string } | null;
+  contact?: { id: string; name: string | null } | null;
+}
+
+export const queueApi = {
+  settings: () => get<QueueConfig>('/tenant/queue/settings'),
+  save: (data: QueueConfig) => put<QueueConfig>('/tenant/queue/settings', data),
+  callbacks: (q: { status?: QueueCallbackStatus }) => get<{ data: QueueCallback[] }>(`/tenant/queue-callbacks${qs(q)}`),
+  mine: () => get<{ data: QueueCallback | null }>('/tenant/queue-callbacks/mine'),
+  result: (id: string, result: 'DONE' | 'NO_ANSWER' | 'CANCELLED') =>
+    post<{ id: string; status: QueueCallbackStatus; attempts: number }>(`/tenant/queue-callbacks/${id}/result`, { result }),
 };
 
 // ─── Consolidado / painel de direcção (fase 9) ──────────────────────────────
@@ -1479,18 +1609,28 @@ export interface ConsolidatedReport {
     conversations: number;
     conversationsResolved: number;
     textFirstResponseSecs: number | null;
+    textSla: { met: number; missed: number; pending: number; slaPct: number | null };
     ticketsCreated: number;
     ticketsResolved: number;
     ticketResolutionSecs: number | null;
+    ticketSla: TicketSlaSummary;
+    ticketsOverdueNow: number;
     csat: CsatSummary;
     qa: { evaluations: number; avgScore: number | null };
   };
-  byChannel: { channel: string; contacts: number }[];
-  series: { period: string; callsIn: number; callsAnswered: number; callsMissed: number; callsOut: number; conversations: number; conversationsResolved: number; ticketsCreated: number; ticketsResolved: number }[];
+  targets: { slaSecs: number; slaTargetPct: number | null; textSlaSecs: number; textSlaTargetPct: number | null; ticketSlaTargetPct: number | null };
+  byChannel: { channel: string; contacts: number; firstResponseSecs: number | null; slaPct: number | null }[];
+  ticketsByPriority: (TicketSlaSummary & { priority: import('@/types').TicketPriority; targetHours: number | null })[];
+  series: {
+    period: string; callsIn: number; callsAnswered: number; callsMissed: number; callsOut: number; conversations: number; conversationsResolved: number;
+    ticketsCreated: number; ticketsResolved: number; callsSlaPct: number | null; textSlaPct: number | null; ticketsBreached: number; ticketSlaPct: number | null;
+  }[];
 }
+export interface TicketSlaSummary { created: number; withDue: number; met: number; breached: number; open: number; slaPct: number | null; resolutionSecs: number | null }
 
 export const consolidatedApi = {
   get: (q: { from?: string; to?: string; bucket: ConsolidatedBucket }) => get<ConsolidatedReport>(`/tenant/reports/consolidated${qs(q)}`),
+  download: (q: { from?: string; to?: string; bucket: ConsolidatedBucket }) => downloadFile(`/tenant/reports/consolidated.xlsx${qs(q)}`, 'consolidado.xlsx'),
 };
 
 // ─── Base de conhecimento (fase 10) ─────────────────────────────────────────

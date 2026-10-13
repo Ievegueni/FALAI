@@ -59,6 +59,7 @@ import { tenantCallTypingRoutes } from "./routes/tenant/callTyping.js";
 import { tenantCallersRoutes } from "./routes/tenant/callers.js";
 import { tenantSupervisionRoutes } from "./routes/tenant/supervision.js";
 import { SupervisionManager } from "./services/supervision.service.js";
+import { resumeRunningSmsCampaigns } from "./services/smsCampaign.service.js";
 import { tenantEventsRoutes } from "./routes/tenant/events.js";
 import { tenantReportsRoutes } from "./routes/tenant/reports.js";
 import { tenantSmsRoutes } from "./routes/tenant/sms.js";
@@ -89,6 +90,7 @@ import { v1TicketsRoutes } from "./routes/v1/tickets.js";
 import { v1ReportsRoutes } from "./routes/v1/reports.js";
 import { tenantAlertsRoutes } from "./routes/tenant/alerts.js";
 import { tenantAgentTimeRoutes } from "./routes/tenant/agentTime.js";
+import { tenantCallQueueRoutes } from "./routes/tenant/callQueue.js";
 import { tenantQualityRoutes } from "./routes/tenant/quality.js";
 import { tenantCsatRoutes, publicCsatRoutes } from "./routes/tenant/csat.js";
 import { tenantKnowledgeRoutes } from "./routes/tenant/knowledge.js";
@@ -391,6 +393,7 @@ async function buildApp() {
   await gated(fastify, "webphone", tenantSupervisionRoutes);
   await gated(fastify, "webphone", tenantAlertsRoutes);
   await gated(fastify, "webphone", tenantAgentTimeRoutes);
+  await gated(fastify, "webphone", tenantCallQueueRoutes);
   await gated(fastify, "quality", tenantQualityRoutes);
   await gated(fastify, "reports", tenantCsatRoutes);
   await gated(fastify, "knowledge", tenantKnowledgeRoutes);
@@ -503,6 +506,10 @@ async function main() {
       .sweepOrphans()
       .then((n) => n > 0 && app.log.info({ n }, "supervision.orphans_swept"))
       .catch((err) => app.log.warn({ err }, "supervision.sweep_failed"));
+    // Campanhas de SMS que o reinício deixou a meio (mensagens QUEUED presas).
+    void resumeRunningSmsCampaigns(app)
+      .then((n) => n > 0 && app.log.info({ n }, "sms_campaign.resumed"))
+      .catch((err) => app.log.warn({ err }, "sms_campaign.resume_failed"));
     void syncAllPbx()
       .then(() => app.log.info("pbx_sync.boot_complete"))
       .catch((err) => app.log.warn({ err }, "pbx_sync.boot_failed"));

@@ -133,6 +133,7 @@ enum TxType {
 
 enum SmsStatus {
   QUEUED // aceite pela plataforma, a caminho do gateway
+  SENDING // reclamada para envio e saldo já reservado; órfã no arranque = interrompida
   SENT // entregue ao gateway (Futurix)
   DELIVERED // confirmado entregue ao destinatário (delivery report)
   FAILED // falhou no envio ou entrega
@@ -280,6 +281,10 @@ model Tenant {
   kbArticles           KbArticle[]
   helpdesk             HelpdeskConnection?
   chatRooms            ChatRoom[]
+  // Fila de espera das chamadas de entrada: { maxWaitSecs, callback,
+  // callbackAfterSecs, offer, thanks } — ver services/callQueue.service.ts.
+  queueConfig          Json?
+  queueCallbacks       QueueCallback[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -579,6 +584,7 @@ model TenantUser {
   csatResponses   CsatResponse[]
   chatMemberships ChatMember[]
   chatMessages    ChatMessage[]
+  callbacks       QueueCallback[]
 }
 
 // Perfil de acesso ao CRM, gerido pela Comunica no backoffice. A matriz diz,
@@ -780,6 +786,10 @@ model Call {
   billedSecs        Int        @default(0)
   costCents         Int        @default(0)
   providerCostCents Int        @default(0)
+  // Saldo reservado no arranque e ainda não acertado (settleCall) nem devolvido
+  // (releaseCallReservation). Posto a 0 de forma atómica por quem o consome —
+  // é isso que impede reembolso duplo. >0 numa chamada terminada = órfã.
+  reservedCents     Int        @default(0)
   transcript        Json?
   summary           String?    @db.Text
   // Caminho do ficheiro de gravação RELATIVO à pasta de gravações (ver
@@ -982,6 +992,9 @@ model Campaign {
   ttsVoiceId        String?
   name              String
   status            CampaignStatus    @default(DRAFT)
+  // Porque está PAUSED: "LOW_BALANCE" (auto, o carregamento de saldo retoma);
+  // null = pausa manual ou outra causa (nunca retomada automaticamente).
+  pausedReason      String?
   scheduleJson      Json?
   retryPolicy       Json?
   throttlePerMinute Int               @default(2)
@@ -1444,6 +1457,9 @@ enum AlertType {
   SLA_BELOW // SLA do dia abaixo da meta
   ABANDON_ABOVE // taxa de abandono do dia acima do limite
   TMA_ABOVE // TMA do dia acima do limite
+  TEXT_SLA_BELOW // SLA dos canais de texto (1.ª resposta) do dia abaixo da meta
+  TICKET_DUE_SOON // ticket em aberto a menos de ticketWarnMins do prazo (ref = ticket)
+  TICKET_OVERDUE // ticket em aberto com o prazo ultrapassado (ref = ticket)
 }
 
 model Alert {
@@ -1610,8 +1626,15 @@ model CsatResponse {
   token          String?     @unique // link do SMS
   createdAt      DateTime    @default(now())
   answeredAt     DateTime?
+  // Notas baixas (1–2): o cliente pode deixar um comentário (SMS e texto) e
+  // a supervisão marca-a como tratada, com uma nota do que se fez.
+  comment        String?     @db.Text
+  reviewedAt     DateTime?
+  reviewedById   String?
+  reviewNote     String?     @db.Text
 
   @@index([tenantId, createdAt])
+  @@index([tenantId, score, reviewedAt])
   @@index([conversationId])
   @@index([callId])
 }
@@ -1706,4 +1729,34 @@ model ChatMessage {
   createdAt DateTime   @default(now())
 
   @@index([roomId, createdAt])
+}
+
+// ============ CALLBACK DA FILA ============
+// Quem esperava na fila carregou 1 a pedir que lhe liguem (esse é o
+// consentimento). O despacho entrega-o ao primeiro agente livre do grupo, que
+// liga pelo webphone. Ver services/callQueue.service.ts.
+enum QueueCallbackStatus {
+  PENDING // à espera de um agente livre
+  ASSIGNED // entregue a um agente, a ligar
+  DONE // falou com o cliente
+  FAILED // esgotou as tentativas
+  CANCELLED
+}
+
+model QueueCallback {
+  id           String              @id @default(cuid())
+  tenantId     String
+  tenant       Tenant              @relation(fields: [tenantId], references: [id])
+  callId       String? // chamada de entrada em que o pediu
+  groupId      String? // grupo pelo qual esperava (null = qualquer agente)
+  number       String
+  status       QueueCallbackStatus @default(PENDING)
+  attempts     Int                 @default(0)
+  assignedToId String?
+  assignedTo   TenantUser?         @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedAt   DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime            @default(now())
+
+  @@index([tenantId, status, createdAt])
 }

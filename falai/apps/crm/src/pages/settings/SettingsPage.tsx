@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Save, RotateCcw, Copy } from 'lucide-react';
-import { settingsApi } from '@/lib/api';
+import { authApi, settingsApi } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { isConfigAdmin } from '@/lib/roles';
+import { parseKz } from '@/lib/utils';
 
 export function SettingsPage() {
   const { t } = useTranslation();
@@ -63,7 +64,7 @@ export function SettingsPage() {
         fiscalNif: form.fiscalNif || null,
         fiscalAddress: form.fiscalAddress || null,
         lowBalanceAlertCents: form.lowBalanceAlertCents
-          ? Math.round(parseFloat(form.lowBalanceAlertCents) * 100)
+          ? Math.round(parseKz(form.lowBalanceAlertCents) * 100)
           : null,
         lowBalanceAlertEmail: form.lowBalanceAlertEmail || null,
         lowBalanceAlertPhone: form.lowBalanceAlertPhone || null,
@@ -219,6 +220,85 @@ export function SettingsPage() {
           </Button>
         )}
       </fieldset>
+
+      {/* 2FA é do próprio utilizador: fora do fieldset, qualquer papel a activa. */}
+      <div className="px-6 pb-6 max-w-2xl">
+        <TwoFactorCard />
+      </div>
     </>
+  );
+}
+
+function TwoFactorCard() {
+  const { t } = useTranslation();
+  const { user, refreshMe } = useAuth();
+  const { success, error } = useToast();
+  const [setup, setSetup] = useState<{ secret: string; qrUri: string } | null>(null);
+  const [code, setCode] = useState('');
+
+  const start = useMutation({
+    mutationFn: authApi.twoFaSetup,
+    onSuccess: (r) => { setSetup(r); setCode(''); },
+    onError: (e: Error) => error(e.message),
+  });
+  const confirm = useMutation({
+    mutationFn: () => authApi.twoFaConfirm(code.trim()),
+    onSuccess: () => { success(t('settings.twoFaDone')); setSetup(null); void refreshMe(); },
+    onError: (e: Error) => error(e.message),
+  });
+  const disable = useMutation({
+    mutationFn: () => authApi.twoFaDisable(code.trim()),
+    onSuccess: () => { success(t('settings.twoFaOff')); setCode(''); void refreshMe(); },
+    onError: (e: Error) => error(e.message),
+  });
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-gray-900 mb-2">{t('settings.twoFaTitle')}</h2>
+      {user?.twoFaEnabled ? (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">{t('settings.twoFaEnabled')}</p>
+          <div className="flex items-end gap-2">
+            <Input
+              label={t('settings.twoFaCode')}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              className="w-32"
+            />
+            <Button variant="danger" loading={disable.isPending} disabled={code.length !== 6} onClick={() => disable.mutate()}>
+              {t('settings.twoFaDisable')}
+            </Button>
+          </div>
+        </div>
+      ) : !setup ? (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">{t('settings.twoFaDisabled')}</p>
+          <Button loading={start.isPending} onClick={() => start.mutate()}>{t('settings.twoFaStart')}</Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">{t('settings.twoFaScan')}</p>
+          <img src={setup.qrUri} alt="QR 2FA" className="h-44 w-44" />
+          <p className="text-xs text-gray-500">
+            {t('settings.twoFaSecret')} <code className="rounded bg-gray-100 px-1 py-0.5 break-all">{setup.secret}</code>
+          </p>
+          <div className="flex items-end gap-2">
+            <Input
+              label={t('settings.twoFaCode')}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              className="w-32"
+            />
+            <Button loading={confirm.isPending} disabled={code.length !== 6} onClick={() => confirm.mutate()}>
+              {t('settings.twoFaConfirm')}
+            </Button>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }

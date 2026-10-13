@@ -42,6 +42,7 @@ export {
   BlockedAddressError,
   ALLOWED_ENDPOINT_PORTS,
 } from "./llm/urlGuard.js";
+export { assertSafeWebhookUrl, assertPublicWebhookUrl, postWebhook } from "./http/safeWebhook.js";
 
 export type { TtsProvider } from "./tts/TtsProvider.js";
 export { ElevenLabsAdapter, silentWav } from "./tts/ElevenLabsAdapter.js";

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Phone, PhoneCall, PhoneIncoming, Plus, Search, FileSpreadsheet, X } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { callsApi, telephonyApi, callTypingApi, type CallsFilters } from '@/lib/api';
+import { categoryPathLabel } from '@/lib/categories';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
 import { Input, Select } from '@/components/ui/Input';
@@ -186,7 +187,6 @@ export function CallsPage() {
   const { data: extensions } = useQuery({ queryKey: ['telephony', 'extensions'], queryFn: telephonyApi.listExtensions, retry: false });
   const { data: groups } = useQuery({ queryKey: ['telephony', 'groups'], queryFn: telephonyApi.listGroups, retry: false });
   const { data: categories } = useQuery({ queryKey: ['call-categories'], queryFn: callTypingApi.categories, retry: false });
-  const catName = (id: string | null) => categories?.find((c) => c.id === id)?.name;
 
   const exportXlsx = async () => {
     setExporting(true);
@@ -276,7 +276,7 @@ export function CallsPage() {
               <select value={categoryId} onChange={(e) => set(setCategoryId)(e.target.value)} className={selectCls}>
                 <option value="">{t('calls.allTypings')}</option>
                 {categories!.map((c) => (
-                  <option key={c.id} value={c.id}>{c.parentId ? `${catName(c.parentId)} › ${c.name}` : c.name}</option>
+                  <option key={c.id} value={c.id}>{categoryPathLabel(categories ?? [], c.id)}</option>
                 ))}
               </select>
             )}
