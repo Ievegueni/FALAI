@@ -1193,6 +1193,8 @@ export interface AttendanceReport {
     extensionId: string | null;
     number: string;
     name: string | null;
+    csatAvg: number | null;
+    csatResponses: number;
     vsTenant: { answerRate: number | null; rejectRate: number | null; tmaSecs: number | null; responseSecs: number | null };
   })[];
   byGroup: (AttendanceCallKpis & {
@@ -1207,6 +1209,8 @@ export interface AttendanceReport {
   byHour: (AttendancePeriodKpis & { hour: number })[];
   /** [0] = segunda … [6] = domingo; 24 horas cada. */
   byWeekdayHour: number[][];
+  /** Satisfação da selecção (todos os canais). */
+  csat: CsatSummary;
 }
 
 export type CallLegOutcome = 'ANSWERED' | 'NO_ANSWER' | 'REJECTED' | 'BUSY' | 'CANCELLED' | 'FAILED';
@@ -1499,12 +1503,32 @@ export interface CsatReport {
   byChannel: (CsatSummary & { key: string })[];
   byAgent: (CsatSummary & { key: string | null; name: string | null })[];
   byGroup: (CsatSummary & { key: string | null; name: string | null })[];
+  byDay: (CsatSummary & { key: string })[];
+  negatives: CsatNegative[];
+}
+export interface CsatNegative {
+  id: string;
+  at: string;
+  score: number;
+  channel: 'VOICE' | 'TEXT' | 'SMS';
+  agent: string | null;
+  group: string | null;
+  contact: { id: string; name: string | null; phone: string | null } | null;
+  comment: string | null;
+  callId: string | null;
+  conversationId: string | null;
+  ticketId: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
 }
 
 export const csatApi = {
   settings: () => get<CsatConfig>('/tenant/csat/settings'),
   save: (data: CsatConfig) => put<CsatConfig>('/tenant/csat/settings', data),
   report: (q: { from?: string; to?: string }) => get<CsatReport>(`/tenant/reports/csat${qs(q)}`),
+  download: (q: { from?: string; to?: string }) => downloadFile(`/tenant/reports/csat.xlsx${qs(q)}`, 'satisfacao.xlsx'),
+  review: (id: string, data: { reviewed: boolean; note?: string | null }) => put<{ ok: true }>(`/tenant/csat/${id}/review`, data),
 };
 
 // ─── Consolidado / painel de direcção (fase 9) ──────────────────────────────

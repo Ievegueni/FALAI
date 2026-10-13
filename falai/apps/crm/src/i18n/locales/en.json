@@ -1000,7 +1000,9 @@
         "Sat",
         "Sun"
       ],
-      "volume": "Calls"
+      "volume": "Calls",
+      "csat": "Satisfaction",
+      "csatResponses": "{{count}} responses"
     },
     "exportPdf": "Export PDF",
     "vsPrevious": "vs. previous period",
@@ -1090,6 +1092,33 @@
         "responses": "Responses",
         "avg": "Average",
         "satisfied": "% satisfied"
+      },
+      "trend": "Satisfaction by day",
+      "trendHint": "Average score (1 to 5) per day",
+      "satisfiedShort": "satisfied",
+      "negatives": "Negative ratings to handle: {{count}}",
+      "negativesHint": "Scores 1 and 2. Customers can leave a comment (SMS and text); mark as handled once you have acted.",
+      "showOpen": "To handle",
+      "showAll": "All",
+      "noNegatives": "No negative ratings in this period.",
+      "neg": {
+        "when": "Date",
+        "score": "Score",
+        "channel": "Channel",
+        "agent": "Agent",
+        "customer": "Customer",
+        "comment": "Comment",
+        "status": "Status",
+        "call": "call",
+        "conversation": "conversation",
+        "ticket": "ticket",
+        "noComment": "no comment",
+        "open": "To handle",
+        "reviewedBy": "Handled by {{name}}",
+        "review": "Mark as handled",
+        "reopen": "Reopen",
+        "reviewTitle": "Handle negative rating",
+        "reviewNote": "What was done (optional)"
       }
     },
     "cons": {

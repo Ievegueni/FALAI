@@ -14,6 +14,7 @@ import type { AttendanceReport, ExportView, AttendanceCallRow, PeriodKpis } from
 import type { ReportRow } from "./reports.service.js";
 import type { Consolidated } from "./consolidated.service.js";
 import type { AgentTimeRow } from "./agentTime.service.js";
+import type { CsatReport } from "./csat.service.js";
 import { addCharts, colRef, type ChartSpec } from "./excelCharts.service.js";
 
 /** Gráfico à direita da tabela da folha (as linhas de dados começam na 5). */
@@ -174,10 +175,12 @@ function agentsSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, cha
     { header: "Δ % atendimento vs média (p.p.)", width: 16, fmt: "dec" },
     { header: "Δ TMA vs média (s)", width: 12, fmt: "int" },
     { header: "Δ resposta vs média (s)", width: 13, fmt: "int" },
+    { header: "Satisfação (média 1–5)", width: 12, fmt: "dec" },
+    { header: "Respostas de satisfação", width: 12, fmt: "int" },
   ], a.byAgent.map((r) => [
     r.number, r.name && r.name !== r.number ? r.name : null, r.offered, r.answered, r.rejected, r.noAnswer, r.busy,
     r.answerRate, r.rejectRate, r.tmaSecs, r.tmeSecs, r.responseSecs, r.typed, r.untypedRate, r.wrapUpSecs,
-    r.vsTenant.answerRate, r.vsTenant.tmaSecs, r.vsTenant.responseSecs,
+    r.vsTenant.answerRate, r.vsTenant.tmaSecs, r.vsTenant.responseSecs, r.csatAvg, r.csatResponses,
   ]));
 }
 
@@ -347,6 +350,9 @@ function indicatorsSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string,
       { label: "% não tipificadas", fmt: "pct" as Fmt, values: both(g.untypedRate, ta.untypedRate) },
       { label: "Pós-chamada (do fim até tipificar)", fmt: "secs" as Fmt, values: both(g.wrapUpSecs, ta.wrapUpSecs) },
     ]),
+    { label: "Satisfação — média (1 a 5, todos os canais)", fmt: "dec", values: filtered ? [a.csat.avg, null] : [a.csat.avg] },
+    { label: "Satisfação — % satisfeitos (4 e 5)", fmt: "pct", values: filtered ? [a.csat.satisfiedPct, null] : [a.csat.satisfiedPct] },
+    { label: "Satisfação — respostas", fmt: "int", values: filtered ? [a.csat.responses, null] : [a.csat.responses] },
   ];
   addKpiSheet(wb, "Indicadores", "Indicadores de atendimento", sub, filtered ? ["Selecção", "Média da conta"] : ["Valor"], rows);
 }
@@ -788,4 +794,72 @@ export async function agentTimeWorkbook(r: { from: string; to: string; data: Age
     { header: "Pausas", width: 8, fmt: "int" },
   ], r.data.flatMap((a) => a.pauses.map((p) => [a.name, p.reason ?? "Sem motivo", p.secs, p.count])));
   return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+// ── Satisfação (CSAT) ────────────────────────────────────────────────────────
+
+const CSAT_CHANNEL: Record<string, string> = { VOICE: "Voz (tecla no fim da chamada)", TEXT: "Texto (mesmo canal)", SMS: "SMS (link)" };
+const CSAT_COLS: Column[] = [
+  { header: "Respostas", width: 10, fmt: "int" },
+  { header: "Média (1 a 5)", width: 11, fmt: "dec" },
+  { header: "% satisfeitos (4 e 5)", width: 14, fmt: "pct" },
+  { header: "Nota 1", width: 7, fmt: "int" },
+  { header: "Nota 2", width: 7, fmt: "int" },
+  { header: "Nota 3", width: 7, fmt: "int" },
+  { header: "Nota 4", width: 7, fmt: "int" },
+  { header: "Nota 5", width: 7, fmt: "int" },
+];
+type CsatRow = CsatReport["byChannel"][number];
+const csatCells = (r: CsatRow): Cell[] => [r.responses, r.avg, r.satisfiedPct, r.distribution[1], r.distribution[2], r.distribution[3], r.distribution[4], r.distribution[5]];
+
+/** Separador Satisfação: resumo, por canal, agente, grupo, dia e as avaliações negativas. */
+export async function csatWorkbook(r: CsatReport, tenant: string): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Falaí";
+  const sub = subtitleOf(tenant, r.from, r.to);
+  const charts: ChartSpec[] = [];
+  const o = r.overall;
+  addKpiSheet(wb, "Resumo", "Satisfação dos clientes", `${sub} · escala de 1 a 5`, ["Valor"], [
+    { label: "Média (1 a 5)", fmt: "dec", values: [o.avg] },
+    { label: "% satisfeitos (notas 4 e 5)", fmt: "pct", values: [o.satisfiedPct] },
+    { label: "Respostas", fmt: "int", values: [o.responses] },
+    { label: "Inquéritos enviados", fmt: "int", values: [r.asked] },
+    { label: "Taxa de resposta", fmt: "pct", values: [r.asked ? Math.round((o.responses / r.asked) * 1000) / 10 : null] },
+    ...([5, 4, 3, 2, 1] as const).map((n) => ({ label: `Nota ${n}`, fmt: "int" as Fmt, values: [o.distribution[n]] })),
+    { label: "Avaliações negativas (1 e 2)", fmt: "int", values: [r.negatives.length] },
+    { label: "Negativas por tratar", fmt: "int", values: [r.negatives.filter((x) => !x.reviewedAt).length] },
+  ]);
+  const table = (name: string, title: string, first: string, rows: CsatRow[], label: (x: CsatRow) => string) =>
+    addTableSheet(wb, name, title, sub, [{ header: first, width: 26, fmt: "text" }, ...CSAT_COLS], rows.map((x) => [label(x), ...csatCells(x)]));
+  table("Por canal", "Satisfação por canal", "Canal", r.byChannel, (x) => CSAT_CHANNEL[x.key ?? ""] ?? x.key ?? "—");
+  table("Por agente", "Satisfação por agente", "Agente", r.byAgent, (x) => x.name ?? "Sem agente");
+  table("Por grupo", "Satisfação por grupo", "Grupo", r.byGroup, (x) => x.name ?? "Sem grupo");
+  const nd = r.byDay.length;
+  if (nd > 1) {
+    charts.push({
+      sheet: "Por dia", type: "line", title: "Média por dia", ...beside(CSAT_COLS.length + 1), numFmt: "0.0",
+      catRef: colRef("Por dia", 0, 5, lastRow(nd)), categories: r.byDay.map((d) => `${d.key!.slice(8, 10)}/${d.key!.slice(5, 7)}`), catDateFmt: "dd/mm",
+      catValues: r.byDay.map((d) => Math.round((Date.UTC(+d.key!.slice(0, 4), +d.key!.slice(5, 7) - 1, +d.key!.slice(8, 10)) - Date.UTC(1899, 11, 30)) / 86400000)),
+      series: [{ name: "Média", ref: colRef("Por dia", 2, 5, lastRow(nd)), values: r.byDay.map((d) => d.avg) }],
+    });
+  }
+  addTableSheet(wb, "Por dia", "Satisfação por dia", sub, [{ header: "Dia", width: 12, fmt: "date" }, ...CSAT_COLS], r.byDay.map((d) => [new Date(`${d.key}T12:00:00`), ...csatCells(d)]));
+  addTableSheet(wb, "Negativas", "Avaliações negativas (notas 1 e 2)", `${sub} · para a supervisão tratar`, [
+    { header: "Data", width: 17, fmt: "datetime" },
+    { header: "Nota", width: 6, fmt: "int" },
+    { header: "Canal", width: 10, fmt: "text" },
+    { header: "Agente", width: 20, fmt: "text" },
+    { header: "Grupo", width: 14, fmt: "text" },
+    { header: "Cliente", width: 22, fmt: "text" },
+    { header: "Telefone", width: 14, fmt: "text" },
+    { header: "Comentário do cliente", width: 50, fmt: "text" },
+    { header: "Estado", width: 11, fmt: "text" },
+    { header: "Tratada por", width: 18, fmt: "text" },
+    { header: "Tratada em", width: 17, fmt: "datetime" },
+    { header: "Nota da supervisão", width: 40, fmt: "text" },
+  ], r.negatives.map((x) => [
+    new Date(x.at), x.score, CSAT_CHANNEL[x.channel]?.split(" ")[0] ?? x.channel, x.agent, x.group, x.contact?.name ?? null, x.contact?.phone ?? null,
+    x.comment, x.reviewedAt ? "Tratada" : "Por tratar", x.reviewedBy, x.reviewedAt ? new Date(x.reviewedAt) : null, x.reviewNote,
+  ]));
+  return addCharts(Buffer.from(await wb.xlsx.writeBuffer()), wb.worksheets.map((w) => w.name), charts);
 }

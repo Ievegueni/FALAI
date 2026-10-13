@@ -1000,7 +1000,9 @@
         "Sáb",
         "Dom"
       ],
-      "volume": "Chamadas"
+      "volume": "Chamadas",
+      "csat": "Satisfação",
+      "csatResponses": "{{count}} respostas"
     },
     "exportPdf": "Exportar PDF",
     "vsPrevious": "vs. período anterior",
@@ -1090,6 +1092,33 @@
         "responses": "Respostas",
         "avg": "Média",
         "satisfied": "% satisfeitos"
+      },
+      "trend": "Satisfação por dia",
+      "trendHint": "Média das notas (1 a 5) de cada dia",
+      "satisfiedShort": "satisfeitos",
+      "negatives": "Avaliações negativas por tratar: {{count}}",
+      "negativesHint": "Notas 1 e 2. O cliente pode deixar um comentário (SMS e texto); marque como tratada depois de agir.",
+      "showOpen": "Por tratar",
+      "showAll": "Todas",
+      "noNegatives": "Sem avaliações negativas neste período.",
+      "neg": {
+        "when": "Data",
+        "score": "Nota",
+        "channel": "Canal",
+        "agent": "Agente",
+        "customer": "Cliente",
+        "comment": "Comentário",
+        "status": "Estado",
+        "call": "chamada",
+        "conversation": "conversa",
+        "ticket": "ticket",
+        "noComment": "sem comentário",
+        "open": "Por tratar",
+        "reviewedBy": "Tratada por {{name}}",
+        "review": "Marcar como tratada",
+        "reopen": "Reabrir",
+        "reviewTitle": "Tratar avaliação negativa",
+        "reviewNote": "O que se fez (opcional)"
       }
     },
     "cons": {

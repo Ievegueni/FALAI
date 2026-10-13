@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle, PhoneMissed, PhoneOff, Clock, Timer, Zap, PhoneIncoming, Target, Hourglass, LogOut } from 'lucide-react';
+import { CheckCircle, PhoneMissed, PhoneOff, Clock, Timer, Zap, PhoneIncoming, Target, Hourglass, LogOut, Smile } from 'lucide-react';
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { SERIES } from '@/components/reports/charts';
 import { reportsApi, type AttendanceFilters, type AttendanceReport, type CallLegOutcome } from '@/lib/api';
@@ -87,6 +87,9 @@ function Overview({ r, filtered }: { r: AttendanceReport; filtered: boolean }) {
         )}
         {!r.limited && (
           <StatCard label={t('reports.att.abandonRate')} value={pct(c.abandonRate)} sub={t('reports.att.abandonRateHint', { count: c.abandoned - c.shortAbandoned })} icon={<LogOut className="h-5 w-5" />} />
+        )}
+        {r.csat.responses > 0 && (
+          <StatCard label={t('reports.att.csat')} value={r.csat.avg ?? '—'} sub={t('reports.cons.csatHint', { pct: pct(r.csat.satisfiedPct), n: r.csat.responses })} icon={<Smile className="h-5 w-5" />} />
         )}
         {!r.limited && r.shortAbandonSecs > 0 && (
           <StatCard label={t('reports.att.shortAbandoned')} value={c.shortAbandoned} sub={t('reports.att.shortAbandonedHint', { secs: r.shortAbandonSecs })} icon={<PhoneMissed className="h-5 w-5" />} />
@@ -253,6 +256,7 @@ function AgentsTable({ r }: { r: AttendanceReport }) {
             <Th right>{t('reports.att.response')}</Th>
             <Th right>{t('reports.att.untypedRate')}</Th>
             <Th right>{t('reports.att.wrapUp')}</Th>
+            <Th right>{t('reports.att.csat')}</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-50">
@@ -271,6 +275,7 @@ function AgentsTable({ r }: { r: AttendanceReport }) {
               <Td right>{dur(a.responseSecs)} <Delta value={a.vsTenant.responseSecs} unit="s" lowerIsBetter /></Td>
               <Td right>{pct(a.untypedRate)}</Td>
               <Td right>{dur(a.wrapUpSecs)}</Td>
+              <Td right>{a.csatAvg === null ? '—' : <span title={t('reports.att.csatResponses', { count: a.csatResponses })}>{a.csatAvg} <span className="text-xs text-gray-400">({a.csatResponses})</span></span>}</Td>
             </tr>
           ))}
         </tbody>

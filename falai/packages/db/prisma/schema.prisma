@@ -1621,8 +1621,15 @@ model CsatResponse {
   token          String?     @unique // link do SMS
   createdAt      DateTime    @default(now())
   answeredAt     DateTime?
+  // Notas baixas (1–2): o cliente pode deixar um comentário (SMS e texto) e
+  // a supervisão marca-a como tratada, com uma nota do que se fez.
+  comment        String?     @db.Text
+  reviewedAt     DateTime?
+  reviewedById   String?
+  reviewNote     String?     @db.Text
 
   @@index([tenantId, createdAt])
+  @@index([tenantId, score, reviewedAt])
   @@index([conversationId])
   @@index([callId])
 }

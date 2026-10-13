@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { FileSpreadsheet, FileText, Sparkles } from 'lucide-react';
-import { reportsApi, telephonyApi, callTypingApi, consolidatedApi, agentTimeApi, ApiError, type AttendanceFilters, type AttendanceExportView, type ConsolidatedBucket } from '@/lib/api';
+import { reportsApi, telephonyApi, callTypingApi, consolidatedApi, agentTimeApi, csatApi, ApiError, type AttendanceFilters, type AttendanceExportView, type ConsolidatedBucket } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -143,6 +143,7 @@ export function ReportsPage() {
     try {
       if (tab === 'consolidated') saveBlob(await consolidatedApi.download({ from, to, bucket }));
       else if (tab === 'agentTime') saveBlob(await agentTimeApi.download({ from, to }));
+      else if (tab === 'csat') saveBlob(await csatApi.download({ from, to }));
     } catch {
       toast.error(t('reports.exportError'));
     } finally {
@@ -193,7 +194,7 @@ export function ReportsPage() {
                 </Button>
               </>
             )}
-            {(tab === 'consolidated' || tab === 'agentTime') && (
+            {(tab === 'consolidated' || tab === 'agentTime' || tab === 'csat') && (
               <Button size="sm" icon={<FileSpreadsheet className="h-4 w-4" />} onClick={() => void exportTab()} loading={downloading}>
                 {t('reports.exportExcel')}
               </Button>

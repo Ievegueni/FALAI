@@ -42,7 +42,12 @@ const report = (o: Partial<any> = {}) => ({
     { date: "2026-09-03", tmaSecs: 100, tmeSecs: 60, responseSecs: 8, wrapUpSecs: 30 },
   ],
   byAgent: [agent("e1", "1001", "Ana Costa", 80, 13.3), agent("e2", "1002", "Rui Lopes", 50, -16.7, 6), agent("e3", "1003", "Edna", 66, -0.7)],
-  byGroup: [{ groupId: "g1", name: "VENDAS", ...calls({ answerRate: 90 }), rejected: 2, vsTenant: { answerRate: 10, tmaSecs: 0, tmeSecs: 0 } }],
+  byGroup: [{ groupId: "g1", name: "VENDAS", ...calls({ answerRate: 90 }), rejected: 2, slaPct: 80, slaTargetPct: null, vsTenant: { answerRate: 10, tmaSecs: 0, tmeSecs: 0 } }],
+  byHour: [],
+  slaSecs: 21,
+  slaTargetPct: null,
+  shortAbandonSecs: 5,
+  csat: { responses: 0, avg: null, satisfiedPct: null, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } },
   ...o,
 });
 const previous = report({
@@ -92,7 +97,7 @@ describe("resumo enviado à IA", () => {
   });
 
   it("sinais detectados no backend", () => {
-    expect(input.signals.some((s) => s.startsWith("TME alto em 2026-09-03"))).toBe(true);
+    expect(input.signals.some((s) => s.startsWith("ASA alto em 2026-09-03"))).toBe(true);
     expect(input.signals.some((s) => s.includes("Recusas a subir"))).toBe(true);
     expect(input.signals.some((s) => s.includes('Motivo de recusa dominante: "Em pausa"'))).toBe(true);
     expect(input.signals.some((s) => s.includes("Tipificação a crescer"))).toBe(true);
@@ -214,5 +219,16 @@ describe("exportação", () => {
     expect(text[0]).toBe("Análise com IA");
     expect(text).toContain("Recomendações");
     expect(text).toContain("1. Reforçar o turno — Nos dias de pico.");
+  });
+});
+
+describe("sinais de SLA e satisfação", () => {
+  it("SLA abaixo da meta e satisfação a descer", () => {
+    const csat = (avg: number) => ({ responses: 20, avg, satisfiedPct: 70, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } });
+    const cur = report({ slaTargetPct: 90, selection: { calls: calls({ slaPct: 75 }), agents: agentK() }, csat: csat(3.6) });
+    const input = svc.prepareAnalysisInput(cur as never, report({ csat: csat(4.2) }) as never, filters, opts);
+    expect(input.signals).toContain("SLA abaixo da meta: 75% (meta 90%)");
+    expect(input.signals).toContain("Satisfação a descer: 3.6 (antes 4.2)");
+    expect(input.csat.current.avg).toBe(3.6);
   });
 });

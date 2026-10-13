@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { z } from "zod";
-import { prisma, type Inbox } from "@falai/db";
+import { prisma, type Inbox, type Prisma } from "@falai/db";
+import type { UserScope } from "./userScope.js";
 import { sendSms } from "./sms.service.js";
 import { isSmsReachable } from "./missedCallSms.service.js";
 
@@ -19,6 +20,12 @@ import { isSmsReachable } from "./missedCallSms.service.js";
 export const DEFAULT_QUESTION = "Numa escala de 1 a 5, em que 5 é muito satisfeito, como avalia o atendimento?";
 export const DEFAULT_THANKS = "Obrigado pela sua avaliação.";
 const TEXT_WINDOW_MS = 24 * 3600_000;
+/** Depois de uma nota baixa, a mensagem seguinte nesta janela é o comentário. */
+const COMMENT_WINDOW_MS = 30 * 60_000;
+export const LOW_SCORE = 2; // 1 e 2 = insatisfeito: pede-se comentário e vai para a lista da supervisão
+export const COMMENT_ASK = "Lamentamos. Se quiser, diga-nos numa mensagem o que correu mal.";
+export const COMMENT_THANKS = "Obrigado pelo comentário. Vamos analisar.";
+const MAX_COMMENT = 2000;
 export const CSAT_SMS_TRIGGER = "CSAT";
 
 export const csatConfigSchema = z.object({
@@ -69,6 +76,83 @@ export function csatSummary(scores: number[]): CsatSummary {
     distribution,
   };
 }
+
+// ─── Relatório ───────────────────────────────────────────────────────────────
+
+/** Âmbito de quem pede: agente só as suas; supervisor os seus agentes e grupos. */
+export function csatScopeWhere(scope: UserScope): Prisma.CsatResponseWhereInput {
+  if (scope.kind === "SELF") return { agentId: scope.userId };
+  if (scope.kind === "TEAM") return { OR: [{ agentId: { in: scope.userIds } }, { groupId: { in: scope.groupIds } }] };
+  return {};
+}
+
+const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** Uma linha por chave (canal, agente, grupo, dia), com o resumo das notas. Pura. */
+export function summarizeBy<R extends { score: number }>(rows: R[], key: (r: R) => string | null, names: Map<string, string> = new Map()) {
+  return [...new Set(rows.map(key))].map((k) => ({
+    key: k,
+    name: k ? (names.get(k) ?? k) : null,
+    ...csatSummary(rows.filter((r) => key(r) === k).map((r) => r.score)),
+  }));
+}
+
+// ponytail: no máximo isto de negativas no ecrã/Excel por período; paginar se um cliente passar disto.
+const MAX_NEGATIVES = 1000;
+
+export async function buildCsatReport(tenantId: string, scope: UserScope, from: Date, to: Date) {
+  const where: Prisma.CsatResponseWhereInput = { tenantId, createdAt: { gte: from, lte: to }, ...csatScopeWhere(scope) };
+  const [rows, groups] = await Promise.all([
+    prisma.csatResponse.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true, channel: true, score: true, agentId: true, groupId: true, createdAt: true, answeredAt: true,
+        comment: true, reviewedAt: true, reviewNote: true, reviewedById: true, callId: true, conversationId: true, ticketId: true,
+        contactId: true,
+      },
+    }),
+    prisma.extensionGroup.findMany({ where: { tenantId }, select: { id: true, name: true } }),
+  ]);
+  const answered = rows.filter((r): r is typeof r & { score: number } => r.score !== null);
+  const userIds = [...new Set(answered.flatMap((r) => [r.agentId, r.reviewedById]).filter((x): x is string => !!x))];
+  const users = new Map((await prisma.tenantUser.findMany({ where: { tenantId, id: { in: userIds } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+  const groupNames = new Map(groups.map((g) => [g.id, g.name]));
+  const negIds = [...new Set(answered.filter((r) => r.score <= LOW_SCORE && r.contactId).map((r) => r.contactId!))].slice(0, MAX_NEGATIVES);
+  const contacts = new Map((await prisma.contact.findMany({ where: { tenantId, id: { in: negIds } }, select: { id: true, name: true, phone: true } })).map((c) => [c.id, c]));
+  const byResponses = (a: { responses: number }, b: { responses: number }) => b.responses - a.responses;
+  return {
+    from: from.toISOString(),
+    to: to.toISOString(),
+    overall: csatSummary(answered.map((r) => r.score)),
+    asked: rows.length,
+    byChannel: summarizeBy(answered, (r) => r.channel).sort(byResponses),
+    byAgent: summarizeBy(answered, (r) => r.agentId, users).sort(byResponses),
+    byGroup: summarizeBy(answered, (r) => r.groupId, groupNames).sort(byResponses),
+    // Dia da resposta (hora local), do mais antigo para o mais recente.
+    byDay: summarizeBy(answered, (r) => localDay(r.answeredAt ?? r.createdAt)).sort((a, b) => (a.key ?? "").localeCompare(b.key ?? "")),
+    negatives: answered
+      .filter((r) => r.score <= LOW_SCORE)
+      .slice(0, MAX_NEGATIVES)
+      .map((r) => ({
+        id: r.id,
+        at: r.answeredAt ?? r.createdAt,
+        score: r.score,
+        channel: r.channel,
+        agent: r.agentId ? (users.get(r.agentId) ?? null) : null,
+        group: r.groupId ? (groupNames.get(r.groupId) ?? null) : null,
+        contact: r.contactId ? (contacts.get(r.contactId) ?? null) : null,
+        comment: r.comment,
+        callId: r.callId,
+        conversationId: r.conversationId,
+        ticketId: r.ticketId,
+        reviewedAt: r.reviewedAt,
+        reviewedBy: r.reviewedById ? (users.get(r.reviewedById) ?? null) : null,
+        reviewNote: r.reviewNote,
+      })),
+  };
+}
+export type CsatReport = Awaited<ReturnType<typeof buildCsatReport>>;
 
 // ─── Voz ─────────────────────────────────────────────────────────────────────
 
@@ -124,7 +208,6 @@ export async function askTextCsat(conversationId: string, deliverText: Deliver, 
  */
 export async function tryTextCsatAnswer(inbox: Inbox, externalRef: string, text: string): Promise<{ conv: ConvRef; thanks: string } | null> {
   const score = parseScore(text);
-  if (score === null) return null;
   // Só os inquéritos desta pessoa neste canal (as conversas dela neste inbox).
   const since = new Date(Date.now() - TEXT_WINDOW_MS);
   const convs = await prisma.conversation.findMany({
@@ -132,6 +215,7 @@ export async function tryTextCsatAnswer(inbox: Inbox, externalRef: string, text:
     select: { id: true, tenantId: true, inboxId: true, externalRef: true, subject: true, contactId: true },
   });
   if (!convs.length) return null;
+  if (score === null) return tryTextCsatComment(inbox.tenantId, convs, text);
   const pending = await prisma.csatResponse.findFirst({
     where: { tenantId: inbox.tenantId, channel: "TEXT", score: null, createdAt: { gte: since }, conversationId: { in: convs.map((c) => c.id) } },
     orderBy: { createdAt: "desc" },
@@ -140,7 +224,33 @@ export async function tryTextCsatAnswer(inbox: Inbox, externalRef: string, text:
   if (!pending) return null;
   const conv = convs.find((c) => c.id === pending.conversationId)!;
   const { count } = await prisma.csatResponse.updateMany({ where: { id: pending.id, score: null }, data: { score, answeredAt: new Date() } });
-  return count ? { conv, thanks: (await tenantCsatConfig(inbox.tenantId)).thanks } : null;
+  if (!count) return null;
+  const thanks = (await tenantCsatConfig(inbox.tenantId)).thanks;
+  return { conv, thanks: score <= LOW_SCORE ? `${thanks} ${COMMENT_ASK}` : thanks };
+}
+
+/**
+ * Mensagem que não é nota: se esta pessoa deu há pouco uma nota baixa sem
+ * comentário, é o comentário — fica na avaliação e não abre conversa nova.
+ */
+async function tryTextCsatComment(tenantId: string, convs: ConvRef[], text: string): Promise<{ conv: ConvRef; thanks: string } | null> {
+  const body = text.trim();
+  if (!body) return null;
+  const low = await prisma.csatResponse.findFirst({
+    where: {
+      tenantId,
+      channel: "TEXT",
+      score: { lte: LOW_SCORE },
+      comment: null,
+      answeredAt: { gte: new Date(Date.now() - COMMENT_WINDOW_MS) },
+      conversationId: { in: convs.map((c) => c.id) },
+    },
+    orderBy: { answeredAt: "desc" },
+    select: { id: true, conversationId: true },
+  });
+  if (!low) return null;
+  const { count } = await prisma.csatResponse.updateMany({ where: { id: low.id, comment: null }, data: { comment: body.slice(0, MAX_COMMENT) } });
+  return count ? { conv: convs.find((c) => c.id === low.conversationId)!, thanks: COMMENT_THANKS } : null;
 }
 
 // ─── SMS ─────────────────────────────────────────────────────────────────────

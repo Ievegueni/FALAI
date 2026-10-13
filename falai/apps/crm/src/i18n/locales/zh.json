@@ -1000,7 +1000,9 @@
         "周六",
         "周日"
       ],
-      "volume": "来电"
+      "volume": "来电",
+      "csat": "满意度",
+      "csatResponses": "{{count}} 条回复"
     },
     "exportPdf": "导出 PDF",
     "vsPrevious": "与上一时段相比",
@@ -1090,6 +1092,33 @@
         "responses": "回复",
         "avg": "平均",
         "satisfied": "满意率"
+      },
+      "trend": "每日满意度",
+      "trendHint": "每天的平均评分（1 至 5）",
+      "satisfiedShort": "满意",
+      "negatives": "待处理的差评：{{count}}",
+      "negativesHint": "1 分和 2 分。客户可留言（短信和文字）；处理后请标记为已处理。",
+      "showOpen": "待处理",
+      "showAll": "全部",
+      "noNegatives": "此期间没有差评。",
+      "neg": {
+        "when": "日期",
+        "score": "评分",
+        "channel": "渠道",
+        "agent": "坐席",
+        "customer": "客户",
+        "comment": "留言",
+        "status": "状态",
+        "call": "通话",
+        "conversation": "会话",
+        "ticket": "工单",
+        "noComment": "无留言",
+        "open": "待处理",
+        "reviewedBy": "由 {{name}} 处理",
+        "review": "标记为已处理",
+        "reopen": "重新打开",
+        "reviewTitle": "处理差评",
+        "reviewNote": "处理说明（可选）"
       }
     },
     "cons": {

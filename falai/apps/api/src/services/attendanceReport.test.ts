@@ -17,6 +17,7 @@ const {
   hourlyRows,
   weekdayHourGrid,
   percentile,
+  selectCsat,
 } = await import("./attendanceReport.service.js");
 type CallRow = import("./attendanceReport.service.js").CallRow;
 type LegRow = import("./attendanceReport.service.js").LegRow;
@@ -255,5 +256,20 @@ describe("por hora e mapa de horas", () => {
     expect(percentile([], 90)).toBeNull();
     expect(percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 90)).toBe(9);
     expect(percentile([7], 90)).toBe(7);
+  });
+});
+
+describe("satisfação nos relatórios de atendimento", () => {
+  const rows = [
+    { score: 5, extensionId: "e1", groupId: "g1", callId: "c1" },
+    { score: 1, extensionId: "e2", groupId: "g2", callId: "c2" },
+    { score: 4, extensionId: null, groupId: "g1", callId: null },
+  ];
+  it("filtra pelo agente, grupo, tipificação (chamadas) e âmbito", () => {
+    expect(selectCsat(rows, {}, new Set()).length).toBe(3);
+    expect(selectCsat(rows, { extensionId: "e1" }, new Set()).map((r) => r.score)).toEqual([5]);
+    expect(selectCsat(rows, { groupId: "g1" }, new Set()).map((r) => r.score)).toEqual([5, 4]);
+    expect(selectCsat(rows, { categoryId: "cat" }, new Set(["c2"])).map((r) => r.score)).toEqual([1]);
+    expect(selectCsat(rows, { scope: { extensionIds: ["e2"], groupIds: [] } }, new Set()).map((r) => r.score)).toEqual([1]);
   });
 });

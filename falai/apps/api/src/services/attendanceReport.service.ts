@@ -32,6 +32,7 @@
  */
 import { prisma, type CallLegOutcome } from "@falai/db";
 import { typingStatus, wrapUpSecs } from "./callTyping.service.js";
+import { csatSummary, type CsatSummary } from "./csat.service.js";
 import { DEFAULT_SLA_RULE, slaSecsFor, slaTargetFor, tenantTargets, slaRuleOf, type SlaRule, type ServiceTargets } from "./serviceTargets.js";
 
 export { DEFAULT_SLA_SECS } from "./serviceTargets.js";
@@ -356,6 +357,9 @@ export interface AgentRow extends AgentKpis {
   extensionId: string | null;
   number: string;
   name: string | null;
+  /** Satisfação do utilizador desta extensão (todos os canais), no período. */
+  csatAvg: number | null;
+  csatResponses: number;
   vsTenant: { answerRate: number | null; rejectRate: number | null; tmaSecs: number | null; responseSecs: number | null };
 }
 
@@ -393,6 +397,32 @@ export interface AttendanceReport {
   slaTargetPct: number | null;
   /** Desistências abaixo disto não contam para o SLA (0 = contam todas). */
   shortAbandonSecs: number;
+  /** Satisfação da selecção (agente/grupo/âmbito; todos os canais). */
+  csat: CsatSummary;
+}
+
+/** Nota de satisfação com o agente (extensão do utilizador que atendeu). */
+export interface CsatRow { score: number; extensionId: string | null; groupId: string | null; callId: string | null }
+
+/** Satisfação da selecção: as do agente, do grupo, das chamadas filtradas ou do âmbito. Pura. */
+export function selectCsat(rows: CsatRow[], f: Pick<AttendanceFilter, "extensionId" | "groupId" | "categoryId" | "scope">, callIds: Set<string>): CsatRow[] {
+  return rows.filter((r) => {
+    if (f.scope && !((r.extensionId !== null && f.scope.extensionIds.includes(r.extensionId)) || (r.groupId !== null && f.scope.groupIds.includes(r.groupId)))) return false;
+    if (f.extensionId && r.extensionId !== f.extensionId) return false;
+    if (f.groupId && r.groupId !== f.groupId) return false;
+    // Tipificação só existe nas chamadas: fica a satisfação dessas chamadas.
+    if (f.categoryId && !(r.callId && callIds.has(r.callId))) return false;
+    return true;
+  });
+}
+
+async function loadCsat(tenantId: string, from: Date, to: Date): Promise<CsatRow[]> {
+  const [rows, users] = await Promise.all([
+    prisma.csatResponse.findMany({ where: { tenantId, createdAt: { gte: from, lte: to }, score: { not: null } }, select: { score: true, agentId: true, groupId: true, callId: true } }),
+    prisma.tenantUser.findMany({ where: { tenantId, extensionId: { not: null } }, select: { id: true, extensionId: true } }),
+  ]);
+  const ext = new Map(users.map((u) => [u.id, u.extensionId]));
+  return rows.map((r) => ({ score: r.score!, extensionId: r.agentId ? (ext.get(r.agentId) ?? null) : null, groupId: r.groupId, callId: r.callId }));
 }
 
 async function loadRows(tenantId: string, from: Date, to: Date): Promise<{ calls: CallRow[]; legs: LegRow[] }> {
@@ -467,7 +497,7 @@ export async function buildAttendanceReport(
 ): Promise<AttendanceReport> {
   if (opts.limited) return byoReport(tenantId, f);
 
-  const [{ calls, legs }, targets] = await Promise.all([loadRows(tenantId, f.from, f.to), tenantTargets(tenantId)]);
+  const [{ calls, legs }, targets, csatRows] = await Promise.all([loadRows(tenantId, f.from, f.to), tenantTargets(tenantId), loadCsat(tenantId, f.from, f.to)]);
   const abandoned = abandonedIds(legs);
   const sla = slaRuleOf(targets);
   const tenant = { calls: callKpis(calls, abandoned, sla), agents: agentKpis(legs) };
@@ -508,11 +538,12 @@ export async function buildAttendanceReport(
     byDay: dailyRows(selCalls, selLegs, new Date(), abandoned, sla),
     byHour: hourlyRows(selCalls, abandoned, sla),
     byWeekdayHour: weekdayHourGrid(selCalls),
-    byAgent: agentRows(selLegs, tenant.agents),
+    byAgent: agentRows(selLegs, tenant.agents, csatRows),
     byGroup: groupRows(selCalls, selLegs, groupNames, abandoned, tenant.calls, sla, targets),
     slaSecs: slaSecsFor(sla, f.groupId ?? null),
     slaTargetPct: slaTargetFor(targets, f.groupId ?? null),
     shortAbandonSecs: sla.shortAbandonSecs,
+    csat: csatSummary(selectCsat(csatRows, f, new Set(selCalls.map((c) => c.id))).map((r) => r.score)),
   };
 }
 
@@ -527,7 +558,8 @@ function groupByKey<T>(rows: T[], key: (r: T) => string): Map<string, T[]> {
   return m;
 }
 
-export function agentRows(legs: LegRow[], base: AgentKpis): AgentRow[] {
+export function agentRows(legs: LegRow[], base: AgentKpis, csat: CsatRow[] = []): AgentRow[] {
+  const csatBy = groupByKey(csat.filter((r) => r.extensionId), (r) => r.extensionId!);
   // Por extensionId; extensões apagadas ficam agrupadas pelo número guardado.
   return [...groupByKey(legs, (l) => l.extensionId ?? `#${l.extensionNumber}`).values()]
     .map((ls) => {
@@ -538,6 +570,8 @@ export function agentRows(legs: LegRow[], base: AgentKpis): AgentRow[] {
         number: first.extensionNumber,
         name: first.extensionName,
         ...k,
+        csatAvg: first.extensionId ? csatSummary((csatBy.get(first.extensionId) ?? []).map((r) => r.score)).avg : null,
+        csatResponses: first.extensionId ? (csatBy.get(first.extensionId)?.length ?? 0) : 0,
         vsTenant: {
           answerRate: delta(k.answerRate, base.answerRate),
           rejectRate: delta(k.rejectRate, base.rejectRate),
@@ -626,6 +660,7 @@ async function byoReport(tenantId: string, f: AttendanceFilter): Promise<Attenda
     slaSecs,
     slaTargetPct: targets.slaTargetPct,
     shortAbandonSecs: 0,
+    csat: csatSummary(selectCsat(await loadCsat(tenantId, f.from, f.to), f, new Set()).map((r) => r.score)),
   };
 }
 
@@ -726,11 +761,11 @@ export type AttendanceCallRow = Awaited<ReturnType<typeof listAttendanceCalls>>[
 export function exportTable(report: AttendanceReport, view: "agents" | "groups" | "reasons" | "typing"): (string | number | null)[][] {
   if (view === "agents") {
     return [
-      ["Extensão", "Nome", "Tocou", "Atendeu", "Recusou", "Não atendeu", "Ocupado", "% atendimento", "% recusa", "TMA (s)", "ASA (s)", "Resposta (s)", "Δ TMA vs média", "Δ resposta vs média", "Tipificadas", "Não tipificadas", "% não tipificadas", "Pós-chamada (s)"],
+      ["Extensão", "Nome", "Tocou", "Atendeu", "Recusou", "Não atendeu", "Ocupado", "% atendimento", "% recusa", "TMA (s)", "ASA (s)", "Resposta (s)", "Δ TMA vs média", "Δ resposta vs média", "Tipificadas", "Não tipificadas", "% não tipificadas", "Pós-chamada (s)", "Satisfação (média)", "Respostas de satisfação"],
       ...report.byAgent.map((r) => [
         r.number, r.name, r.offered, r.answered, r.rejected, r.noAnswer, r.busy, r.answerRate, r.rejectRate,
         r.tmaSecs, r.tmeSecs, r.responseSecs, r.vsTenant.tmaSecs, r.vsTenant.responseSecs,
-        r.typed, r.untyped, r.untypedRate, r.wrapUpSecs,
+        r.typed, r.untyped, r.untypedRate, r.wrapUpSecs, r.csatAvg, r.csatResponses,
       ]),
     ];
   }

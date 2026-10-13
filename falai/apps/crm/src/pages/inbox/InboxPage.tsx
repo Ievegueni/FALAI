@@ -52,7 +52,8 @@ export function InboxPage() {
   const [status, setStatus] = useState<ConversationStatus>('OPEN');
   const [inboxId, setInboxId] = useState('');
   const [assignee, setAssignee] = useState('');
-  const [selected, setSelected] = useState<string | null>(null);
+  // ?c=<id> abre essa conversa (ligações a partir dos relatórios e tickets).
+  const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(window.location.search).get('c'));
   useConversationEvents();
 
   const { data: inboxes = [] } = useQuery({ queryKey: ['inboxes'], queryFn: inboxesApi.list });

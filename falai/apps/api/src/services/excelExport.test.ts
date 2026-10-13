@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import ExcelJS from "exceljs";
-import { attendanceWorkbook } from "./excelExport.service.js";
+import { attendanceWorkbook, csatWorkbook } from "./excelExport.service.js";
 
 /** Excel dos relatórios: números como números (não texto), com o formato certo. */
 describe("Excel formatado", () => {
@@ -38,6 +38,7 @@ describe("Excel formatado", () => {
       byDay: [{ date: "2026-10-01", ...period, responseSecs: 6, wrapUpSecs: 20 }],
       byHour: Array.from({ length: 24 }, (_, hour) => ({ hour, ...period })),
       byWeekdayHour: grid, slaSecs: 21, slaTargetPct: 80, shortAbandonSecs: 5,
+      csat: { responses: 4, avg: 4.5, satisfiedPct: 100, distribution: { 1: 0, 2: 0, 3: 0, 4: 2, 5: 2 } },
     } as never;
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load((await attendanceWorkbook(report, "attendance", "Demo")) as never);
@@ -80,5 +81,25 @@ describe("gráficos nativos no Excel", () => {
     expect(chart).toContain("<c:f>'Motivos de recusa'!$B$5:$B$6</c:f>");
     expect(await zip.file("xl/worksheets/sheet1.xml")!.async("string")).toContain('<drawing r:id="rIdFalaiDrawing"/>');
     expect(await zip.file("[Content_Types].xml")!.async("string")).toContain("/xl/charts/chart1.xml");
+  });
+});
+
+describe("Excel da satisfação", () => {
+  it("resumo, por canal/agente/grupo/dia e as negativas com o comentário", async () => {
+    const sum = (avg: number) => ({ responses: 2, avg, satisfiedPct: 50, distribution: { 1: 1, 2: 0, 3: 0, 4: 0, 5: 1 } });
+    const report = {
+      from: "2026-10-01T00:00:00Z", to: "2026-10-02T23:59:59Z", overall: sum(3), asked: 4,
+      byChannel: [{ key: "SMS", name: "SMS", ...sum(3) }], byAgent: [{ key: "u1", name: "Ana", ...sum(3) }], byGroup: [],
+      byDay: [{ key: "2026-10-01", name: "2026-10-01", ...sum(3) }, { key: "2026-10-02", name: "2026-10-02", ...sum(3) }],
+      negatives: [{ id: "r1", at: new Date("2026-10-01T10:00:00Z"), score: 1, channel: "SMS", agent: "Ana", group: null, contact: { id: "c", name: "Rui", phone: "923000000" },
+        comment: "Esperei muito", callId: null, conversationId: null, ticketId: null, reviewedAt: null, reviewedBy: null, reviewNote: null }],
+    } as never;
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await csatWorkbook(report, "Demo")) as never);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(["Resumo", "Por canal", "Por agente", "Por grupo", "Por dia", "Negativas"]);
+    expect(wb.getWorksheet("Resumo")!.getCell("B9").value).toBe(0.5); // taxa de resposta 2/4
+    const neg = wb.getWorksheet("Negativas")!;
+    expect(neg.getCell("H5").value).toBe("Esperei muito");
+    expect(neg.getCell("I5").value).toBe("Por tratar");
   });
 });
