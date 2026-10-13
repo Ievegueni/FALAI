@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { FileSpreadsheet, FileText, Sparkles } from 'lucide-react';
 import { reportsApi, telephonyApi, callTypingApi, consolidatedApi, agentTimeApi, csatApi, ApiError, type AttendanceFilters, type AttendanceExportView, type ConsolidatedBucket } from '@/lib/api';
+import { categoryPathLabel } from '@/lib/categories';
 import { Header } from '@/components/layout/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -97,7 +98,6 @@ export function ReportsPage() {
   const { data: extensions } = useQuery({ queryKey: ['telephony', 'extensions'], queryFn: telephonyApi.listExtensions, retry: false });
   const { data: groups } = useQuery({ queryKey: ['telephony', 'groups'], queryFn: telephonyApi.listGroups, retry: false });
   const { data: categories } = useQuery({ queryKey: ['call-categories'], queryFn: callTypingApi.categories, retry: false });
-  const catName = (id: string | null) => categories?.find((c) => c.id === id)?.name;
 
   // Análise com IA (melhoria 6): no Resumo só conta o período (os outros
   // filtros não se vêem lá); nos restantes separadores, todos os filtros.
@@ -293,7 +293,7 @@ export function ReportsPage() {
                   <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm">
                     <option value="">{t('reports.all')}</option>
                     {categories!.map((c) => (
-                      <option key={c.id} value={c.id}>{c.parentId ? `${catName(c.parentId)} › ${c.name}` : c.name}</option>
+                      <option key={c.id} value={c.id}>{categoryPathLabel(categories ?? [], c.id)}</option>
                     ))}
                   </select>
                 </div>

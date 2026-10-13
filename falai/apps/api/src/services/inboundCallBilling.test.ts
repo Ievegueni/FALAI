@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { CallEvent } from "@falai/shared";
 
 /**
@@ -154,6 +154,19 @@ vi.mock("@falai/providers", () => ({
 
 const resolveInboundForTenant = vi.fn();
 const resolveInboundGlobal = vi.fn();
+// A fila fica desligada (como antes: sem ninguém livre, "sem serviço"), menos
+// nos testes "fila de espera" no fim deste ficheiro.
+const queueOff = { maxWaitSecs: 0, callback: false, callbackAfterSecs: 60, offer: "", thanks: "" };
+const tenantQueueConfig = vi.fn(async () => queueOff);
+const requestCallback = vi.fn(async () => ({ id: "cb1" }));
+vi.mock("./callQueue.service.js", () => ({
+  tenantQueueConfig,
+  callbackBusyExtensionIds: vi.fn(async () => new Set()),
+  dispatchCallbacks: vi.fn(async () => {}),
+  requestCallback,
+  queueOfferPrompt: (t: string) => `queue_cb_${t}`,
+  queueThanksPrompt: (t: string) => `queue_cb_${t}_thanks`,
+}));
 vi.mock("./callRouting.service.js", () => ({ resolveInboundForTenant, resolveInboundGlobal }));
 // Quem decide o texto e o travão de custos é o missedCallSms.service, que tem
 // os seus próprios testes. O que se prende aqui é só QUANDO o router o chama.
@@ -169,7 +182,7 @@ vi.mock("./callRecording.service.js", () => ({
   saveFinishedRecording: vi.fn(async () => {}),
 }));
 
-const { registerInboundCallRouter } = await import("./inboundCallRouter.service.js");
+const { registerInboundCallRouter, resetInboundRouterState } = await import("./inboundCallRouter.service.js");
 
 const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never;
 
@@ -220,6 +233,8 @@ const START: CallEvent = {
 };
 
 beforeEach(() => {
+  resetInboundRouterState();
+  tenantQueueConfig.mockResolvedValue(queueOff);
   rows.length = 0;
   legs.length = 0;
   busyExtensions = [];
@@ -552,5 +567,57 @@ describe("chamada de entrada — tipificação obrigatória", () => {
     const endpoints = s.asterisk.originateToPjsipEndpoint.mock.calls.map((c) => c[0]);
     expect(endpoints).toEqual(["ext_G2", "extweb_G2"]);
     expect(legs.map((l) => l.extensionId)).toEqual(["ext_g2"]);
+  });
+});
+
+describe("fila de espera", () => {
+  const ID = "chan-trunk-1";
+  const tick = (ms: number) => vi.advanceTimersByTimeAsync(ms);
+  beforeEach(() => { vi.useFakeTimers(); tenantRow.holdAudio = false; });
+  afterEach(() => vi.useRealTimers());
+
+  it("sem agente livre espera com som e toca sozinha quando ele fica livre, com o tempo de espera no INVITE", async () => {
+    tenantQueueConfig.mockResolvedValue({ ...queueOff, maxWaitSecs: 300 });
+    busyExtensions = ["ext_201"];
+    const s = setup();
+    await s.emit(START);
+    expect(s.asterisk.noRouteFallback).not.toHaveBeenCalled();
+    expect(s.asterisk.startRingback).toHaveBeenCalledWith(ID);
+    expect(s.asterisk.originateToPjsipEndpoint).not.toHaveBeenCalled();
+
+    await tick(8_000);
+    busyExtensions = [];
+    await tick(2_100);
+    expect(s.asterisk.originateToPjsipEndpoint).toHaveBeenCalled();
+    const vars = (s.asterisk.originateToPjsipEndpoint.mock.calls[0] as unknown[])[4] as Record<string, string>;
+    expect(Number(vars["PJSIP_HEADER(add,X-Falai-Queue-Wait)"])).toBeGreaterThanOrEqual(8);
+  });
+
+  it("passado o tempo máximo, desiste com o aviso de sem serviço", async () => {
+    tenantQueueConfig.mockResolvedValue({ ...queueOff, maxWaitSecs: 10 });
+    busyExtensions = ["ext_201"];
+    const s = setup();
+    await s.emit(START);
+    await tick(12_100);
+    expect(s.asterisk.noRouteFallback).toHaveBeenCalledWith(ID);
+    expect(s.asterisk.destroyBridge).toHaveBeenCalled();
+  });
+
+  it("oferece o callback e o 1 grava o pedido sem SMS de chamada perdida", async () => {
+    tenantQueueConfig.mockResolvedValue({ ...queueOff, maxWaitSecs: 300, callback: true, callbackAfterSecs: 10 });
+    busyExtensions = ["ext_201"];
+    const s = setup();
+    await s.emit(START);
+    await s.emit({ type: "DTMF", providerCallId: ID, digit: "1" }); // antes da oferta não conta
+    expect(requestCallback).not.toHaveBeenCalled();
+
+    await tick(12_100);
+    expect(s.asterisk.playMediaOnChannel).toHaveBeenCalledWith(ID, "queue_cb_tnt_1");
+    await s.emit({ type: "DTMF", providerCallId: ID, digit: "1" });
+    expect(requestCallback).toHaveBeenCalledWith(expect.objectContaining({ tenantId: "tnt_1", number: "+244923111222" }));
+    expect(s.asterisk.playMediaOnChannel).toHaveBeenCalledWith(ID, "queue_cb_tnt_1_thanks");
+
+    await s.emit({ type: "CALL_ENDED", providerCallId: ID, endedAt: new Date(), durationSecs: 20, hangupCause: "NORMAL" });
+    expect(notifyMissedCall).not.toHaveBeenCalled();
   });
 });

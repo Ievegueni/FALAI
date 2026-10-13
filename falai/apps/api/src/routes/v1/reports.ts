@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { prisma } from "@falai/db";
 import { buildConsolidated } from "../../services/consolidated.service.js";
+import { SUB_PATH_SELECT, subPathName } from "../../services/callTyping.service.js";
 
 /**
  * Dados para Power BI / BI (fase 9) — ver docs/POWER-BI.md. Só leitura, scope
@@ -58,7 +59,7 @@ export async function v1ReportsRoutes(fastify: FastifyInstance): Promise<void> {
           legs: {
             where: { outcome: "ANSWERED" },
             take: 1,
-            select: { extensionNumber: true, extension: { select: { displayName: true } }, category: { select: { name: true } }, subcategory: { select: { name: true } } },
+            select: { extensionNumber: true, extension: { select: { displayName: true } }, category: { select: { name: true } }, subcategory: { select: SUB_PATH_SELECT } },
           },
         },
       }),
@@ -81,7 +82,7 @@ export async function v1ReportsRoutes(fastify: FastifyInstance): Promise<void> {
           agentExtension: leg?.extensionNumber ?? null,
           agentName: leg?.extension?.displayName ?? null,
           category: leg?.category?.name ?? null,
-          subcategory: leg?.subcategory?.name ?? null,
+          subcategory: subPathName(leg?.subcategory),
           waitSecs: secs(c.queuedAt, c.answeredAt),
           talkSecs: secs(c.answeredAt, c.endedAt) ?? c.durationSecs,
           answered: !!c.answeredAt,

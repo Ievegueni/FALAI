@@ -21,6 +21,7 @@ import { callsFilterSchema, callsWhere, pbxCallsWhere } from "../../services/cal
 import ExcelJS from "exceljs";
 import { addTableSheet } from "../../services/excelExport.service.js";
 import { callScopeWhere, pbxCallScopeWhere, userScope } from "../../services/userScope.js";
+import { SUB_PATH_SELECT, subPathName } from "../../services/callTyping.service.js";
 
 const createSchema = z.object({
   agentId: z.string().min(1),
@@ -65,7 +66,7 @@ type CallRow = {
     extensionNumber: string;
     extension: { displayName: string | null } | null;
     category: { name: string } | null;
-    subcategory: { name: string } | null;
+    subcategory: Parameters<typeof subPathName>[0];
   }[];
   turns?: {
     id: string;
@@ -121,7 +122,7 @@ function mapCall(c: CallRow) {
         ? { number: c.legs[0].extensionNumber, name: c.legs[0].extension?.displayName ?? null }
         : null,
       typing: c.legs[0]?.category
-        ? [c.legs[0].category.name, c.legs[0].subcategory?.name].filter(Boolean).join(" › ")
+        ? [c.legs[0].category.name, subPathName(c.legs[0].subcategory)].filter(Boolean).join(" › ")
         : null,
     }),
     ...(c.variables !== undefined && { variables: c.variables }),
@@ -157,7 +158,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
         extensionNumber: true,
         extension: { select: { displayName: true } },
         category: { select: { name: true } },
-        subcategory: { select: { name: true } },
+        subcategory: { select: SUB_PATH_SELECT },
       },
     },
   } satisfies Prisma.CallSelect;
@@ -292,7 +293,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
             extension: { select: { displayName: true } },
             rejectReason: { select: { label: true } },
             category: { select: { name: true } },
-            subcategory: { select: { name: true } },
+            subcategory: { select: SUB_PATH_SELECT },
           },
         }),
         prisma.contactNote.findMany({
@@ -327,7 +328,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
               ? {
                   legId: answered.id,
                   category: answered.category?.name ?? null,
-                  subcategory: answered.subcategory?.name ?? null,
+                  subcategory: subPathName(answered.subcategory) ?? null,
                   note: answered.typingNote,
                   typedAt: answered.typedAt,
                   typedBy: answered.typedById ? (users.get(answered.typedById) ?? null) : null,

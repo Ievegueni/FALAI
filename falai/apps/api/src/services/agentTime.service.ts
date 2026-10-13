@@ -1,5 +1,6 @@
 import { prisma } from "@falai/db";
 import type { UserScope } from "./userScope.js";
+import { typingStatus, wrapUpSecs } from "./callTyping.service.js";
 
 /**
  * Tempo dos agentes (centro de atendimento, fase 5) — ver
@@ -9,6 +10,9 @@ import type { UserScope } from "./userScope.js";
  *   Ligado    = sessões no CRM (AgentSession), sobreposições juntas (vários separadores)
  *   Aderência = % do escalado em que esteve ligado
  *   Pausa     = pausas da extensão (AgentPause), por motivo
+ *   Conversa  = pernas atendidas pela extensão do agente (CallLeg)
+ *   Pós-chamada = do fim da chamada à tipificação (ver callTyping.service.ts)
+ *   Disponível = ligado sem estar em pausa, em conversa nem em pós-chamada
  *
  * Os cálculos são funções puras sobre intervalos (testadas em agentTime.test.ts).
  */
@@ -74,6 +78,9 @@ export interface AgentTimeRow {
   adherencePct: number | null;
   pausedSecs: number;
   pauses: { reason: string | null; secs: number; count: number }[];
+  talkSecs: number;
+  wrapUpSecs: number;
+  availableSecs: number;
 }
 
 export function agentTimeRow(
@@ -82,6 +89,8 @@ export function agentTimeRow(
     sessions: Interval[];
     shifts: Interval[];
     pauses: { reason: string | null; iv: Interval }[];
+    talk?: Interval[];
+    wrapUps?: Interval[];
   },
   from: number,
   to: number
@@ -90,6 +99,9 @@ export function agentTimeRow(
   const scheduled = mergeIntervals(input.shifts, from, to);
   const scheduledSecs = totalSecs(scheduled);
   const inShift = overlapSecs(logged, scheduled);
+  const talk = mergeIntervals(input.talk ?? [], from, to);
+  const wrap = mergeIntervals(input.wrapUps ?? [], from, to);
+  const busy = mergeIntervals([...input.pauses.map((p) => p.iv), ...talk, ...wrap], from, to);
   const byReason = new Map<string | null, { secs: number; count: number }>();
   for (const p of input.pauses) {
     const secs = totalSecs(mergeIntervals([p.iv], from, to));
@@ -108,8 +120,74 @@ export function agentTimeRow(
     adherencePct: scheduledSecs ? Math.round((inShift / scheduledSecs) * 1000) / 10 : null,
     pausedSecs: totalSecs(mergeIntervals(input.pauses.map((p) => p.iv), from, to)),
     pauses: [...byReason].map(([reason, v]) => ({ reason, ...v })).sort((a, b) => b.secs - a.secs),
+    talkSecs: totalSecs(talk),
+    wrapUpSecs: totalSecs(wrap),
+    availableSecs: Math.max(0, totalSecs(logged) - overlapSecs(logged, busy)),
   };
 }
+
+export type AgentState = "LOGGED_IN" | "LOGGED_OUT" | "PAUSED" | "IN_CALL" | "WRAP_UP";
+export interface StateSegment { state: AgentState; from: number; to: number | null; detail: string | null }
+
+/**
+ * Linha do tempo dos estados de um agente no período: ligado/desligado (sessões
+ * juntas e os buracos entre elas), pausas, conversas e pós-chamada. Intervalos
+ * abertos chegam já fechados em `now`; o que ainda decorre sai com to = null.
+ */
+export function agentStateTimeline(
+  input: {
+    sessions: Interval[];
+    pauses: { iv: Interval; reason: string | null }[];
+    calls: { iv: Interval; number: string | null }[];
+    wrapUps: { iv: Interval; number: string | null }[];
+  },
+  from: number,
+  to: number,
+  now: number
+): StateSegment[] {
+  const end = Math.min(to, now);
+  const out: StateSegment[] = [];
+  const push = (state: AgentState, [a, b]: Interval, detail: string | null) => {
+    const lo = Math.max(a, from);
+    const hi = Math.min(b, end);
+    if (hi > lo) out.push({ state, from: lo, to: hi >= now ? null : hi, detail });
+  };
+  let cursor = from;
+  for (const iv of mergeIntervals(input.sessions, from, end)) {
+    push("LOGGED_OUT", [cursor, iv[0]], null);
+    push("LOGGED_IN", iv, null);
+    cursor = iv[1];
+  }
+  push("LOGGED_OUT", [cursor, end], null);
+  for (const p of input.pauses) push("PAUSED", p.iv, p.reason);
+  for (const c of input.calls) push("IN_CALL", c.iv, c.number);
+  for (const w of input.wrapUps) push("WRAP_UP", w.iv, w.number);
+  const rank: Record<AgentState, number> = { LOGGED_OUT: 0, LOGGED_IN: 0, PAUSED: 1, IN_CALL: 1, WRAP_UP: 2 };
+  return out.sort((x, y) => x.from - y.from || rank[x.state] - rank[y.state]);
+}
+
+interface LegTimes { outcome: string | null; answeredAt: Date | null; endedAt: Date | null; typedAt: Date | null; wrapUpEndsAt: Date | null }
+
+/** Conversa: de atender a desligar (ainda em curso → now). */
+const talkInterval = (l: LegTimes, now: Date): Interval | null =>
+  l.outcome === "ANSWERED" && l.answeredAt ? [l.answeredAt.getTime(), (l.endedAt ?? now).getTime()] : null;
+
+/** Pós-chamada: mesma regra dos relatórios (wrapUpSecs); a decorrer → até now. */
+function wrapUpInterval(l: LegTimes, now: Date): Interval | null {
+  if (!l.endedAt) return null;
+  const secs = wrapUpSecs(l, now);
+  if (secs !== null) return secs > 0 ? [l.endedAt.getTime(), l.endedAt.getTime() + secs * 1000] : null;
+  return typingStatus(l, now) === "PENDING" ? [l.endedAt.getTime(), now.getTime()] : null;
+}
+
+const legSelect = { extensionId: true, outcome: true, answeredAt: true, endedAt: true, typedAt: true, wrapUpEndsAt: true } as const;
+/** Pernas atendidas que podem tocar o período (a pós-chamada pode passar do fim da chamada). */
+const legWhere = (extensionIds: string[], from: Date, to: Date) => ({
+  extensionId: { in: extensionIds },
+  outcome: "ANSWERED" as const,
+  answeredAt: { lte: to },
+  OR: [{ endedAt: null }, { endedAt: { gte: new Date(from.getTime() - 86_400_000) } }],
+});
 
 // ─── BD ──────────────────────────────────────────────────────────────────────
 
@@ -122,7 +200,8 @@ export async function buildAgentTimeReport(tenantId: string, scope: UserScope, f
   });
   const ids = users.map((u) => u.id);
   const range = { lte: to };
-  const [sessions, shifts, pauses] = await Promise.all([
+  const extIds = users.map((u) => u.extensionId).filter((x): x is string => !!x);
+  const [sessions, shifts, pauses, legs] = await Promise.all([
     prisma.agentSession.findMany({
       where: { tenantId, userId: { in: ids }, startedAt: range, OR: [{ endedAt: null }, { endedAt: { gte: from } }] },
       select: { userId: true, startedAt: true, endedAt: true },
@@ -132,8 +211,10 @@ export async function buildAgentTimeReport(tenantId: string, scope: UserScope, f
       where: { tenantId, userId: { in: ids }, startedAt: range, OR: [{ endedAt: null }, { endedAt: { gte: from } }] },
       select: { userId: true, startedAt: true, endedAt: true, reason: { select: { label: true } } },
     }),
+    prisma.callLeg.findMany({ where: { tenantId, ...legWhere(extIds, from, to) }, select: legSelect }),
   ]);
   const iv = (a: Date, b: Date | null): Interval => [a.getTime(), (b ?? now).getTime()];
+  const nonNull = <T,>(x: T | null): x is T => x !== null;
   return {
     from: from.toISOString(),
     to: to.toISOString(),
@@ -144,11 +225,47 @@ export async function buildAgentTimeReport(tenantId: string, scope: UserScope, f
           sessions: sessions.filter((s) => s.userId === u.id).map((s) => iv(s.startedAt, s.endedAt)),
           shifts: shiftIntervals(shifts.filter((s) => s.userId === u.id), from, to),
           pauses: pauses.filter((p) => p.userId === u.id).map((p) => ({ reason: p.reason?.label ?? null, iv: iv(p.startedAt, p.endedAt) })),
+          talk: legs.filter((l) => l.extensionId && l.extensionId === u.extensionId).map((l) => talkInterval(l, now)).filter(nonNull),
+          wrapUps: legs.filter((l) => l.extensionId && l.extensionId === u.extensionId).map((l) => wrapUpInterval(l, now)).filter(nonNull),
         },
         from.getTime(),
         end
       )
     ),
+  };
+}
+
+/** Linha do tempo dos estados de um utilizador (null = não existe neste tenant). */
+export async function buildAgentStates(tenantId: string, userId: string, from: Date, to: Date, now = new Date()) {
+  const user = await prisma.tenantUser.findFirst({ where: { id: userId, tenantId }, select: { id: true, name: true, extensionId: true } });
+  if (!user) return null;
+  const range = { startedAt: { lte: to }, OR: [{ endedAt: null }, { endedAt: { gte: from } }] };
+  const [sessions, pauses, legs] = await Promise.all([
+    prisma.agentSession.findMany({ where: { tenantId, userId, ...range }, select: { startedAt: true, endedAt: true } }),
+    prisma.agentPause.findMany({ where: { tenantId, userId, ...range }, select: { startedAt: true, endedAt: true, reason: { select: { label: true } } } }),
+    user.extensionId
+      ? prisma.callLeg.findMany({ where: { tenantId, ...legWhere([user.extensionId], from, to) }, select: { ...legSelect, call: { select: { fromNumber: true } } } })
+      : Promise.resolve([]),
+  ]);
+  const iv = (a: Date, b: Date | null): Interval => [a.getTime(), (b ?? now).getTime()];
+  const withIv = <T,>(list: { iv: Interval | null; number: T }[]) => list.filter((x): x is { iv: Interval; number: T } => x.iv !== null);
+  const timeline = agentStateTimeline(
+    {
+      sessions: sessions.map((s) => iv(s.startedAt, s.endedAt)),
+      pauses: pauses.map((p) => ({ iv: iv(p.startedAt, p.endedAt), reason: p.reason?.label ?? null })),
+      calls: withIv(legs.map((l) => ({ iv: talkInterval(l, now), number: l.call.fromNumber }))),
+      wrapUps: withIv(legs.map((l) => ({ iv: wrapUpInterval(l, now), number: l.call.fromNumber }))),
+    },
+    from.getTime(),
+    to.getTime(),
+    now.getTime()
+  );
+  const iso = (ms: number) => new Date(ms).toISOString();
+  return {
+    user: { id: user.id, name: user.name },
+    from: from.toISOString(),
+    to: to.toISOString(),
+    data: timeline.map((s) => ({ ...s, from: iso(s.from), to: s.to === null ? null : iso(s.to) })),
   };
 }
 
@@ -175,6 +292,9 @@ export async function setExtensionPause(tenantId: string, extensionId: string, p
 const SESSION_TOUCH_MS = 5 * 60_000;
 // Ligações abertas por utilizador nesta instância: a sessão abre na 1ª e fecha na última.
 const live = new Map<string, { count: number; sessionId: string; touchedAt: number }>();
+
+/** Tem o CRM aberto agora (nesta instância da API). Usado pelo despacho dos callbacks da fila. */
+export const isUserLive = (userId: string) => live.has(userId);
 
 export async function sessionConnected(tenantId: string, userId: string): Promise<void> {
   const cur = live.get(userId);

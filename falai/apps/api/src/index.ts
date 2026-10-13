@@ -90,6 +90,7 @@ import { v1TicketsRoutes } from "./routes/v1/tickets.js";
 import { v1ReportsRoutes } from "./routes/v1/reports.js";
 import { tenantAlertsRoutes } from "./routes/tenant/alerts.js";
 import { tenantAgentTimeRoutes } from "./routes/tenant/agentTime.js";
+import { tenantCallQueueRoutes } from "./routes/tenant/callQueue.js";
 import { tenantQualityRoutes } from "./routes/tenant/quality.js";
 import { tenantCsatRoutes, publicCsatRoutes } from "./routes/tenant/csat.js";
 import { tenantKnowledgeRoutes } from "./routes/tenant/knowledge.js";
@@ -392,6 +393,7 @@ async function buildApp() {
   await gated(fastify, "webphone", tenantSupervisionRoutes);
   await gated(fastify, "webphone", tenantAlertsRoutes);
   await gated(fastify, "webphone", tenantAgentTimeRoutes);
+  await gated(fastify, "webphone", tenantCallQueueRoutes);
   await gated(fastify, "quality", tenantQualityRoutes);
   await gated(fastify, "reports", tenantCsatRoutes);
   await gated(fastify, "knowledge", tenantKnowledgeRoutes);

@@ -47,6 +47,15 @@ import { agentOf } from "./quality.service.js";
 import { activeConnection } from "./helpdesk/sync.js";
 import { createTicket } from "./tickets.service.js";
 import {
+  callbackBusyExtensionIds,
+  dispatchCallbacks,
+  queueOfferPrompt,
+  queueThanksPrompt,
+  requestCallback,
+  tenantQueueConfig,
+  type QueueConfig,
+} from "./callQueue.service.js";
+import {
   computeCallCost,
   effectivePrice,
   reserveBalance,
@@ -84,6 +93,8 @@ interface InboundLegs {
   groupId: string | null;
   answeredExtensionId?: string;
   answeredAt?: Date;
+  /** Extensões ainda a tocar — a fila não lhes entrega outra chamada. */
+  ringingExt: Set<string>;
 }
 const legsByCaller = new Map<string, InboundLegs>();
 
@@ -158,6 +169,7 @@ export function registerInboundCallRouter(
       }
       endIvr(event.providerCallId);
       endCsat(event.providerCallId);
+      await leaveQueue(event.providerCallId, asterisk);
       // Quem ligou desligou: cancela os toques / desliga o agente.
       await releaseCallerLegs(event.providerCallId, asterisk);
       // O inquérito não se cobra: a conversa acabou quando o agente desligou.
@@ -186,6 +198,11 @@ export function registerInboundCallRouter(
         await onCsatDigit(cs, event.digit, asterisk, log);
         return;
       }
+      const q = queue.get(event.providerCallId);
+      if (q) {
+        await onQueueDigit(q, event.digit, asterisk, log);
+        return;
+      }
       const s = ivrSessions.get(event.providerCallId);
       if (s) await onIvrDigit(s, event.digit, asterisk, log);
       return;
@@ -196,6 +213,17 @@ export function registerInboundCallRouter(
         // Fim do agradecimento: desliga. Fim da pergunta: espera pela tecla.
         if (cs.thanking) await hangupCsat(cs, asterisk);
         else armCsatTimeout(cs, asterisk);
+        return;
+      }
+      const q = queue.get(event.providerCallId);
+      if (q && event.playbackId === q.offering) {
+        // Fim da oferta de callback: volta a música; o 1 continua a valer.
+        q.offering = undefined;
+        await q.hold.start().catch(() => {});
+        return;
+      }
+      if (callbackThanks.get(event.providerCallId) === event.playbackId) {
+        await endAfterCallback(event.providerCallId, asterisk);
         return;
       }
       const s = ivrSessions.get(event.providerCallId);
@@ -217,6 +245,17 @@ export function registerInboundCallRouter(
       await asterisk.noRouteFallback(event.providerCallId).catch(() => {});
     }
   });
+
+  // Fila: entrega as chamadas em espera e os callbacks a quem ficar livre.
+  let ticking = false;
+  setInterval(() => {
+    if (ticking) return;
+    ticking = true;
+    queueTick(asterisk, log)
+      .then(() => dispatchCallbacks(fastify, occupiedExtensionIds(), (t) => [...queue.values()].some((q) => q.tenantId === t)))
+      .catch((err) => log.error({ err }, "inbound_call_router.queue_tick_failed"))
+      .finally(() => (ticking = false));
+  }, QUEUE_TICK_MS).unref();
 }
 
 async function handleInboundCall(
@@ -254,8 +293,13 @@ async function routeTo(
     return;
   }
 
-  const targets = await resolveTargets(tenantId, dest);
-  if (targets.length === 0) {
+  // FIFO: havendo já gente na fila para este destino, entra atrás deles.
+  const waiting = [...queue.values()].some(
+    (q) => q.tenantId === tenantId && q.dest.destType === dest.destType && q.dest.destValue === dest.destValue
+  );
+  const targets = waiting ? [] : await resolveTargets(tenantId, dest);
+  const cfg = await tenantQueueConfig(tenantId);
+  if (targets.length === 0 && cfg.maxWaitSecs === 0) {
     log.warn({ did: event.did, dest }, "inbound_call_router.no_target");
     await asterisk.noRouteFallback(event.providerCallId);
     return;
@@ -269,7 +313,10 @@ async function routeTo(
   const callId = await openInboundCall(event, tenantId, log);
   const groupId = dest.destType === "GROUP" ? dest.destValue : null;
   if (callId) await markInboundQueued(callId, groupId, log);
-  await ringTargets(event, targets, groupId, callId, tenantId, asterisk, log);
+  const hold = await startHold(event, tenantId, asterisk, log);
+  const ctx: RingCtx = { event, tenantId, dest, groupId, callId, hold, since: new Date(), cfg };
+  if (targets.length === 0) enqueue(ctx, log);
+  else await ringTargets(ctx, targets, asterisk, log);
 }
 
 interface RingTarget extends LegTarget {
@@ -295,10 +342,12 @@ async function resolveTargets(tenantId: string, dest: Dest): Promise<RingTarget[
     exts = members.map((m) => m.extension);
   }
   // Tipificação obrigatória: quem ainda está a tipificar a chamada anterior
-  // não recebe outra (ver callTyping.service.ts).
-  const busy = await busyExtensionIds(exts.map((e) => e.id));
+  // não recebe outra (ver callTyping.service.ts). Nem quem está em chamada, a
+  // tocar ou a tratar um callback — é isso que faz a chamada esperar na fila.
+  const [busy, onCallback] = await Promise.all([busyExtensionIds(exts.map((e) => e.id)), callbackBusyExtensionIds(tenantId)]);
+  const occupied = occupiedExtensionIds();
   return exts
-    .filter((e) => !busy.has(e.id))
+    .filter((e) => !busy.has(e.id) && !occupied.has(e.id) && !onCallback.has(e.id))
     .map((e) => ({ extensionId: e.id, number: e.number, sipAuthUser: e.sipAuthUser }));
 }
 
@@ -311,18 +360,11 @@ interface ExtLeg {
   done: boolean;
 }
 
-async function ringTargets(
-  event: InboundEvent,
-  targets: RingTarget[],
-  groupId: string | null,
-  callId: string | null,
-  tenantId: string,
-  asterisk: AsteriskAdapter,
-  log: FastifyBaseLogger
-): Promise<void> {
-  const bridge = await asterisk.createBridge();
-  await asterisk.answerChannel(event.providerCallId);
-  await asterisk.addChannelToBridge(bridge.id, event.providerCallId);
+async function ringTargets(ctx: RingCtx, targets: RingTarget[], asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
+  const { event, groupId, callId, tenantId, hold } = ctx;
+  const bridge = { id: hold.bridgeId };
+  // Sinal para o agente: a chamada vem da fila e já esperou X segundos.
+  const waitedSecs = Math.round((Date.now() - ctx.since.getTime()) / 1000);
 
   // Uma perna por extensão, aberta ANTES de tocar: o id segue no INVITE
   // (X-Falai-Leg-Id) para o webphone poder gravar o motivo de uma recusa.
@@ -335,7 +377,10 @@ async function ringTargets(
       const legId = legIds.get(t.extensionId);
       const ext: ExtLeg = { extensionId: t.extensionId, legId, pending: new Set(), outcomes: [], done: false };
       extLegs.set(t.extensionId, ext);
-      const variables = legId ? { "PJSIP_HEADER(add,X-Falai-Leg-Id)": legId } : undefined;
+      const variables: Record<string, string> = {
+        ...(legId && { "PJSIP_HEADER(add,X-Falai-Leg-Id)": legId }),
+        ...(waitedSecs >= 5 && { "PJSIP_HEADER(add,X-Falai-Queue-Wait)": String(waitedSecs) }),
+      };
       return [extensionEndpointId(t.sipAuthUser), extensionWebEndpointId(t.sipAuthUser)].map((endpointId) =>
         asterisk
           .originateToPjsipEndpoint(endpointId, `ring:${bridge.id}`, event.callerIdNum, RING_TIMEOUT_SECS, variables)
@@ -364,45 +409,16 @@ async function ringTargets(
   // atenderam" de "desligou no menu".
   if (channelIds.length > 0) rangExtension.add(event.providerCallId);
 
-  // Enquanto toca, quem liga ouve a música de espera do cliente (na bridge,
-  // onde por agora só está ele) ou, sem música, o sinal de chamada. Sem nada
-  // ouvia silêncio e desligava.
-  let ringbackId: string | null = null;
-  let moh = false;
-  if (channelIds.length > 0) {
-    const t = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { holdAudio: true } });
-    if (t?.holdAudio) {
-      try {
-        await asterisk.startBridgeMoh(bridge.id, holdMusicClass(tenantId));
-        moh = true;
-      } catch (err) {
-        log.warn({ err, providerCallId: event.providerCallId }, "inbound_call_router.hold_music_failed");
-      }
-    }
-    if (!moh) {
-      try {
-        ringbackId = (await asterisk.startRingback(event.providerCallId)).id;
-      } catch (err) {
-        log.warn({ err, providerCallId: event.providerCallId }, "inbound_call_router.ringback_failed");
-      }
-    }
-  }
   // A música pára ANTES de o agente entrar na bridge, senão ouvia-a também.
-  const stopRingback = () =>
-    moh
-      ? asterisk.stopBridgeMoh(bridge.id).catch(() => {})
-      : ringbackId
-        ? asterisk.stopPlayback(ringbackId).catch(() => {})
-        : Promise.resolve();
-  const legs: InboundLegs = { bridgeId: bridge.id, ringing: channelIds, stopHold: stopRingback, tenantId, callId, groupId };
+  const stopRingback = () => hold.stop();
+  const ringingExt = new Set([...extLegs.values()].filter((e) => !e.done).map((e) => e.extensionId));
+  const legs: InboundLegs = { bridgeId: bridge.id, ringing: channelIds, stopHold: stopRingback, tenantId, callId, groupId, ringingExt };
   legsByCaller.set(event.providerCallId, legs);
 
   if (channelIds.length === 0) {
     log.warn({ did: event.did, targets }, "inbound_call_router.no_target_reachable");
-    await asterisk.noRouteFallback(event.providerCallId);
-    // A bridge já existe: sem isto ficava órfã no Asterisk a cada chamada de
-    // entrada que não encontra ninguém.
-    await asterisk.destroyBridge(bridge.id).catch(() => {});
+    legsByCaller.delete(event.providerCallId);
+    await requeueOrGiveUp(ctx, asterisk, log);
     return;
   }
 
@@ -415,6 +431,7 @@ async function ringTargets(
         return;
       }
       legs.ringing = [];
+      legs.ringingExt.clear();
       legs.answered = answeredId;
       // Relatórios: esta extensão atendeu; as outras deixam de tocar.
       const winner = extByChannel.get(answeredId);
@@ -451,8 +468,7 @@ async function ringTargets(
       if (legsByCaller.get(event.providerCallId) !== legs) return;
       legsByCaller.delete(event.providerCallId);
       log.info({ did: event.did }, "inbound_call_router.nobody_answered");
-      void stopRingback().then(() => asterisk.noRouteFallback(event.providerCallId).catch(() => {}));
-      asterisk.destroyBridge(bridge.id).catch(() => {});
+      void requeueOrGiveUp(ctx, asterisk, log);
     },
     (channelId, cause) => {
       const ext = extByChannel.get(channelId);
@@ -468,9 +484,218 @@ async function ringTargets(
       ext.outcomes.push(outcome);
       if (ext.pending.size > 0) return;
       ext.done = true;
+      legs.ringingExt.delete(ext.extensionId);
       if (ext.legId) void endLeg(ext.legId, mergeOutcomes(ext.outcomes), cause, log);
     }
   );
+}
+
+// ─── Fila de espera + callback ──────────────────────────────────────────────
+// Ver services/callQueue.service.ts. Quem liga fica numa bridge só sua, com a
+// música de espera (ou o sinal de chamada); a cada QUEUE_TICK_MS procura-se
+// uma extensão livre do destino e, havendo, toca nela. Por ordem de chegada.
+// ponytail: estado em memória — um reinício da API larga quem está na fila;
+// passar para Redis se houver mais de uma instância da API.
+
+const QUEUE_TICK_MS = 2_000;
+
+/** Espera de quem liga: a bridge e o som que lá toca. stop/start para a oferta de callback. */
+interface Hold {
+  bridgeId: string;
+  start: () => Promise<void>;
+  stop: () => Promise<unknown>;
+}
+
+/** Tudo o que é preciso para (voltar a) tocar a chamada nas extensões do destino. */
+interface RingCtx {
+  event: InboundEvent;
+  tenantId: string;
+  dest: Dest;
+  groupId: string | null;
+  callId: string | null;
+  hold: Hold;
+  since: Date;
+  cfg: QueueConfig;
+}
+
+interface QueueEntry extends RingCtx {
+  offered: boolean;
+  /** Id do playback da oferta enquanto toca (a música está parada). */
+  offering?: string | undefined;
+}
+const queue = new Map<string, QueueEntry>(); // canal do trunk → entrada (ordem = chegada)
+/** Quem pediu callback e está a ouvir o agradecimento: canal → playback. */
+const callbackThanks = new Map<string, string>();
+const callbackBridges = new Map<string, string>();
+
+/** Quem está à espera na fila agora (só leitura) — para a supervisão e a TV da sala. */
+export function queuedCalls(tenantId: string): { callId: string | null; groupId: string | null; since: Date }[] {
+  return [...queue.values()]
+    .filter((q) => q.tenantId === tenantId)
+    .map((q) => ({ callId: q.callId, groupId: q.groupId, since: q.since }));
+}
+
+/** Extensões em chamada de entrada ou a tocar agora. */
+function occupiedExtensionIds(): Set<string> {
+  const out = new Set<string>();
+  for (const l of legsByCaller.values()) {
+    if (l.answeredExtensionId) out.add(l.answeredExtensionId);
+    for (const id of l.ringingExt) out.add(id);
+  }
+  return out;
+}
+
+/**
+ * Atende, põe quem liga numa bridge e começa a música de espera do cliente
+ * (ou, sem música, o sinal de chamada). Sem nada ouvia silêncio e desligava.
+ */
+async function startHold(event: InboundEvent, tenantId: string, asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<Hold> {
+  const bridge = await asterisk.createBridge();
+  await asterisk.answerChannel(event.providerCallId);
+  await asterisk.addChannelToBridge(bridge.id, event.providerCallId);
+  const t = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { holdAudio: true } });
+  let moh = false;
+  let ringbackId: string | null = null;
+  const hold: Hold = {
+    bridgeId: bridge.id,
+    async start() {
+      if (t?.holdAudio) {
+        try {
+          await asterisk.startBridgeMoh(bridge.id, holdMusicClass(tenantId));
+          moh = true;
+          return;
+        } catch (err) {
+          log.warn({ err, providerCallId: event.providerCallId }, "inbound_call_router.hold_music_failed");
+        }
+      }
+      try {
+        ringbackId = (await asterisk.startRingback(event.providerCallId)).id;
+      } catch (err) {
+        log.warn({ err, providerCallId: event.providerCallId }, "inbound_call_router.ringback_failed");
+      }
+    },
+    stop() {
+      const p = moh
+        ? asterisk.stopBridgeMoh(bridge.id).catch(() => {})
+        : ringbackId
+          ? asterisk.stopPlayback(ringbackId).catch(() => {})
+          : Promise.resolve();
+      moh = false;
+      ringbackId = null;
+      return p;
+    },
+  };
+  await hold.start();
+  return hold;
+}
+
+function enqueue(ctx: RingCtx, log: FastifyBaseLogger): void {
+  // Esperar na fila e desligar conta como "não atendida" (SMS de chamada perdida).
+  rangExtension.add(ctx.event.providerCallId);
+  queue.set(ctx.event.providerCallId, { ...ctx, offered: false });
+  log.info({ did: ctx.event.did, dest: ctx.dest }, "inbound_call_router.queued");
+}
+
+/** Ninguém atendeu / ninguém alcançável: volta à fila enquanto houver tempo. */
+async function requeueOrGiveUp(ctx: RingCtx, asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
+  const left = ctx.cfg.maxWaitSecs * 1000 - (Date.now() - ctx.since.getTime());
+  if (left > 0) {
+    const prev = queue.get(ctx.event.providerCallId);
+    queue.set(ctx.event.providerCallId, { ...ctx, offered: prev?.offered ?? false });
+    rangExtension.add(ctx.event.providerCallId);
+    return;
+  }
+  await giveUp(ctx, asterisk);
+}
+
+async function giveUp(ctx: RingCtx, asterisk: AsteriskAdapter): Promise<void> {
+  queue.delete(ctx.event.providerCallId);
+  await ctx.hold.stop();
+  await asterisk.noRouteFallback(ctx.event.providerCallId).catch(() => {});
+  await asterisk.destroyBridge(ctx.hold.bridgeId).catch(() => {});
+}
+
+/** Quem ligou desligou: larga a fila (ou o agradecimento do callback). */
+async function leaveQueue(callerId: string, asterisk: AsteriskAdapter): Promise<void> {
+  const q = queue.get(callerId);
+  const bridgeId = q?.hold.bridgeId ?? callbackBridges.get(callerId);
+  queue.delete(callerId);
+  callbackThanks.delete(callerId);
+  callbackBridges.delete(callerId);
+  if (q) await q.hold.stop();
+  if (bridgeId) await asterisk.destroyBridge(bridgeId).catch(() => {});
+}
+
+/** Só para testes: o estado em memória não pode passar de um teste para o outro. */
+export function resetInboundRouterState(): void {
+  legsByCaller.clear();
+  callerByAgent.clear();
+  queue.clear();
+  callbackThanks.clear();
+  callbackBridges.clear();
+}
+
+async function queueTick(asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
+  for (const [id, q] of queue) {
+    const waited = Date.now() - q.since.getTime();
+    if (waited >= q.cfg.maxWaitSecs * 1000) {
+      log.info({ did: q.event.did, waitedSecs: Math.round(waited / 1000) }, "inbound_call_router.queue_timeout");
+      await giveUp(q, asterisk);
+      continue;
+    }
+    // resolveTargets já tira quem está a tocar — inclui o que este ciclo acabou de entregar.
+    const targets = await resolveTargets(q.tenantId, q.dest);
+    if (targets.length > 0) {
+      queue.delete(id);
+      if (q.offering) {
+        await asterisk.stopPlayback(q.offering).catch(() => {});
+        await q.hold.start();
+      }
+      await ringTargets(q, targets, asterisk, log);
+      continue;
+    }
+    if (q.cfg.callback && !q.offered && q.event.callerIdNum && waited >= q.cfg.callbackAfterSecs * 1000) {
+      q.offered = true;
+      try {
+        await q.hold.stop();
+        q.offering = (await asterisk.playMediaOnChannel(id, queueOfferPrompt(q.tenantId))).id;
+      } catch (err) {
+        log.warn({ err, providerCallId: id }, "inbound_call_router.callback_offer_failed");
+        q.offering = undefined;
+        await q.hold.start();
+      }
+    }
+  }
+}
+
+/** Carregou 1 depois da oferta: é o consentimento para lhe ligarmos de volta. */
+async function onQueueDigit(q: QueueEntry, digit: string, asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
+  if (digit !== "1" || !q.offered || !q.cfg.callback || !q.event.callerIdNum) return;
+  const id = q.event.providerCallId;
+  queue.delete(id);
+  rangExtension.delete(id); // pediu que lhe liguem: não é chamada perdida
+  try {
+    await requestCallback({ tenantId: q.tenantId, callId: q.callId, groupId: q.groupId, number: q.event.callerIdNum });
+    log.info({ providerCallId: id }, "inbound_call_router.callback_requested");
+    if (q.offering) await asterisk.stopPlayback(q.offering).catch(() => {});
+    await q.hold.stop();
+    callbackBridges.set(id, q.hold.bridgeId);
+    const pb = await asterisk.playMediaOnChannel(id, queueThanksPrompt(q.tenantId));
+    callbackThanks.set(id, pb.id);
+    // Se o PROMPT_FINISHED não chegar, desliga na mesma.
+    setTimeout(() => void endAfterCallback(id, asterisk), 15_000).unref();
+  } catch (err) {
+    log.error({ err, providerCallId: id }, "inbound_call_router.callback_failed");
+    await endAfterCallback(id, asterisk);
+  }
+}
+
+async function endAfterCallback(callerId: string, asterisk: AsteriskAdapter): Promise<void> {
+  const bridgeId = callbackBridges.get(callerId);
+  callbackThanks.delete(callerId);
+  callbackBridges.delete(callerId);
+  await asterisk.hangup(callerId).catch(() => {});
+  if (bridgeId) await asterisk.destroyBridge(bridgeId).catch(() => {});
 }
 
 // ─── IVR ────────────────────────────────────────────────────────────────────

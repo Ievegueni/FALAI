@@ -37,7 +37,7 @@ const prisma = {
 };
 vi.mock("@falai/db", () => ({ prisma }));
 
-const { typingStatus, wrapUpDeadline, wrapUpSecs, visibleCategories, validateTyping } = await import("./callTyping.service.js");
+const { typingStatus, wrapUpDeadline, wrapUpSecs, visibleCategories, validateTyping, subcategoryPaths, categoryLineage, categoryDepth } = await import("./callTyping.service.js");
 const { tenantCallTypingRoutes } = await import("../routes/tenant/callTyping.js");
 
 const END = new Date("2026-10-02T10:00:00Z");
@@ -152,5 +152,36 @@ describe("edição (PUT /tenant/call-legs/:id/typing)", () => {
     leg.outcome = "NO_ANSWER";
     expect((await f.inject({ method: "PUT", url: "/tenant/call-legs/leg_1/typing", payload: { categoryId: "cat_info" } })).statusCode).toBe(409);
     leg.outcome = "ANSWERED";
+  });
+});
+
+describe("subcategorias em vários níveis", () => {
+  const n = (id: string, parentId: string | null, name: string, isActive = true) => ({ id, parentId, name, isActive, groupIds: [] as string[] });
+  const tree = [
+    n("fat", null, "Faturação"),
+    n("atraso", "fat", "Atraso"),
+    n("multa", "atraso", "Multa"),
+    n("juros", "atraso", "Juros"),
+    n("velho", "atraso", "Velho", false),
+    n("baixo", "velho", "Por baixo do inactivo"),
+    n("2via", "fat", "2.ª via"),
+  ];
+  const v = visibleCategories(tree, new Set());
+
+  it("um nível inactivo esconde também o que está por baixo", () => {
+    expect(v.map((c) => c.id).sort()).toEqual(["2via", "atraso", "fat", "juros", "multa"]);
+  });
+  it("tem de descer até ao último nível, e por baixo da categoria escolhida", () => {
+    expect(validateTyping(v, "fat", "atraso")).toBe("Escolha a subcategoria");
+    expect(validateTyping(v, "fat", "multa")).toBeNull();
+    expect(validateTyping(v, "fat", "2via")).toBeNull();
+    expect(validateTyping(v, "fat", "baixo")).toBe("Subcategoria inválida");
+    expect(validateTyping([...v, n("outra", null, "Outra")], "outra", "multa")).toBe("Subcategoria inválida");
+  });
+  it("caminho abaixo da categoria, linhagem e nível", () => {
+    expect(subcategoryPaths(tree).get("multa")).toBe("Atraso › Multa");
+    expect(subcategoryPaths(tree).get("2via")).toBe("2.ª via");
+    expect(categoryLineage(tree, "multa")).toEqual(["multa", "atraso", "fat"]);
+    expect(categoryDepth(tree, "baixo")).toBe(4);
   });
 });

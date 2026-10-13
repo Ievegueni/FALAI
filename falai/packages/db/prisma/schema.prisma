@@ -281,6 +281,10 @@ model Tenant {
   kbArticles           KbArticle[]
   helpdesk             HelpdeskConnection?
   chatRooms            ChatRoom[]
+  // Fila de espera das chamadas de entrada: { maxWaitSecs, callback,
+  // callbackAfterSecs, offer, thanks } — ver services/callQueue.service.ts.
+  queueConfig          Json?
+  queueCallbacks       QueueCallback[]
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -580,6 +584,7 @@ model TenantUser {
   csatResponses   CsatResponse[]
   chatMemberships ChatMember[]
   chatMessages    ChatMessage[]
+  callbacks       QueueCallback[]
 }
 
 // Perfil de acesso ao CRM, gerido pela Comunica no backoffice. A matriz diz,
@@ -1724,4 +1729,34 @@ model ChatMessage {
   createdAt DateTime   @default(now())
 
   @@index([roomId, createdAt])
+}
+
+// ============ CALLBACK DA FILA ============
+// Quem esperava na fila carregou 1 a pedir que lhe liguem (esse é o
+// consentimento). O despacho entrega-o ao primeiro agente livre do grupo, que
+// liga pelo webphone. Ver services/callQueue.service.ts.
+enum QueueCallbackStatus {
+  PENDING // à espera de um agente livre
+  ASSIGNED // entregue a um agente, a ligar
+  DONE // falou com o cliente
+  FAILED // esgotou as tentativas
+  CANCELLED
+}
+
+model QueueCallback {
+  id           String              @id @default(cuid())
+  tenantId     String
+  tenant       Tenant              @relation(fields: [tenantId], references: [id])
+  callId       String? // chamada de entrada em que o pediu
+  groupId      String? // grupo pelo qual esperava (null = qualquer agente)
+  number       String
+  status       QueueCallbackStatus @default(PENDING)
+  attempts     Int                 @default(0)
+  assignedToId String?
+  assignedTo   TenantUser?         @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  assignedAt   DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime            @default(now())
+
+  @@index([tenantId, status, createdAt])
 }

@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Select, Textarea } from '@/components/ui/Input';
 import { useToast } from '@/contexts/ToastContext';
 import { formatPhone } from '@/lib/utils';
+import { categoryChain } from '@/lib/categories';
 
 /**
  * Tipificação pós-chamada no webphone (melhoria 2). Com tipificação
@@ -36,8 +37,8 @@ export function TypingModal({ legId, onClose }: { legId: string | null; onClose:
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { success, error } = useToast();
-  const [categoryId, setCategoryId] = useState('');
-  const [subcategoryId, setSubcategoryId] = useState('');
+  // Escolha do topo até ao último nível: [categoria, sub, sub-sub, …].
+  const [path, setPath] = useState<string[]>([]);
   const [note, setNote] = useState('');
 
   const { data } = useQuery({
@@ -47,20 +48,24 @@ export function TypingModal({ legId, onClose }: { legId: string | null; onClose:
   });
   // Edição: começa com o que já estava gravado.
   useEffect(() => {
-    setCategoryId(data?.categoryId ?? '');
-    setSubcategoryId(data?.subcategoryId ?? '');
+    setPath(data ? categoryChain(data.categories, data.subcategoryId ?? data.categoryId ?? null) : []);
     setNote(data?.note ?? '');
   }, [data]);
 
   const pending = data?.status === 'PENDING';
   const left = secsLeft(data?.wrapUpEndsAt ?? null, useNow(pending));
-  const tops = data?.categories.filter((c) => c.parentId === null) ?? [];
-  const subs = data?.categories.filter((c) => c.parentId === categoryId) ?? [];
-  const valid = categoryId !== '' && (subs.length === 0 || subcategoryId !== '');
+  const cats = data?.categories ?? [];
+  const childrenOf = (id: string | null) => cats.filter((c) => c.parentId === id);
+  const tops = childrenOf(null);
+  // Um select por nível: o topo e, por cada escolha com filhos, o nível seguinte.
+  const levels = [tops, ...path.map((id) => childrenOf(id))].filter((opts, i) => i === 0 || opts.length > 0);
+  // Tem de descer até ao fim (a API recusa um nível que ainda tenha subcategorias).
+  const valid = path.length > 0 && childrenOf(path[path.length - 1]!).length === 0;
+  const pickAt = (level: number, id: string) => setPath((p) => (id ? [...p.slice(0, level), id] : p.slice(0, level)));
 
   const save = useMutation({
     mutationFn: () =>
-      callTypingApi.saveTyping(legId!, { categoryId, subcategoryId: subcategoryId || null, note: note.trim() || null }),
+      callTypingApi.saveTyping(legId!, { categoryId: path[0]!, subcategoryId: path.length > 1 ? path[path.length - 1]! : null, note: note.trim() || null }),
     onSuccess: () => {
       success(t('webphone.typingSaved'));
       void qc.invalidateQueries({ queryKey: ['untyped-legs'] });
@@ -92,16 +97,12 @@ export function TypingModal({ legId, onClose }: { legId: string | null; onClose:
           <p className="text-sm text-gray-500">{t('webphone.typingNoCategories')}</p>
         ) : (
           <>
-            <Select label={t('webphone.typingCategory')} value={categoryId} onChange={(e) => { setCategoryId(e.target.value); setSubcategoryId(''); }}>
-              <option value="">—</option>
-              {tops.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </Select>
-            {subs.length > 0 && (
-              <Select label={t('webphone.typingSubcategory')} value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)}>
+            {levels.map((opts, i) => (
+              <Select key={i} label={i === 0 ? t('webphone.typingCategory') : t('webphone.typingSubcategory')} value={path[i] ?? ''} onChange={(e) => pickAt(i, e.target.value)}>
                 <option value="">—</option>
-                {subs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {opts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </Select>
-            )}
+            ))}
             <Textarea label={t('webphone.typingNote')} value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={1000} />
           </>
         )}

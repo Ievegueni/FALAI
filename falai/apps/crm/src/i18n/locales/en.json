@@ -1065,7 +1065,26 @@
       "pauses": "Pauses by reason",
       "noReason": "No reason",
       "empty": "No users.",
-      "hint": "Logged in = time with the CRM open. Adherence = % of the shift spent logged in."
+      "hint": "Logged = time with the CRM open. Adherence = % of the shift spent logged in. Available = logged in, not paused, talking or in wrap-up.",
+      "talk": "Talk",
+      "wrapUp": "Wrap-up",
+      "available": "Available",
+      "timeline": "States of {{name}}",
+      "timelineHint": "Click an agent to see their state timeline.",
+      "state": "State",
+      "since": "Start",
+      "until": "End",
+      "duration": "Duration",
+      "detail": "Detail",
+      "ongoing": "ongoing",
+      "noStates": "No records in this period.",
+      "states": {
+        "LOGGED_IN": "Logged in",
+        "LOGGED_OUT": "Logged out",
+        "PAUSED": "Paused",
+        "IN_CALL": "In call",
+        "WRAP_UP": "Wrap-up"
+      }
     },
     "csat": {
       "settings": "Satisfaction survey",
@@ -1279,7 +1298,8 @@
       "WHISPER": "A supervisor is talking to you (the customer can't hear).",
       "BARGE": "A supervisor joined the call (the customer hears them)."
     },
-    "pauseWithReason": "Pause…"
+    "pauseWithReason": "Pause…",
+    "fromQueue": "From queue · waited {{wait}}"
   },
   "telephony": {
     "title": "Telephony",
@@ -1947,5 +1967,73 @@
     "placeholder": "Write a message… (Enter sends, Shift+Enter new line)",
     "empty": "No conversations yet. Start one with a colleague.",
     "pick": "Pick a conversation on the left."
+  },
+  "queue": {
+    "tab": "Callbacks",
+    "settings": {
+      "title": "Queue and callback",
+      "maxWait": "Maximum wait in queue (minutes)",
+      "maxWaitHint": "With no agent free, callers wait with music and the call rings the first agent who becomes free. 0 = no queue (out-of-service notice).",
+      "callback": "Offer callback to waiting callers",
+      "callbackHint": "After the set time, callers hear the offer and press 1 to be called back (this is their consent). The first free agent gets the request and the webphone dials automatically.",
+      "callbackAfter": "Offer after (seconds)",
+      "offer": "Offer message",
+      "thanks": "Confirmation message"
+    },
+    "list": {
+      "all": "All",
+      "requested": "Requested",
+      "number": "Number",
+      "status": "Status",
+      "attempts": "Attempts",
+      "agent": "Agent",
+      "empty": "No callback requests"
+    },
+    "status": {
+      "PENDING": "Waiting for agent",
+      "ASSIGNED": "Calling",
+      "DONE": "Done",
+      "FAILED": "Failed",
+      "CANCELLED": "Cancelled"
+    },
+    "popup": {
+      "title": "Callback requested from queue",
+      "requestedAt": "Requested at {{time}}",
+      "attempt": "attempt {{n}}",
+      "autoDial": "Dialling automatically in {{secs}} s",
+      "waitingPhone": "Waiting for the webphone to be free",
+      "paused": "Auto-dial paused",
+      "callNow": "Call now",
+      "hold": "Wait",
+      "done": "Spoke to the customer",
+      "noAnswer": "No answer",
+      "cancel": "Cancel"
+    }
+  },
+  "wallboard": {
+    "open": "TV mode",
+    "title": "Contact centre",
+    "waiting": "Waiting",
+    "longest": "longest {{time}}",
+    "answered": "Answered today",
+    "missed": "Missed today",
+    "abandoned": "{{n}} abandoned",
+    "sla": "SLA today",
+    "target": "target {{pct}}%",
+    "asa": "Avg. wait",
+    "tma": "AHT {{time}}",
+    "callbacks": "Callbacks",
+    "agents": "Agents",
+    "noAgents": "No agents",
+    "queue": "Queue now",
+    "queueEmpty": "Nobody waiting",
+    "unknownCustomer": "Customer",
+    "more": "+{{n}} waiting",
+    "ranking": "Today's ranking",
+    "rankingEmpty": "No answered calls yet",
+    "rankingHint": "Answered · AHT · satisfaction",
+    "offline": "Offline",
+    "allGroups": "All groups",
+    "fullscreen": "Full screen"
   }
 }

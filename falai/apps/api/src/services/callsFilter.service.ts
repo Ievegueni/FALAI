@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 import type { Prisma } from "@falai/db";
+import { legUnderCategory } from "./callTyping.service.js";
 
 export const callsFilterSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -61,7 +62,7 @@ export function callsWhere(tenantId: string, f: CallsFilter): Prisma.CallWhereIn
   const and: Prisma.CallWhereInput[] = [];
   if (f.q) and.push(searchWhere(f.q));
   if (f.extensionId) and.push({ legs: { some: { extensionId: f.extensionId, outcome: "ANSWERED" } } });
-  if (f.categoryId) and.push({ legs: { some: { OR: [{ categoryId: f.categoryId }, { subcategoryId: f.categoryId }] } } });
+  if (f.categoryId) and.push({ legs: { some: legUnderCategory(f.categoryId) } }); // inclui os níveis por baixo
   if (and.length > 0) where.AND = and;
   return where;
 }

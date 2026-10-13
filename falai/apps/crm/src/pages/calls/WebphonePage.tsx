@@ -117,6 +117,7 @@ export function WebphonePage() {
     callState,
     remoteIdentity,
     incomingLegId,
+    incomingQueueWaitSecs,
     error,
     selectExtension,
     call,
@@ -268,6 +269,11 @@ export function WebphonePage() {
             <div className="flex flex-col items-center gap-4 py-4">
               <p className="text-sm text-gray-600">{t('webphone.incomingCall')}</p>
               <p className="text-lg font-semibold text-gray-900">{remoteIdentity}</p>
+              {incomingQueueWaitSecs !== null && (
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800">
+                  {t('webphone.fromQueue', { wait: `${Math.floor(incomingQueueWaitSecs / 60)}:${String(incomingQueueWaitSecs % 60).padStart(2, '0')}` })}
+                </span>
+              )}
               <div className="flex gap-3">
                 <Button variant="danger" icon={<PhoneOff className="h-4 w-4" />} onClick={() => setRejecting(true)}>
                   {t('webphone.reject')}

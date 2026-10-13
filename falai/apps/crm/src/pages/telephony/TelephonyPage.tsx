@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, KeyRound, Users, Shield, Copy, Check, Radio, Lock } from 'lucide-react';
 import { telephonyApi, rejectReasonsApi, pauseReasonsApi, callTypingApi, type RejectReason, type CallCategory } from '@/lib/api';
+import { MAX_CATEGORY_DEPTH, categoryPathLabel } from '@/lib/categories';
 import { isConfigAdmin, isOpsManager } from '@/lib/roles';
 import { useAuth } from '@/contexts/AuthContext';
 import { Header } from '@/components/layout/Header';
@@ -423,7 +424,7 @@ function ReasonsTab({ canManage, api, queryKey, hintKey, placeholderKey, emptyKe
 }
 
 // ─── Tipificação de chamadas (melhoria 2) ────────────────────────────────────
-// Categoria → subcategoria. Desactivar em vez de apagar (histórico). Grupos só
+// Categoria → subcategoria → … (até MAX_CATEGORY_DEPTH níveis). Desactivar em vez de apagar (histórico). Grupos só
 // nas categorias: vazio = todos os agentes vêem.
 function TypingTab({ canManage }: { canManage: boolean }) {
   const { t } = useTranslation();
@@ -473,8 +474,15 @@ function TypingTab({ canManage }: { canManage: boolean }) {
   const groupName = (id: string) => groups?.find((g) => g.id === id)?.name ?? id;
   const isTopModal = modal ? (modal.editing?.parentId ?? modal.parentId) === null : false;
 
-  const row = (c: CallCategory, sub: boolean) => (
-    <div key={c.id} className={`flex items-center gap-3 px-5 py-2.5 ${sub ? 'pl-12 bg-gray-50/50' : ''}`}>
+  // Árvore: cada nível com mais recuo; "+ subcategoria" até ao último nível permitido.
+  const tree = (c: CallCategory, depth: number): JSX.Element[] => [
+    row(c, depth),
+    ...(cats ?? []).filter((s) => s.parentId === c.id).flatMap((s) => tree(s, depth + 1)),
+  ];
+  const row = (c: CallCategory, depth: number) => {
+    const sub = depth > 1;
+    return (
+    <div key={c.id} className={`flex items-center gap-3 py-2.5 pr-5 ${sub ? 'bg-gray-50/50' : ''}`} style={{ paddingLeft: `${1.25 + (depth - 1) * 1.75}rem` }}>
       <p className={`flex-1 text-sm ${c.isActive ? 'text-gray-900' : 'text-gray-400 line-through'} ${sub ? '' : 'font-medium'}`}>{c.name}</p>
       {!sub && c.groupIds.length > 0 && (
         <div className="flex gap-1">{c.groupIds.map((g) => <Badge key={g} className="bg-blue-50 text-blue-700">{groupName(g)}</Badge>)}</div>
@@ -482,13 +490,14 @@ function TypingTab({ canManage }: { canManage: boolean }) {
       {!c.isActive && <Badge className="bg-gray-100 text-gray-500">{t('telephony.inactive')}</Badge>}
       {canManage && (
         <div className="flex items-center gap-1">
-          {!sub && <Button size="sm" variant="ghost" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => open(null, c.id)}>{t('telephony.typingAddSub')}</Button>}
+          {depth < MAX_CATEGORY_DEPTH && <Button size="sm" variant="ghost" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => open(null, c.id)}>{t('telephony.typingAddSub')}</Button>}
           <Button size="sm" variant="ghost" onClick={() => open(c, c.parentId)}>{t('common.edit')}</Button>
           <Button size="sm" variant="ghost" onClick={() => toggle.mutate(c)}>{c.isActive ? t('telephony.deactivate') : t('telephony.activate')}</Button>
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <>
@@ -513,13 +522,13 @@ function TypingTab({ canManage }: { canManage: boolean }) {
       </div>
       <Card padding={false}>
         <div className="divide-y divide-gray-50">
-          {tops.map((c) => [row(c, false), ...(cats ?? []).filter((s) => s.parentId === c.id).map((s) => row(s, true))])}
+          {tops.flatMap((c) => tree(c, 1))}
           {tops.length === 0 && <div className="px-5 py-8 text-center text-gray-400 text-sm">{t('telephony.typingEmpty')}</div>}
         </div>
       </Card>
 
       <Modal open={modal !== null} onClose={() => setModal(null)}
-        title={modal?.editing ? t('common.edit') : isTopModal ? t('telephony.typingNewCategory') : t('telephony.typingAddSub')}
+        title={modal?.editing ? t('common.edit') : isTopModal ? t('telephony.typingNewCategory') : `${t('telephony.typingAddSub')} — ${modal?.parentId ? categoryPathLabel(cats ?? [], modal.parentId) : ''}`}
         footer={<><Button variant="ghost" onClick={() => setModal(null)}>{t('common.cancel')}</Button><Button loading={save.isPending} disabled={!name.trim()} onClick={() => save.mutate()}>{t('common.save')}</Button></>}>
         <div className="space-y-4">
           <Input label={t('common.name')} value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoFocus />

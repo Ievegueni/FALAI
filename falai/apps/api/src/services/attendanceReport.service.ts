@@ -31,7 +31,7 @@
  * mesmas funções/endpoints.
  */
 import { prisma, type CallLegOutcome } from "@falai/db";
-import { typingStatus, wrapUpSecs } from "./callTyping.service.js";
+import { typingStatus, wrapUpSecs, SUB_PATH_SELECT, subPathName, legUnderCategory, categoryLineage } from "./callTyping.service.js";
 import { csatSummary, type CsatSummary } from "./csat.service.js";
 import { DEFAULT_SLA_RULE, slaSecsFor, slaTargetFor, tenantTargets, slaRuleOf, type SlaRule, type ServiceTargets } from "./serviceTargets.js";
 
@@ -63,6 +63,8 @@ export interface LegRow {
   // Tipificação (melhoria 2)
   categoryId?: string | null;
   subcategoryId?: string | null;
+  /** Último nível tipificado e os pais dele (ids) — para filtrar por um nível do meio. */
+  typingIds?: string[];
   category?: string | null;
   subcategory?: string | null;
   typedAt?: Date | null;
@@ -466,10 +468,12 @@ async function loadRows(tenantId: string, from: Date, to: Date): Promise<{ calls
         typedAt: true,
         wrapUpEndsAt: true,
         category: { select: { name: true } },
-        subcategory: { select: { name: true } },
+        subcategory: { select: SUB_PATH_SELECT },
       },
     }),
   ]);
+  const tree = await prisma.callCategory.findMany({ where: { tenantId }, select: { id: true, parentId: true } });
+  const lineage = (id: string | null) => (id ? categoryLineage(tree, id) : []);
   return {
     calls,
     legs: legs.map((l) => ({
@@ -488,7 +492,8 @@ async function loadRows(tenantId: string, from: Date, to: Date): Promise<{ calls
       categoryId: l.categoryId,
       subcategoryId: l.subcategoryId,
       category: l.category?.name ?? null,
-      subcategory: l.subcategory?.name ?? null,
+      subcategory: subPathName(l.subcategory) ?? null,
+      typingIds: lineage(l.subcategoryId),
       typedAt: l.typedAt,
       wrapUpEndsAt: l.wrapUpEndsAt,
     })),
@@ -533,7 +538,8 @@ export async function buildAttendanceReport(
   }
   // Tipificação: só as chamadas atendidas com esta categoria (ou subcategoria).
   if (f.categoryId) {
-    selLegs = selLegs.filter((l) => l.categoryId === f.categoryId || l.subcategoryId === f.categoryId);
+    // Um nível do meio apanha tudo o que está por baixo dele (typingIds = último nível + pais).
+    selLegs = selLegs.filter((l) => l.categoryId === f.categoryId || (l.typingIds ?? [l.subcategoryId]).includes(f.categoryId!));
     const ids = new Set(selLegs.map((l) => l.callId));
     selCalls = selCalls.filter((c) => ids.has(c.id));
   }
@@ -700,7 +706,7 @@ export async function listAttendanceCalls(
       legs: {
         some: {
           ...(f.extensionId && { extensionId: f.extensionId }),
-          ...(f.categoryId && { OR: [{ categoryId: f.categoryId }, { subcategoryId: f.categoryId }] }),
+          ...(f.categoryId && legUnderCategory(f.categoryId)),
         },
       },
     }),
@@ -733,7 +739,7 @@ export async function listAttendanceCalls(
             rejectNote: true,
             rejectReason: { select: { label: true } },
             category: { select: { name: true } },
-            subcategory: { select: { name: true } },
+            subcategory: { select: SUB_PATH_SELECT },
             typingNote: true,
           },
         },
@@ -760,7 +766,7 @@ export async function listAttendanceCalls(
         outcome: l.outcome,
         responseSecs: l.answeredAt ? Math.round(secs(l.ringStartedAt, l.answeredAt)) : null,
         reason: l.rejectReason?.label ?? l.rejectNote ?? null,
-        typing: l.category ? [l.category.name, l.subcategory?.name].filter(Boolean).join(" › ") : null,
+        typing: l.category ? [l.category.name, subPathName(l.subcategory)].filter(Boolean).join(" › ") : null,
         typingNote: l.typingNote,
       })),
     })),

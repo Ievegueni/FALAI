@@ -51,6 +51,7 @@ const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then((m)
 const PbxIntegrationPage = lazy(() => import('@/pages/settings/PbxIntegrationPage').then((m) => ({ default: m.PbxIntegrationPage })));
 const TelephonyPage = lazy(() => import('@/pages/telephony/TelephonyPage').then((m) => ({ default: m.TelephonyPage })));
 const WebphonePage = lazy(() => import('@/pages/calls/WebphonePage').then((m) => ({ default: m.WebphonePage })));
+const WallboardPage = lazy(() => import('@/pages/wallboard/WallboardPage').then((m) => ({ default: m.WallboardPage })));
 const SupervisionPage = lazy(() => import('@/pages/supervision/SupervisionPage').then((m) => ({ default: m.SupervisionPage })));
 
 export default function App() {
@@ -67,6 +68,9 @@ export default function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/2fa" element={<TwoFactorPage />} />
               </Route>
+
+              {/* TV da sala de supervisão — ecrã inteiro, sem sidebar nem SSE */}
+              <Route path="/wallboard" element={<RequireFeature feature="webphone"><WallboardPage /></RequireFeature>} />
 
               {/* Onboarding — full-page, no sidebar */}
               <Route path="/onboarding" element={<OnboardingPage />} />

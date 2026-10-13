@@ -17,7 +17,7 @@ import type { RTCSession } from 'jssip/lib/RTCSession';
 import type { RTCSessionEvent } from 'jssip/lib/UA';
 import { webphoneApi, type SupervisionMode } from '@/lib/api';
 import { useTenantEvents } from '@/lib/tenantEvents';
-import { startRingtone, stopRingtone, unlockRingtone } from '@/lib/ringtone';
+import { playQueueAlert, startRingback, startRingtone, stopRingback, stopRingtone, unlockRingtone } from '@/lib/ringtone';
 import { useToast } from '@/contexts/ToastContext';
 
 export type RegistrationState = 'unregistered' | 'registering' | 'registered' | 'failed';
@@ -30,6 +30,8 @@ interface WebphoneContextValue {
   remoteIdentity: string | null;
   /** Perna da chamada a entrar (cabeçalho X-Falai-Leg-Id) — para gravar o motivo de uma recusa. */
   incomingLegId: string | null;
+  /** Segundos que a chamada a entrar esperou na fila (X-Falai-Queue-Wait); null = não veio da fila. */
+  incomingQueueWaitSecs: number | null;
   error: string | null;
   /** Esta sessão é uma supervisão (o utilizador é o supervisor a ouvir). */
   supervising: boolean;
@@ -65,6 +67,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
   const [callState, setCallState] = useState<CallState>('idle');
   const [remoteIdentity, setRemoteIdentity] = useState<string | null>(null);
   const [incomingLegId, setIncomingLegId] = useState<string | null>(null);
+  const [incomingQueueWaitSecs, setIncomingQueueWaitSecs] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [supervising, setSupervising] = useState(false);
   const [supervisedMode, setSupervisedMode] = useState<SupervisionMode | null>(null);
@@ -178,8 +181,16 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
           // Posto pelo router de entrada (inboundCallRouter.service.ts) para
           // o motivo de uma recusa ficar na perna certa dos relatórios.
           setIncomingLegId(request.getHeader('X-Falai-Leg-Id') || null);
+          // Vem da fila de espera: sinal próprio (bip + notificação do sistema),
+          // mesmo com o CRM noutro separador.
+          const waited = Number(request.getHeader('X-Falai-Queue-Wait')) || null;
+          setIncomingQueueWaitSecs(waited);
+          if (waited) {
+            playQueueAlert();
+            notifyQueueCall(session.remote_identity.uri.user, waited);
+          }
           if (locationRef.current !== '/webphone') {
-            info('Chamada a entrar — abra o Webphone para atender.');
+            info(waited ? `Chamada da fila (esperou ${fmtWait(waited)}) — abra o Webphone para atender.` : 'Chamada a entrar — abra o Webphone para atender.');
           }
         });
 
@@ -249,6 +260,14 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
   }, [callState]);
   useEffect(() => stopRingtone, []);
 
+  // Chamada de saída: sinal de chamada até o cliente atender (ou falhar). A
+  // supervisão entra directamente em 'in-call', por isso não toca.
+  useEffect(() => {
+    if (callState === 'calling' || callState === 'ringing') startRingback();
+    else stopRingback();
+  }, [callState]);
+  useEffect(() => stopRingback, []);
+
   // Com a página recarregada, o gesto de escolher a linha pode não voltar a
   // acontecer (linha reposta automaticamente): qualquer clique autoriza o som.
   useEffect(() => {
@@ -280,6 +299,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
         callState,
         remoteIdentity,
         incomingLegId,
+        incomingQueueWaitSecs,
         supervising,
         supervisedMode,
         error,
@@ -297,6 +317,16 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
       {children}
     </WebphoneContext.Provider>
   );
+}
+
+const fmtWait = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+/** Notificação do sistema operativo; pede autorização na primeira vez. */
+function notifyQueueCall(from: string, waited: number): void {
+  if (typeof Notification === 'undefined') return;
+  const show = () => new Notification('Chamada da fila a entrar', { body: `${from} — esperou ${fmtWait(waited)}`, tag: 'falai-queue-call' });
+  if (Notification.permission === 'granted') show();
+  else if (Notification.permission === 'default') void Notification.requestPermission().then((p) => p === 'granted' && show());
 }
 
 export function useWebphone(): WebphoneContextValue {

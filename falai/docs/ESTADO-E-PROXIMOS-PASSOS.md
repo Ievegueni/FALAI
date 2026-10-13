@@ -221,6 +221,36 @@ integração pronto a entregar: `docs/API-BYOM.md`.
   tudo no browser e no Excel. Página própria do agente não feita: o agente já vê
   os seus números (âmbito SELF) no separador Atendimento.
 
+### 3.6 Fila de espera, callback e estados do agente (13/10, `feat/tickets`, por commitar) — por testar com chamadas reais
+
+- **Fila real** (`inboundCallRouter.service.ts`, secção "Fila"): sem agente livre
+  (em chamada, a tocar, pausa, pós-chamada, a tratar callback) quem liga espera
+  com música e a chamada toca sozinha no primeiro que ficar livre, por ordem de
+  chegada. `Tenant.queueConfig.maxWaitSecs` (0 = comportamento antigo).
+- **Callback** (`callQueue.service.ts`): oferta por TTS ao fim de N s, tecla 1 =
+  consentimento → `QueueCallback`. Despacho entrega ao primeiro agente livre
+  (CRM aberto) por SSE; o popup do CRM liga sozinho pelo webphone em 10 s.
+  "Não atendeu" volta à fila (5 min, máx. 3 tentativas).
+- **Sinal**: cabeçalho `X-Falai-Queue-Wait` no INVITE → bip próprio, notificação
+  do sistema e "Da fila · esperou m:ss" no webphone.
+- **Estados do agente**: relatório de tempo com conversa/pós-chamada/disponível
+  + linha do tempo por agente (`/tenant/reports/agent-states`). "PAUSE BREAK",
+  "REMUP" etc. são motivos de pausa configuráveis.
+- UI: Supervisão → separador Callbacks; Supervisão → Definições → Fila.
+- Migração `20261013170000_call_queue_callback` aplicada na BD dev (13/10); por aplicar em produção (com backup).
+- Limite: chamadas de saída do webphone não contam como "ocupado" nem como conversa.
+- **Sinal de chamada na saída** do webphone (tom 425 Hz gerado no browser, `lib/ringtone.ts`).
+- **TV da sala (`/wallboard`)**: ecrã inteiro escuro, 2 em 2 s — em espera/maior espera,
+  atendidas, perdidas, SLA vs meta, ASA/TMA, callbacks, grelha de agentes por estado,
+  fila ao vivo, ranking do dia (atendidas, TMA, CSAT), alertas. `?group=<id>` por sala.
+  Rota `GET /tenant/supervision/wallboard` — **nunca devolve números de clientes**, só o
+  nome do contacto. Entra com uma conta de supervisor da sala; fica fora do AppLayout
+  (sem SSE) para não contar como agente ligado. Botão "Modo TV" na Supervisão.
+- **Demo local**: `npx tsx --env-file=.env scripts/seed-atendimento.ts` (tenant Demo
+  Company; contas `sala@`, `ana@`, `bruno@`, `carla@`, `delcio@`, `edna@demo.com`,
+  password `Demo1234!`) + `DEMO_LIVE=1` no `.env` (só dev: `services/demoLive.ts` mostra
+  as chamadas `demo-*` como ao vivo). Reiniciar a API **antes** do seed (o arranque fecha sessões abertas).
+
 ## 4. O QUE FALTA FAZER
 
 ### 4.0 API_BYOM — validar contra base de dados (fazer primeiro, é rápido)

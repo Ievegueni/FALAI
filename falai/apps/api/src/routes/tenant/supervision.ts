@@ -3,7 +3,10 @@ import { z } from "zod";
 import { prisma } from "@falai/db";
 import { extensionEndpointId, extensionWebEndpointId } from "@falai/providers";
 import type { TenantJwtPayload } from "../../plugins/auth.js";
-import { activeInboundCalls, monitoringNoticePrompt } from "../../services/inboundCallRouter.service.js";
+import { activeInboundCalls, monitoringNoticePrompt, queuedCalls, type ActiveInboundCall } from "../../services/inboundCallRouter.service.js";
+import { rankAgents } from "../../services/wallboard.service.js";
+import { demoActiveCalls, demoLive, demoQueuedCalls } from "../../services/demoLive.js";
+import { slaRuleOf, slaTargetFor, tenantTargets } from "../../services/serviceTargets.js";
 import { SupervisionError } from "../../services/supervision.service.js";
 import { callKpis, abandonedIds } from "../../services/attendanceReport.service.js";
 import { isTelephonyWav } from "../shared/ivrRouting.js";
@@ -81,6 +84,7 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
   }
 
   async function isOnline(sipAuthUser: string): Promise<boolean> {
+    if (demoLive) return true;
     const hit = onlineCache.get(sipAuthUser);
     if (hit && Date.now() - hit.at < ONLINE_TTL_MS) return hit.online;
     const states = await Promise.all(
@@ -92,25 +96,27 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
   }
 
   // GET /tenant/supervision/live — agentes, chamadas activas e indicadores do dia
-  fastify.get("/tenant/supervision/live", { preHandler }, async (request, reply) => {
-    const user = request.tenantUser!;
-    const scope = await scopeOr403(user, reply);
-    if (!scope) return;
-    const { tenantId } = user;
-    const now = new Date();
-
+  /**
+   * Estado de cada agente agora (extensões activas no âmbito; `groupId`
+   * restringe a um grupo). Partilhado pelo painel e pela TV da sala.
+   */
+  async function agentsNow(tenantId: string, scope: Scope, now: Date, calls: ActiveInboundCall[], groupId?: string) {
     const extensions = await prisma.extension.findMany({
-      where: { tenantId, isActive: true, ...(!scope.all && { id: { in: [...scope.extensionIds] } }) },
+      where: {
+        tenantId,
+        isActive: true,
+        ...(!scope.all && { id: { in: [...scope.extensionIds] } }),
+        ...(groupId && { groups: { some: { groupId } } }),
+      },
       orderBy: { number: "asc" },
       select: {
         id: true, number: true, displayName: true, sipAuthUser: true, pausedAt: true,
+        users: { take: 1, select: { id: true, name: true } },
         pauses: { where: { endedAt: null }, take: 1, select: { reason: { select: { label: true } } } },
       },
     });
     const extIds = extensions.map((e) => e.id);
-    const calls = activeInboundCalls(tenantId).filter((c) => inScope(scope, c));
-
-    const [ringing, wrapUps, callRows, groups, todayCalls, todayLegs, online, me] = await Promise.all([
+    const [ringing, wrapUps, online] = await Promise.all([
       prisma.callLeg.findMany({
         where: { tenantId, extensionId: { in: extIds }, outcome: null, ringStartedAt: { gte: new Date(now.getTime() - 5 * 60_000) } },
         select: { extensionId: true, ringStartedAt: true },
@@ -119,6 +125,39 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
         where: { tenantId, extensionId: { in: extIds }, typedAt: null, wrapUpEndsAt: { gt: now } },
         select: { extensionId: true, endedAt: true },
       }),
+      Promise.all(extensions.map((e) => isOnline(e.sipAuthUser))),
+    ]);
+    const byExt = <T extends { extensionId: string | null }>(rows: T[]) => new Map(rows.map((r) => [r.extensionId!, r]));
+    const ringingBy = byExt(ringing);
+    const wrapBy = byExt(wrapUps);
+    const callBy = new Map(calls.map((c) => [c.agentExtensionId, c]));
+    return extensions.map((e, i) => ({
+      extensionId: e.id,
+      number: e.number,
+      name: e.displayName,
+      user: e.users[0] ?? null,
+      ...agentState({
+        inCallSince: callBy.get(e.id)?.answeredAt ?? null,
+        ringingSince: ringingBy.get(e.id)?.ringStartedAt ?? null,
+        wrapUpSince: wrapBy.get(e.id)?.endedAt ?? null,
+        pausedAt: e.pausedAt,
+        online: online[i]!,
+      }),
+      pauseReason: e.pausedAt ? (e.pauses[0]?.reason?.label ?? null) : null,
+    }));
+  }
+
+  fastify.get("/tenant/supervision/live", { preHandler }, async (request, reply) => {
+    const user = request.tenantUser!;
+    const scope = await scopeOr403(user, reply);
+    if (!scope) return;
+    const { tenantId } = user;
+    const now = new Date();
+
+    const calls = [...activeInboundCalls(tenantId), ...(await demoActiveCalls(tenantId))].filter((c) => inScope(scope, c));
+
+    const [agents, callRows, groups, todayCalls, todayLegs, me] = await Promise.all([
+      agentsNow(tenantId, scope, now, calls),
       prisma.call.findMany({
         where: { tenantId, id: { in: calls.map((c) => c.callId) } },
         select: { id: true, fromNumber: true, contact: { select: { name: true } } },
@@ -137,41 +176,24 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
         where: { tenantId, ringStartedAt: { gte: startOfDay(now) }, outcome: "CANCELLED" },
         select: { callId: true, outcome: true },
       }),
-      Promise.all(extensions.map((e) => isOnline(e.sipAuthUser))),
       prisma.tenantUser.findUnique({ where: { id: user.sub }, select: { extensionId: true } }),
     ]);
 
-    const byExt = <T extends { extensionId: string | null }>(rows: T[]) => new Map(rows.map((r) => [r.extensionId!, r]));
-    const ringingBy = byExt(ringing);
-    const wrapBy = byExt(wrapUps);
-    const callBy = new Map(calls.map((c) => [c.agentExtensionId, c]));
     const rowBy = new Map(callRows.map((r) => [r.id, r]));
     const groupName = new Map(groups.map((g) => [g.id, g.name]));
-    const extBy = new Map(extensions.map((e) => [e.id, e]));
+    const extBy = new Map(agents.map((e) => [e.extensionId, e]));
     const k = callKpis(todayCalls, abandonedIds(todayLegs));
 
     return {
       now,
-      agents: extensions.map((e, i) => ({
-        extensionId: e.id,
-        number: e.number,
-        name: e.displayName,
-        ...agentState({
-          inCallSince: callBy.get(e.id)?.answeredAt ?? null,
-          ringingSince: ringingBy.get(e.id)?.ringStartedAt ?? null,
-          wrapUpSince: wrapBy.get(e.id)?.endedAt ?? null,
-          pausedAt: e.pausedAt,
-          online: online[i]!,
-        }),
-        pauseReason: e.pausedAt ? (e.pauses[0]?.reason?.label ?? null) : null,
-      })),
+      agents: agents.map(({ user: _u, ...a }) => a),
       calls: calls.map((c) => {
         const row = rowBy.get(c.callId);
         const ext = extBy.get(c.agentExtensionId);
         const session = fastify.supervision.forCall(c.callId);
         return {
           callId: c.callId,
-          agent: ext ? (ext.displayName ?? ext.number) : null,
+          agent: ext ? (ext.name ?? ext.number) : null,
           agentNumber: ext?.number ?? null,
           group: c.groupId ? (groupName.get(c.groupId) ?? null) : null,
           customer: row?.contact?.name ?? null,
@@ -190,6 +212,108 @@ export const tenantSupervisionRoutes: FastifyPluginAsync = async (fastify) => {
         missed: k.missed,
         answered: k.answered,
       },
+    };
+  });
+
+  // GET /tenant/supervision/wallboard — TV da sala (ver services/wallboard.service.ts).
+  // Nunca devolve números de telefone de clientes: só o nome do contacto.
+  fastify.get<{ Querystring: { groupId?: string } }>("/tenant/supervision/wallboard", { preHandler }, async (request, reply) => {
+    const user = request.tenantUser!;
+    const scope = await scopeOr403(user, reply);
+    if (!scope) return;
+    const { tenantId } = user;
+    const groupId = request.query.groupId || undefined;
+    if (groupId && !scope.all && !scope.groupIds.has(groupId)) return reply.status(403).send({ error: "Este grupo não é seu" });
+    const now = new Date();
+    const day = startOfDay(now);
+    const groupOk = (g: string | null) => (groupId ? g === groupId : scope.all || (g !== null && scope.groupIds.has(g)));
+
+    const calls = [...activeInboundCalls(tenantId), ...(await demoActiveCalls(tenantId))].filter((c) => inScope(scope, c) && (!groupId || c.groupId === groupId));
+    const queue = [...queuedCalls(tenantId), ...(await demoQueuedCalls(tenantId))].filter((q) => groupOk(q.groupId));
+    const callIds = [...calls.map((c) => c.callId), ...queue.map((q) => q.callId).filter((x): x is string => !!x)];
+
+    const [agents, callRows, groups, todayCalls, todayLegs, targets, pendingCallbacks, group] = await Promise.all([
+      agentsNow(tenantId, scope, now, calls, groupId),
+      prisma.call.findMany({ where: { tenantId, id: { in: callIds } }, select: { id: true, contact: { select: { name: true } } } }),
+      prisma.extensionGroup.findMany({ where: { tenantId }, select: { id: true, name: true } }),
+      prisma.call.findMany({
+        where: {
+          tenantId,
+          kind: "INBOUND",
+          queuedAt: { gte: day },
+          ...(groupId ? { groupId } : !scope.all && { groupId: { in: [...scope.groupIds] } }),
+        },
+        select: { id: true, queuedAt: true, answeredAt: true, endedAt: true, groupId: true },
+      }),
+      prisma.callLeg.findMany({
+        where: { tenantId, ringStartedAt: { gte: day } },
+        select: { callId: true, outcome: true, extensionId: true, answeredAt: true, endedAt: true },
+      }),
+      tenantTargets(tenantId),
+      prisma.queueCallback.count({
+        where: { tenantId, status: { in: ["PENDING", "ASSIGNED"] }, ...(groupId ? { groupId } : !scope.all && { groupId: { in: [...scope.groupIds] } }) },
+      }),
+      groupId ? prisma.extensionGroup.findFirst({ where: { id: groupId, tenantId }, select: { name: true } }) : null,
+    ]);
+    const customer = new Map(callRows.map((r) => [r.id, r.contact?.name ?? null]));
+    const groupName = new Map(groups.map((g) => [g.id, g.name]));
+    const callByExt = new Map(calls.map((c) => [c.agentExtensionId, c]));
+    const k = callKpis(todayCalls, abandonedIds(todayLegs), slaRuleOf(targets));
+
+    // Ranking do dia: pernas atendidas pelas extensões no ecrã + satisfação de hoje.
+    const extIds = new Set(agents.map((a) => a.extensionId));
+    const extByUser = new Map(agents.filter((a) => a.user).map((a) => [a.user!.id, a.extensionId]));
+    const csat = await prisma.csatResponse.findMany({
+      where: { tenantId, agentId: { in: [...extByUser.keys()] }, score: { not: null }, answeredAt: { gte: day } },
+      select: { agentId: true, score: true },
+    });
+    const csatByExt = new Map<string, number[]>();
+    for (const r of csat) {
+      const ext = extByUser.get(r.agentId!);
+      if (ext) csatByExt.set(ext, [...(csatByExt.get(ext) ?? []), r.score!]);
+    }
+    const nameOf = (a: (typeof agents)[number]) => a.user?.name ?? a.name ?? a.number;
+
+    return {
+      now,
+      group: group?.name ?? null,
+      kpis: {
+        waiting: queue.length,
+        longestWaitSince: queue.reduce<Date | null>((m, q) => (!m || q.since < m ? q.since : m), null),
+        answered: k.answered,
+        missed: k.missed,
+        abandoned: k.abandoned,
+        slaPct: k.slaPct,
+        slaTargetPct: slaTargetFor(targets, groupId ?? null),
+        maxWaitTargetSecs: targets.maxWaitSecs,
+        tmeSecs: k.tmeSecs,
+        tmaSecs: k.tmaSecs,
+        pendingCallbacks,
+      },
+      queue: queue
+        .sort((a, b) => a.since.getTime() - b.since.getTime())
+        .map((q) => ({
+          since: q.since,
+          group: q.groupId ? (groupName.get(q.groupId) ?? null) : null,
+          customer: q.callId ? (customer.get(q.callId) ?? null) : null,
+        })),
+      agents: agents.map((a) => {
+        const c = callByExt.get(a.extensionId);
+        return {
+          extensionId: a.extensionId,
+          name: nameOf(a),
+          state: a.state,
+          since: a.since,
+          pauseReason: a.pauseReason,
+          customer: c ? (customer.get(c.callId) ?? null) : null,
+          group: c?.groupId ? (groupName.get(c.groupId) ?? null) : null,
+        };
+      }),
+      ranking: rankAgents(
+        todayLegs.filter((l) => l.extensionId && extIds.has(l.extensionId) && l.outcome === "ANSWERED"),
+        new Map(agents.map((a) => [a.extensionId, nameOf(a)])),
+        csatByExt
+      ),
     };
   });
 

@@ -492,8 +492,30 @@ export interface SupervisionLogEntry {
   modes: { mode: SupervisionMode; at: string }[];
 }
 
+export interface Wallboard {
+  now: string;
+  group: string | null;
+  kpis: {
+    waiting: number;
+    longestWaitSince: string | null;
+    answered: number;
+    missed: number;
+    abandoned: number;
+    slaPct: number | null;
+    slaTargetPct: number | null;
+    maxWaitTargetSecs: number | null;
+    tmeSecs: number | null;
+    tmaSecs: number | null;
+    pendingCallbacks: number;
+  };
+  queue: { since: string; group: string | null; customer: string | null }[];
+  agents: { extensionId: string; name: string; state: AgentLiveState; since: string | null; pauseReason: string | null; customer: string | null; group: string | null }[];
+  ranking: { extensionId: string; name: string; answered: number; tmaSecs: number | null; csatAvg: number | null }[];
+}
+
 export const supervisionApi = {
   live: () => get<SupervisionLive>('/tenant/supervision/live'),
+  wallboard: (groupId?: string) => get<Wallboard>(`/tenant/supervision/wallboard${qs({ groupId })}`),
   start: (callId: string, mode: SupervisionMode) =>
     post<{ sessionId: string; status: string; mode: SupervisionMode }>(`/tenant/supervision/calls/${callId}`, { mode }),
   setMode: (sessionId: string, mode: SupervisionMode) =>
@@ -1449,10 +1471,17 @@ export interface AgentTimeRow {
   adherencePct: number | null;
   pausedSecs: number;
   pauses: { reason: string | null; secs: number; count: number }[];
+  talkSecs: number;
+  wrapUpSecs: number;
+  availableSecs: number;
 }
+export type AgentState = 'LOGGED_IN' | 'LOGGED_OUT' | 'PAUSED' | 'IN_CALL' | 'WRAP_UP';
+export interface AgentStateSegment { state: AgentState; from: string; to: string | null; detail: string | null }
 
 export const agentTimeApi = {
   report: (q: { from?: string; to?: string }) => get<{ from: string; to: string; data: AgentTimeRow[] }>(`/tenant/reports/agent-time${qs(q)}`),
+  states: (q: { userId: string; from?: string; to?: string }) =>
+    get<{ user: { id: string; name: string }; from: string; to: string; data: AgentStateSegment[] }>(`/tenant/reports/agent-states${qs(q)}`),
   download: (q: { from?: string; to?: string }) => downloadFile(`/tenant/reports/agent-time.xlsx${qs(q)}`, 'tempo_agentes.xlsx'),
 };
 
@@ -1531,6 +1560,38 @@ export const csatApi = {
   report: (q: { from?: string; to?: string }) => get<CsatReport>(`/tenant/reports/csat${qs(q)}`),
   download: (q: { from?: string; to?: string }) => downloadFile(`/tenant/reports/csat.xlsx${qs(q)}`, 'satisfacao.xlsx'),
   review: (id: string, data: { reviewed: boolean; note?: string | null }) => put<{ ok: true }>(`/tenant/csat/${id}/review`, data),
+};
+
+// ─── Fila de espera + callback ──────────────────────────────────────────────
+
+export interface QueueConfig {
+  maxWaitSecs: number;
+  callback: boolean;
+  callbackAfterSecs: number;
+  offer: string;
+  thanks: string;
+}
+export type QueueCallbackStatus = 'PENDING' | 'ASSIGNED' | 'DONE' | 'FAILED' | 'CANCELLED';
+export interface QueueCallback {
+  id: string;
+  number: string;
+  status: QueueCallbackStatus;
+  attempts: number;
+  createdAt: string;
+  assignedAt: string | null;
+  closedAt?: string | null;
+  groupId: string | null;
+  assignedTo: { name: string } | null;
+  contact?: { id: string; name: string | null } | null;
+}
+
+export const queueApi = {
+  settings: () => get<QueueConfig>('/tenant/queue/settings'),
+  save: (data: QueueConfig) => put<QueueConfig>('/tenant/queue/settings', data),
+  callbacks: (q: { status?: QueueCallbackStatus }) => get<{ data: QueueCallback[] }>(`/tenant/queue-callbacks${qs(q)}`),
+  mine: () => get<{ data: QueueCallback | null }>('/tenant/queue-callbacks/mine'),
+  result: (id: string, result: 'DONE' | 'NO_ANSWER' | 'CANCELLED') =>
+    post<{ id: string; status: QueueCallbackStatus; attempts: number }>(`/tenant/queue-callbacks/${id}/result`, { result }),
 };
 
 // ─── Consolidado / painel de direcção (fase 9) ──────────────────────────────

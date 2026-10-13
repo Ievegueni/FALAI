@@ -13,6 +13,7 @@
  */
 import { prisma, type Prisma } from "@falai/db";
 import { normalizeAoPhone } from "@falai/shared";
+import { SUB_PATH_SELECT, subPathName } from "./callTyping.service.js";
 
 // ─── Funções puras ───────────────────────────────────────────────────────────
 
@@ -100,7 +101,7 @@ const historySelect = {
       typedAt: true,
       extension: { select: { displayName: true } },
       category: { select: { name: true } },
-      subcategory: { select: { name: true } },
+      subcategory: { select: SUB_PATH_SELECT },
     },
   },
 } satisfies Prisma.CallSelect;
@@ -122,7 +123,7 @@ function mapHistory(c: HistoryCall) {
       c.kind === "INBOUND"
         ? historyState({ answeredAt: c.answeredAt, endedAt: c.endedAt, legOutcomes: c.legs.map((l) => l.outcome) })
         : c.status,
-    typing: answered?.category ? [answered.category.name, answered.subcategory?.name].filter(Boolean).join(" › ") : null,
+    typing: answered?.category ? [answered.category.name, subPathName(answered.subcategory)].filter(Boolean).join(" › ") : null,
     note: answered?.typingNote ?? null,
   };
 }
@@ -165,7 +166,7 @@ export async function buildCallerPanel(tenantId: string, raw: string | null | un
     prisma.callLeg.findFirst({
       where: { tenantId, call: { contactId }, typedAt: { not: null } },
       orderBy: { typedAt: "desc" },
-      select: { typedAt: true, typingNote: true, category: { select: { name: true } }, subcategory: { select: { name: true } } },
+      select: { typedAt: true, typingNote: true, category: { select: { name: true } }, subcategory: { select: SUB_PATH_SELECT } },
     }),
     prisma.conversation.findMany({
       where: { tenantId, contactId },
@@ -199,7 +200,7 @@ export async function buildCallerPanel(tenantId: string, raw: string | null | un
       callsLast7Days: last7Days,
       lastTyping: lastTyped?.category
         ? {
-            label: [lastTyped.category.name, lastTyped.subcategory?.name].filter(Boolean).join(" › "),
+            label: [lastTyped.category.name, subPathName(lastTyped.subcategory)].filter(Boolean).join(" › "),
             at: lastTyped.typedAt,
             note: lastTyped.typingNote,
           }

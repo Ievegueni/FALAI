@@ -1065,7 +1065,26 @@
       "pauses": "Pausas por motivo",
       "noReason": "Sem motivo",
       "empty": "Sem utilizadores.",
-      "hint": "Ligado = tempo com o CRM aberto. Aderência = % do turno em que esteve ligado."
+      "hint": "Ligado = tempo com o CRM aberto. Aderência = % do turno em que esteve ligado. Disponível = ligado sem pausa, conversa nem pós-chamada.",
+      "talk": "Em conversa",
+      "wrapUp": "Pós-chamada",
+      "available": "Disponível",
+      "timeline": "Estados de {{name}}",
+      "timelineHint": "Clique num agente para ver a linha do tempo dos estados.",
+      "state": "Estado",
+      "since": "Início",
+      "until": "Fim",
+      "duration": "Duração",
+      "detail": "Detalhe",
+      "ongoing": "a decorrer",
+      "noStates": "Sem registos no período.",
+      "states": {
+        "LOGGED_IN": "Ligado",
+        "LOGGED_OUT": "Desligado",
+        "PAUSED": "Em pausa",
+        "IN_CALL": "Em chamada",
+        "WRAP_UP": "Pós-chamada"
+      }
     },
     "csat": {
       "settings": "Inquérito de satisfação",
@@ -1279,7 +1298,8 @@
       "WHISPER": "Um supervisor está a falar consigo (o cliente não ouve).",
       "BARGE": "Um supervisor entrou na chamada (o cliente ouve-o)."
     },
-    "pauseWithReason": "Pausar…"
+    "pauseWithReason": "Pausar…",
+    "fromQueue": "Da fila · esperou {{wait}}"
   },
   "telephony": {
     "title": "Telefonia",
@@ -1947,5 +1967,73 @@
     "placeholder": "Escreva uma mensagem… (Enter envia, Shift+Enter muda de linha)",
     "empty": "Ainda não há conversas. Comece uma com um colega.",
     "pick": "Escolha uma conversa à esquerda."
+  },
+  "queue": {
+    "tab": "Callbacks",
+    "settings": {
+      "title": "Fila de espera e callback",
+      "maxWait": "Tempo máximo na fila (minutos)",
+      "maxWaitHint": "Sem agente livre, quem liga espera com música e a chamada toca sozinha no primeiro agente que ficar livre. 0 = sem fila (aviso de sem serviço).",
+      "callback": "Oferecer callback a quem espera",
+      "callbackHint": "Ao fim do tempo indicado, quem espera ouve a oferta e carrega 1 para lhe ligarmos de volta (é o consentimento). O primeiro agente livre recebe o pedido e o webphone liga sozinho.",
+      "callbackAfter": "Oferecer ao fim de (segundos)",
+      "offer": "Mensagem da oferta",
+      "thanks": "Mensagem de confirmação"
+    },
+    "list": {
+      "all": "Todos",
+      "requested": "Pedido",
+      "number": "Número",
+      "status": "Estado",
+      "attempts": "Tentativas",
+      "agent": "Agente",
+      "empty": "Sem pedidos de callback"
+    },
+    "status": {
+      "PENDING": "À espera de agente",
+      "ASSIGNED": "A ligar",
+      "DONE": "Feito",
+      "FAILED": "Falhou",
+      "CANCELLED": "Cancelado"
+    },
+    "popup": {
+      "title": "Callback pedido na fila",
+      "requestedAt": "Pedido às {{time}}",
+      "attempt": "tentativa {{n}}",
+      "autoDial": "Liga sozinho dentro de {{secs}} s",
+      "waitingPhone": "À espera de o webphone estar livre",
+      "paused": "Marcação automática parada",
+      "callNow": "Ligar agora",
+      "hold": "Esperar",
+      "done": "Falei com o cliente",
+      "noAnswer": "Não atendeu",
+      "cancel": "Cancelar"
+    }
+  },
+  "wallboard": {
+    "open": "Modo TV",
+    "title": "Centro de atendimento",
+    "waiting": "Em espera",
+    "longest": "maior espera {{time}}",
+    "answered": "Atendidas hoje",
+    "missed": "Perdidas hoje",
+    "abandoned": "{{n}} desistiram",
+    "sla": "SLA hoje",
+    "target": "meta {{pct}}%",
+    "asa": "Espera média",
+    "tma": "TMA {{time}}",
+    "callbacks": "Callbacks",
+    "agents": "Agentes",
+    "noAgents": "Sem agentes",
+    "queue": "Fila agora",
+    "queueEmpty": "Ninguém à espera",
+    "unknownCustomer": "Cliente",
+    "more": "+{{n}} à espera",
+    "ranking": "Ranking de hoje",
+    "rankingEmpty": "Ainda sem chamadas atendidas",
+    "rankingHint": "Atendidas · TMA · satisfação",
+    "offline": "Sem ligação",
+    "allGroups": "Todos os grupos",
+    "fullscreen": "Ecrã inteiro"
   }
 }

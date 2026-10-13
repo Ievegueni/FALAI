@@ -41,6 +41,12 @@ export function formatTime(iso: string): string {
 
 export function formatDuration(secs: number): string {
   if (secs < 60) return `${secs}s`;
+  // Horas a partir de 1 h: "2627m 35s" não se lê num relatório de 30 dias.
+  if (secs >= 3600) {
+    const h = Math.floor(secs / 3600);
+    const mm = Math.floor((secs % 3600) / 60);
+    return mm > 0 ? `${h}h ${mm}m` : `${h}h`;
+  }
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return s > 0 ? `${m}m ${s}s` : `${m}m`;

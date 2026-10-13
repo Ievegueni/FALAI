@@ -1065,7 +1065,26 @@
       "pauses": "按原因的暂停",
       "noReason": "无原因",
       "empty": "没有用户。",
-      "hint": "在线 = 打开 CRM 的时间。遵守率 = 班次内在线时间占比。"
+      "hint": "登录 = 打开 CRM 的时间。遵从率 = 班次内登录时间的百分比。空闲 = 已登录且未暂停、未通话、未话后处理。",
+      "talk": "通话",
+      "wrapUp": "话后处理",
+      "available": "空闲",
+      "timeline": "{{name}} 的状态",
+      "timelineHint": "点击坐席查看状态时间线。",
+      "state": "状态",
+      "since": "开始",
+      "until": "结束",
+      "duration": "时长",
+      "detail": "详情",
+      "ongoing": "进行中",
+      "noStates": "该期间无记录。",
+      "states": {
+        "LOGGED_IN": "已登录",
+        "LOGGED_OUT": "已登出",
+        "PAUSED": "暂停",
+        "IN_CALL": "通话中",
+        "WRAP_UP": "话后处理"
+      }
     },
     "csat": {
       "settings": "满意度调查",
@@ -1279,7 +1298,8 @@
       "WHISPER": "主管正在与您说话（客户听不到）。",
       "BARGE": "主管已加入通话（客户能听到）。"
     },
-    "pauseWithReason": "暂停…"
+    "pauseWithReason": "暂停…",
+    "fromQueue": "来自排队 · 已等待 {{wait}}"
   },
   "telephony": {
     "title": "电话",
@@ -1875,5 +1895,73 @@
     "placeholder": "输入消息…（Enter 发送，Shift+Enter 换行）",
     "empty": "暂无对话。与同事开始一个吧。",
     "pick": "在左侧选择一个对话。"
+  },
+  "queue": {
+    "tab": "回拨",
+    "settings": {
+      "title": "排队与回拨",
+      "maxWait": "最长排队时间（分钟）",
+      "maxWaitHint": "没有空闲坐席时，来电者听等待音乐，电话会自动转给第一个空闲的坐席。0 = 不排队（提示无服务）。",
+      "callback": "向排队来电者提供回拨",
+      "callbackHint": "等待达到设定时间后，来电者会听到提示，按 1 即同意回拨。第一个空闲坐席收到请求，网页电话自动拨出。",
+      "callbackAfter": "多少秒后提供（秒）",
+      "offer": "提示语",
+      "thanks": "确认语"
+    },
+    "list": {
+      "all": "全部",
+      "requested": "请求时间",
+      "number": "号码",
+      "status": "状态",
+      "attempts": "尝试次数",
+      "agent": "坐席",
+      "empty": "没有回拨请求"
+    },
+    "status": {
+      "PENDING": "等待坐席",
+      "ASSIGNED": "拨打中",
+      "DONE": "已完成",
+      "FAILED": "失败",
+      "CANCELLED": "已取消"
+    },
+    "popup": {
+      "title": "排队中请求的回拨",
+      "requestedAt": "请求时间 {{time}}",
+      "attempt": "第 {{n}} 次尝试",
+      "autoDial": "{{secs}} 秒后自动拨打",
+      "waitingPhone": "等待网页电话空闲",
+      "paused": "已暂停自动拨打",
+      "callNow": "立即拨打",
+      "hold": "等待",
+      "done": "已与客户通话",
+      "noAnswer": "未接听",
+      "cancel": "取消"
+    }
+  },
+  "wallboard": {
+    "open": "电视模式",
+    "title": "呼叫中心",
+    "waiting": "排队中",
+    "longest": "最长 {{time}}",
+    "answered": "今日接听",
+    "missed": "今日未接",
+    "abandoned": "{{n}} 放弃",
+    "sla": "今日 SLA",
+    "target": "目标 {{pct}}%",
+    "asa": "平均等待",
+    "tma": "平均通话 {{time}}",
+    "callbacks": "回拨",
+    "agents": "坐席",
+    "noAgents": "没有坐席",
+    "queue": "当前排队",
+    "queueEmpty": "无人排队",
+    "unknownCustomer": "客户",
+    "more": "另有 {{n}} 人排队",
+    "ranking": "今日排名",
+    "rankingEmpty": "还没有接听的电话",
+    "rankingHint": "接听数 · 平均通话 · 满意度",
+    "offline": "连接中断",
+    "allGroups": "全部组",
+    "fullscreen": "全屏"
   }
 }

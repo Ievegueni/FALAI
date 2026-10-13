@@ -819,7 +819,10 @@ export async function agentTimeWorkbook(r: { from: string; to: string; data: Age
     { header: "Aderência", width: 10, fmt: "pct" },
     { header: "Em pausa", width: 11, fmt: "secs" },
     { header: "Pausas", width: 8, fmt: "int" },
-  ], r.data.map((a) => [a.name, a.scheduledSecs, a.loggedSecs, a.loggedInShiftSecs, a.adherencePct, a.pausedSecs, a.pauses.reduce((n, p) => n + p.count, 0)]));
+    { header: "Conversa", width: 11, fmt: "secs" },
+    { header: "Pós-chamada", width: 11, fmt: "secs" },
+    { header: "Disponível", width: 11, fmt: "secs" },
+  ], r.data.map((a) => [a.name, a.scheduledSecs, a.loggedSecs, a.loggedInShiftSecs, a.adherencePct, a.pausedSecs, a.pauses.reduce((n, p) => n + p.count, 0), a.talkSecs, a.wrapUpSecs, a.availableSecs]));
   addTableSheet(wb, "Pausas por motivo", "Pausas por motivo", sub, [
     { header: "Agente", width: 24, fmt: "text" },
     { header: "Motivo", width: 24, fmt: "text" },

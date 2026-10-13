@@ -6,6 +6,7 @@ import { Sidebar } from './Sidebar';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { IncomingCallBanner } from '@/components/calls/IncomingCallBanner';
+import { CallbackPopup } from '@/components/calls/CallbackPopup';
 import { AlertToaster } from '@/components/alerts/AlertToaster';
 import { PlatformBanner } from './PlatformBanner';
 import { ChatToaster } from '@/components/chat/ChatBits';
@@ -40,6 +41,7 @@ export function AppLayout() {
   return (
     <div className="flex h-screen bg-gray-50">
       <IncomingCallBanner />
+      <CallbackPopup />
       <AlertToaster />
       <ChatToaster />
       <Sidebar open={navOpen} onClose={() => setNavOpen(false)} pinned={pinned} onTogglePin={togglePin} />

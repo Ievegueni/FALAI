@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Headphones, MessageCircle, Users, PhoneOff, Clock, PhoneMissed, ListOrdered, CheckCircle, Upload } from 'lucide-react';
+import { Headphones, MessageCircle, Users, PhoneOff, Clock, PhoneMissed, ListOrdered, CheckCircle, Upload, Tv } from 'lucide-react';
 import {
   supervisionApi,
   type AgentLiveState,
@@ -21,6 +21,7 @@ import { toTelephonyWav } from '@/lib/telephonyWav';
 import { clsx, formatDuration, formatPhone } from '@/lib/utils';
 import { isOpsManager } from '@/lib/roles';
 import { AlertsHistory, OpenAlerts, TargetsCard } from './AlertsPanels';
+import { CallbacksList, QueueSettings } from './QueuePanels';
 
 /**
  * Supervisão em tempo real (melhoria 4). O painel pergunta à API de 2 em 2 s
@@ -300,7 +301,15 @@ export function SupervisionPage() {
   const [tab, setTab] = useState('live');
   return (
     <>
-      <Header title={t('nav.supervision')} />
+      <Header
+        title={t('nav.supervision')}
+        actions={
+          // Abre a TV da sala noutro separador, para arrastar para o ecrã grande.
+          <Button size="sm" variant="outline" icon={<Tv className="h-4 w-4" />} onClick={() => window.open('/wallboard', '_blank', 'noopener')}>
+            {t('wallboard.open')}
+          </Button>
+        }
+      />
       <div className={clsx('p-6 space-y-6')}>
         <Tabs
           active={tab}
@@ -308,6 +317,7 @@ export function SupervisionPage() {
           tabs={[
             { key: 'live', label: t('supervision.tabLive') },
             { key: 'alerts', label: t('alerts.tab') },
+            { key: 'callbacks', label: t('queue.tab') },
             ...(isAdmin
               ? [
                   { key: 'log', label: t('supervision.tabLog') },
@@ -318,8 +328,9 @@ export function SupervisionPage() {
         />
         {tab === 'live' && <><OpenAlerts /><Live /></>}
         {tab === 'alerts' && <AlertsHistory />}
+        {tab === 'callbacks' && <CallbacksList />}
         {tab === 'log' && isAdmin && <Log />}
-        {tab === 'settings' && isAdmin && <><TargetsCard /><Settings /></>}
+        {tab === 'settings' && isAdmin && <><TargetsCard /><QueueSettings /><Settings /></>}
       </div>
     </>
   );
