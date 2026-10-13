@@ -221,7 +221,7 @@ integração pronto a entregar: `docs/API-BYOM.md`.
   tudo no browser e no Excel. Página própria do agente não feita: o agente já vê
   os seus números (âmbito SELF) no separador Atendimento.
 
-### 3.6 Fila de espera, callback e estados do agente (13/10, `feat/tickets`, por commitar) — por testar com chamadas reais
+### 3.6 Fila de espera, callback e estados do agente (13–14/10, `feat/tickets`, commit 2966784) — por testar com chamadas reais
 
 - **Fila real** (`inboundCallRouter.service.ts`, secção "Fila"): sem agente livre
   (em chamada, a tocar, pausa, pós-chamada, a tratar callback) quem liga espera
