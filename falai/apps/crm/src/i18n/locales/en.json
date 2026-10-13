@@ -1002,7 +1002,9 @@
       ],
       "volume": "Calls",
       "csat": "Satisfaction",
-      "csatResponses": "{{count}} responses"
+      "csatResponses": "{{count}} responses",
+      "vsPrevious": "vs previous period",
+      "noCompare": "no comparison"
     },
     "exportPdf": "Export PDF",
     "vsPrevious": "vs. previous period",

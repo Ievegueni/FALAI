@@ -1002,7 +1002,9 @@
       ],
       "volume": "Chamadas",
       "csat": "Satisfação",
-      "csatResponses": "{{count}} respostas"
+      "csatResponses": "{{count}} respostas",
+      "vsPrevious": "vs período anterior",
+      "noCompare": "sem base de comparação"
     },
     "exportPdf": "Exportar PDF",
     "vsPrevious": "vs. período anterior",

@@ -1002,7 +1002,9 @@
       ],
       "volume": "来电",
       "csat": "满意度",
-      "csatResponses": "{{count}} 条回复"
+      "csatResponses": "{{count}} 条回复",
+      "vsPrevious": "较上一周期",
+      "noCompare": "无对比数据"
     },
     "exportPdf": "导出 PDF",
     "vsPrevious": "与上一时段相比",

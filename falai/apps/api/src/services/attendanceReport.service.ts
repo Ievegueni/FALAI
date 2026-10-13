@@ -399,6 +399,21 @@ export interface AttendanceReport {
   shortAbandonSecs: number;
   /** Satisfação da selecção (agente/grupo/âmbito; todos os canais). */
   csat: CsatSummary;
+  /** A mesma selecção no período anterior com a mesma duração (só com withPrevious). */
+  previous?: { from: string; to: string; calls: CallKpis; agents: AgentKpis; csat: CsatSummary };
+}
+
+/** Período anterior com a mesma duração, a acabar logo antes de `from`. */
+export function previousPeriod(from: Date, to: Date): { from: Date; to: Date } {
+  const prevTo = new Date(from.getTime() - 1);
+  return { from: new Date(prevTo.getTime() - (to.getTime() - from.getTime())), to: prevTo };
+}
+
+/** Relatório do período e, junto, a mesma selecção no período anterior (para as variações). */
+export async function buildAttendanceWithPrevious(tenantId: string, f: AttendanceFilter, opts: { limited: boolean }): Promise<AttendanceReport> {
+  const p = previousPeriod(f.from, f.to);
+  const [cur, prev] = await Promise.all([buildAttendanceReport(tenantId, f, opts), buildAttendanceReport(tenantId, { ...f, ...p }, opts)]);
+  return { ...cur, previous: { from: prev.from, to: prev.to, calls: prev.selection.calls, agents: prev.selection.agents, csat: prev.csat } };
 }
 
 /** Nota de satisfação com o agente (extensão do utilizador que atendeu). */

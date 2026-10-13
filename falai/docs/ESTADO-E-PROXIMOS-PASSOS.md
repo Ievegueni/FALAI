@@ -3,7 +3,7 @@
 > **Este é o ficheiro para ler no início de cada sessão.** Diz o que está feito,
 > o que falta e por onde continuar. Actualizar no fim de cada sessão.
 >
-> Última actualização: **22/09/2026**
+> Última actualização: **13/10/2026** (secção 3.5)
 > Branch actual: `docs/deploy-guide` · Último commit: `077daf0`
 > **Atenção: há trabalho não commitado** (ver secção 6).
 
@@ -199,6 +199,27 @@ integração pronto a entregar: `docs/API-BYOM.md`.
   ```
 
 ---
+
+### 3.5 Relatórios, ASA, SLA e satisfação (13/10, `feat/tickets`, 4 commits) — por testar
+
+- **SLA de voz**: limiar e meta por grupo; desistências curtas (5 s, configurável)
+  fora do SLA e do abandono; ASA (antes "TME"), ASA 90 %, maior espera, por hora,
+  mapa dia da semana × hora, SLA por dia contra a meta. Metas em
+  `services/serviceTargets.ts` (Tenant.serviceTargets, JSON — sem migração).
+- **Texto e tickets**: SLA da 1.ª resposta por canal; prazo dos tickets por
+  prioridade (automático, recalcula se não foi escrito à mão), filtro
+  "Atrasados", alertas `TEXT_SLA_BELOW`, `TICKET_DUE_SOON`, `TICKET_OVERDUE`.
+- **Satisfação**: comentário nas notas 1–2 (SMS e texto), lista de negativas
+  para a supervisão tratar, nota por agente, evolução diária, análise IA v3.
+- **Excel**: todos os separadores dos Relatórios exportam e espelham o ecrã
+  (Atendimento, Por agente, Por grupo, Recusas, Tipificação, Chamadas, Tempo
+  dos agentes, Satisfação, Consolidado, Resumo); comparação com o período anterior.
+- **Migrações novas (só aditivas)**: `20261013150000_sla_alert_types`,
+  `20261013160000_csat_comment_review`.
+- **Por fazer**: repor a BD de dev (ficou vazia a 13/10 — `migrate deploy` +
+  seeds), arrancar a API (a porta 3000 estava ocupada pelo projecto ARA) e testar
+  tudo no browser e no Excel. Página própria do agente não feita: o agente já vê
+  os seus números (âmbito SELF) no separador Atendimento.
 
 ## 4. O QUE FALTA FAZER
 

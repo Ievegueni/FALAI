@@ -49,50 +49,75 @@ function Empty() {
   return <p className="py-8 text-center text-sm text-gray-400">{t('reports.noData')}</p>;
 }
 
+type Good = 'up' | 'down' | 'neutral';
+
+/**
+ * Variação face ao período anterior: p.p. nas taxas, % no resto (como no
+ * Excel). Cor pelo sentido bom do indicador, sempre com o sinal escrito.
+ */
+function Change({ cur, prev, rate, good }: { cur: number | null; prev: number | null | undefined; rate?: boolean; good: Good }) {
+  const { t } = useTranslation();
+  if (prev === undefined) return null;
+  const ch = cur === null || prev === null ? null : rate ? Math.round((cur - prev) * 10) / 10 : prev === 0 ? null : Math.round(((cur - prev) / prev) * 1000) / 10;
+  if (ch === null) return <span className="block text-xs text-gray-400">{t('reports.att.noCompare')}</span>;
+  const tone = ch === 0 || good === 'neutral' ? 'text-gray-500' : (good === 'up') === ch > 0 ? 'text-emerald-700' : 'text-red-600';
+  return (
+    <span className={clsx('block text-xs font-medium', tone)}>
+      {ch > 0 ? '+' : ''}{ch}{rate ? ' p.p.' : '%'} {t('reports.att.vsPrevious')}
+    </span>
+  );
+}
+
 function Overview({ r, filtered }: { r: AttendanceReport; filtered: boolean }) {
   const { t } = useTranslation();
   const c = r.selection.calls;
   const a = r.selection.agents;
+  const pc = r.previous?.calls;
+  const pa = r.previous?.agents;
+  // Texto do cartão + variação.
+  const sub = (hint: React.ReactNode, cur: number | null, prev: number | null | undefined, good: Good, rate = false) => (
+    <>{hint}<Change cur={cur} prev={prev} rate={rate} good={good} /></>
+  );
   return (
     <div className="space-y-4">
       {r.limited && (
         <Card className="text-sm text-amber-700 bg-amber-50 border-amber-200">{t('reports.att.limited')}</Card>
       )}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label={t('reports.att.calls')} value={c.total} icon={<PhoneIncoming className="h-5 w-5" />} />
-        <StatCard label={t('reports.answered')} value={c.answered} sub={pct(c.answerRate)} icon={<CheckCircle className="h-5 w-5" />} />
+        <StatCard label={t('reports.att.calls')} value={c.total} sub={sub(null, c.total, pc?.total, 'neutral')} icon={<PhoneIncoming className="h-5 w-5" />} />
+        <StatCard label={t('reports.answered')} value={c.answered} sub={sub(pct(c.answerRate), c.answerRate, pc?.answerRate, 'up', true)} icon={<CheckCircle className="h-5 w-5" />} />
         <StatCard
           label={t('reports.missed')}
           value={c.missed}
-          sub={t('reports.att.abandonedSub', { count: c.abandoned })}
+          sub={sub(t('reports.att.abandonedSub', { count: c.abandoned }), c.missed, pc?.missed, 'down')}
           icon={<PhoneMissed className="h-5 w-5" />}
         />
         {!r.limited && (
-          <StatCard label={t('reports.att.rejected')} value={a.rejected} sub={pct(a.rejectRate)} icon={<PhoneOff className="h-5 w-5" />} />
+          <StatCard label={t('reports.att.rejected')} value={a.rejected} sub={sub(pct(a.rejectRate), a.rejectRate, pa?.rejectRate, 'down', true)} icon={<PhoneOff className="h-5 w-5" />} />
         )}
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label={t('reports.att.sla')}
           value={<span className={slaTone(c.slaPct, r.slaTargetPct)}>{pct(c.slaPct)}</span>}
-          sub={r.slaTargetPct !== null ? t('reports.att.slaHintTarget', { secs: r.slaSecs, target: r.slaTargetPct }) : t('reports.att.slaHint', { secs: r.slaSecs })}
+          sub={sub(r.slaTargetPct !== null ? t('reports.att.slaHintTarget', { secs: r.slaSecs, target: r.slaTargetPct }) : t('reports.att.slaHint', { secs: r.slaSecs }), c.slaPct, pc?.slaPct, 'up', true)}
           icon={<Target className="h-5 w-5" />}
         />
-        <StatCard label={t('reports.att.tme')} value={dur(c.tmeSecs)} sub={t('reports.att.tmeHint')} icon={<Timer className="h-5 w-5" />} />
-        <StatCard label={t('reports.att.asaP90')} value={dur(c.asaP90Secs)} sub={t('reports.att.asaP90Hint')} icon={<Hourglass className="h-5 w-5" />} />
-        <StatCard label={t('reports.att.maxWait')} value={dur(c.maxWaitSecs)} sub={t('reports.att.maxWaitHint')} icon={<Hourglass className="h-5 w-5" />} />
-        <StatCard label={t('reports.att.tma')} value={dur(c.tmaSecs)} sub={t('reports.att.tmaHint')} icon={<Clock className="h-5 w-5" />} />
+        <StatCard label={t('reports.att.tme')} value={dur(c.tmeSecs)} sub={sub(t('reports.att.tmeHint'), c.tmeSecs, pc?.tmeSecs, 'down')} icon={<Timer className="h-5 w-5" />} />
+        <StatCard label={t('reports.att.asaP90')} value={dur(c.asaP90Secs)} sub={sub(t('reports.att.asaP90Hint'), c.asaP90Secs, pc?.asaP90Secs, 'down')} icon={<Hourglass className="h-5 w-5" />} />
+        <StatCard label={t('reports.att.maxWait')} value={dur(c.maxWaitSecs)} sub={sub(t('reports.att.maxWaitHint'), c.maxWaitSecs, pc?.maxWaitSecs, 'down')} icon={<Hourglass className="h-5 w-5" />} />
+        <StatCard label={t('reports.att.tma')} value={dur(c.tmaSecs)} sub={sub(t('reports.att.tmaHint'), c.tmaSecs, pc?.tmaSecs, 'neutral')} icon={<Clock className="h-5 w-5" />} />
         {!r.limited && (
-          <StatCard label={t('reports.att.response')} value={dur(a.responseSecs)} sub={t('reports.att.responseHint')} icon={<Zap className="h-5 w-5" />} />
+          <StatCard label={t('reports.att.response')} value={dur(a.responseSecs)} sub={sub(t('reports.att.responseHint'), a.responseSecs, pa?.responseSecs, 'down')} icon={<Zap className="h-5 w-5" />} />
         )}
         {!r.limited && (
-          <StatCard label={t('reports.att.abandonRate')} value={pct(c.abandonRate)} sub={t('reports.att.abandonRateHint', { count: c.abandoned - c.shortAbandoned })} icon={<LogOut className="h-5 w-5" />} />
+          <StatCard label={t('reports.att.abandonRate')} value={pct(c.abandonRate)} sub={sub(t('reports.att.abandonRateHint', { count: c.abandoned - c.shortAbandoned }), c.abandonRate, pc?.abandonRate, 'down', true)} icon={<LogOut className="h-5 w-5" />} />
         )}
         {r.csat.responses > 0 && (
-          <StatCard label={t('reports.att.csat')} value={r.csat.avg ?? '—'} sub={t('reports.cons.csatHint', { pct: pct(r.csat.satisfiedPct), n: r.csat.responses })} icon={<Smile className="h-5 w-5" />} />
+          <StatCard label={t('reports.att.csat')} value={r.csat.avg ?? '—'} sub={sub(t('reports.cons.csatHint', { pct: pct(r.csat.satisfiedPct), n: r.csat.responses }), r.csat.avg, r.previous?.csat.avg, 'up')} icon={<Smile className="h-5 w-5" />} />
         )}
         {!r.limited && r.shortAbandonSecs > 0 && (
-          <StatCard label={t('reports.att.shortAbandoned')} value={c.shortAbandoned} sub={t('reports.att.shortAbandonedHint', { secs: r.shortAbandonSecs })} icon={<PhoneMissed className="h-5 w-5" />} />
+          <StatCard label={t('reports.att.shortAbandoned')} value={c.shortAbandoned} sub={sub(t('reports.att.shortAbandonedHint', { secs: r.shortAbandonSecs }), c.shortAbandoned, pc?.shortAbandoned, 'neutral')} icon={<PhoneMissed className="h-5 w-5" />} />
         )}
       </div>
       {!r.limited && <SlaTrend r={r} />}

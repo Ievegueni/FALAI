@@ -317,44 +317,77 @@ export function addKpiSheet(
   return ws;
 }
 
-/** Os indicadores do separador Atendimento (os cartões e a comparação com a conta). */
+type Good = "up" | "down" | "neutral";
+
+/** Variação face ao período anterior: p.p. nas taxas, % no resto. null sem base. Pura. */
+export function changeOf(cur: number | null, prev: number | null, fmt: Fmt): number | null {
+  if (cur === null || prev === null) return null;
+  if (fmt === "pct") return Math.round((cur - prev) * 10) / 10;
+  return prev === 0 ? null : Math.round(((cur - prev) / prev) * 1000) / 10;
+}
+
+/** Os indicadores do separador Atendimento (os cartões, a média da conta e o período anterior). */
 function indicatorsSheet(wb: ExcelJS.Workbook, a: AttendanceReport, sub: string, filtered: boolean): void {
   const c = a.selection.calls;
   const g = a.selection.agents;
   const tc = a.tenant.calls;
   const ta = a.tenant.agents;
-  const both = (x: number | null, y: number | null) => (filtered ? [x, y] : [x]);
-  const rows: Parameters<typeof addKpiSheet>[5] = [
-    { label: "Chamadas", fmt: "int", values: both(c.total, tc.total) },
-    { label: "Atendidas", fmt: "int", values: both(c.answered, tc.answered) },
-    { label: "% atendimento", fmt: "pct", values: both(c.answerRate, tc.answerRate) },
-    { label: "Perdidas", fmt: "int", values: both(c.missed, tc.missed) },
-    { label: "Abandonadas (quem ligou desligou)", fmt: "int", values: both(c.abandoned, tc.abandoned) },
-    { label: `Desistências curtas (antes de ${a.shortAbandonSecs} s, fora do SLA)`, fmt: "int", values: both(c.shortAbandoned, tc.shortAbandoned) },
-    { label: "% abandono (sem as curtas)", fmt: "pct", values: both(c.abandonRate, tc.abandonRate) },
+  const pc = a.previous?.calls;
+  const pg = a.previous?.agents;
+  const pz = a.previous?.csat;
+  type Row = { label: string; fmt: Fmt; cur: number | null; ten: number | null; prev: number | null | undefined; good: Good; target?: number | null };
+  const rows: Row[] = [
+    { label: "Chamadas", fmt: "int", cur: c.total, ten: tc.total, prev: pc?.total, good: "neutral" },
+    { label: "Atendidas", fmt: "int", cur: c.answered, ten: tc.answered, prev: pc?.answered, good: "up" },
+    { label: "% atendimento", fmt: "pct", cur: c.answerRate, ten: tc.answerRate, prev: pc?.answerRate, good: "up" },
+    { label: "Perdidas", fmt: "int", cur: c.missed, ten: tc.missed, prev: pc?.missed, good: "down" },
+    { label: "Abandonadas (quem ligou desligou)", fmt: "int", cur: c.abandoned, ten: tc.abandoned, prev: pc?.abandoned, good: "down" },
+    { label: `Desistências curtas (antes de ${a.shortAbandonSecs} s, fora do SLA)`, fmt: "int", cur: c.shortAbandoned, ten: tc.shortAbandoned, prev: pc?.shortAbandoned, good: "neutral" },
+    { label: "% abandono (sem as curtas)", fmt: "pct", cur: c.abandonRate, ten: tc.abandonRate, prev: pc?.abandonRate, good: "down" },
     ...(a.limited ? [] : [
-      { label: "Recusadas", fmt: "int" as Fmt, values: both(g.rejected, ta.rejected) },
-      { label: "% recusa", fmt: "pct" as Fmt, values: both(g.rejectRate, ta.rejectRate) },
+      { label: "Recusadas", fmt: "int" as Fmt, cur: g.rejected, ten: ta.rejected, prev: pg?.rejected, good: "down" as Good },
+      { label: "% recusa", fmt: "pct" as Fmt, cur: g.rejectRate, ten: ta.rejectRate, prev: pg?.rejectRate, good: "down" as Good },
     ]),
-    { label: `SLA (atendidas em menos de ${a.slaSecs} s)`, fmt: "pct", values: both(c.slaPct, tc.slaPct), target: { value: a.slaTargetPct, higherIsBetter: true } },
-    { label: "Meta do SLA", fmt: "pct", values: both(a.slaTargetPct, a.slaTargetPct) },
-    { label: "Atendidas dentro do SLA", fmt: "int", values: both(c.slaMet, tc.slaMet) },
-    { label: "TMA — tempo médio de atendimento", fmt: "secs", values: both(c.tmaSecs, tc.tmaSecs) },
-    { label: "ASA — tempo médio de espera até atender", fmt: "secs", values: both(c.tmeSecs, tc.tmeSecs) },
-    { label: "ASA 90% — 9 em cada 10 atendidas esperaram até", fmt: "secs", values: both(c.asaP90Secs, tc.asaP90Secs) },
-    { label: "Maior espera", fmt: "secs", values: both(c.maxWaitSecs, tc.maxWaitSecs) },
+    { label: `SLA (atendidas em menos de ${a.slaSecs} s)`, fmt: "pct", cur: c.slaPct, ten: tc.slaPct, prev: pc?.slaPct, good: "up", target: a.slaTargetPct },
+    { label: "Meta do SLA", fmt: "pct", cur: a.slaTargetPct, ten: a.slaTargetPct, prev: undefined, good: "neutral" },
+    { label: "Atendidas dentro do SLA", fmt: "int", cur: c.slaMet, ten: tc.slaMet, prev: pc?.slaMet, good: "up" },
+    { label: "TMA — tempo médio de atendimento", fmt: "secs", cur: c.tmaSecs, ten: tc.tmaSecs, prev: pc?.tmaSecs, good: "neutral" },
+    { label: "ASA — tempo médio de espera até atender", fmt: "secs", cur: c.tmeSecs, ten: tc.tmeSecs, prev: pc?.tmeSecs, good: "down" },
+    { label: "ASA 90% — 9 em cada 10 atendidas esperaram até", fmt: "secs", cur: c.asaP90Secs, ten: tc.asaP90Secs, prev: pc?.asaP90Secs, good: "down" },
+    { label: "Maior espera", fmt: "secs", cur: c.maxWaitSecs, ten: tc.maxWaitSecs, prev: pc?.maxWaitSecs, good: "down" },
     ...(a.limited ? [] : [
-      { label: "Tempo de resposta do agente", fmt: "secs" as Fmt, values: both(g.responseSecs, ta.responseSecs) },
-      { label: "Tipificadas", fmt: "int" as Fmt, values: both(g.typed, ta.typed) },
-      { label: "Não tipificadas", fmt: "int" as Fmt, values: both(g.untyped, ta.untyped) },
-      { label: "% não tipificadas", fmt: "pct" as Fmt, values: both(g.untypedRate, ta.untypedRate) },
-      { label: "Pós-chamada (do fim até tipificar)", fmt: "secs" as Fmt, values: both(g.wrapUpSecs, ta.wrapUpSecs) },
+      { label: "Tempo de resposta do agente", fmt: "secs" as Fmt, cur: g.responseSecs, ten: ta.responseSecs, prev: pg?.responseSecs, good: "down" as Good },
+      { label: "Tipificadas", fmt: "int" as Fmt, cur: g.typed, ten: ta.typed, prev: pg?.typed, good: "neutral" as Good },
+      { label: "Não tipificadas", fmt: "int" as Fmt, cur: g.untyped, ten: ta.untyped, prev: pg?.untyped, good: "down" as Good },
+      { label: "% não tipificadas", fmt: "pct" as Fmt, cur: g.untypedRate, ten: ta.untypedRate, prev: pg?.untypedRate, good: "down" as Good },
+      { label: "Pós-chamada (do fim até tipificar)", fmt: "secs" as Fmt, cur: g.wrapUpSecs, ten: ta.wrapUpSecs, prev: pg?.wrapUpSecs, good: "down" as Good },
     ]),
-    { label: "Satisfação — média (1 a 5, todos os canais)", fmt: "dec", values: filtered ? [a.csat.avg, null] : [a.csat.avg] },
-    { label: "Satisfação — % satisfeitos (4 e 5)", fmt: "pct", values: filtered ? [a.csat.satisfiedPct, null] : [a.csat.satisfiedPct] },
-    { label: "Satisfação — respostas", fmt: "int", values: filtered ? [a.csat.responses, null] : [a.csat.responses] },
+    { label: "Satisfação — média (1 a 5, todos os canais)", fmt: "dec", cur: a.csat.avg, ten: null, prev: pz?.avg, good: "up" },
+    { label: "Satisfação — % satisfeitos (4 e 5)", fmt: "pct", cur: a.csat.satisfiedPct, ten: null, prev: pz?.satisfiedPct, good: "up" },
+    { label: "Satisfação — respostas", fmt: "int", cur: a.csat.responses, ten: null, prev: pz?.responses, good: "neutral" },
   ];
-  addKpiSheet(wb, "Indicadores", "Indicadores de atendimento", sub, filtered ? ["Selecção", "Média da conta"] : ["Valor"], rows);
+  const withPrev = a.previous !== undefined;
+  const cols = [filtered ? "Selecção" : "Valor", ...(filtered ? ["Média da conta"] : []), ...(withPrev ? ["Período anterior", "Variação"] : [])];
+  const sub2 = withPrev ? `${sub} · comparado com ${fmtDate(a.previous!.from)} – ${fmtDate(a.previous!.to)} · variação em p.p. nas taxas e em % no resto` : sub;
+  const ws = addKpiSheet(wb, "Indicadores", "Indicadores de atendimento", sub2, cols, rows.map((r) => ({
+    label: r.label,
+    fmt: r.fmt,
+    values: [r.cur, ...(filtered ? [r.ten] : []), ...(withPrev ? [r.prev ?? null] : [])],
+    ...(r.target !== undefined && { target: { value: r.target, higherIsBetter: true } }),
+  })));
+  if (!withPrev) return;
+  const col = cols.length + 1; // a última coluna (Variação)
+  rows.forEach((r, i) => {
+    const cell = ws.getCell(5 + i, col);
+    const ch = r.prev === undefined ? null : changeOf(r.cur, r.prev, r.fmt);
+    cell.value = ch === null ? null : r.fmt === "pct" ? ch : ch / 100;
+    cell.numFmt = r.fmt === "pct" ? '+0.0" p.p.";-0.0" p.p.";0.0" p.p."' : "+0.0%;-0.0%;0.0%";
+    cell.alignment = { horizontal: "right" };
+    if (ch !== null && ch !== 0 && r.good !== "neutral") {
+      const good = (r.good === "up") === ch > 0;
+      cell.font = { bold: true, color: { argb: good ? "FF006300" : "FFD03B3B" } };
+    }
+  });
 }
 
 const PERIOD_COLS: Column[] = [

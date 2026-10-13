@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import ExcelJS from "exceljs";
-import { attendanceWorkbook, csatWorkbook } from "./excelExport.service.js";
+import { attendanceWorkbook, changeOf, csatWorkbook } from "./excelExport.service.js";
 
 /** Excel dos relatórios: números como números (não texto), com o formato certo. */
 describe("Excel formatado", () => {
@@ -39,6 +39,7 @@ describe("Excel formatado", () => {
       byHour: Array.from({ length: 24 }, (_, hour) => ({ hour, ...period })),
       byWeekdayHour: grid, slaSecs: 21, slaTargetPct: 80, shortAbandonSecs: 5,
       csat: { responses: 4, avg: 4.5, satisfiedPct: 100, distribution: { 1: 0, 2: 0, 3: 0, 4: 2, 5: 2 } },
+      previous: { from: "2026-08-04T00:00:00Z", to: "2026-09-02T23:59:59Z", calls: { ...kpis, total: 10, slaPct: 70 }, agents, csat: { responses: 2, avg: 4, satisfiedPct: 50, distribution: { 1: 0, 2: 0, 3: 1, 4: 0, 5: 1 } } },
     } as never;
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load((await attendanceWorkbook(report, "attendance", "Demo")) as never);
@@ -47,6 +48,11 @@ describe("Excel formatado", () => {
     const slaRow = [...Array(30).keys()].map((i) => ind.getRow(5 + i)).find((r) => String(r.getCell(1).value).startsWith("SLA"))!;
     expect(slaRow.getCell(2).value).toBeCloseTo(0.636);
     expect(slaRow.getCell(2).font.color?.argb).toBe("FFD03B3B"); // abaixo da meta de 80 %
+    expect(slaRow.getCell(3).value).toBeCloseTo(0.7); // período anterior
+    expect(slaRow.getCell(4).value).toBe(-6.4); // variação em p.p.
+    expect(slaRow.getCell(4).font.color?.argb).toBe("FFD03B3B"); // o SLA desceu
+    expect(ind.getCell("C5").value).toBe(10);
+    expect(ind.getCell("D5").value).toBeCloseTo(0.2); // chamadas +20 %
     const day = wb.getWorksheet("Por dia")!;
     expect(day.getCell("I5").value).toBe(0.8); // meta ao lado do SLA
     expect(wb.getWorksheet("Por hora")!.getCell("A14").value).toBe("09:00");
@@ -101,5 +107,14 @@ describe("Excel da satisfação", () => {
     const neg = wb.getWorksheet("Negativas")!;
     expect(neg.getCell("H5").value).toBe("Esperei muito");
     expect(neg.getCell("I5").value).toBe("Por tratar");
+  });
+});
+
+describe("variação face ao período anterior", () => {
+  it("p.p. nas taxas, % no resto, null sem base", () => {
+    expect(changeOf(82, 80, "pct")).toBe(2);
+    expect(changeOf(120, 100, "int")).toBe(20);
+    expect(changeOf(5, 0, "int")).toBeNull();
+    expect(changeOf(null, 3, "secs")).toBeNull();
   });
 });

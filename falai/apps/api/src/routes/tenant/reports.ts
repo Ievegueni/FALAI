@@ -2,6 +2,7 @@ import { z } from "zod";
 import { buildCallReport, reportToCsv } from "../../services/reports.service.js";
 import {
   buildAttendanceReport,
+  buildAttendanceWithPrevious,
   exportTable,
   listAttendanceCalls,
   tableToCsv,
@@ -243,7 +244,7 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
     const f = await scopedAttendanceFilter(request, attendanceSchema.parse(request.query));
     if ("error" in f) return reply.status(403).send(f);
     const { isCrmPbx } = await ensureCdrSynced(fastify, tenantId);
-    return buildAttendanceReport(tenantId, f, { limited: isCrmPbx });
+    return buildAttendanceWithPrevious(tenantId, f, { limited: isCrmPbx });
   });
 
   // GET /tenant/reports/attendance/calls — chamadas de entrada com as pernas (paginado)
@@ -266,7 +267,7 @@ export const tenantReportsRoutes: FastifyPluginAsync = async (fastify) => {
     if (q.format === "xlsx") {
       // Excel já formatado (exceljs) — ver services/excelExport.service.ts.
       const [report, tenant, analysis, calls, filters] = await Promise.all([
-        buildAttendanceReport(tenantId, f, { limited: isCrmPbx }),
+        q.view === "attendance" ? buildAttendanceWithPrevious(tenantId, f, { limited: isCrmPbx }) : buildAttendanceReport(tenantId, f, { limited: isCrmPbx }),
         prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true } }),
         // A análise guardada é dos filtros, não do âmbito: só vai para quem vê tudo.
         f.scope ? null : latestAnalysis(tenantId, analysisFilters(q)),

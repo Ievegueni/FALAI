@@ -1211,6 +1211,8 @@ export interface AttendanceReport {
   byWeekdayHour: number[][];
   /** Satisfação da selecção (todos os canais). */
   csat: CsatSummary;
+  /** A mesma selecção no período anterior (para as variações). */
+  previous?: { from: string; to: string; calls: AttendanceCallKpis; agents: AttendanceAgentKpis; csat: CsatSummary };
 }
 
 export type CallLegOutcome = 'ANSWERED' | 'NO_ANSWER' | 'REJECTED' | 'BUSY' | 'CANCELLED' | 'FAILED';
