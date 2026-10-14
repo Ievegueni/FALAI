@@ -5,6 +5,7 @@ import type { CallEngineService } from "./CallEngineService.js";
 import { reserveBalance, computeReservation, effectivePrice, type PriceConfig } from "./billing.service.js";
 import { resolveOutboundExtension, NoOutboundLineError } from "./outboundExtension.service.js";
 import { enqueueWebhook } from "./webhookDispatch.service.js";
+import { parseRetryPolicy } from "./callSettlement.service.js";
 
 const DISPATCH_INTERVAL_MS = 30_000; // every 30 seconds
 
@@ -433,9 +434,9 @@ export class CampaignDispatcher {
       await refundDispatchReservation(campaign.tenantId, estimatedCost, createdCallId);
 
       // Handle retry or mark as failed
-      const retryPolicyRaw = campaign.retryPolicy as Record<string, unknown> | null;
-      const maxAttempts = typeof retryPolicyRaw?.["maxAttempts"] === "number" ? retryPolicyRaw["maxAttempts"] : 0;
-      const delayMinutes = typeof retryPolicyRaw?.["delayMinutes"] === "number" ? retryPolicyRaw["delayMinutes"] : 60;
+      const retryPolicy = parseRetryPolicy(campaign.retryPolicy);
+      const maxAttempts = retryPolicy?.maxAttempts ?? 0;
+      const delayMinutes = retryPolicy?.delayMinutes ?? 60;
       const newAttempts = (cc.attempts ?? 0) + 1;
 
       if (maxAttempts > 0 && newAttempts < maxAttempts) {
@@ -559,9 +560,9 @@ export class CampaignDispatcher {
 
       await refundDispatchReservation(campaign.tenantId, estimatedCost, createdCallId);
 
-      const retryPolicyRaw = campaign.retryPolicy as Record<string, unknown> | null;
-      const maxAttempts = typeof retryPolicyRaw?.["maxAttempts"] === "number" ? retryPolicyRaw["maxAttempts"] : 0;
-      const delayMinutes = typeof retryPolicyRaw?.["delayMinutes"] === "number" ? retryPolicyRaw["delayMinutes"] : 60;
+      const retryPolicy = parseRetryPolicy(campaign.retryPolicy);
+      const maxAttempts = retryPolicy?.maxAttempts ?? 0;
+      const delayMinutes = retryPolicy?.delayMinutes ?? 60;
       const newAttempts = (cc.attempts ?? 0) + 1;
 
       if (maxAttempts > 0 && newAttempts < maxAttempts) {

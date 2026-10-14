@@ -2,20 +2,30 @@ import { prisma } from "@falai/db";
 import type { CallStatus } from "@falai/db";
 import type { FastifyBaseLogger } from "fastify";
 
-interface RetryPolicy {
+export interface RetryPolicy {
   maxAttempts: number;
   retryOn: string[];
   delayMinutes: number;
 }
 
-function parseRetryPolicy(raw: unknown): RetryPolicy | null {
+/** Resultados que voltam a ser tentados quando a política não traz `retryOn`. */
+const DEFAULT_RETRY_ON = ["NO_ANSWER", "BUSY", "FAILED"];
+
+/**
+ * Lê a política gravada na campanha. A API (CRM e v1) grava
+ * `{ maxAttempts, retryDelayMinutes }`; `retryOn` e `delayMinutes` são o
+ * formato antigo e continuam a ser aceites. Antes exigia-se `retryOn`, que a
+ * API nunca grava, e por isso nenhuma chamada não atendida voltava a ser feita.
+ */
+export function parseRetryPolicy(raw: unknown): RetryPolicy | null {
   if (!raw || typeof raw !== "object") return null;
   const p = raw as Record<string, unknown>;
-  if (typeof p["maxAttempts"] !== "number" || !Array.isArray(p["retryOn"])) return null;
+  if (typeof p["maxAttempts"] !== "number") return null;
+  const delay = typeof p["retryDelayMinutes"] === "number" ? p["retryDelayMinutes"] : p["delayMinutes"];
   return {
-    maxAttempts: p["maxAttempts"] as number,
-    retryOn: p["retryOn"] as string[],
-    delayMinutes: typeof p["delayMinutes"] === "number" ? p["delayMinutes"] : 60,
+    maxAttempts: p["maxAttempts"],
+    retryOn: Array.isArray(p["retryOn"]) ? (p["retryOn"] as string[]) : DEFAULT_RETRY_ON,
+    delayMinutes: typeof delay === "number" ? delay : 60,
   };
 }
 
