@@ -842,8 +842,8 @@
       "campaignsRetry": "Retry a CANCELLED or DONE campaign",
       "campaignsReport": "Full effectiveness report for the campaign",
       "campaignsContactsList": "Named list of participants, with status and outcome",
-      "campaignsContactsRemoveOne": "Remove 1 not-yet-contacted contact from the campaign",
-      "campaignsContactsRemove": "Remove several not-yet-contacted contacts at once",
+      "campaignsContactsRemoveOne": "Remove 1 contact from the campaign (unless a call is in progress)",
+      "campaignsContactsRemove": "Remove several contacts from the campaign at once (unless a call is in progress)",
       "walletGet": "Current balance and latest transactions",
       "smsSend": "Send an SMS"
     },

@@ -842,8 +842,8 @@
       "campaignsRetry": "重试已取消或已完成的活动",
       "campaignsReport": "活动的完整效果报告",
       "campaignsContactsList": "参与者名单，含状态与结果",
-      "campaignsContactsRemoveOne": "从活动中移除一个尚未联系的联系人",
-      "campaignsContactsRemove": "一次移除多个尚未联系的联系人",
+      "campaignsContactsRemoveOne": "从活动中移除一个联系人（通话进行中的除外）",
+      "campaignsContactsRemove": "一次从活动中移除多个联系人（通话进行中的除外）",
       "walletGet": "当前余额和最近交易",
       "smsSend": "发送一条短信"
     },

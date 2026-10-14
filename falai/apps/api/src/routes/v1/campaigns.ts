@@ -2,8 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma, type Prisma } from "@falai/db";
 import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
 import { normalizeAoPhone, INVALID_PHONE_MESSAGE as INVALID_PHONE } from "@falai/shared";
-
-const REMOVABLE_STATUSES = ["PENDING", "QUEUED", "OPTED_OUT"] as const;
+import { isRemovable, planRemoval } from "../../services/campaignContactRemoval.js";
 
 /** Estados em que ainda faz sentido mexer na lista de contactos da campanha. */
 const CONTACT_EDITABLE_STATUSES = ["DRAFT", "SCHEDULED", "PAUSED", "RUNNING"];
@@ -533,7 +532,7 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
     return reply.send({ data, total, limit, offset });
   });
 
-  // DELETE /v1/campaigns/:id/contacts/:contactId — remove 1 contacto ainda não contactado
+  // DELETE /v1/campaigns/:id/contacts/:contactId — remove 1 contacto (qualquer estado menos IN_PROGRESS)
   fastify.delete("/v1/campaigns/:id/contacts/:contactId", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
     const tenantId = request.apiKey!.tenantId;
     const { id, contactId } = request.params as { id: string; contactId: string };
@@ -545,9 +544,10 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       where: { campaignId_contactId: { campaignId: campaign.id, contactId } },
     });
     if (!cc) return reply.status(404).send({ error: "Contact not found in this campaign" });
-    if (!REMOVABLE_STATUSES.includes(cc.status as (typeof REMOVABLE_STATUSES)[number])) {
+    if (!isRemovable(cc.status)) {
       return reply.status(400).send({
-        error: "Contact was already contacted and cannot be removed. Use contact opt-out to prevent future attempts.",
+        error: "Contact has a call in progress and cannot be removed yet. Retry after the call ends.",
+        reason: "IN_PROGRESS",
       });
     }
 
@@ -572,21 +572,20 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       where: { campaignId: campaign.id, contactId: { in: body.contactIds } },
       select: { id: true, contactId: true, status: true },
     });
-
-    const removable = candidates.filter((c) => REMOVABLE_STATUSES.includes(c.status as (typeof REMOVABLE_STATUSES)[number]));
-    const skippedIds = candidates
-      .filter((c) => !REMOVABLE_STATUSES.includes(c.status as (typeof REMOVABLE_STATUSES)[number]))
-      .map((c) => c.contactId);
-    const notFoundIds = body.contactIds.filter((cid) => !candidates.some((c) => c.contactId === cid));
+    const { removable, skipped } = planRemoval(body.contactIds, candidates);
 
     if (removable.length > 0) {
       await prisma.campaignContact.deleteMany({ where: { id: { in: removable.map((c) => c.id) } } });
     }
 
+    // `skipped`/`skippedIds` mantêm-se para os clientes que já os lêem;
+    // `skippedDetails` diz porquê (IN_PROGRESS: voltar a pedir depois da chamada).
     return reply.send({
       removed: removable.length,
-      skipped: skippedIds.length + notFoundIds.length,
-      skippedIds: [...skippedIds, ...notFoundIds],
+      removedIds: removable.map((c) => c.contactId),
+      skipped: skipped.length,
+      skippedIds: skipped.map((s) => s.contactId),
+      skippedDetails: skipped,
     });
   });
 }

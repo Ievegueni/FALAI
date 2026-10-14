@@ -842,8 +842,8 @@
       "campaignsRetry": "Repetir uma campanha CANCELLED ou DONE",
       "campaignsReport": "Quadro completo de eficácia da campanha",
       "campaignsContactsList": "Lista nominal dos participantes, com estado e resultado",
-      "campaignsContactsRemoveOne": "Remover 1 contacto ainda não contactado da campanha",
-      "campaignsContactsRemove": "Remover vários contactos ainda não contactados, de uma vez",
+      "campaignsContactsRemoveOne": "Remover 1 contacto da campanha (exceto com chamada a decorrer)",
+      "campaignsContactsRemove": "Remover vários contactos da campanha de uma vez (exceto com chamada a decorrer)",
       "walletGet": "Saldo actual e últimos movimentos",
       "smsSend": "Enviar um SMS"
     },
