@@ -13,11 +13,12 @@ import { config } from "../config.js";
 export const RESERVED_SUBDOMAINS = new Set([
   "admin", "api", "www", "mail", "smtp", "imap", "pop", "webmail", "ftp", "ns1", "ns2",
   "app", "crm", "status", "docs", "help", "suporte", "support", "static", "cdn", "dev", "staging", "test",
+  "sip", "webphone", "ws", "falai", "autodiscover", "autoconfig",
 ]);
 
 const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 
-/** Normaliza e valida o subdomínio escrito no backoffice. Devolve o erro, ou null se for válido. */
+/** Valida o subdomínio (já em minúsculas e sem espaços). Devolve o erro, ou null se for válido. */
 export function subdomainError(value: string): string | null {
   if (!LABEL.test(value)) return "Use 1 a 32 caracteres: letras minúsculas, números e hífen (não no início nem no fim)";
   if (RESERVED_SUBDOMAINS.has(value)) return `"${value}" está reservado para a plataforma`;

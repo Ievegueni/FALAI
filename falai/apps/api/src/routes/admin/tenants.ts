@@ -322,7 +322,12 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(subdomain !== undefined && { subdomain }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },
+    }).catch((err: { code?: string }) => {
+      // Corrida entre duas gravações do mesmo endereço (ou NIF): o índice único decide.
+      if (err?.code === "P2002") return null;
+      throw err;
     });
+    if (!tenant) return reply.status(409).send({ error: "Esse endereço (ou NIF) já pertence a outro cliente" });
 
     await fastify.audit({
       actorType: "ADMIN", actorId: admin.sub, action: "tenant.updated",
