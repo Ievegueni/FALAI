@@ -9,6 +9,7 @@ import { IncomingCallBanner } from '@/components/calls/IncomingCallBanner';
 import { CallbackPopup } from '@/components/calls/CallbackPopup';
 import { AlertToaster } from '@/components/alerts/AlertToaster';
 import { PlatformBanner } from './PlatformBanner';
+import { NewAddressBanner } from './NewAddressBanner';
 import { ChatToaster } from '@/components/chat/ChatBits';
 
 export function AppLayout() {
@@ -59,6 +60,7 @@ export function AppLayout() {
           </p>
         </div>
         <PlatformBanner />
+        <NewAddressBanner />
         <div className="min-w-0 flex-1 overflow-y-auto">
           <Outlet />
         </div>

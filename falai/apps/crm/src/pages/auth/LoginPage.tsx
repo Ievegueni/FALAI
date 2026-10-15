@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff } from 'lucide-react';
@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ApiError } from '@/lib/api';
+import { ApiError, authApi } from '@/lib/api';
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -18,10 +18,20 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Endereço próprio do cliente (credito.falai.ao): mostra de quem é; desconhecido bloqueia o login.
+  const [site, setSite] = useState<{ tenantName?: string; logoDataUrl?: string | null; unknown?: boolean } | null>(null);
+  const [rightSite, setRightSite] = useState<string | null>(null);
+
+  useEffect(() => {
+    authApi.site()
+      .then((s) => setSite(s.subdomain ? s : null))
+      .catch((err) => { if (err instanceof ApiError && err.status === 404) setSite({ unknown: true }); });
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setRightSite(null);
     try {
       const { requiresTwoFactor } = await login(email, password);
       if (requiresTwoFactor) {
@@ -30,6 +40,7 @@ export function LoginPage() {
         navigate('/dashboard');
       }
     } catch (err) {
+      if (err instanceof ApiError && err.status === 403 && typeof err.data.crmUrl === 'string') setRightSite(err.data.crmUrl);
       toastError(err instanceof ApiError ? err.message : t('login.error'));
     } finally {
       setLoading(false);
@@ -40,13 +51,16 @@ export function LoginPage() {
     <div className="w-full max-w-sm">
       <div className="mb-8 text-center">
         <div className="mx-auto mb-4 inline-flex items-center justify-center rounded-xl bg-white px-5 py-3 shadow-lg">
-          <img src="/logo.png" alt="Comunica" className="h-10 w-auto" />
+          <img src={site?.logoDataUrl ?? '/logo.png'} alt={site?.tenantName ?? 'Comunica'} className="h-10 w-auto" />
         </div>
-        <h1 className="text-2xl font-bold text-white">Falaí</h1>
+        <h1 className="text-2xl font-bold text-white">{site?.tenantName ?? 'Falaí'}</h1>
         <p className="mt-1 text-sm text-slate-400">{t('login.subtitle')}</p>
       </div>
 
       <div className="rounded-2xl bg-white p-8 shadow-2xl">
+        {site?.unknown ? (
+          <p className="text-sm text-gray-700">{t('login.unknownSite')}</p>
+        ) : (
         <form onSubmit={(e) => { void handleSubmit(e); }} className="flex flex-col gap-4">
           <Input
             label={t('login.email')}
@@ -78,7 +92,13 @@ export function LoginPage() {
           <Button type="submit" loading={loading} className="mt-2 w-full h-10">
             {t('login.submit')}
           </Button>
+          {rightSite && (
+            <a href={rightSite} className="text-center text-sm font-medium text-indigo-600 hover:underline">
+              {t('login.goToYourSite')}: {rightSite.replace(/^https?:\/\//, '')}
+            </a>
+          )}
         </form>
+        )}
       </div>
 
       <p className="mt-6 text-center text-xs text-slate-500">

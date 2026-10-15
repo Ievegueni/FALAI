@@ -55,6 +55,8 @@ export interface Tenant {
   features?: TenantFeatures;
   /** Logo definido pela Comunica no backoffice (data URL). Null = logo da Comunica. */
   logoDataUrl?: string | null;
+  /** Endereço próprio do cliente no CRM (ex.: https://credito.falai.ao). Null = só os domínios gerais. */
+  crmUrl?: string | null;
   onboardingCompletedAt: string | null;
 }
 

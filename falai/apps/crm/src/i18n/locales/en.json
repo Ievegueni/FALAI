@@ -58,7 +58,9 @@
     "emailPlaceholder": "company@example.ao",
     "password": "Password",
     "submit": "Sign in",
-    "error": "Sign-in failed"
+    "error": "Sign-in failed",
+    "unknownSite": "This address does not belong to any customer. Please check the address you were sent.",
+    "goToYourSite": "Go to your address"
   },
   "twofa": {
     "title": "2FA Verification",
@@ -2036,5 +2038,9 @@
     "offline": "Offline",
     "allGroups": "All groups",
     "fullscreen": "Full screen"
+  },
+  "newAddress": {
+    "text": "Your CRM address is now {{url}}. Please bookmark it.",
+    "go": "Open the new address"
   }
 }

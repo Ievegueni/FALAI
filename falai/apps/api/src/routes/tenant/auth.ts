@@ -35,8 +35,8 @@ function shapeTenant<
   if (!tenant) return null;
   return {
     ...tenant,
-    // Endereço do CRM deste cliente: o CRM avisa quem ainda entra pelo antigo.
-    crmUrl: crmUrlFor(tenant.subdomain),
+    // Endereço próprio do cliente: o CRM avisa quem ainda entra pelo geral.
+    crmUrl: tenant.subdomain ? crmUrlFor(tenant.subdomain) : null,
     features: applyProfile(computeFeatures({
       overrides: tenant.features,
       aiAgentsEnabled: tenant.plan?.aiAgentsEnabled ?? true,

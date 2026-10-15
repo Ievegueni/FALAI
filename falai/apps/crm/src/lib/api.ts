@@ -40,6 +40,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Corpo da resposta de erro (ex.: `crmUrl` quando se entra no endereço de outro cliente). */
+    public readonly data: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -74,7 +76,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     // A API devolve `{ error }` na generalidade das rotas e `{ message }` nos
     // erros de validação do Fastify — aceitar ambos.
     const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
-    throw new ApiError(res.status, body.error ?? body.message ?? 'Erro desconhecido');
+    throw new ApiError(res.status, body.error ?? body.message ?? 'Erro desconhecido', body);
   }
 
   if (res.status === 204) return undefined as T;
@@ -131,6 +133,9 @@ export const authApi = {
     }),
 
   me: () => get<MeResponse>('/tenant/auth/me'),
+
+  /** De quem é o endereço por onde se entrou (credito.falai.ao → FACIL CREDITO). 404 = endereço desconhecido. */
+  site: () => get<{ subdomain: string | null; tenantName?: string; logoDataUrl?: string | null }>('/tenant/auth/site'),
 
   // The backend identifies the pending 2FA login via the sessionToken from /login.
   twoFaVerify: (sessionToken: string, code: string) =>

@@ -58,7 +58,9 @@
     "emailPlaceholder": "empresa@exemplo.ao",
     "password": "Palavra-passe",
     "submit": "Entrar",
-    "error": "Erro ao iniciar sessão"
+    "error": "Erro ao iniciar sessão",
+    "unknownSite": "Este endereço não pertence a nenhum cliente. Confirme o endereço que lhe foi enviado.",
+    "goToYourSite": "Ir para o seu endereço"
   },
   "twofa": {
     "title": "Verificação 2FA",
@@ -2036,5 +2038,9 @@
     "offline": "Sem ligação",
     "allGroups": "Todos os grupos",
     "fullscreen": "Ecrã inteiro"
+  },
+  "newAddress": {
+    "text": "O endereço do vosso CRM passou a ser {{url}}. Guarde-o nos favoritos.",
+    "go": "Abrir o novo endereço"
   }
 }

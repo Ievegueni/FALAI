@@ -979,9 +979,12 @@ function EndpointRow({ ep, baseUrl }: { ep: EndpointDef; baseUrl: string }) {
   );
 }
 
+// O domínio antigo (api.falai.comunica.ao) continua a responder para as integrações existentes.
+const LIVE_API_URL = 'https://api.falai.ao';
+
 function DocsPanel() {
   const { t } = useTranslation();
-  const [baseUrl, setBaseUrl] = useState('https://api.falai.comunica.ao');
+  const [baseUrl, setBaseUrl] = useState(LIVE_API_URL);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ 'developers.groups.calls': true });
   const [openWebhook, setOpenWebhook] = useState<string | null>(null);
 
@@ -997,8 +1000,8 @@ function DocsPanel() {
           <h3 className="text-sm font-semibold text-gray-900">{t('developers.baseUrl')}</h3>
           <div className="flex gap-1 rounded-lg border border-gray-200 p-0.5 bg-gray-50">
             <button
-              className={`text-xs px-3 py-1 rounded-md transition-colors ${baseUrl === 'https://api.falai.comunica.ao' ? 'bg-white shadow-sm text-gray-900 font-medium' : 'text-gray-500 hover:text-gray-700'}`}
-              onClick={() => setBaseUrl('https://api.falai.comunica.ao')}
+              className={`text-xs px-3 py-1 rounded-md transition-colors ${baseUrl === LIVE_API_URL ? 'bg-white shadow-sm text-gray-900 font-medium' : 'text-gray-500 hover:text-gray-700'}`}
+              onClick={() => setBaseUrl(LIVE_API_URL)}
             >
               {t('developers.live')}
             </button>
