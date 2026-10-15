@@ -620,4 +620,20 @@ describe("fila de espera", () => {
     await s.emit({ type: "CALL_ENDED", providerCallId: ID, endedAt: new Date(), durationSecs: 20, hangupCause: "NORMAL" });
     expect(notifyMissedCall).not.toHaveBeenCalled();
   });
+
+  it("extensão livre mas offline: tenta uma vez por ciclo, não em ciclo apertado", async () => {
+    // Incidente 2026-10-15: o originate falhava (500 do Asterisk), a chamada
+    // voltava para o fim do Map da fila e o mesmo for...of apanhava-a outra vez
+    // — ~130 tentativas por segundo e dezenas de milhares de pernas FAILED.
+    tenantQueueConfig.mockResolvedValue({ ...queueOff, maxWaitSecs: 300 });
+    busyExtensions = ["ext_201"];
+    const s = setup();
+    await s.emit(START);
+    s.asterisk.originateToPjsipEndpoint.mockRejectedValue(new Error("ARI 500"));
+    busyExtensions = [];
+    await tick(10_100); // 5 ciclos da fila
+    // 2 endpoints (hardphone + webphone) por tentativa, uma tentativa por ciclo.
+    expect(s.asterisk.originateToPjsipEndpoint.mock.calls.length).toBeLessThanOrEqual(10);
+    expect(legs.length).toBeLessThanOrEqual(5);
+  });
 });

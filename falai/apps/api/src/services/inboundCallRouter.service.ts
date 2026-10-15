@@ -636,7 +636,12 @@ export function resetInboundRouterState(): void {
 }
 
 async function queueTick(asterisk: AsteriskAdapter, log: FastifyBaseLogger): Promise<void> {
-  for (const [id, q] of queue) {
+  // Sobre uma cópia: quem não se alcança volta à fila pelo requeueOrGiveUp e,
+  // a iterar o Map vivo, era apanhado outra vez no mesmo ciclo — um originate
+  // a falhar dava centenas de tentativas por segundo (incidente 2026-10-15).
+  for (const [id, q] of [...queue]) {
+    // Pode ter saído (desligou) ou ter sido trocada enquanto se esperava acima.
+    if (queue.get(id) !== q) continue;
     const waited = Date.now() - q.since.getTime();
     if (waited >= q.cfg.maxWaitSecs * 1000) {
       log.info({ did: q.event.did, waitedSecs: Math.round(waited / 1000) }, "inbound_call_router.queue_timeout");
