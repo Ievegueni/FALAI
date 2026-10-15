@@ -3,6 +3,7 @@ import { prisma } from "@falai/db";
 import { extensionWebEndpointId } from "@falai/providers";
 import { decryptSecret } from "../../services/crypto.service.js";
 import { config } from "../../config.js";
+import { subdomainFromHost } from "../../services/tenantHost.js";
 import { registerExtensions } from "../shared/extensions.js";
 import { isConfigAdmin } from "../../services/userScope.js";
 
@@ -60,7 +61,9 @@ export const tenantExtensionsRoutes: FastifyPluginAsync = async (fastify) => {
       // hardphone, cujo username é o sipAuthUser CRU (sem prefixo extweb_).
       sipAuthUser: ext.sipAuthUser,
       sipAuthSecret: decryptSecret(ext.sipAuthSecret),
-      wsUri: config.PUBLIC_WEBPHONE_WSS_URL,
+      // No endereço próprio do cliente a sinalização vai pelo mesmo nome (o
+      // nginx de *.falai.ao também encaminha /webphone-ws); senão, a geral.
+      wsUri: subdomainFromHost(request.headers.host) ? `wss://${request.headers.host}/webphone-ws` : config.PUBLIC_WEBPHONE_WSS_URL,
       sipDomain: config.PUBLIC_WEBPHONE_SIP_DOMAIN,
       displayName: ext.displayName,
       number: ext.number,

@@ -35,6 +35,7 @@ import { adminTenantAccessProfilesRoutes } from "./routes/admin/tenant-access-pr
 import { adminAgentsModerationRoutes } from "./routes/admin/agents-moderation.js";
 import { adminModelsModerationRoutes } from "./routes/admin/models-moderation.js";
 import { tenantAuthRoutes } from "./routes/tenant/auth.js";
+import { parseAllowedOrigins } from "./services/corsOrigins.js";
 import { tenantAgentsRoutes } from "./routes/tenant/agents.js";
 import { tenantDashboardRoutes } from "./routes/tenant/dashboard.js";
 import { tenantContactsRoutes } from "./routes/tenant/contacts.js";
@@ -215,7 +216,7 @@ async function buildApp() {
   await fastify.register(fastifyMultipart, { limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB max
   // Em produção: usa a whitelist de ALLOWED_ORIGINS se definida; senão bloqueia
   // cross-origin (FE e API na mesma origem/proxy). Em dev: reflecte qualquer origem.
-  const allowedOrigins = config.ALLOWED_ORIGINS?.split(",").map((o) => o.trim()).filter(Boolean);
+  const allowedOrigins = parseAllowedOrigins(config.ALLOWED_ORIGINS);
   const corsOrigin =
     config.NODE_ENV === "production" ? (allowedOrigins && allowedOrigins.length > 0 ? allowedOrigins : false) : true;
   await fastify.register(fastifyCors, {
