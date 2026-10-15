@@ -637,3 +637,29 @@ describe("fila de espera", () => {
     expect(legs.length).toBeLessThanOrEqual(5);
   });
 });
+
+describe("chamada de entrada — atendimento automático", () => {
+  const varsOf = (s: ReturnType<typeof setup>) =>
+    (s.asterisk.originateToPjsipEndpoint.mock.calls as unknown[][]).map((c) => c[4] as Record<string, string>);
+
+  it("extensão com autoAnswer: X-Falai-Auto-Answer e Call-Info answer-after=0 no hardphone e no webphone", async () => {
+    prisma.extension.findFirst.mockResolvedValueOnce({ id: "ext_201", number: "201", sipAuthUser: "Ab12", autoAnswer: true } as never);
+    const s = setup();
+    await s.emit(START);
+    const vars = varsOf(s);
+    expect(vars).toHaveLength(2);
+    for (const v of vars) {
+      expect(v["PJSIP_HEADER(add,X-Falai-Auto-Answer)"]).toBe("1");
+      expect(v["PJSIP_HEADER(add,Call-Info)"]).toMatch(/answer-after=0/);
+    }
+  });
+
+  it("sem autoAnswer (por omissão): toca como sempre, sem esses cabeçalhos", async () => {
+    const s = setup();
+    await s.emit(START);
+    for (const v of varsOf(s)) {
+      expect(v["PJSIP_HEADER(add,X-Falai-Auto-Answer)"]).toBeUndefined();
+      expect(v["PJSIP_HEADER(add,Call-Info)"]).toBeUndefined();
+    }
+  });
+});

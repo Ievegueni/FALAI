@@ -322,12 +322,14 @@ async function routeTo(
 
 interface RingTarget extends LegTarget {
   sipAuthUser: string;
+  /** A extensão atende sozinha (definido pelo administrador). */
+  autoAnswer: boolean;
 }
 
 /** Extensões a tocar: a extensão, ou os membros activos do grupo. */
 async function resolveTargets(tenantId: string, dest: Dest): Promise<RingTarget[]> {
-  const select = { id: true, number: true, sipAuthUser: true } as const;
-  let exts: { id: string; number: string; sipAuthUser: string }[] = [];
+  const select = { id: true, number: true, sipAuthUser: true, autoAnswer: true } as const;
+  let exts: { id: string; number: string; sipAuthUser: string; autoAnswer: boolean }[] = [];
   if (dest.destType === "EXTENSION") {
     const ext = await prisma.extension.findFirst({
       // Em pausa (melhoria 4) não recebe chamadas.
@@ -349,7 +351,7 @@ async function resolveTargets(tenantId: string, dest: Dest): Promise<RingTarget[
   const occupied = occupiedExtensionIds();
   return exts
     .filter((e) => !busy.has(e.id) && !occupied.has(e.id) && !onCallback.has(e.id))
-    .map((e) => ({ extensionId: e.id, number: e.number, sipAuthUser: e.sipAuthUser }));
+    .map((e) => ({ extensionId: e.id, number: e.number, sipAuthUser: e.sipAuthUser, autoAnswer: e.autoAnswer }));
 }
 
 /** Estado da perna de uma extensão enquanto os seus canais tocam. */
@@ -381,6 +383,12 @@ async function ringTargets(ctx: RingCtx, targets: RingTarget[], asterisk: Asteri
       const variables: Record<string, string> = {
         ...(legId && { "PJSIP_HEADER(add,X-Falai-Leg-Id)": legId }),
         ...(waitedSecs >= 5 && { "PJSIP_HEADER(add,X-Falai-Queue-Wait)": String(waitedSecs) }),
+        // Atendimento automático: o webphone lê o X-Falai-Auto-Answer; os
+        // telefones físicos (Yealink, Grandstream...) o Call-Info answer-after=0.
+        ...(t.autoAnswer && {
+          "PJSIP_HEADER(add,X-Falai-Auto-Answer)": "1",
+          "PJSIP_HEADER(add,Call-Info)": "<sip:falai>;answer-after=0",
+        }),
       };
       return [extensionEndpointId(t.sipAuthUser), extensionWebEndpointId(t.sipAuthUser)].map((endpointId) =>
         asterisk

@@ -23,6 +23,7 @@ const createSchema = z.object({
   mobile: z.string().max(32).optional().nullable(),
   roleId: z.string().cuid().optional().nullable(),
   phoneNumber: z.string().max(32).optional().nullable(),
+  autoAnswer: z.boolean().optional(),
 });
 
 const updateSchema = z.object({
@@ -41,6 +42,8 @@ const updateSchema = z.object({
   isActive: z.boolean().optional(),
   isDefault: z.boolean().optional(),
   phoneNumber: z.string().max(32).optional().nullable(),
+  // Atendimento automático das chamadas de entrada (ver inboundCallRouter.service.ts).
+  autoAnswer: z.boolean().optional(),
 });
 
 /**
@@ -112,6 +115,7 @@ export function registerExtensions(
         mobile: body.mobile ?? null,
         roleId: body.roleId ?? null,
         phoneNumber: body.phoneNumber ?? null,
+        autoAnswer: body.autoAnswer ?? false,
         sipAuthUser: creds.sipAuthUser,
         sipAuthSecret: creds.sipAuthSecretEncrypted,
         ...EXTENSION_DEFAULTS,
@@ -158,6 +162,7 @@ export function registerExtensions(
         ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
         ...(body.isDefault !== undefined ? { isDefault: body.isDefault } : {}),
         ...(body.phoneNumber !== undefined ? { phoneNumber: body.phoneNumber } : {}),
+        ...(body.autoAnswer !== undefined ? { autoAnswer: body.autoAnswer } : {}),
       },
     });
 

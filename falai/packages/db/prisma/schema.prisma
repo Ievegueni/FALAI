@@ -379,6 +379,9 @@ model Extension {
   // Registo SIP
   sipAuthUser    String                    @unique // "Nome de registo", ex "7jyXTI2S56"
   sipAuthSecret  String // encriptado (AES-256-GCM)
+  // Atendimento automático (definido pelo administrador): o router de entrada
+  // manda X-Falai-Auto-Answer e Call-Info answer-after=0; o webphone dá um bip e atende.
+  autoAnswer     Boolean                   @default(false)
   maxIpRegs      Int                       @default(4)
   maxWebRegs     Int                       @default(3)
   // Config por aba (JSON)
