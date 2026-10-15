@@ -6,7 +6,7 @@ export const adminHealthRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /admin/health/providers
   fastify.get("/health/providers", { preHandler }, async () => {
-    const [yeastarHealth, recentEvents, systemSettings] = await Promise.all([
+    const [engineHealth, recentEvents, systemSettings] = await Promise.all([
       fastify.telephony.healthCheck(),
       prisma.systemEvent.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
       prisma.systemSetting.findFirst({ where: { key: "MAX_CONCURRENT_CALLS" } }),
@@ -34,11 +34,10 @@ export const adminHealthRoutes: FastifyPluginAsync = async (fastify) => {
 
     const providers = [
       {
-        // O motor pode ser o próprio (Asterisk) ou o PBX externo — ver §15.2.
-        name: process.env["TELEPHONY_ENGINE"] === "asterisk" ? "Asterisk (motor próprio)" : "Yeastar PBX",
-        status: yeastarHealth.ok ? "ok" : "down",
+        name: "Asterisk (motor próprio)",
+        status: engineHealth.ok ? "ok" : "down",
         latencyMs: null,
-        detail: yeastarHealth.details ?? null,
+        detail: engineHealth.details ?? null,
       },
       {
         name: "Redis",

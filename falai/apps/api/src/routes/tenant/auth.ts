@@ -12,6 +12,7 @@ import {
   pending2FaTenantKey,
 } from "../../services/auth.service.js";
 import { computeFeatures } from "../../services/features.js";
+import { applyProfile, sanitizePermissions, type ProfilePermissions } from "../../services/accessProfiles.js";
 
 // Selecção comum do tenant devolvida ao CRM (login e /me)
 const tenantClientSelect = {
@@ -20,23 +21,34 @@ const tenantClientSelect = {
   status: true,
   balanceCents: true,
   features: true,
+  logoDataUrl: true,
   plan: { select: { name: true, productType: true, aiAgentsEnabled: true, clinicEnabled: true, smsEnabled: true, maxAgents: true, maxConcurrent: true } },
 } as const;
 
-// Substitui o campo `features` cru (overrides) pelas features efectivas calculadas
+// Substitui o campo `features` cru (overrides) pelas features efectivas calculadas,
+// já sem os módulos que o perfil de acesso do utilizador esconde
 function shapeTenant<
-  T extends { features: unknown; plan: { aiAgentsEnabled: boolean; productType?: string } | null },
->(tenant: T | null) {
+  T extends { features: unknown; plan: { aiAgentsEnabled: boolean; smsEnabled?: boolean; productType?: string } | null },
+>(tenant: T | null, permissions: ProfilePermissions | null = null) {
   if (!tenant) return null;
   return {
     ...tenant,
-    features: computeFeatures({
+    features: applyProfile(computeFeatures({
       overrides: tenant.features,
       aiAgentsEnabled: tenant.plan?.aiAgentsEnabled ?? true,
+      ...(tenant.plan?.smsEnabled !== undefined && { smsEnabled: tenant.plan.smsEnabled }),
       ...(tenant.plan?.productType !== undefined && { productType: tenant.plan.productType }),
-    }),
+    }), permissions),
   };
 }
+
+// Perfil de acesso a devolver ao CRM (o OWNER nunca é restringido)
+function profileOf(user: { role: string; accessProfile: { id: string; name: string; permissions: unknown } | null }) {
+  if (user.role === "OWNER" || !user.accessProfile) return null;
+  return { id: user.accessProfile.id, name: user.accessProfile.name, permissions: sanitizePermissions(user.accessProfile.permissions) };
+}
+
+const accessProfileSelect = { select: { id: true, name: true, permissions: true } } as const;
 
 const PENDING_2FA_TTL = 5 * 60;
 
@@ -121,7 +133,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
 
     const user = await prisma.tenantUser.findUnique({
       where: { email: body.email },
-      include: { tenant: { select: { id: true, status: true, deletedAt: true } } },
+      include: { tenant: { select: { id: true, status: true, deletedAt: true } }, accessProfile: accessProfileSelect },
     });
 
     if (!user) return reply.status(401).send({ error: "Credenciais inválidas" });
@@ -158,11 +170,12 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id: user.tenantId },
         select: tenantClientSelect,
       });
+      const accessProfile = profileOf(user);
       return {
         token,
         requiresTwoFactor: false,
-        user: { id: user.id, name: user.name, email: user.email, role: user.role, twoFaEnabled: false },
-        tenant: shapeTenant(tenantRecord),
+        user: { id: user.id, name: user.name, email: user.email, role: user.role, twoFaEnabled: false, accessProfile },
+        tenant: shapeTenant(tenantRecord, accessProfile?.permissions ?? null),
       };
     }
 
@@ -204,7 +217,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/2fa/setup", { preHandler }, async (request) => {
     const user = request.tenantUser!;
     const secret = generateTotpSecret();
-    const qrCode = await generateTotpQrCode(user.email, secret);
+    const qrCode = await generateTotpQrCode(user.email, secret, "Falaí");
     await fastify.redis.set(`tenant:2fa:setup:${user.sub}`, secret, "EX", 10 * 60);
     return { secret, qrCode };
   });
@@ -233,13 +246,34 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
     return { ok: true };
   });
 
+  // POST /tenant/auth/2fa/disable — protected, exige o código actual
+  fastify.post<{ Body: { code: string } }>("/2fa/disable", { preHandler, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+    const user = request.tenantUser!;
+    const { code } = totpSchema.pick({ code: true }).parse(request.body);
+    const row = await prisma.tenantUser.findUnique({ where: { id: user.sub }, select: { twoFaSecret: true } });
+    if (!row?.twoFaSecret) return reply.status(400).send({ error: "A 2FA não está activa" });
+    if (!verifyTotp(row.twoFaSecret, code)) return reply.status(400).send({ error: "Código inválido" });
+
+    await prisma.tenantUser.update({ where: { id: user.sub }, data: { twoFaSecret: null } });
+    await fastify.audit({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "tenant.2fa.disabled",
+      targetType: "TenantUser",
+      targetId: user.sub,
+      ip: request.ip,
+    });
+    return { ok: true };
+  });
+
   // GET /tenant/auth/me — current session info
   fastify.get("/me", { preHandler }, async (request) => {
     const user = request.tenantUser!;
     const tenantUser = await prisma.tenantUser.findUniqueOrThrow({
       where: { id: user.sub },
-      include: { tenant: { select: tenantClientSelect } },
+      include: { tenant: { select: tenantClientSelect }, accessProfile: accessProfileSelect, extension: { select: { number: true } } },
     });
+    const accessProfile = profileOf(tenantUser);
     return {
       user: {
         id: tenantUser.id,
@@ -247,8 +281,12 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
         email: tenantUser.email,
         role: tenantUser.role,
         twoFaEnabled: !!tenantUser.twoFaSecret,
+        accessProfile,
+        // Webphone e screen pop usam a extensão do próprio utilizador.
+        extensionId: tenantUser.extensionId,
+        extensionNumber: tenantUser.extension?.number ?? null,
       },
-      tenant: shapeTenant(tenantUser.tenant),
+      tenant: shapeTenant(tenantUser.tenant, accessProfile?.permissions ?? null),
     };
   });
 };

@@ -1,8 +1,10 @@
 /**
- * Gera e faz upload dos prompts de voz do OTP para o Yeastar.
+ * Gera os prompts de voz do OTP e grava-os na pasta de sons do Asterisk
+ * (ASTERISK_SOUNDS_DIR), onde o motor os toca como sound:custom/<nome>.
  *
  * Não usa TTS pago: a voz é gerada localmente com o `say` do macOS e convertida
- * para WAV PCM 8kHz mono 16-bit (formato aceite pelo Yeastar) com `afconvert`.
+ * para WAV PCM 8kHz mono 16-bit com `afconvert`. Só corre em macOS: para o
+ * servidor, gerar aqui e copiar os otp_*.wav para a pasta de sons de lá.
  *
  * Os prompts são fixos (intro, dígitos 0-9, "repito", "obrigado"), gerados uma
  * única vez. O OtpCallService monta a sequência para cada código em runtime.
@@ -14,10 +16,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Redis from "ioredis";
-import { YeastarAdapter } from "@falai/providers";
-import { resolveProviderConfig } from "../src/services/providerConfig.service.js";
-import { config } from "../src/config.js";
+import { AsteriskAdapter } from "@falai/providers";
 
 // name (sem extensão) → { text, voice }. Prefixo por idioma.
 const DIGITS_PT: Record<string, string> = {
@@ -30,7 +29,7 @@ const DIGITS_EN: Record<string, string> = {
 };
 
 interface PromptSpec {
-  name: string; // nome do prompt no Yeastar
+  name: string; // nome do ficheiro (sem extensão) na pasta de sons
   text: string;
   voice: string;
 }
@@ -64,33 +63,24 @@ function synthesizeWav(spec: PromptSpec, workDir: string): Buffer {
   const aiff = join(workDir, `${spec.name}.aiff`);
   const wav = join(workDir, `${spec.name}.wav`);
   execFileSync("say", ["-v", spec.voice, "-r", String(RATE), "-o", aiff, spec.text]);
-  // WAV PCM 16-bit little-endian, 8000 Hz, mono — formato de prompt do Yeastar
+  // WAV PCM 16-bit little-endian, 8000 Hz, mono — o ".wav" de 8 kHz do Asterisk
   execFileSync("afconvert", ["-f", "WAVE", "-d", "LEI16@8000", "-c", "1", aiff, wav]);
   return readFileSync(wav);
 }
 
 async function main() {
-  const providers = await resolveProviderConfig();
-  if (providers.yeastar.stubMode) {
-    console.error("Yeastar está em STUB mode — configura credenciais reais antes de fazer upload.");
+  const soundsDir = process.env["ASTERISK_SOUNDS_DIR"];
+  if (!soundsDir) {
+    console.error("ASTERISK_SOUNDS_DIR em falta — é a pasta de sons partilhada com o Asterisk.");
     process.exit(1);
   }
-
-  const redis = new Redis(config.REDIS_URL, { maxRetriesPerRequest: null });
-  const adapter = new YeastarAdapter(
-    {
-      baseUrl: providers.yeastar.baseUrl,
-      clientId: providers.yeastar.clientId,
-      clientSecret: providers.yeastar.clientSecret,
-      stubMode: false,
-    },
-    redis
-  );
+  // Só o uploadPrompt é usado: escreve no disco, não fala com o ARI.
+  const adapter = new AsteriskAdapter({ baseUrl: "", username: "", password: "", soundsDir });
 
   const workDir = mkdtempSync(join(tmpdir(), "otp-prompts-"));
   const prompts = buildPromptList();
 
-  console.info(`A gerar e enviar ${prompts.length} prompts para o Yeastar…`);
+  console.info(`A gerar ${prompts.length} prompts em ${soundsDir}…`);
   let ok = 0;
   for (const spec of prompts) {
     try {
@@ -104,8 +94,7 @@ async function main() {
   }
 
   rmSync(workDir, { recursive: true, force: true });
-  await redis.quit();
-  console.info(`\nConcluído: ${ok}/${prompts.length} prompts enviados.`);
+  console.info(`\nConcluído: ${ok}/${prompts.length} prompts gravados.`);
   process.exit(ok === prompts.length ? 0 : 1);
 }
 

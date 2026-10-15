@@ -47,6 +47,12 @@ export interface GuardrailContext {
   /** Números para onde este tenant pode transferir uma chamada. */
   allowedEscalationNumbers: string[];
   maxReplyChars?: number;
+  /**
+   * Canais de texto: escalate é passar a conversa a um humano da caixa de
+   * entrada — não se marca número nenhum, por isso o destino é descartado em
+   * vez de validado.
+   */
+  escalateIsHandoff?: boolean;
 }
 
 export interface GuardrailInput {
@@ -183,7 +189,9 @@ export async function applyGuardrails(
   // 5. Escalar só para números do próprio tenant. Sem isto, um modelo
   //    comprometido podia desviar chamadas dos clientes finais para um número
   //    qualquer — é a violação mais cara desta lista.
-  if (action.type === "escalate") {
+  if (action.type === "escalate" && context.escalateIsHandoff) {
+    action = { type: "escalate" };
+  } else if (action.type === "escalate") {
     const target = digits(action.to ?? "");
     const allowed = context.allowedEscalationNumbers.map(digits).filter(Boolean);
     if (!escalationAllowed(target, allowed)) {

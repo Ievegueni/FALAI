@@ -14,11 +14,12 @@
  * permite criar o registo e cobrar de uma só vez — sem reservas nem acertos.
  */
 import { prisma } from "@falai/db";
-import type { FastifyBaseLogger } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { sipAuthUserFromEndpointId } from "@falai/providers";
+import { notifyMissedCall } from "./missedCallSms.service.js";
 import {
   computeCallCost,
-  effectiveBillingMode,
+  effectivePrice,
   reserveBalance,
   type PriceConfig,
 } from "./billing.service.js";
@@ -49,7 +50,11 @@ function statusFrom(disposition: string, billsec: number): "COMPLETED" | "NO_ANS
  * Regista e cobra uma chamada marcada no telefone. Idempotente pelo `uniqueid`:
  * uma reentrega do dialplan não duplica o registo nem cobra duas vezes.
  */
-export async function recordWebphoneCall(cdr: WebphoneCdr, log: FastifyBaseLogger): Promise<void> {
+export async function recordWebphoneCall(
+  cdr: WebphoneCdr,
+  fastify: FastifyInstance,
+  log: FastifyBaseLogger
+): Promise<void> {
   const sipAuthUser = sipAuthUserFromEndpointId(cdr.endpoint);
   if (!sipAuthUser) {
     log.warn({ endpoint: cdr.endpoint }, "webphone_cdr.not_an_extension");
@@ -64,6 +69,7 @@ export async function recordWebphoneCall(cdr: WebphoneCdr, log: FastifyBaseLogge
         select: {
           id: true,
           billingModeOverride: true,
+      pricePerMinuteOverrideCents: true,
           plan: {
             select: { billingMode: true, pricePerMinuteCents: true, pricePerCallCents: true },
           },
@@ -84,11 +90,7 @@ export async function recordWebphoneCall(cdr: WebphoneCdr, log: FastifyBaseLogge
   if (existing) return;
 
   const { tenant } = ext;
-  const price: PriceConfig = {
-    billingMode: effectiveBillingMode(tenant.plan.billingMode, tenant.billingModeOverride),
-    pricePerMinuteCents: tenant.plan.pricePerMinuteCents,
-    pricePerCallCents: tenant.plan.pricePerCallCents,
-  };
+  const price: PriceConfig = effectivePrice(tenant);
   const status = statusFrom(cdr.disposition, cdr.billsec);
   // Chamada não atendida não se cobra, seja qual for o modo de cobrança.
   const costCents = status === "COMPLETED" ? computeCallCost(cdr.billsec, price) : 0;
@@ -143,4 +145,14 @@ export async function recordWebphoneCall(cdr: WebphoneCdr, log: FastifyBaseLogge
     { callId: call.id, tenantId: tenant.id, to: cdr.to, billsec: cdr.billsec, costCents },
     "webphone_cdr.recorded"
   );
+
+  if (status === "NO_ANSWER") {
+    await notifyMissedCall({
+      fastify,
+      tenantId: tenant.id,
+      toNumber: cdr.to,
+      callId: call.id,
+      log,
+    });
+  }
 }

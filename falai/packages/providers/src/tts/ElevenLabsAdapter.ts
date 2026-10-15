@@ -5,15 +5,37 @@ export interface ElevenLabsConfig {
   modelId?: string;     // default "eleven_multilingual_v2"
   outputFormat?: string; // default "pcm_16000"
   stubMode?: boolean;
+  maxConcurrent?: number; // pedidos TTS em paralelo neste processo (default 2)
+  maxRetries?: number;    // novas tentativas em 429 (default 4)
+  retryBaseMs?: number;   // espera base entre tentativas (default 1000)
 }
 
 const ELEVENLABS_BASE = "https://api.elevenlabs.io/v1";
 
 export class ElevenLabsAdapter implements TtsProvider {
   private config: ElevenLabsConfig;
+  // O plano ElevenLabs limita os pedidos em paralelo (3 na conta toda). Vários
+  // lançamentos de campanha no mesmo segundo davam 429 concurrent_limit_exceeded
+  // e a campanha ficava em PAUSED. Fila local + novas tentativas em 429.
+  private active = 0;
+  private waiting: Array<() => void> = [];
 
   constructor(config: ElevenLabsConfig) {
     this.config = config;
+  }
+
+  private async acquire(): Promise<void> {
+    if (this.active < (this.config.maxConcurrent ?? 2)) {
+      this.active++;
+      return;
+    }
+    await new Promise<void>((resolve) => this.waiting.push(resolve));
+  }
+
+  private release(): void {
+    const next = this.waiting.shift();
+    if (next) next(); // passa a vaga directamente ao próximo
+    else this.active--;
   }
 
   async synthesize(params: {
@@ -27,29 +49,32 @@ export class ElevenLabsAdapter implements TtsProvider {
 
     const startedAt = Date.now();
     const outputFormat = this.config.outputFormat ?? "pcm_16000";
+    const maxRetries = this.config.maxRetries ?? 4;
+    const baseMs = this.config.retryBaseMs ?? 1000;
 
-    const res = await fetch(
-      `${ELEVENLABS_BASE}/text-to-speech/${params.voiceId}?output_format=${outputFormat}`,
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": this.config.apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text: params.text,
-          model_id: this.config.modelId ?? "eleven_multilingual_v2",
-          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
-        }),
+    await this.acquire();
+    let arrayBuffer: ArrayBuffer;
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const res = await this.request(params.text, params.voiceId, outputFormat);
+        if (res.ok) {
+          arrayBuffer = await res.arrayBuffer();
+          break;
+        }
+        const msg = await res.text().catch(() => res.statusText);
+        if (res.status !== 429 || attempt >= maxRetries) {
+          throw new Error(`ElevenLabs TTS failed (${res.status}): ${msg}`);
+        }
+        const retryAfterS = Number(res.headers.get("retry-after"));
+        const waitMs = retryAfterS > 0
+          ? retryAfterS * 1000
+          : baseMs * 2 ** attempt + Math.floor(Math.random() * baseMs);
+        await new Promise((r) => setTimeout(r, waitMs));
       }
-    );
-
-    if (!res.ok) {
-      const msg = await res.text().catch(() => res.statusText);
-      throw new Error(`ElevenLabs TTS failed (${res.status}): ${msg}`);
+    } finally {
+      this.release();
     }
 
-    const arrayBuffer = await res.arrayBuffer();
     const pcmBuffer = Buffer.from(arrayBuffer);
 
     // Wrap PCM in WAV container (ElevenLabs pcm_16000 = 16kHz, 16-bit, mono)
@@ -62,6 +87,41 @@ export class ElevenLabsAdapter implements TtsProvider {
       durationMs: Date.now() - startedAt,
       characters: params.text.length,
     };
+  }
+
+  private request(text: string, voiceId: string, outputFormat: string): Promise<Response> {
+    return fetch(
+      `${ELEVENLABS_BASE}/text-to-speech/${voiceId}?output_format=${outputFormat}`,
+      {
+        method: "POST",
+        headers: {
+          "xi-api-key": this.config.apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text,
+          model_id: this.config.modelId ?? "eleven_multilingual_v2",
+          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        }),
+      }
+    );
+  }
+
+  async listVoices(): Promise<Array<{ voiceId: string; name: string }> | null> {
+    if (this.config.stubMode) return null;
+    try {
+      const res = await fetch(`${ELEVENLABS_BASE}/voices`, {
+        headers: { "xi-api-key": this.config.apiKey },
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as { voices?: Array<{ voice_id?: string; name?: string }> };
+      if (!Array.isArray(body.voices)) return null;
+      return body.voices
+        .filter((v): v is { voice_id: string; name?: string } => typeof v.voice_id === "string")
+        .map((v) => ({ voiceId: v.voice_id, name: v.name ?? v.voice_id }));
+    } catch {
+      return null;
+    }
   }
 
   async healthCheck(): Promise<{ ok: boolean; details?: string }> {

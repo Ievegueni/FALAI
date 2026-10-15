@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "@falai/db";
 import { createHmac, randomBytes } from "crypto";
+import { requireConfigAdmin } from "../../services/userScope.js";
+import { assertPublicWebhookUrl, postWebhook } from "@falai/providers";
 
 export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<void> {
   const preHandler = [fastify.verifyTenant];
@@ -22,6 +24,7 @@ export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<vo
         webhookUrl: true,
         // Never return webhookSecret raw — only whether one is set
         plan: { select: { name: true, pricePerMinuteCents: true, maxAgents: true, maxConcurrent: true } },
+        pricePerMinuteOverrideCents: true,
         createdAt: true,
       },
     });
@@ -33,14 +36,20 @@ export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<vo
       select: { webhookSecret: true },
     });
 
+    // O cliente vê o preço que lhe é cobrado: o seu, se tiver, senão o do plano
+    const { pricePerMinuteOverrideCents, ...rest } = tenant;
+    if (rest.plan && pricePerMinuteOverrideCents !== null) {
+      rest.plan = { ...rest.plan, pricePerMinuteCents: pricePerMinuteOverrideCents };
+    }
+
     return reply.send({
-      ...tenant,
+      ...rest,
       webhookSecretConfigured: !!hasWebhookSecret?.webhookSecret,
     });
   });
 
   // PATCH /tenant/settings — update webhookUrl, rotate secret
-  fastify.patch("/tenant/settings", { preHandler }, async (request, reply) => {
+  fastify.patch("/tenant/settings", { preHandler: [...preHandler, requireConfigAdmin] }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const body = request.body as {
       webhookUrl?: string | null;
@@ -51,7 +60,18 @@ export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<vo
     let newSecret: string | undefined;
 
     const update: Record<string, unknown> = {};
-    if (body.webhookUrl !== undefined) update["webhookUrl"] = body.webhookUrl;
+    if (body.webhookUrl !== undefined) {
+      const raw = typeof body.webhookUrl === "string" ? body.webhookUrl.trim() : "";
+      if (raw) {
+        // Anti-SSRF: só https (http fora de produção) e só hosts que resolvem para IPs públicos.
+        try {
+          await assertPublicWebhookUrl(raw);
+        } catch (err) {
+          return reply.status(422).send({ error: err instanceof Error ? err.message : "URL do webhook inválido" });
+        }
+      }
+      update["webhookUrl"] = raw || null;
+    }
     if (body.name !== undefined && body.name.trim().length > 0) update["name"] = body.name.trim();
     if (body.rotateWebhookSecret === true) {
       newSecret = `whsec_${randomBytes(24).toString("hex")}`;
@@ -71,7 +91,7 @@ export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<vo
   });
 
   // POST /tenant/settings/webhook-test — sends a test event to the configured URL
-  fastify.post("/tenant/settings/webhook-test", { preHandler }, async (request, reply) => {
+  fastify.post("/tenant/settings/webhook-test", { preHandler: [...preHandler, requireConfigAdmin] }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
 
     const tenant = await prisma.tenant.findUnique({
@@ -94,17 +114,17 @@ export async function tenantSettingsRoutes(fastify: FastifyInstance): Promise<vo
       : undefined;
 
     try {
-      const res = await fetch(tenant.webhookUrl, {
-        method: "POST",
-        headers: {
+      const statusCode = await postWebhook(
+        tenant.webhookUrl,
+        {
           "Content-Type": "application/json",
           "User-Agent": "Falai-Webhook/1.0",
           ...(signature && { "X-Falai-Signature": signature }),
         },
         body,
-        signal: AbortSignal.timeout(8_000),
-      });
-      return reply.send({ ok: res.ok, statusCode: res.status });
+        8_000,
+      );
+      return reply.send({ ok: statusCode >= 200 && statusCode < 300, statusCode });
     } catch (err) {
       return reply.status(502).send({ error: "Webhook delivery failed", detail: String(err) });
     }

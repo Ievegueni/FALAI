@@ -12,7 +12,7 @@ import { Modal } from '@/components/ui/Modal';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { Pagination } from '@/components/ui/Pagination';
 import { useToast } from '@/contexts/ToastContext';
-import { formatAOA, formatDate, transactionTypeLabel } from '@/lib/utils';
+import { formatAOA, formatDate, parseKz, transactionTypeLabel } from '@/lib/utils';
 import type { TransactionType } from '@/types';
 
 const TOPUP_AMOUNTS = [5000_00, 10000_00, 20000_00, 50000_00];
@@ -24,7 +24,7 @@ function TopupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [reference, setReference] = useState<{ reference: string; entity: string; expiresAt: string } | null>(null);
 
   const topup = useMutation({
-    mutationFn: () => walletApi.topup(Math.round(parseFloat(amount.replace(',', '.')) * 100)),
+    mutationFn: () => walletApi.topup(Math.round(parseKz(amount) * 100)),
     onSuccess: (res) => {
       setReference({ reference: res.reference, entity: res.entity, expiresAt: res.expiresAt });
     },
@@ -105,6 +105,7 @@ const txIcon: Record<TransactionType, typeof ArrowUpRight> = {
   TOPUP: ArrowUpRight,
   CALL_CHARGE: ArrowDownLeft,
   SMS_CHARGE: ArrowDownLeft,
+  TEXT_CHARGE: ArrowDownLeft,
   REFUND: ArrowUpRight,
   ADJUSTMENT: ArrowUpRight,
   MONTHLY_FEE: ArrowDownLeft,
@@ -114,6 +115,7 @@ const txColor: Record<TransactionType, string> = {
   TOPUP: 'text-emerald-600 bg-emerald-50',
   CALL_CHARGE: 'text-red-600 bg-red-50',
   SMS_CHARGE: 'text-red-600 bg-red-50',
+  TEXT_CHARGE: 'text-red-600 bg-red-50',
   REFUND: 'text-emerald-600 bg-emerald-50',
   ADJUSTMENT: 'text-blue-600 bg-blue-50',
   MONTHLY_FEE: 'text-orange-600 bg-orange-50',

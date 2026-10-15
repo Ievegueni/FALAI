@@ -93,3 +93,17 @@ export function formatDialNumber(raw: string, format: DialFormat = "national"): 
 export function parseDialFormat(value: string | undefined): DialFormat {
   return value === "e164" || value === "cc" || value === "national" ? value : "national";
 }
+
+/**
+ * Música de espera de um cliente. O `asteriskRuntime.service` escreve a classe
+ * no `musiconhold-falai.conf` e o router de entrada toca-a na bridge — os dois
+ * têm de usar o mesmo nome e a mesma pasta.
+ */
+export function holdMusicClass(tenantId: string): string {
+  return `falai_${safe(tenantId)}`;
+}
+
+/** Pasta da música de espera do cliente, relativa à pasta de sons. */
+export function holdMusicDir(tenantId: string): string {
+  return `moh/${safe(tenantId)}`;
+}

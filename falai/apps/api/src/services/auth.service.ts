@@ -33,8 +33,8 @@ export function verifyTotp(secret: string, token: string): boolean {
   return authenticator.verify({ token, secret });
 }
 
-export async function generateTotpQrCode(email: string, secret: string): Promise<string> {
-  const otpauth = authenticator.keyuri(email, "Falaí Backoffice", secret);
+export async function generateTotpQrCode(email: string, secret: string, issuer = "Falaí Backoffice"): Promise<string> {
+  const otpauth = authenticator.keyuri(email, issuer, secret);
   return QRCode.toDataURL(otpauth);
 }
 

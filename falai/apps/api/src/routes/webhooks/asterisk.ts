@@ -62,7 +62,7 @@ export const asteriskWebhookRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     // Não segurar o dialplan à espera da base de dados: a chamada já acabou.
-    void recordWebphoneCall(parsed.data, fastify.log).catch((err) =>
+    void recordWebphoneCall(parsed.data, fastify, fastify.log).catch((err) =>
       fastify.log.error({ err }, "asterisk.cdr.record_failed")
     );
 

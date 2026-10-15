@@ -2,7 +2,8 @@ import { Worker, Queue } from "bullmq";
 import { createHmac } from "crypto";
 import pino from "pino";
 import { prisma, type Prisma, runMonthlyBilling, reconcileStaleCalls } from "@falai/db";
-import { QUEUES, JOBS } from "@falai/shared";
+import { QUEUES, JOBS, normalizeAoPhone } from "@falai/shared";
+import { postWebhook } from "@falai/providers";
 
 const isDev = process.env["NODE_ENV"] === "development";
 const log = isDev
@@ -42,11 +43,14 @@ const billingWorker = new Worker(
 
 // ── Outbound Webhooks Worker ──────────────────────────────────────────────
 interface WebhookJobData {
-  callId: string;
+  /** Ausente em eventos ao nível da campanha (pause/resume/cancel/completed), que não têm uma chamada associada. */
+  callId?: string | null;
   tenantId: string;
   event: string;
   payload: Record<string, unknown>;
 }
+
+const webhooksOutQueue = new Queue(QUEUES.WEBHOOKS_OUT, { connection });
 
 const webhooksOutWorker = new Worker(
   QUEUES.WEBHOOKS_OUT,
@@ -79,22 +83,24 @@ const webhooksOutWorker = new Worker(
       ? `sha256=${createHmac("sha256", tenant.webhookSecret).update(body).digest("hex")}`
       : undefined;
 
-    const res = await fetch(tenant.webhookUrl, {
-      method: "POST",
-      headers: {
+    // Anti-SSRF no ponto de envio: valida o URL e cada IP no momento da ligação
+    // (um URL gravado antes desta validação, ou um DNS que mudou, não passa).
+    const status = await postWebhook(
+      tenant.webhookUrl,
+      {
         "Content-Type": "application/json",
         "User-Agent": "Falai-Webhook/1.0",
         ...(signature && { "X-Falai-Signature": signature }),
       },
       body,
-      signal: AbortSignal.timeout(10_000),
-    });
+      10_000,
+    );
 
-    if (!res.ok) {
-      throw new Error(`Webhook delivery failed: HTTP ${res.status}`);
+    if (status < 200 || status >= 300) {
+      throw new Error(`Webhook delivery failed: HTTP ${status}`);
     }
 
-    log.info({ jobId: job.id, status: res.status }, "webhooks_out.delivered");
+    log.info({ jobId: job.id, status }, "webhooks_out.delivered");
   },
   { connection, concurrency: 20 }
 );
@@ -124,14 +130,6 @@ interface ImportJobData {
   rows: Array<{ phone: string; name?: string; attributes?: Record<string, unknown> }>;
 }
 
-function normalizePhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("244") && digits.length === 12) return `+${digits}`;
-  if (digits.startsWith("00244") && digits.length === 14) return `+${digits.slice(2)}`;
-  if (digits.length === 9) return `+244${digits}`;
-  if (digits.length >= 11) return `+${digits}`;
-  return null;
-}
 
 const contactImportWorker = new Worker(
   QUEUES.CONTACT_IMPORT,
@@ -151,7 +149,7 @@ const contactImportWorker = new Worker(
       const batch = rows.slice(i, i + BATCH);
       await Promise.all(
         batch.map(async (row) => {
-          const phone = normalizePhone(row.phone);
+          const phone = normalizeAoPhone(row.phone);
           if (!phone) { skipped++; return; }
           try {
             await prisma.contact.upsert({
@@ -198,6 +196,18 @@ const purgeWorker = new Worker(
         const result = await reconcileStaleCalls();
         if (result.closed > 0) {
           log.warn({ jobId: job.id, ...result }, "reconcile_stale_calls.closed");
+        }
+        for (const cc of result.completedCampaigns) {
+          await webhooksOutQueue.add(
+            JOBS.DELIVER_WEBHOOK,
+            {
+              tenantId: cc.tenantId,
+              event: "campaign.completed",
+              payload: { campaignId: cc.campaignId, completed: cc.completed, failed: cc.failed },
+            },
+            { attempts: 3, backoff: { type: "exponential", delay: 5000 } }
+          );
+          log.info({ campaignId: cc.campaignId, tenantId: cc.tenantId }, "reconcile_stale_calls.campaign_completed");
         }
         break;
       }

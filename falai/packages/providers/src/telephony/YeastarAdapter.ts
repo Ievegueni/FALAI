@@ -224,13 +224,19 @@ export class YeastarAdapter implements TelephonyProvider {
       );
       return;
     }
+    // A P-Series desliga por CANAL (`channel_id`), não pela chamada: o `call_id`
+    // que o dial devolve era recusado e o botão "Desligar" dava sempre 502. Os
+    // canais tiram-se do call/query (members[].<tipo>.channel_id).
     const token = await this.getToken();
-    const res = await this.http.post<YeastarResponse>(
-      "/openapi/v1.0/call/hangup",
-      { call_id: providerCallId },
-      this.tokenParam(token)
+    const members = await this.callChannels(token, providerCallId);
+    if (!members) return; // já terminou
+    const results = await Promise.all(
+      members.map(({ channelId: channel_id }) =>
+        this.http.post<YeastarResponse>("/openapi/v1.0/call/hangup", { channel_id }, this.tokenParam(token))
+      )
     );
-    this.assertOk(res.data);
+    // Basta um canal desligado para a chamada cair; os outros podem já não existir.
+    if (results.length > 0 && !results.some((r) => r.data.errcode === 0)) this.assertOk(results[0]!.data);
   }
 
   async transfer(providerCallId: string, to: string): Promise<void> {
@@ -238,13 +244,33 @@ export class YeastarAdapter implements TelephonyProvider {
       console.info(`[YeastarAdapter STUB] transfer → ${providerCallId} to=${to}`);
       return;
     }
+    // Como no hangup: a P-Series transfere um CANAL (`channel_id`), não a
+    // chamada. Transfere-se o lado do cliente (membro inbound/outbound) para
+    // `number`; sem esse membro, o primeiro canal da chamada.
     const token = await this.getToken();
+    const members = await this.callChannels(token, providerCallId);
+    if (!members || members.length === 0) throw new Error(`Yeastar: chamada ${providerCallId} não encontrada para transferir`);
+    const remote = members.find((m) => m.type === "outbound" || m.type === "inbound") ?? members[0]!;
     const res = await this.http.post<YeastarResponse>(
       "/openapi/v1.0/call/transfer",
-      { call_id: providerCallId, transfer_to: to },
+      { type: "blind", channel_id: remote.channelId, number: to },
       this.tokenParam(token)
     );
     this.assertOk(res.data);
+  }
+
+  /** Canais de uma chamada activa (call/query → members[].<tipo>.channel_id). Null = já não existe. */
+  private async callChannels(token: string, providerCallId: string): Promise<Array<{ type: string; channelId: string }> | null> {
+    const q = await this.http.get<YeastarResponse<Array<{ call_id?: string; callid?: string; members?: Array<Record<string, { channel_id?: string } | undefined>> }>>>(
+      "/openapi/v1.0/call/query",
+      { params: { access_token: token, call_id: providerCallId } }
+    );
+    this.assertOk(q.data);
+    const call = (q.data.data ?? []).find((c) => (c.call_id ?? c.callid) === providerCallId);
+    if (!call) return null;
+    return (call.members ?? []).flatMap((m) =>
+      Object.entries(m).flatMap(([type, v]) => (v?.channel_id ? [{ type, channelId: v.channel_id }] : []))
+    );
   }
 
   async uploadPrompt(name: string, wavBuffer: Buffer): Promise<void> {
@@ -267,17 +293,17 @@ export class YeastarAdapter implements TelephonyProvider {
     this.assertOk(res.data);
   }
 
-  async playPrompt(params: PlayPromptParams): Promise<void> {
+  async playPrompt(params: PlayPromptParams): Promise<{ providerCallId: string }> {
     if (this.config.stubMode) {
       console.info(`[YeastarAdapter STUB] playPrompt → number=${params.number} prompts=${params.prompts.join(",")}`);
       if (params.providerCallId) {
         this.fireEvent({ type: "PROMPT_FINISHED", providerCallId: params.providerCallId }, this.stubDelayMs("promptFinished"));
       }
-      return;
+      return { providerCallId: params.providerCallId ?? "" };
     }
     const token = await this.getToken();
     const safePrompts = params.prompts.map((p) => p.replace(/\.[^.]+$/, ""));
-    const res = await this.http.post<YeastarResponse>(
+    const res = await this.http.post<YeastarResponse & { call_id?: string }>(
       "/openapi/v1.0/call/play_prompt",
       {
         number: this.normalizeNumber(params.number),
@@ -290,6 +316,9 @@ export class YeastarAdapter implements TelephonyProvider {
       this.tokenParam(token)
     );
     this.assertOk(res.data);
+    // O play_prompt do Yeastar nem sempre devolve call_id; sem ele fica o canal
+    // que veio por parâmetro, que é o caso de tocar num canal já existente.
+    return { providerCallId: res.data.call_id ?? params.providerCallId ?? "" };
   }
 
   // ── Events ────────────────────────────────────────────────────────────────

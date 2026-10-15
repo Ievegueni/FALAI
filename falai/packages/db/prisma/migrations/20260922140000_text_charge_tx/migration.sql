@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "TxType" ADD VALUE 'TEXT_CHARGE';
+
