@@ -31,6 +31,10 @@ const envSchema = z.object({
   // REGISTER. Sem isto configurado, o endpoint de credenciais do webphone
   // não funciona (ver routes/tenant/extensions.ts).
   PUBLIC_WEBPHONE_WSS_URL: z.string().optional(),
+  // Domínio dos endereços próprios dos clientes: <subdomínio>.<isto> (ex.:
+  // "falai.ao" → credito.falai.ao). Vazio = funcionalidade desligada, o CRM só
+  // responde pelos domínios gerais como antes. Ver services/tenantHost.ts.
+  TENANT_BASE_DOMAIN: z.string().optional(),
   PUBLIC_WEBPHONE_SIP_DOMAIN: z.string().optional(),
 
   // true = STT/LLM/TTS em modo stub (sem chamar Deepgram/Claude/ElevenLabs),

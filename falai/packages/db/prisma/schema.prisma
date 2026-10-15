@@ -159,6 +159,9 @@ model Tenant {
   name                 String
   // Logo do cliente mostrado no CRM (data URL, ≤ 256 KB). Null = logo da Comunica.
   logoDataUrl          String?             @db.Text
+  // Endereço próprio no CRM: <subdomain>.<TENANT_BASE_DOMAIN> (ex.: credito.falai.ao).
+  // Null = só entra pelos domínios gerais. Regras em services/tenantHost.ts da API.
+  subdomain            String?             @unique
   nif                  String?             @unique
   email                String
   phone                String
