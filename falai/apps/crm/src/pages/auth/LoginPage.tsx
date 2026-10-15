@@ -25,7 +25,9 @@ export function LoginPage() {
   useEffect(() => {
     authApi.site()
       .then((s) => setSite(s.subdomain ? s : null))
-      .catch((err) => { if (err instanceof ApiError && err.status === 404) setSite({ unknown: true }); });
+      // Só o 404 da própria rota (traz `subdomain`) é endereço desconhecido; um 404
+      // genérico (API sem esta rota) não pode bloquear o login.
+      .catch((err) => { if (err instanceof ApiError && err.status === 404 && err.data.subdomain) setSite({ unknown: true }); });
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
