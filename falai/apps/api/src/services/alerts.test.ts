@@ -5,7 +5,8 @@ vi.mock("@falai/providers", () => ({ extensionEndpointId: (s: string) => s, exte
 vi.mock("./inboundCallRouter.service.js", () => ({ activeInboundCalls: () => [] }));
 vi.mock("./webhookEmitter.service.js", () => ({ emitWebhookAsync: () => undefined }));
 vi.mock("./features.js", () => ({ tenantHasFeature: async () => true }));
-const { liveBreaches, dailyBreaches, diffAlerts, parseTargets, textBreaches, ticketBreaches } = await import("./alerts.service.js");
+const { liveBreaches, dailyBreaches, diffAlerts, parseTargets, textBreaches, ticketBreaches, startAlertEvaluator } = await import("./alerts.service.js");
+const { prisma } = (await import("@falai/db")) as unknown as { prisma: Record<string, unknown> };
 const { callKpis } = await import("./attendanceReport.service.js");
 
 /** Alertas operacionais: quando abrem, quando fecham, e o SLA. */
@@ -134,5 +135,24 @@ describe("texto e tickets", () => {
       { id: "t3", groupId: null, dueAt: new Date(now.getTime() + 5 * 3600_000) },
     ], t, now);
     expect(b.map((x) => [x.type, x.ref, x.value])).toEqual([["TICKET_DUE_SOON", "t1", 1800], ["TICKET_OVERDUE", "t2", 600]]);
+  });
+});
+
+describe("avaliador periódico", () => {
+  it("a BD a falhar no tick fica no log e não derruba a API", async () => {
+    // Incidente 2026-10-10: o Postgres reiniciou com uma actualização automática,
+    // o findMany rejeitou e, sem catch, a rejeição não tratada matou o processo.
+    vi.useFakeTimers();
+    prisma.tenant = { findMany: vi.fn(async () => { throw new Error("FATAL: the database system is shutting down"); }) };
+    const log = { error: vi.fn(), warn: vi.fn(), info: vi.fn() };
+    const stop = startAlertEvaluator({ log } as never);
+    try {
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(log.error).toHaveBeenCalledWith(expect.objectContaining({ err: expect.any(Error) }), "alerts.tick_failed");
+    } finally {
+      stop();
+      vi.useRealTimers();
+      delete prisma.tenant;
+    }
   });
 });

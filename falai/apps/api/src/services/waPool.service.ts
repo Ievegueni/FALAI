@@ -256,6 +256,8 @@ export function startWaHealthCheck(fastify: FastifyInstance): () => void {
         if (!(await tenantHasFeature(i.tenantId, "inbox"))) continue;
         await checkNumber(fastify, i.id).catch((err) => fastify.log.warn({ err, inboxId: i.id }, "whatsapp.pool.check_error"));
       }
+    } catch (err) {
+      fastify.log.error({ err }, "whatsapp.pool.tick_failed");
     } finally {
       running = false;
     }

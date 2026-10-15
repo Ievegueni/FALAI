@@ -333,6 +333,8 @@ export function startHelpdeskSync(log: FastifyBaseLogger): () => Promise<void> {
           await recordError(c.tenantId, err);
         });
       }
+    } catch (err) {
+      log.error({ err }, "helpdesk.tick_failed");
     } finally {
       running = false;
     }

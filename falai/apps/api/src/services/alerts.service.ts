@@ -346,6 +346,10 @@ export function startAlertEvaluator(fastify: FastifyInstance): () => void {
           fastify.log.warn({ err, tenantId: tn.id }, "alerts.evaluate_error")
         );
       }
+    } catch (err) {
+      // Sem isto, um erro da BD (ex.: Postgres a reiniciar) era uma rejeição
+      // não tratada e derrubava a API inteira (incidente 2026-10-10).
+      fastify.log.error({ err }, "alerts.tick_failed");
     } finally {
       running = false;
     }

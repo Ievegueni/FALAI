@@ -137,6 +137,8 @@ export function startEmailPolling(fastify: FastifyInstance): () => void {
           fastify.log.warn({ err: err instanceof Error ? err.message : err, inboxId: inbox.id }, "email.poll_failed")
         );
       }
+    } catch (err) {
+      fastify.log.error({ err }, "email.tick_failed");
     } finally {
       running = false;
     }
