@@ -29,6 +29,7 @@ import {
   stopCallRecording,
   saveFinishedRecording,
 } from "./callRecording.service.js";
+import { crmUrlForTenant } from "./tenantHost.js";
 import { notifyMissedCall } from "./missedCallSms.service.js";
 import {
   answerLeg,
@@ -1066,7 +1067,7 @@ async function closeInboundCall(
       // Helpdesk externo com "ticket em todas as chamadas": cria-o já (vai para o Freshdesk pela fila).
       const hd = await activeConnection(call.tenantId);
       if (hd?.ticketOnCall === "ALWAYS" && !full?.ticketId) {
-        const crm = process.env["PUBLIC_CRM_URL"]?.replace(/\/$/, "");
+        const crm = await crmUrlForTenant(call.tenantId);
         const agent = agentId ? (await prisma.tenantUser.findUnique({ where: { id: agentId }, select: { name: true } }))?.name : null;
         await createTicket(call.tenantId, null, {
           subject: `Chamada de ${call.fromNumber ?? "número oculto"}`,

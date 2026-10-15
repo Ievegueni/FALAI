@@ -13,6 +13,7 @@ import {
 } from "../../services/auth.service.js";
 import { computeFeatures } from "../../services/features.js";
 import { applyProfile, sanitizePermissions, type ProfilePermissions } from "../../services/accessProfiles.js";
+import { crmUrlFor, subdomainFromHost } from "../../services/tenantHost.js";
 
 // Selecção comum do tenant devolvida ao CRM (login e /me)
 const tenantClientSelect = {
@@ -22,17 +23,20 @@ const tenantClientSelect = {
   balanceCents: true,
   features: true,
   logoDataUrl: true,
+  subdomain: true,
   plan: { select: { name: true, productType: true, aiAgentsEnabled: true, clinicEnabled: true, smsEnabled: true, maxAgents: true, maxConcurrent: true } },
 } as const;
 
 // Substitui o campo `features` cru (overrides) pelas features efectivas calculadas,
 // já sem os módulos que o perfil de acesso do utilizador esconde
 function shapeTenant<
-  T extends { features: unknown; plan: { aiAgentsEnabled: boolean; smsEnabled?: boolean; productType?: string } | null },
+  T extends { features: unknown; subdomain?: string | null; plan: { aiAgentsEnabled: boolean; smsEnabled?: boolean; productType?: string } | null },
 >(tenant: T | null, permissions: ProfilePermissions | null = null) {
   if (!tenant) return null;
   return {
     ...tenant,
+    // Endereço do CRM deste cliente: o CRM avisa quem ainda entra pelo antigo.
+    crmUrl: crmUrlFor(tenant.subdomain),
     features: applyProfile(computeFeatures({
       overrides: tenant.features,
       aiAgentsEnabled: tenant.plan?.aiAgentsEnabled ?? true,
@@ -127,13 +131,25 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
     });
   });
 
+  // GET /tenant/auth/site — de quem é o endereço por onde se entrou (ecrã de login)
+  fastify.get("/site", async (request, reply) => {
+    const site = subdomainFromHost(request.headers.host);
+    if (!site) return { subdomain: null };
+    const tenant = await prisma.tenant.findFirst({
+      where: { subdomain: site, deletedAt: null },
+      select: { name: true, logoDataUrl: true },
+    });
+    if (!tenant) return reply.status(404).send({ error: "Endereço desconhecido", subdomain: site });
+    return { subdomain: site, tenantName: tenant.name, logoDataUrl: tenant.logoDataUrl };
+  });
+
   // POST /tenant/auth/login
   fastify.post("/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = loginSchema.parse(request.body);
 
     const user = await prisma.tenantUser.findUnique({
       where: { email: body.email },
-      include: { tenant: { select: { id: true, status: true, deletedAt: true } }, accessProfile: accessProfileSelect },
+      include: { tenant: { select: { id: true, status: true, deletedAt: true, subdomain: true } }, accessProfile: accessProfileSelect },
     });
 
     if (!user) return reply.status(401).send({ error: "Credenciais inválidas" });
@@ -153,6 +169,23 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
         ip: request.ip,
       });
       return reply.status(401).send({ error: "Credenciais inválidas" });
+    }
+
+    // No endereço próprio de um cliente (credito.falai.ao) só entram os seus
+    // utilizadores. Só depois da password certa, para não revelar que o email
+    // existe noutro cliente; aí já se pode indicar o endereço certo.
+    const site = subdomainFromHost(request.headers.host);
+    if (site && user.tenant!.subdomain !== site) {
+      await fastify.audit({
+        actorType: "TENANT_USER",
+        actorId: user.id,
+        action: "tenant.login.wrong_site",
+        targetType: "TenantUser",
+        targetId: user.id,
+        ip: request.ip,
+        after: { site },
+      });
+      return reply.status(403).send({ error: "Esta conta não pertence a este endereço", crmUrl: crmUrlFor(user.tenant!.subdomain) });
     }
 
     if (!user.twoFaSecret) {
