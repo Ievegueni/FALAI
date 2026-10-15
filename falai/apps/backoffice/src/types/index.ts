@@ -612,6 +612,8 @@ export interface TenantExtension {
   sipAuthUser: string;
   isActive: boolean;
   isDefault: boolean;
+  /** Atende sozinha as chamadas de entrada. */
+  autoAnswer?: boolean;
   phoneNumber: string | null;
   createdAt: string;
 }
@@ -623,4 +625,5 @@ export interface TenantExtensionInput {
   phoneNumber?: string | null;
   isActive?: boolean;
   isDefault?: boolean;
+  autoAnswer?: boolean;
 }

@@ -12,7 +12,7 @@ import type { TenantExtension } from '@/types';
  * apps/api/src/routes/shared/extensions.ts.
  */
 
-const EMPTY = { number: '', displayName: '', callerId: '', phoneNumber: '', isActive: true };
+const EMPTY = { number: '', displayName: '', callerId: '', phoneNumber: '', isActive: true, autoAnswer: false };
 
 function ExtensionModal({ tenantId, editing, onClose, onSecret }: {
   tenantId: string;
@@ -29,6 +29,7 @@ function ExtensionModal({ tenantId, editing, onClose, onSecret }: {
     callerId: editing.callerId,
     phoneNumber: editing.phoneNumber ?? '',
     isActive: editing.isActive,
+    autoAnswer: editing.autoAnswer ?? false,
   });
   const set = (k: keyof typeof form, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -38,6 +39,7 @@ function ExtensionModal({ tenantId, editing, onClose, onSecret }: {
         displayName: form.displayName.trim() || null,
         ...(form.callerId.trim() ? { callerId: form.callerId.trim() } : {}),
         phoneNumber: form.phoneNumber.trim() || null,
+        autoAnswer: form.autoAnswer,
       };
       if (isNew) {
         const ext = await tenantsApi.createExtension(tenantId, { number: form.number.trim(), ...data, displayName: data.displayName ?? undefined });
@@ -75,6 +77,13 @@ function ExtensionModal({ tenantId, editing, onClose, onSecret }: {
             <option value="0">Inactiva</option>
           </Select>
         )}
+        <label className="col-span-2 flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" className="mt-0.5" checked={form.autoAnswer} onChange={(e) => set('autoAnswer', e.target.checked)} />
+          <span>
+            Atender automaticamente
+            <span className="block text-xs text-gray-500">As chamadas de entrada entram sozinhas no webphone (com um bip). Também nos telefones físicos que suportam answer-after.</span>
+          </span>
+        </label>
       </div>
     </Modal>
   );
@@ -135,6 +144,7 @@ export function TenantExtensionsTab({ tenantId }: { tenantId: string }) {
                     <Badge className="bg-amber-100 text-amber-700 text-xs inline-flex items-center gap-1"><Star className="h-3 w-3" />Por defeito</Badge>
                   )}
                   {!x.isActive && <Badge className="bg-gray-100 text-gray-500 text-xs">Inactiva</Badge>}
+                  {x.autoAnswer && <Badge className="bg-violet-100 text-violet-700 text-xs">Atende sozinha</Badge>}
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
                   SIP <code className="bg-gray-100 px-1 rounded">{x.sipAuthUser}</code>

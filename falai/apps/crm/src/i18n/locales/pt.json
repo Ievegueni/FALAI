@@ -1419,7 +1419,10 @@
     "tabPauseReasons": "Motivos de pausa",
     "pauseReasonsHint": "Motivos que o agente escolhe ao pausar no webphone (almoço, formação, ...). Entram no relatório de tempo dos agentes.",
     "pauseReasonPlaceholder": "Novo motivo de pausa",
-    "noPauseReasons": "Sem motivos de pausa — o agente pausa sem motivo."
+    "noPauseReasons": "Sem motivos de pausa — o agente pausa sem motivo.",
+    "autoAnswer": "Atender automaticamente",
+    "autoAnswerHint": "As chamadas de entrada entram sozinhas no webphone (com um bip), sem o agente carregar em atender. Também funciona nos telefones físicos que suportam answer-after.",
+    "autoAnswerBadge": "Atende sozinha"
   },
   "inbox": {
     "waPool": "Pool WhatsApp (Active/Standby)",

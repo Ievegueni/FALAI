@@ -1419,7 +1419,10 @@
     "tabPauseReasons": "Pause reasons",
     "pauseReasonsHint": "Reasons the agent picks when pausing in the webphone (lunch, training, ...). They feed the agent time report.",
     "pauseReasonPlaceholder": "New pause reason",
-    "noPauseReasons": "No pause reasons — agents pause without a reason."
+    "noPauseReasons": "No pause reasons — agents pause without a reason.",
+    "autoAnswer": "Auto-answer",
+    "autoAnswerHint": "Incoming calls are answered automatically on the webphone (with a beep), without the agent pressing answer. Also works on desk phones that support answer-after.",
+    "autoAnswerBadge": "Auto-answer"
   },
   "inbox": {
     "waPool": "WhatsApp pool (Active/Standby)",

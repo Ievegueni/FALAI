@@ -479,6 +479,8 @@ export interface Extension {
   security: Record<string, unknown> | null;
   isActive: boolean;
   isDefault: boolean;
+  /** Atende sozinha as chamadas de entrada (definido pelo administrador). */
+  autoAnswer?: boolean;
   phoneNumber: string | null;
   createdAt: string;
   updatedAt: string;

@@ -72,6 +72,24 @@ export function playQueueAlert(): void {
   });
 }
 
+/** Dois bips curtos: "chamada atendida automaticamente, já está em linha". */
+export function playAutoAnswerBeep(): void {
+  unlockRingtone();
+  if (!ctx) return;
+  const g = ctx.createGain();
+  g.gain.value = 0.2;
+  g.connect(ctx.destination);
+  const t0 = ctx.currentTime;
+  [0, 0.18].forEach((start) => {
+    const osc = ctx!.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 1000;
+    osc.connect(g);
+    osc.start(t0 + start);
+    osc.stop(t0 + start + 0.1);
+  });
+}
+
 // ─── Sinal de chamada (chamada de saída) ────────────────────────────────────
 // O Asterisk não manda áudio antes de o cliente atender (Dial sem early media),
 // por isso o agente ouvia silêncio. Tom europeu, o de Angola: 425 Hz, 1 s ligado, 4 s desligado.

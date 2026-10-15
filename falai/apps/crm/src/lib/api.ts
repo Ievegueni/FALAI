@@ -694,6 +694,7 @@ export const telephonyApi = {
     email?: string | null;
     mobile?: string | null;
     roleId?: string | null;
+    autoAnswer?: boolean;
   }) => post<Extension>('/tenant/extensions', data),
   updateExtension: (id: string, data: Partial<Extension>) => put<Extension>(`/tenant/extensions/${id}`, data),
   resetExtensionSip: (id: string) => post<Extension>(`/tenant/extensions/${id}/reset-sip`),

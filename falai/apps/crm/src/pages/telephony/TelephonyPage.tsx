@@ -55,7 +55,7 @@ function ExtensionModal({ open, onClose, editing, roles, onReveal }: {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { success, error } = useToast();
-  const [form, setForm] = useState({ number: '', callerId: '', displayName: '', email: '', mobile: '', roleId: '' });
+  const [form, setForm] = useState({ number: '', callerId: '', displayName: '', email: '', mobile: '', roleId: '', autoAnswer: false });
 
   // Sincroniza o formulário quando abre em modo edição
   const [lastId, setLastId] = useState<string | null>(null);
@@ -68,11 +68,12 @@ function ExtensionModal({ open, onClose, editing, roles, onReveal }: {
       email: editing.email ?? '',
       mobile: editing.mobile ?? '',
       roleId: editing.roleId ?? '',
+      autoAnswer: editing.autoAnswer ?? false,
     });
   }
   if (open && !editing && lastId !== null) {
     setLastId(null);
-    setForm({ number: '', callerId: '', displayName: '', email: '', mobile: '', roleId: '' });
+    setForm({ number: '', callerId: '', displayName: '', email: '', mobile: '', roleId: '', autoAnswer: false });
   }
 
   const save = useMutation({
@@ -83,6 +84,7 @@ function ExtensionModal({ open, onClose, editing, roles, onReveal }: {
         email: form.email || null,
         mobile: form.mobile || null,
         roleId: form.roleId || null,
+        autoAnswer: form.autoAnswer,
       };
       if (editing) return telephonyApi.updateExtension(editing.id, payload);
       return telephonyApi.createExtension({ number: form.number, ...payload });
@@ -113,6 +115,13 @@ function ExtensionModal({ open, onClose, editing, roles, onReveal }: {
         </Select>
         <Input label={t('telephony.email')} type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
         <Input label={t('telephony.mobile')} value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} />
+        <label className="col-span-2 flex items-start gap-2 text-sm text-gray-700 cursor-pointer">
+          <input type="checkbox" className="mt-0.5" checked={form.autoAnswer} onChange={(e) => setForm((f) => ({ ...f, autoAnswer: e.target.checked }))} />
+          <span>
+            {t('telephony.autoAnswer')}
+            <span className="block text-xs text-gray-500">{t('telephony.autoAnswerHint')}</span>
+          </span>
+        </label>
       </div>
     </Modal>
   );
@@ -164,6 +173,7 @@ function ExtensionsTab({ canManage, roles }: { canManage: boolean; roles: Teleph
               <tr key={e.id} className="hover:bg-gray-50">
                 <td className="px-5 py-2.5 font-medium text-gray-900">
                   {e.number}{e.isDefault && <Badge className="ml-2 bg-blue-100 text-blue-700">{t('telephony.default')}</Badge>}
+                  {e.autoAnswer && <Badge className="ml-2 bg-violet-100 text-violet-700">{t('telephony.autoAnswerBadge')}</Badge>}
                 </td>
                 <td className="px-5 py-2.5 text-gray-600">{e.displayName ?? '—'}<div className="text-xs text-gray-400">{e.email}</div></td>
                 <td className="px-5 py-2.5 text-gray-600">{roleName(e.roleId) ?? '—'}</td>

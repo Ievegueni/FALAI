@@ -17,7 +17,7 @@ import type { RTCSession } from 'jssip/lib/RTCSession';
 import type { RTCSessionEvent } from 'jssip/lib/UA';
 import { webphoneApi, type SupervisionMode } from '@/lib/api';
 import { useTenantEvents } from '@/lib/tenantEvents';
-import { playQueueAlert, startRingback, startRingtone, stopRingback, stopRingtone, unlockRingtone } from '@/lib/ringtone';
+import { playAutoAnswerBeep, playQueueAlert, startRingback, startRingtone, stopRingback, stopRingtone, unlockRingtone } from '@/lib/ringtone';
 import { useToast } from '@/contexts/ToastContext';
 
 export type RegistrationState = 'unregistered' | 'registering' | 'registered' | 'failed';
@@ -60,6 +60,8 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
 
   const uaRef = useRef<JsSIPType.UA | null>(null);
   const sessionRef = useRef<RTCSession | null>(null);
+  // A chamada a entrar vai ser atendida sozinha (X-Falai-Auto-Answer): não toca.
+  const autoAnsweringRef = useRef(false);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [extensionId, setExtensionId] = useState<string | null>(null);
@@ -207,6 +209,10 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
           // Chamada de entrada — se o agente não estiver na página do
           // webphone, o único aviso é este toast (a sessão continua viva no
           // Context, mas sem UI própria aqui para atender).
+          // Extensão com atendimento automático (definido pelo administrador,
+          // inboundCallRouter.service.ts): sem toque, um bip e entra sozinha.
+          const autoAnswer = request.getHeader('X-Falai-Auto-Answer') === '1';
+          autoAnsweringRef.current = autoAnswer;
           attachSession(session, 'incoming');
           // Posto pelo router de entrada (inboundCallRouter.service.ts) para
           // o motivo de uma recusa ficar na perna certa dos relatórios.
@@ -218,6 +224,19 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
           if (waited) {
             playQueueAlert();
             notifyQueueCall(session.remote_identity.uri.user, waited);
+          }
+          if (autoAnswer) {
+            playAutoAnswerBeep();
+            setTimeout(() => {
+              if (sessionRef.current !== session || !session.isInProgress()) return;
+              unlockRemoteAudio();
+              session.answer({ mediaConstraints: { audio: true, video: false } });
+            }, 500);
+            if (locationRef.current !== '/webphone') {
+              info('Chamada atendida automaticamente.');
+              navigate('/webphone');
+            }
+            return;
           }
           if (locationRef.current !== '/webphone') {
             info(waited ? `Chamada da fila (esperou ${fmtWait(waited)}) — abra o Webphone para atender.` : 'Chamada a entrar — abra o Webphone para atender.');
@@ -231,7 +250,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
         setError(err instanceof Error ? err.message : 'Não foi possível obter as credenciais do webphone');
       }
     },
-    [attachSession, info, teardownUa, unlockRemoteAudio],
+    [attachSession, info, navigate, teardownUa, unlockRemoteAudio],
   );
 
   const unregister = useCallback(() => {
@@ -287,7 +306,7 @@ export function WebphoneProvider({ children }: { children: ReactNode }) {
 
   // Toque no browser enquanto a chamada de entrada não é atendida/rejeitada.
   useEffect(() => {
-    if (callState === 'incoming') startRingtone();
+    if (callState === 'incoming' && !autoAnsweringRef.current) startRingtone();
     else stopRingtone();
   }, [callState]);
   useEffect(() => stopRingtone, []);
