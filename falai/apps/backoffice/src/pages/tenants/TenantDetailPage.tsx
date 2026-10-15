@@ -412,6 +412,7 @@ export function TenantDetailPage() {
       {tab === 'overview' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <LogoCard tenantId={tenant.id} logo={tenant.logoDataUrl ?? null} />
+          <SubdomainCard tenantId={tenant.id} subdomain={tenant.subdomain ?? null} crmUrl={tenant.crmUrl ?? null} />
           <Card>
             <h2 className="text-sm font-semibold text-gray-700 mb-4">Organização</h2>
             <dl className="space-y-3 text-sm">
@@ -1578,6 +1579,46 @@ function CampaignDetailModal({ tenantId, campaignId, onClose }: { tenantId: stri
         </div>
       )}
     </Modal>
+  );
+}
+
+/** Endereço próprio do cliente no CRM (credito → credito.falai.ao). */
+function SubdomainCard({ tenantId, subdomain, crmUrl }: { tenantId: string; subdomain: string | null; crmUrl: string | null }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [value, setValue] = useState(subdomain ?? '');
+  useEffect(() => setValue(subdomain ?? ''), [subdomain]);
+  const save = useMutation({
+    mutationFn: (v: string) => tenantsApi.update(tenantId, { subdomain: v.trim().toLowerCase() || null }),
+    onSuccess: (_r, v) => {
+      toast.success(v.trim() ? 'Endereço actualizado' : 'Endereço removido');
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', tenantId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Não foi possível guardar o endereço'),
+  });
+  const changed = value.trim().toLowerCase() !== (subdomain ?? '');
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-gray-700 mb-1">Endereço do CRM</h2>
+      <p className="text-xs text-gray-500 mb-4">
+        Endereço próprio do cliente (ex.: <span className="font-mono">credito</span> → credito.falai.ao). Nesse endereço só entram os
+        utilizadores deste cliente. Antes de o usar, o nome tem de estar no certificado do servidor.
+      </p>
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="sem endereço próprio" disabled={save.isPending} />
+        </div>
+        <Button size="sm" onClick={() => save.mutate(value)} disabled={!changed || save.isPending}>
+          {save.isPending ? 'A guardar…' : 'Guardar'}
+        </Button>
+      </div>
+      {crmUrl && (
+        <a href={crmUrl} target="_blank" rel="noreferrer" className="mt-3 inline-block text-xs text-indigo-600 hover:underline">
+          {crmUrl}
+        </a>
+      )}
+    </Card>
   );
 }
 

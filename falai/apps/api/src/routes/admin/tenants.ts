@@ -14,6 +14,7 @@ import { publicApiUrl } from "../tenant/inboxes.js";
 import { checkNumber } from "../../services/waPool.service.js";
 import { registerIvrRouting, type RoutingCtx } from "../shared/ivrRouting.js";
 import { registerExtensions } from "../shared/extensions.js";
+import { crmUrlFor, subdomainError } from "../../services/tenantHost.js";
 
 const lineCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -74,6 +75,8 @@ const updateSchema = z.object({
   missedCallSms: z.boolean().optional(),
   missedCallSmsText: z.string().max(480).nullable().optional(),
   aiReportDailyLimit: z.number().int().min(0).max(1000).optional(), // análises IA dos relatórios por dia (0 = desligado)
+  // Endereço próprio no CRM (credito → credito.falai.ao). "" ou null = sem endereço próprio.
+  subdomain: z.string().trim().toLowerCase().nullable().optional(),
 });
 
 const smsConfigSchema = z.object({
@@ -112,6 +115,8 @@ function mapTenant(t: any) {
     balanceCents: t.balanceCents,
     creditLimitCents: t.creditLimitCents,
     webhookUrl: t.webhookUrl ?? null,
+    subdomain: t.subdomain ?? null,
+    crmUrl: t.subdomain ? crmUrlFor(t.subdomain) : null,
     onboardingCompletedAt: null,
     planId: t.planId,
     plan: t.plan
@@ -277,6 +282,14 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
     const existing = await prisma.tenant.findFirst({ where: { id: request.params.id, deletedAt: null } });
     if (!existing) return reply.status(404).send({ error: "Tenant não encontrado" });
 
+    const subdomain = body.subdomain === undefined ? undefined : body.subdomain || null;
+    if (subdomain) {
+      const err = subdomainError(subdomain);
+      if (err) return reply.status(400).send({ error: err });
+      const taken = await prisma.tenant.findFirst({ where: { subdomain, id: { not: existing.id } }, select: { id: true } });
+      if (taken) return reply.status(409).send({ error: "Esse endereço já pertence a outro cliente" });
+    }
+
     // Ligar o SMS automático sem mensagem escrita deixava o aviso ligado a não
     // fazer nada — falha silenciosa que só se nota quando um cliente se queixa
     // de não receber nada.
@@ -306,6 +319,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.missedCallSms !== undefined && { missedCallSms: body.missedCallSms }),
         ...(body.missedCallSmsText !== undefined && { missedCallSmsText: body.missedCallSmsText }),
         ...(body.aiReportDailyLimit !== undefined && { aiReportDailyLimit: body.aiReportDailyLimit }),
+        ...(subdomain !== undefined && { subdomain }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },
     });

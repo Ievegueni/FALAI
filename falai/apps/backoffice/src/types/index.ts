@@ -207,6 +207,9 @@ export interface Tenant {
   balanceCents: number;
   creditLimitCents: number;
   webhookUrl: string | null;
+  /** Endereço próprio no CRM (credito → credito.falai.ao). Null = só os domínios gerais. */
+  subdomain?: string | null;
+  crmUrl?: string | null;
   onboardingCompletedAt: string | null;
   planId: string;
   plan: Plan;
