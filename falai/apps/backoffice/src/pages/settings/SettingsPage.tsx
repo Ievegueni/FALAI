@@ -19,6 +19,7 @@ function SetModal({ onClose }: { onClose: () => void }) {
       toast.success('Configuração guardada.');
       onClose();
     },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao guardar.'),
   });
 
   return (
@@ -53,6 +54,7 @@ export function SettingsPage() {
   const deleteMut = useMutation({
     mutationFn: (key: string) => settingsApi.delete(key),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ['admin', 'settings'] }); toast.success('Configuração removida.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao remover.'),
   });
 
   const updateMut = useMutation({
@@ -62,6 +64,7 @@ export function SettingsPage() {
       toast.success('Actualizado.');
       setEditKey(null);
     },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao guardar.'),
   });
 
   if (isLoading) return <PageSpinner />;

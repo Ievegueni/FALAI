@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { getTenantTelephony, hasOwnPbx } from "../../services/tenantTelephony.service.js";
+import { hasOwnPbx } from "../../services/tenantTelephony.service.js";
 import { prisma } from "@falai/db";
 import { resolveOutboundExtension, NoOutboundLineError } from "../../services/outboundExtension.service.js";
 import { reserveBalance } from "../../services/billing.service.js";
@@ -10,7 +10,7 @@ const bodySchema = z.object({
   code: z.string().min(4).max(12).regex(/^\d+$/, "O código deve conter apenas dígitos"),
   fromExtension: z.string().optional(),
   // Extensão com permissões de saída (outbound route) para números externos.
-  // Se omitido, usa fromExtension. Configura no Yeastar qual extensão tem trunk de saída.
+  // Se omitido, usa fromExtension.
   dialPermission: z.string().optional(),
   language: z.enum(["pt", "en"]).optional().default("pt"),
   // "yes" → extensão de origem atende automaticamente e liga ao destino (padrão OTP)
@@ -74,8 +74,6 @@ export async function v1OtpRoutes(fastify: FastifyInstance): Promise<void> {
       if (!paid) return reply.status(402).send({ error: "Saldo insuficiente" });
     }
 
-    const telephony = await getTenantTelephony(fastify, tenantId);
-
     try {
       const { providerCallId } = await fastify.otpCallService.initiateCall({
         to,
@@ -84,7 +82,8 @@ export async function v1OtpRoutes(fastify: FastifyInstance): Promise<void> {
         ...(dialPermission && { dialPermission }),
         language,
         autoAnswer,
-        telephony,
+        telephony: fastify.telephony,
+        tenantId,
       });
 
       fastify.log.info({ tenantId, to, providerCallId }, "v1.otp.call_initiated");

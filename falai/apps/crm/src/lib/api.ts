@@ -6,6 +6,7 @@ import type {
   Call,
   CallStatus,
   Campaign,
+  CampaignContactRow,
   CampaignMode,
   CampaignSchedule,
   CampaignStatus,
@@ -15,6 +16,8 @@ import type {
   ExtensionGroup,
   TelephonyRole,
   TrunkView,
+  IvrMenu,
+  InboundRoute,
   ImportResult,
   LoginResponse,
   MeResponse,
@@ -37,6 +40,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    /** Corpo da resposta de erro (ex.: `crmUrl` quando se entra no endereço de outro cliente). */
+    public readonly data: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = 'ApiError';
@@ -58,7 +63,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
 
-  if (res.status === 401) {
+  // Um 401 só significa sessão expirada quando a chamada ia autenticada com
+  // token. Sem token (ex.: /tenant/auth/login com password errada) é só uma
+  // credencial inválida — mostrar a mensagem do backend em vez de mascará-la.
+  if (res.status === 401 && token) {
     localStorage.removeItem('falai_token');
     window.dispatchEvent(new CustomEvent('falai:unauthorized'));
     throw new ApiError(401, 'Sessão expirada. Por favor inicie sessão novamente.');
@@ -68,7 +76,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     // A API devolve `{ error }` na generalidade das rotas e `{ message }` nos
     // erros de validação do Fastify — aceitar ambos.
     const body = await res.json().catch(() => ({})) as { message?: string; error?: string };
-    throw new ApiError(res.status, body.error ?? body.message ?? 'Erro desconhecido');
+    throw new ApiError(res.status, body.error ?? body.message ?? 'Erro desconhecido', body);
   }
 
   if (res.status === 204) return undefined as T;
@@ -126,6 +134,9 @@ export const authApi = {
 
   me: () => get<MeResponse>('/tenant/auth/me'),
 
+  /** De quem é o endereço por onde se entrou (credito.falai.ao → FACIL CREDITO). 404 = endereço desconhecido. */
+  site: () => get<{ subdomain: string | null; tenantName?: string; logoDataUrl?: string | null }>('/tenant/auth/site'),
+
   // The backend identifies the pending 2FA login via the sessionToken from /login.
   twoFaVerify: (sessionToken: string, code: string) =>
     post<{ token: string }>('/tenant/auth/2fa/verify', { sessionToken, code }),
@@ -139,6 +150,8 @@ export const authApi = {
     const r = await post<{ ok: boolean }>('/tenant/auth/2fa/confirm', { code });
     return { success: r.ok };
   },
+
+  twoFaDisable: (code: string) => post<{ ok: boolean }>('/tenant/auth/2fa/disable', { code }),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
@@ -226,6 +239,69 @@ export const agentsApi = {
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
 
+export interface ContactFileResult {
+  contacts: { id: string; name: string | null; phone: string; status: 'existing' | 'created' }[];
+  summary: { rows: number; valid: number; existing: number; created: number; duplicatesInFile: number; invalid: number };
+  invalid: { row: number; raw: string; reason: string }[];
+  nameMatches: { row: number; name: string; phone: string; existingPhone: string | null }[];
+}
+
+export type ContactCallState = 'ANSWERED' | 'MISSED' | 'REJECTED' | 'IN_PROGRESS';
+export interface ContactHistoryFilters {
+  from?: string;
+  to?: string;
+  state?: Exclude<ContactCallState, 'IN_PROGRESS'>;
+  categoryId?: string;
+  extensionId?: string;
+  page?: number;
+  pageSize?: number;
+}
+export interface ContactHistoryRow {
+  id: string;
+  at: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  kind: string;
+  agent: string | null;
+  group: string | null;
+  durationSecs: number | null;
+  state: ContactCallState;
+  status: string;
+  typing: string | null;
+  note: string | null;
+}
+export interface ContactProfile {
+  contact: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    email: string | null;
+    attributes: Record<string, string> | null;
+    optedOutAt: string | null;
+    optOutReason: string | null;
+    createdAt: string;
+    phones: { id: string; phone: string; label: string | null }[];
+  };
+  summary: {
+    total: number;
+    answered: number;
+    missed: number;
+    rejected: number;
+    firstContactAt: string | null;
+    lastContactAt: string | null;
+    topTyping: { label: string; count: number } | null;
+    lastTyping: { label: string; at: string; note: string | null } | null;
+    topAgent: { extensionId: string | null; name: string; count: number } | null;
+  };
+  typings: {
+    total: number;
+    distribution: { id: string; name: string; count: number; pct: number; subs: { id: string; name: string; count: number; pct: number }[] }[];
+    timeline: { at: string; label: string; note: string | null; agent: string; callId: string }[];
+  };
+  filters: { agents: { extensionId: string; name: string }[]; categories: { id: string; name: string }[] };
+  notes: { id: string; source: 'NOTE' | 'TYPING'; body: string; at: string; author: string | null; callId: string | null }[];
+  tickets: (import('@/types').TicketRef & { supportLevel: number; updatedAt: string })[];
+}
+
 export const contactsApi = {
   list: async (params?: { page?: number; search?: string; optedOut?: boolean }) => {
     const page = params?.page ?? 1;
@@ -237,8 +313,43 @@ export const contactsApi = {
 
   get: async (id: string) => (await get<{ contact: Contact }>(`/tenant/contacts/${id}`)).contact,
 
+  // ─── Perfil completo do cliente (melhoria 5) ───
+  profile: (id: string) => get<ContactProfile>(`/tenant/contacts/${id}/profile`),
+  history: (id: string, f: ContactHistoryFilters) =>
+    get<{ data: ContactHistoryRow[]; total: number; page: number; pageSize: number }>(`/tenant/contacts/${id}/calls${qs({ ...f })}`),
+  exportHistory: async (id: string, f: ContactHistoryFilters) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/contacts/${id}/calls/export.xlsx${qs({ ...f, page: undefined, pageSize: undefined })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao exportar');
+    const blob = await res.blob();
+    const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+    return { blob, filename: match?.[1] ?? 'historico.xlsx' };
+  },
+  addPhone: (id: string, phone: string, label?: string) =>
+    post<{ id: string; phone: string; label: string | null }>(`/tenant/contacts/${id}/phones`, { phone, ...(label && { label }) }),
+  removePhone: (id: string, phoneId: string) => del<void>(`/tenant/contacts/${id}/phones/${phoneId}`),
+  /** O outro contacto é absorvido por este (histórico junto; o outro é apagado). */
+  merge: (id: string, otherId: string) => post<{ ok: true; moved: Record<string, number> }>(`/tenant/contacts/${id}/merge`, { otherId }),
+
+  /** Ficheiro de números para uma campanha: reutiliza os existentes, cria os que faltam. */
+  fromFile: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    return post<ContactFileResult>('/tenant/contacts/from-file', fd);
+  },
+
   create: async (data: Partial<Contact>) =>
     (await post<{ contact: Contact }>('/tenant/contacts', data)).contact,
+
+  // Um pedido para a lista toda (até 1000). Criar em ciclo estourava o
+  // rate-limit global da API e devolvia 429 a meio da importação.
+  createMany: (contacts: Array<Partial<Contact>>) =>
+    post<{ created: number; skipped: number; received: number; invalid: Array<{ index: number; phone: string; reason: string }> }>(
+      '/tenant/contacts/bulk',
+      { contacts },
+    ),
 
   update: async (id: string, data: Partial<Contact>) =>
     (await patch<{ contact: Contact }>(`/tenant/contacts/${id}`, data)).contact,
@@ -270,13 +381,35 @@ export const contactsApi = {
 
 // ─── Calls ───────────────────────────────────────────────────────────────────
 
+/** Filtros da página Chamadas (ver API: callsFilter.service.ts). */
+export interface CallsFilters {
+  from?: string;
+  to?: string;
+  direction?: 'inbound' | 'outbound';
+  kind?: 'AI_AGENT' | 'DIRECT' | 'OTP' | 'INBOUND' | 'FIXED_SCRIPT';
+  extensionId?: string;
+  groupId?: string;
+  categoryId?: string;
+  q?: string;
+}
+
 export const callsApi = {
-  list: async (params?: { page?: number; agentId?: string; status?: CallStatus; campaignId?: string }) => {
-    const page = params?.page ?? 1;
-    const raw = await get<{ calls: Call[]; total: number }>(
-      `/tenant/calls${qs({ ...pageRange(page), agentId: params?.agentId, status: params?.status, campaignId: params?.campaignId })}`,
-    );
+  list: async (params?: { page?: number; agentId?: string; status?: CallStatus; campaignId?: string } & CallsFilters) => {
+    const { page = 1, ...filters } = params ?? {};
+    const raw = await get<{ calls: Call[]; total: number }>(`/tenant/calls${qs({ ...pageRange(page), ...filters })}`);
     return toPaginated(raw.calls, raw.total, page);
+  },
+
+  /** A lista filtrada em Excel formatado (gerado no servidor). */
+  exportXlsx: async (filters: CallsFilters & { status?: CallStatus }) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/calls/export.xlsx${qs({ ...filters })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao exportar');
+    const blob = await res.blob();
+    const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+    return { blob, filename: match?.[1] ?? 'chamadas.xlsx' };
   },
 
   get: async (id: string) => (await get<{ call: Call }>(`/tenant/calls/${id}`)).call,
@@ -285,6 +418,20 @@ export const callsApi = {
     (await post<{ call: Call }>('/tenant/calls', data)).call,
 
   cancel: async (id: string) => (await post<{ call: Call }>(`/tenant/calls/${id}/cancel`)).call,
+
+  /**
+   * Descarrega a gravação. Não se pode pôr o URL directamente num <audio>: a
+   * rota é autenticada por header e o elemento não o envia — daí trazer o
+   * ficheiro e devolver um object URL para lhe dar como src.
+   */
+  recording: async (id: string) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/calls/${id}/recording`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao obter a gravação');
+    return URL.createObjectURL(await res.blob());
+  },
 
   // Chamadas directas (click-to-call, sem agente)
   extensions: async () =>
@@ -305,6 +452,209 @@ export const callsApi = {
 export const webphoneApi = {
   getCredentials: (extensionId: string) =>
     get<WebphoneCredentials>(`/tenant/extensions/${encodeURIComponent(extensionId)}/webphone-credentials`),
+};
+
+// ─── Motivos de recusa (relatórios de atendimento) ───────────────────────────
+
+export interface RejectReason {
+  id: string;
+  label: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+// ─── Supervisão em tempo real (melhoria 4) ───────────────────────────────────
+
+export type SupervisionMode = 'LISTEN' | 'WHISPER' | 'BARGE';
+export type AgentLiveState = 'IN_CALL' | 'RINGING' | 'WRAP_UP' | 'PAUSED' | 'AVAILABLE' | 'OFFLINE';
+
+export interface SupervisionLive {
+  now: string;
+  agents: { extensionId: string; number: string; name: string | null; state: AgentLiveState; since: string | null; pauseReason?: string | null }[];
+  calls: {
+    callId: string;
+    agent: string | null;
+    agentNumber: string | null;
+    group: string | null;
+    customer: string | null;
+    number: string | null;
+    /** OUTBOUND = marcada no teclado do webphone/telefone (sem grupo). */
+    direction?: 'INBOUND' | 'OUTBOUND';
+    since: string;
+    ownCall: boolean;
+    supervision: { sessionId: string; mode: SupervisionMode; status: 'CONNECTING' | 'ACTIVE'; mine: boolean } | null;
+  }[];
+  kpis: { queued: number; tmeSecs: number | null; missed: number; answered: number };
+}
+
+export interface SupervisionLogEntry {
+  sessionId: string;
+  supervisor: string;
+  agent: string | null;
+  callId: string;
+  customer: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+  modes: { mode: SupervisionMode; at: string }[];
+}
+
+export interface Wallboard {
+  now: string;
+  group: string | null;
+  kpis: {
+    waiting: number;
+    longestWaitSince: string | null;
+    answered: number;
+    missed: number;
+    abandoned: number;
+    slaPct: number | null;
+    slaTargetPct: number | null;
+    maxWaitTargetSecs: number | null;
+    tmeSecs: number | null;
+    tmaSecs: number | null;
+    pendingCallbacks: number;
+  };
+  queue: { since: string; group: string | null; customer: string | null }[];
+  agents: { extensionId: string; name: string; state: AgentLiveState; since: string | null; pauseReason: string | null; customer: string | null; group: string | null }[];
+  ranking: { extensionId: string; name: string; answered: number; tmaSecs: number | null; csatAvg: number | null }[];
+}
+
+export const supervisionApi = {
+  live: () => get<SupervisionLive>('/tenant/supervision/live'),
+  wallboard: (groupId?: string) => get<Wallboard>(`/tenant/supervision/wallboard${qs({ groupId })}`),
+  start: (callId: string, mode: SupervisionMode) =>
+    post<{ sessionId: string; status: string; mode: SupervisionMode }>(`/tenant/supervision/calls/${callId}`, { mode }),
+  setMode: (sessionId: string, mode: SupervisionMode) =>
+    patch<{ sessionId: string; mode: SupervisionMode }>(`/tenant/supervision/sessions/${sessionId}`, { mode }),
+  end: (sessionId: string) => del<void>(`/tenant/supervision/sessions/${sessionId}`),
+  log: (q: { from?: string; to?: string; page: number }) =>
+    get<{ total: number; page: number; pageSize: number; data: SupervisionLogEntry[] }>(`/tenant/supervision/log${qs(q)}`),
+  settings: () => get<{ supervisionNotifyListen: boolean; monitoringNotice: boolean }>('/tenant/supervision/settings'),
+  updateSettings: (data: { supervisionNotifyListen?: boolean; monitoringNotice?: boolean }) =>
+    patch<{ supervisionNotifyListen: boolean; monitoringNotice: boolean }>('/tenant/supervision/settings', data),
+  uploadNotice: (wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'aviso.wav');
+    return post<{ ok: true }>('/tenant/supervision/notice-audio', fd);
+  },
+  pause: (extensionId: string) =>
+    get<{ paused: boolean; since: string | null; reason: { id: string; label: string } | null }>(`/tenant/supervision/pause${qs({ extensionId })}`),
+  setPause: (extensionId: string, paused: boolean, reasonId?: string | null) =>
+    post<{ paused: boolean }>('/tenant/supervision/pause', { extensionId, paused, ...(reasonId && { reasonId }) }),
+};
+
+// ─── Painel do cliente na entrada (melhoria 3) ───────────────────────────────
+
+export type CallerInfo =
+  | { kind: 'HIDDEN' }
+  | { kind: 'NUMBER'; raw: string; national: string | null; display: string };
+
+export interface CallerHistoryItem {
+  id: string;
+  kind: string;
+  at: string;
+  agent: string | null;
+  group: string | null;
+  durationSecs: number;
+  state: string; // ANSWERED | MISSED | REJECTED | IN_PROGRESS (entrada) ou o status (saída)
+  typing: string | null;
+  note: string | null;
+}
+
+export interface CallerNote {
+  id: string;
+  body: string;
+  createdAt: string;
+  author?: string | null;
+  callId: string | null;
+}
+
+export interface CallerPanelData {
+  caller: CallerInfo;
+  callId: string | null;
+  contact: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    email: string | null;
+    attributes: Record<string, unknown> | null;
+    optedOutAt: string | null;
+    phones: { id: string; phone: string; label: string | null }[];
+  } | null;
+  history?: { data: CallerHistoryItem[]; hasMore: boolean };
+  highlights?: { callsLast7Days: number; lastTyping: { label: string; at: string; note: string | null } | null };
+  conversations?: { id: string; status: string; lastMessageAt: string | null; inbox: { channel: string; name: string } }[];
+  openTickets?: import('@/types').TicketRef[];
+  notes?: CallerNote[];
+}
+
+export const callersApi = {
+  lookup: (q: { legId: string } | { number: string }) =>
+    get<CallerPanelData>(`/tenant/callers/lookup${qs(q)}`),
+  history: (contactId: string, before: string) =>
+    get<{ data: CallerHistoryItem[]; hasMore: boolean }>(`/tenant/callers/${contactId}/history${qs({ before, limit: 10 })}`),
+  quickCreate: (data: { name: string; phone: string; legId?: string }) => post<{ id: string }>('/tenant/callers/contacts', data),
+  update: (contactId: string, data: { name?: string; email?: string | null }) =>
+    patch<{ ok: true }>(`/tenant/callers/${contactId}`, data),
+  addPhone: (contactId: string, data: { phone: string; label?: string }) =>
+    post<{ id: string; phone: string; label: string | null }>(`/tenant/callers/${contactId}/phones`, data),
+  removePhone: (contactId: string, phoneId: string) => del<void>(`/tenant/callers/${contactId}/phones/${phoneId}`),
+  addNote: (contactId: string, data: { body: string; legId?: string }) =>
+    post<CallerNote>(`/tenant/callers/${contactId}/notes`, data),
+};
+
+// ─── Tipificação de chamadas (melhoria 2) ────────────────────────────────────
+
+export interface CallCategory {
+  id: string;
+  parentId: string | null;
+  name: string;
+  isActive: boolean;
+  sortOrder: number;
+  groupIds: string[];
+}
+
+export type TypingStatus = 'NONE' | 'TYPED' | 'PENDING' | 'NOT_TYPED';
+
+export interface LegTyping {
+  id: string;
+  from: string | null;
+  status: TypingStatus;
+  wrapUpEndsAt: string | null;
+  categoryId: string | null;
+  subcategoryId: string | null;
+  note: string | null;
+  categories: { id: string; parentId: string | null; name: string }[];
+}
+
+export const callTypingApi = {
+  categories: () => get<{ data: CallCategory[] }>('/tenant/call-categories').then((r) => r.data),
+  createCategory: (data: { name: string; parentId?: string | null; groupIds?: string[]; sortOrder?: number }) =>
+    post<CallCategory>('/tenant/call-categories', data),
+  updateCategory: (id: string, data: Partial<Pick<CallCategory, 'name' | 'isActive' | 'sortOrder' | 'groupIds'>>) =>
+    patch<{ ok: true }>(`/tenant/call-categories/${id}`, data),
+  settings: () => get<{ typingRequired: boolean; typingMaxSecs: number }>('/tenant/call-typing/settings'),
+  updateSettings: (data: { typingRequired?: boolean; typingMaxSecs?: number }) =>
+    patch<{ typingRequired: boolean; typingMaxSecs: number }>('/tenant/call-typing/settings', data),
+  untyped: (extensionId: string) =>
+    get<{ data: { id: string; from: string | null; at: string; status: TypingStatus; wrapUpEndsAt: string | null }[] }>(
+      `/tenant/call-legs/untyped?extensionId=${encodeURIComponent(extensionId)}`,
+    ).then((r) => r.data),
+  legTyping: (legId: string) => get<LegTyping>(`/tenant/call-legs/${encodeURIComponent(legId)}/typing`),
+  saveTyping: (legId: string, data: { categoryId: string; subcategoryId?: string | null; note?: string | null }) =>
+    put<{ ok: true; edited: boolean }>(`/tenant/call-legs/${encodeURIComponent(legId)}/typing`, data),
+};
+
+export const rejectReasonsApi = {
+  list: (all = false) =>
+    get<{ data: RejectReason[] }>(`/tenant/reject-reasons${all ? '?all=1' : ''}`).then((r) => r.data),
+  create: (data: { label: string; sortOrder?: number }) => post<RejectReason>('/tenant/reject-reasons', data),
+  update: (id: string, data: Partial<Pick<RejectReason, 'label' | 'isActive' | 'sortOrder'>>) =>
+    patch<{ ok: true }>(`/tenant/reject-reasons/${id}`, data),
+  /** Motivo de uma recusa no webphone — `legId` vem do cabeçalho X-Falai-Leg-Id. */
+  saveForLeg: (legId: string, data: { reasonId: string } | { note: string }) =>
+    post<{ ok: true }>(`/tenant/call-legs/${encodeURIComponent(legId)}/reject-reason`, data),
 };
 
 // ─── Integração PBX (bring-your-own-PBX) ─────────────────────────────────────
@@ -344,6 +694,7 @@ export const telephonyApi = {
     email?: string | null;
     mobile?: string | null;
     roleId?: string | null;
+    autoAnswer?: boolean;
   }) => post<Extension>('/tenant/extensions', data),
   updateExtension: (id: string, data: Partial<Extension>) => put<Extension>(`/tenant/extensions/${id}`, data),
   resetExtensionSip: (id: string) => post<Extension>(`/tenant/extensions/${id}/reset-sip`),
@@ -368,6 +719,37 @@ export const telephonyApi = {
   // Trunk (só-leitura no produto Voice AI; editável no BYO-PBX)
   listTrunks: () => get<{ productType: string; trunks: TrunkView[] }>('/tenant/trunks'),
   updateTrunk: (id: string, data: Record<string, unknown>) => put<{ trunk: TrunkView }>(`/tenant/trunks/${id}`, data),
+
+  // Menus IVR
+  listIvr: () => get<IvrMenu[]>('/tenant/routing/ivr'),
+  createIvr: (data: Omit<IvrMenu, 'id'>) => post<{ id: string }>('/tenant/routing/ivr', data),
+  updateIvr: (id: string, data: Omit<IvrMenu, 'id'>) => put<{ ok: true }>(`/tenant/routing/ivr/${id}`, data),
+  deleteIvr: (id: string) => del<void>(`/tenant/routing/ivr/${id}`),
+  uploadIvrAudio: (id: string, wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'greeting.wav');
+    return post<{ ok: true }>(`/tenant/routing/ivr/${id}/audio`, fd);
+  },
+  removeIvrAudio: (id: string) => del<void>(`/tenant/routing/ivr/${id}/audio`),
+  uploadIvrWelcome: (id: string, wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'welcome.wav');
+    return post<{ ok: true }>(`/tenant/routing/ivr/${id}/welcome`, fd);
+  },
+  removeIvrWelcome: (id: string) => del<void>(`/tenant/routing/ivr/${id}/welcome`),
+  getHoldAudio: () => get<{ enabled: boolean }>('/tenant/routing/hold-audio'),
+  uploadHoldAudio: (wav: Blob) => {
+    const fd = new FormData();
+    fd.append('file', wav, 'hold.wav');
+    return post<{ ok: true }>('/tenant/routing/hold-audio', fd);
+  },
+  removeHoldAudio: () => del<void>('/tenant/routing/hold-audio'),
+
+  // Rotas de entrada (DID → destino)
+  listInboundRoutes: () => get<InboundRoute[]>('/tenant/routing/inbound-routes'),
+  createInboundRoute: (data: Omit<InboundRoute, 'id' | 'trunkName'>) => post<{ id: string }>('/tenant/routing/inbound-routes', data),
+  updateInboundRoute: (id: string, data: Omit<InboundRoute, 'id' | 'trunkName'>) => put<{ ok: true }>(`/tenant/routing/inbound-routes/${id}`, data),
+  deleteInboundRoute: (id: string) => del<void>(`/tenant/routing/inbound-routes/${id}`),
 };
 
 // ─── Campaigns ───────────────────────────────────────────────────────────────
@@ -400,6 +782,9 @@ function mapCampaign(raw: Record<string, unknown>): Campaign {
     failedCount: failed,
     answeredCount: (raw.answeredCount as number | undefined) ?? 0,
     pendingCount: (raw.pendingCount as number | undefined) ?? Math.max(0, total - completed - failed),
+    skippedCount: (raw.skippedCount as number | undefined) ?? 0,
+    optedOutCount: (raw.optedOutCount as number | undefined) ?? 0,
+    attemptedCount: (raw.attemptedCount as number | undefined) ?? completed + failed,
     actualCostCents: (raw.actualCostCents as number | undefined) ?? 0,
     mode: (raw.mode as Campaign['mode']) ?? 'VOICE_AI',
     scriptText: (raw.scriptText as string | null) ?? null,
@@ -476,7 +861,28 @@ export const campaignsApi = {
   delete: (id: string) => del<void>(`/tenant/campaigns/${id}`),
 
   addContacts: (id: string, contactIds: string[]) =>
-    post<{ added: number }>(`/tenant/campaigns/${id}/contacts`, { contactIds }),
+    post<{ added: number; totalContacts: number }>(`/tenant/campaigns/${id}/contacts`, { contactIds }),
+
+  /** Participantes da campanha, um a um, com o desfecho de cada chamada. */
+  contacts: (id: string, params?: { page?: number; status?: string; search?: string }) => {
+    const page = params?.page ?? 1;
+    return get<{ contacts: CampaignContactRow[]; total: number }>(
+      `/tenant/campaigns/${id}/contacts${qs({
+        ...pageRange(page),
+        status: params?.status,
+        search: params?.search,
+      })}`,
+    );
+  },
+
+  removeContact: (id: string, contactId: string) =>
+    del<{ ok: boolean; totalContacts: number }>(`/tenant/campaigns/${id}/contacts/${contactId}`),
+
+  removeContacts: (id: string, contactIds: string[]) =>
+    post<{ removed: number; skipped: number; totalContacts: number }>(
+      `/tenant/campaigns/${id}/contacts/remove`,
+      { contactIds },
+    ),
 
   report: async (id: string) => {
     const raw = await get<Record<string, unknown>>(`/tenant/campaigns/${id}/report`);
@@ -488,7 +894,28 @@ export const campaignsApi = {
   pause: (id: string) => post<Campaign>(`/tenant/campaigns/${id}/pause`),
   resume: (id: string) => post<Campaign>(`/tenant/campaigns/${id}/resume`),
   cancel: (id: string) => post<Campaign>(`/tenant/campaigns/${id}/cancel`),
-  retry: (id: string) => post<{ ok: boolean; totalContacts: number }>(`/tenant/campaigns/${id}/retry`),
+  /** scope=FAILED repete só quem falhou ou ficou por tentar; ALL repete tudo. */
+  retry: (id: string, scope: 'ALL' | 'FAILED' = 'ALL') =>
+    post<{ ok: boolean; totalContacts: number; resetCount: number }>(
+      `/tenant/campaigns/${id}/retry`,
+      { scope },
+    ),
+
+  /** Descarrega a lista completa de participantes em CSV (abre com o token na query). */
+  exportContactsCsv: async (id: string, name: string) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/campaigns/${id}/contacts?format=csv`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Falha ao exportar CSV');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `campanha-${name.replace(/[^\w-]+/g, '_')}-contactos.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 // ─── Wallet ──────────────────────────────────────────────────────────────────
@@ -542,16 +969,29 @@ export const billingApi = {
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 
+export interface TeamMemberInput {
+  name?: string;
+  password?: string;
+  role?: import('@/types').TenantRole;
+  extensionId?: string | null;
+  groupIds?: string[];
+  supervisedGroupIds?: string[];
+}
+
 export const teamApi = {
   list: () => get<import('@/types').TenantUser[]>('/tenant/team'),
 
-  invite: (data: { email: string; name: string; role: import('@/types').TenantRole }) =>
-    post<import('@/types').TenantUser>('/tenant/team/invite', data),
+  /** O gestor cria o utilizador já com password (sem convite por email). */
+  create: (data: TeamMemberInput & { email: string; name: string; password: string; role: import('@/types').TenantRole }) =>
+    post<import('@/types').TenantUser>('/tenant/team', data),
 
   updateRole: (userId: string, role: import('@/types').TenantRole) =>
     patch<import('@/types').TenantUser>(`/tenant/team/${userId}`, { role }),
 
   remove: (userId: string) => del<void>(`/tenant/team/${userId}`),
+
+  /** Papel, extensão do utilizador e grupos que supervisiona (melhoria 4). */
+  update: (userId: string, data: TeamMemberInput) => patch<import('@/types').TenantUser>(`/tenant/team/${userId}`, data),
 };
 
 // ─── API Keys ─────────────────────────────────────────────────────────────────
@@ -606,6 +1046,31 @@ export interface CallReportSummary {
   sms: { total: number; sent: number; failed: number; costCents: number };
 }
 
+export interface ReportAnalysisResult {
+  headline: string;
+  summary: string;
+  comparison: string;
+  anomalies: { title: string; detail: string; severity: 'info' | 'warning' | 'critical' }[];
+  agents: { above: { who: string; why: string }[]; below: { who: string; why: string }[] };
+  groups: { above: { who: string; why: string }[]; below: { who: string; why: string }[] };
+  typingTrends: { label: string; detail: string }[];
+  recommendations: { title: string; detail: string }[];
+}
+export interface ReportAnalysisRow {
+  id: string;
+  result: ReportAnalysisResult;
+  createdAt: string;
+  model: string;
+}
+export interface ReportAnalysisState {
+  analysis: ReportAnalysisRow | null;
+  canAnalyze: boolean;
+  canConfigure: boolean;
+  agentNames: boolean;
+  dailyLimit: number;
+  usedToday: number;
+}
+
 export const reportsApi = {
   summary: (params?: { from?: string; to?: string }) =>
     get<CallReportSummary>(`/tenant/reports${qs({ from: params?.from, to: params?.to })}`),
@@ -622,7 +1087,191 @@ export const reportsApi = {
     const match = /filename="?([^"]+)"?/.exec(disposition);
     return { blob, filename: match?.[1] ?? 'chamadas.csv' };
   },
+
+  // ── Resumo (cartões com comparação, anéis, por dia) ──
+  overview: (params: { from?: string; to?: string }) =>
+    get<ReportsOverview>(`/tenant/reports/overview${qs({ from: params.from, to: params.to })}`),
+  /** O Resumo em Excel já formatado (várias folhas), gerado no servidor. */
+  // ─── Análise com IA (melhoria 6) ───
+  analysis: (f: AttendanceFilters) => get<ReportAnalysisState>(`/tenant/reports/analysis${qs({ ...f })}`),
+  analyze: (f: AttendanceFilters) =>
+    post<{ analysis: ReportAnalysisRow; cached: boolean }>('/tenant/reports/analysis', f),
+  analysisSettings: (agentNames: boolean) => put<{ ok: true }>('/tenant/reports/analysis/settings', { agentNames }),
+
+  /** O Resumo em Excel; os filtros de agente/grupo/tipificação só servem para juntar a análise IA desses filtros. */
+  downloadOverviewXlsx: async (params: AttendanceFilters) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/reports/overview.xlsx${qs({ ...params })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao gerar o Excel');
+    const blob = await res.blob();
+    const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+    return { blob, filename: match?.[1] ?? 'relatorio.xlsx' };
+  },
+  /** PDF do resumo, gerado no servidor (não é uma impressão da página). */
+  downloadOverviewPdf: async (params: AttendanceFilters) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/reports/overview.pdf${qs({ ...params })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao gerar o PDF');
+    const blob = await res.blob();
+    const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+    return { blob, filename: match?.[1] ?? 'relatorio.pdf' };
+  },
+
+  // ── Atendimento (KPIs por agente/grupo) ──
+  attendance: (f: AttendanceFilters) => get<AttendanceReport>(`/tenant/reports/attendance${qs({ ...f })}`),
+  attendanceCalls: (f: AttendanceFilters & { page: number; pageSize?: number }) =>
+    get<AttendanceCallsPage>(
+      `/tenant/reports/attendance/calls${qs({ ...f, pageSize: f.pageSize ?? 25 })}`,
+    ),
+  downloadAttendance: async (f: AttendanceFilters & { view: AttendanceExportView; format: 'csv' | 'xlsx' }) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/reports/attendance/export${qs({ ...f })}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Erro ao exportar');
+    const blob = await res.blob();
+    const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+    return { blob, filename: match?.[1] ?? `atendimento.${f.format}` };
+  },
 };
+
+export interface ReportsOverview {
+  from: string;
+  to: string;
+  previousFrom: string;
+  previousTo: string;
+  limited: boolean;
+  tiles: {
+    key: string;
+    value: number | null;
+    previous: number | null;
+    deltaPct: number | null;
+    good: 'up' | 'down' | 'neutral';
+    unit: 'count' | 'secs';
+    series: (number | null)[];
+  }[];
+  donuts: Record<'byGroup' | 'byState' | 'byTyping', { label: string; value: number }[]>;
+  daily: { date: string; total: number; answered: number }[];
+}
+
+export interface AttendanceFilters {
+  from?: string;
+  to?: string;
+  extensionId?: string;
+  groupId?: string;
+  categoryId?: string;
+}
+
+export type AttendanceExportView = 'attendance' | 'agents' | 'groups' | 'reasons' | 'typing' | 'calls';
+
+/** Linha de um período (dia ou hora). */
+export interface AttendancePeriodKpis {
+  total: number;
+  answered: number;
+  missed: number;
+  abandoned: number;
+  shortAbandoned: number;
+  answerRate: number | null;
+  slaPct: number | null;
+  tmaSecs: number | null;
+  /** ASA — espera média até atender. */
+  tmeSecs: number | null;
+  asaP90Secs: number | null;
+  maxWaitSecs: number | null;
+}
+
+export interface AttendanceCallKpis extends AttendancePeriodKpis {
+  abandonRate: number | null;
+  slaMet: number;
+}
+
+export interface AttendanceAgentKpis {
+  offered: number;
+  answered: number;
+  rejected: number;
+  noAnswer: number;
+  busy: number;
+  failed: number;
+  cancelled: number;
+  answerRate: number | null;
+  rejectRate: number | null;
+  tmaSecs: number | null;
+  tmeSecs: number | null;
+  responseSecs: number | null;
+  typed: number;
+  untyped: number;
+  untypedRate: number | null;
+  wrapUpSecs: number | null;
+}
+
+export interface AttendanceReport {
+  from: string;
+  to: string;
+  limited: boolean;
+  slaSecs: number;
+  slaTargetPct: number | null;
+  shortAbandonSecs: number;
+  tenant: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
+  selection: { calls: AttendanceCallKpis; agents: AttendanceAgentKpis };
+  reasons: { reason: string; count: number; pct: number }[];
+  typing: { category: string; subcategory: string | null; count: number; pct: number }[];
+  byAgent: (AttendanceAgentKpis & {
+    extensionId: string | null;
+    number: string;
+    name: string | null;
+    csatAvg: number | null;
+    csatResponses: number;
+    vsTenant: { answerRate: number | null; rejectRate: number | null; tmaSecs: number | null; responseSecs: number | null };
+  })[];
+  byGroup: (AttendanceCallKpis & {
+    groupId: string | null;
+    name: string;
+    rejected: number;
+    slaSecs: number;
+    slaTargetPct: number | null;
+    vsTenant: { answerRate: number | null; tmaSecs: number | null; tmeSecs: number | null; slaPct: number | null };
+  })[];
+  byDay: (AttendancePeriodKpis & { date: string; responseSecs: number | null; wrapUpSecs: number | null })[];
+  byHour: (AttendancePeriodKpis & { hour: number })[];
+  /** [0] = segunda … [6] = domingo; 24 horas cada. */
+  byWeekdayHour: number[][];
+  /** Satisfação da selecção (todos os canais). */
+  csat: CsatSummary;
+  /** A mesma selecção no período anterior (para as variações). */
+  previous?: { from: string; to: string; calls: AttendanceCallKpis; agents: AttendanceAgentKpis; csat: CsatSummary };
+}
+
+export type CallLegOutcome = 'ANSWERED' | 'NO_ANSWER' | 'REJECTED' | 'BUSY' | 'CANCELLED' | 'FAILED';
+
+export interface AttendanceCallsPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  data: {
+    id: string;
+    from: string | null;
+    contactId: string | null;
+    contactName: string | null;
+    to: string;
+    startedAt: string;
+    group: string | null;
+    answered: boolean;
+    waitSecs: number | null;
+    talkSecs: number | null;
+    legs: {
+      extension: string;
+      outcome: CallLegOutcome | null;
+      responseSecs: number | null;
+      reason: string | null;
+      typing: string | null;
+      typingNote: string | null;
+    }[];
+  }[];
+}
 
 // ─── SMS ──────────────────────────────────────────────────────────────────────
 
@@ -649,7 +1298,7 @@ export const smsApi = {
 
   campaign: (id: string) => get<{ campaign: SmsCampaign }>(`/tenant/sms/campaigns/${id}`).then((r) => r.campaign),
 
-  createCampaign: (data: { name: string; body: string; contactIds?: string[]; throttlePerMinute?: number }) =>
+  createCampaign: (data: { name: string; body: string; contactIds?: string[]; allContacts?: boolean; throttlePerMinute?: number }) =>
     post<{ id: string }>('/tenant/sms/campaigns', data),
 
   addCampaignContacts: (id: string, contactIds: string[]) =>
@@ -665,7 +1314,8 @@ export const settingsApi = {
 
   update: (data: Partial<TenantSettings>) => patch<TenantSettings>('/tenant/settings', data),
 
-  rotateSecret: () => post<{ webhookSecret: string }>('/tenant/settings/rotate-secret'),
+  // O backend não tem endpoint dedicado — a rotação é uma flag no PATCH /tenant/settings.
+  rotateSecret: () => patch<{ ok: boolean; webhookSecret: string }>('/tenant/settings', { rotateWebhookSecret: true }),
 
   testWebhook: () => post<{ delivered: boolean; statusCode?: number }>('/tenant/settings/webhook-test'),
 
@@ -679,4 +1329,384 @@ export const settingsApi = {
     const events = raw.data.map((e) => ({ id: e.id, payload: e.payload, error: e.message, createdAt: e.createdAt }));
     return toPaginated(events, raw.total, page);
   },
+};
+
+// ─── Canais de texto ─────────────────────────────────────────────────────────
+
+type InboxInput = { channel?: import('@/types').Channel; name?: string; agentId?: string | null; autoReply?: boolean; enabled?: boolean; config?: Record<string, unknown> };
+
+export const inboxesApi = {
+  list: () => get<{ data: import('@/types').Inbox[] }>('/tenant/inboxes').then((r) => r.data),
+  create: (data: InboxInput) => post<import('@/types').Inbox>('/tenant/inboxes', data),
+  update: (id: string, data: InboxInput) => patch<import('@/types').Inbox>(`/tenant/inboxes/${id}`, data),
+  remove: (id: string) => del<void>(`/tenant/inboxes/${id}`),
+  poolAction: (id: string, action: 'activate' | 'standby' | 'disable' | 'check') =>
+    post<import('@/types').Inbox | { verdict: string; detail: string }>(`/tenant/inboxes/${id}/wa-pool`, { action }),
+  poolOrder: (ids: string[]) => put<void>('/tenant/inboxes/wa-pool/order', { ids }),
+};
+
+export const conversationsApi = {
+  list: (params: { status?: string; inboxId?: string; assignee?: string }) =>
+    get<{ data: import('@/types').Conversation[] }>(`/tenant/conversations${qs(params)}`).then((r) => r.data),
+  get: (id: string) => get<import('@/types').ConversationDetail>(`/tenant/conversations/${id}`),
+  send: (id: string, text: string, isPrivate = false) =>
+    post<import('@/types').ConversationMessage>(`/tenant/conversations/${id}/messages`, { text, private: isPrivate }),
+  update: (id: string, data: { status?: string; mode?: string; assigneeId?: string | null; updatedAt: string }) =>
+    patch<import('@/types').Conversation>(`/tenant/conversations/${id}`, data),
+  /** Anexo protegido por auth — descarrega via fetch e abre como blob. */
+  openAttachment: async (file: string) => {
+    const token = localStorage.getItem('falai_token');
+    const res = await fetch(`${API_BASE}/tenant/conversations/attachments/${encodeURIComponent(file)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new ApiError(res.status, 'Anexo indisponível');
+    window.open(URL.createObjectURL(await res.blob()), '_blank');
+  },
+};
+
+export const cannedApi = {
+  list: () => get<{ data: import('@/types').CannedResponse[] }>('/tenant/canned-responses').then((r) => r.data),
+  create: (data: { shortcut: string; text: string }) => post<import('@/types').CannedResponse>('/tenant/canned-responses', data),
+  remove: (id: string) => del<void>(`/tenant/canned-responses/${id}`),
+};
+
+/** Descarrega um ficheiro gerado pela API (Excel, PDF) com o nome que ela dá. */
+export async function downloadFile(path: string, fallbackName: string): Promise<{ blob: Blob; filename: string }> {
+  const token = localStorage.getItem('falai_token');
+  const res = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, 'Erro ao exportar');
+  const match = /filename="?([^"]+)"?/.exec(res.headers.get('Content-Disposition') ?? '');
+  return { blob: await res.blob(), filename: match?.[1] ?? fallbackName };
+}
+
+// ─── Tickets ────────────────────────────────────────────────────────────────
+
+export type TicketInput = {
+  subject?: string;
+  description?: string | null;
+  priority?: import('@/types').TicketPriority;
+  supportLevel?: number;
+  contactId?: string | null;
+  assigneeId?: string | null;
+  groupId?: string | null;
+  categoryId?: string | null;
+  subcategoryId?: string | null;
+  dueAt?: string | null;
+};
+
+export const ticketsApi = {
+  meta: () => get<import('@/types').TicketMeta>('/tenant/tickets/meta'),
+  list: (params: { status?: string; priority?: string; supportLevel?: number; assignee?: string; groupId?: string; contactId?: string; q?: string; due?: string; page?: number }) =>
+    get<Paginated<import('@/types').Ticket>>(`/tenant/tickets${qs(params)}`),
+  get: (id: string) => get<import('@/types').TicketDetail>(`/tenant/tickets/${id}`),
+  create: (data: TicketInput & { subject: string; callId?: string; conversationId?: string }) =>
+    post<import('@/types').Ticket>('/tenant/tickets', data),
+  update: (id: string, data: TicketInput & { status?: import('@/types').TicketStatus; updatedAt: string }) =>
+    patch<import('@/types').Ticket>(`/tenant/tickets/${id}`, data),
+  addNote: (id: string, body: string) => post<unknown>(`/tenant/tickets/${id}/notes`, { body }),
+  unlink: (id: string, target: { callId?: string; conversationId?: string }) =>
+    request<void>(`/tenant/tickets/${id}/links`, { method: 'DELETE', body: JSON.stringify(target) }),
+};
+
+// ─── Metas e alertas operacionais (fase 4) ──────────────────────────────────
+
+export type AlertType = 'LONG_WAIT' | 'LONG_HANDLE' | 'NO_AGENTS' | 'SLA_BELOW' | 'ABANDON_ABOVE' | 'TMA_ABOVE' | 'TEXT_SLA_BELOW' | 'TICKET_DUE_SOON' | 'TICKET_OVERDUE';
+
+export interface OpsAlert {
+  id: string;
+  type: AlertType;
+  ref: string;
+  groupId: string | null;
+  group?: string | null;
+  value: number;
+  threshold: number;
+  endValue: number | null;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export interface GroupTargets {
+  slaThresholdSecs: number | null;
+  slaTargetPct: number | null;
+}
+
+export interface ServiceTargets {
+  slaThresholdSecs: number;
+  slaTargetPct: number | null;
+  shortAbandonSecs: number;
+  groups: Record<string, GroupTargets>;
+  maxWaitSecs: number | null;
+  maxHandleSecs: number | null;
+  minAvailableAgents: number | null;
+  maxAbandonPct: number | null;
+  maxTmaSecs: number | null;
+  textSlaSecs: number;
+  textSlaTargetPct: number | null;
+  ticketHours: Record<import('@/types').TicketPriority, number | null>;
+  ticketSlaTargetPct: number | null;
+  ticketWarnMins: number;
+}
+
+export const alertsApi = {
+  settings: () => get<ServiceTargets>('/tenant/alerts/settings'),
+  saveSettings: (data: ServiceTargets) => put<ServiceTargets>('/tenant/alerts/settings', data),
+  list: (q: { open?: boolean; type?: AlertType; from?: string; to?: string; page?: number }) =>
+    get<Paginated<OpsAlert> & { byType: Partial<Record<AlertType, number>> }>(`/tenant/alerts${qs({ ...q, open: q.open === undefined ? undefined : String(q.open) })}`),
+};
+
+// ─── Agentes: motivos de pausa, turnos, tempo (fase 5) ──────────────────────
+
+export const pauseReasonsApi = {
+  list: (all = false) => get<{ data: RejectReason[] }>(`/tenant/pause-reasons${all ? '?all=1' : ''}`).then((r) => r.data),
+  create: (data: { label: string; sortOrder?: number }) => post<RejectReason>('/tenant/pause-reasons', data),
+  update: (id: string, data: Partial<Pick<RejectReason, 'label' | 'isActive' | 'sortOrder'>>) =>
+    patch<{ ok: true }>(`/tenant/pause-reasons/${id}`, data),
+};
+
+export interface ShiftInput { weekday: number; start: string; end: string }
+
+export const shiftsApi = {
+  get: (userId: string) => get<{ data: ShiftInput[] }>(`/tenant/team/${userId}/shifts`).then((r) => r.data),
+  save: (userId: string, shifts: ShiftInput[]) => put<{ data: ShiftInput[] }>(`/tenant/team/${userId}/shifts`, shifts),
+};
+
+export interface AgentTimeRow {
+  userId: string;
+  name: string;
+  scheduledSecs: number;
+  loggedSecs: number;
+  loggedInShiftSecs: number;
+  adherencePct: number | null;
+  pausedSecs: number;
+  pauses: { reason: string | null; secs: number; count: number }[];
+  talkSecs: number;
+  wrapUpSecs: number;
+  availableSecs: number;
+}
+export type AgentState = 'LOGGED_IN' | 'LOGGED_OUT' | 'PAUSED' | 'IN_CALL' | 'WRAP_UP';
+export interface AgentStateSegment { state: AgentState; from: string; to: string | null; detail: string | null }
+
+export const agentTimeApi = {
+  report: (q: { from?: string; to?: string }) => get<{ from: string; to: string; data: AgentTimeRow[] }>(`/tenant/reports/agent-time${qs(q)}`),
+  states: (q: { userId: string; from?: string; to?: string }) =>
+    get<{ user: { id: string; name: string }; from: string; to: string; data: AgentStateSegment[] }>(`/tenant/reports/agent-states${qs(q)}`),
+  download: (q: { from?: string; to?: string }) => downloadFile(`/tenant/reports/agent-time.xlsx${qs(q)}`, 'tempo_agentes.xlsx'),
+};
+
+// ─── Qualidade (fase 7) ─────────────────────────────────────────────────────
+
+export type QaAnswer = 'YES' | 'NO' | 'NA';
+export type QaStatus = 'SUBMITTED' | 'ACKNOWLEDGED' | 'DISPUTED' | 'RESOLVED';
+export interface QaCriterion { id?: string; label: string; weight: number; critical: boolean }
+export interface QaDefinition { sections: { title: string; criteria: QaCriterion[] }[] }
+export interface QaForm { id: string; name: string; isActive: boolean; definition: QaDefinition; updatedAt: string }
+type Person = { id: string; name: string };
+export interface QaEvaluationRow {
+  id: string; score: number; criticalFail: boolean; status: QaStatus; createdAt: string;
+  callId: string | null; conversationId: string | null; ticketId: string | null;
+  form: { name: string } | null; agent: Person; evaluator: Person;
+}
+export interface QaEvaluationDetail extends QaEvaluationRow {
+  formSnapshot: QaDefinition & { name: string };
+  answers: Record<string, QaAnswer>;
+  comment: string | null; agentComment: string | null; resolution: string | null; acknowledgedAt: string | null;
+  canEdit: boolean; isMine: boolean;
+}
+export interface QaSummaryRow { agentId: string; agent: string; evaluations: number; avgScore: number | null; criticalFails: number; disputed: number }
+export interface QaSampleRow { agentId: string; agent: string; calls: { id: string; at: string; fromNumber: string | null; durationSecs: number }[] }
+
+export const qaApi = {
+  forms: (all = false) => get<{ data: QaForm[] }>(`/tenant/qa/forms${all ? '?all=1' : ''}`).then((r) => r.data),
+  createForm: (data: { name: string; definition: QaDefinition }) => post<QaForm>('/tenant/qa/forms', data),
+  updateForm: (id: string, data: { name: string; definition: QaDefinition; isActive?: boolean }) => put<QaForm>(`/tenant/qa/forms/${id}`, data),
+  list: (q: { agentId?: string; status?: QaStatus; from?: string; to?: string; page?: number }) =>
+    get<Paginated<QaEvaluationRow>>(`/tenant/qa/evaluations${qs(q)}`),
+  get: (id: string) => get<QaEvaluationDetail>(`/tenant/qa/evaluations/${id}`),
+  create: (data: { formId: string; callId?: string; conversationId?: string; ticketId?: string; answers: Record<string, QaAnswer>; comment?: string }) =>
+    post<{ id: string }>('/tenant/qa/evaluations', data),
+  revise: (id: string, data: { answers?: Record<string, QaAnswer>; comment?: string | null; resolution?: string }) =>
+    patch<QaEvaluationDetail>(`/tenant/qa/evaluations/${id}`, data),
+  acknowledge: (id: string, comment?: string) => post<unknown>(`/tenant/qa/evaluations/${id}/acknowledge`, comment ? { comment } : {}),
+  dispute: (id: string, comment: string) => post<unknown>(`/tenant/qa/evaluations/${id}/dispute`, { comment }),
+  summary: (q: { from?: string; to?: string }) => get<{ data: QaSummaryRow[] }>(`/tenant/qa/summary${qs(q)}`).then((r) => r.data),
+  sample: (q: { days?: number; perAgent?: number }) => get<{ data: QaSampleRow[] }>(`/tenant/qa/sample${qs(q)}`).then((r) => r.data),
+};
+
+// ─── Satisfação / CSAT (fase 8) ─────────────────────────────────────────────
+
+export interface CsatConfig { voice: boolean; text: boolean; sms: boolean; question: string; thanks: string }
+export interface CsatSummary { responses: number; avg: number | null; satisfiedPct: number | null; distribution: Record<'1' | '2' | '3' | '4' | '5', number> }
+export interface CsatReport {
+  overall: CsatSummary;
+  asked: number;
+  byChannel: (CsatSummary & { key: string })[];
+  byAgent: (CsatSummary & { key: string | null; name: string | null })[];
+  byGroup: (CsatSummary & { key: string | null; name: string | null })[];
+  byDay: (CsatSummary & { key: string })[];
+  negatives: CsatNegative[];
+}
+export interface CsatNegative {
+  id: string;
+  at: string;
+  score: number;
+  channel: 'VOICE' | 'TEXT' | 'SMS';
+  agent: string | null;
+  group: string | null;
+  contact: { id: string; name: string | null; phone: string | null } | null;
+  comment: string | null;
+  callId: string | null;
+  conversationId: string | null;
+  ticketId: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+}
+
+export const csatApi = {
+  settings: () => get<CsatConfig>('/tenant/csat/settings'),
+  save: (data: CsatConfig) => put<CsatConfig>('/tenant/csat/settings', data),
+  report: (q: { from?: string; to?: string }) => get<CsatReport>(`/tenant/reports/csat${qs(q)}`),
+  download: (q: { from?: string; to?: string }) => downloadFile(`/tenant/reports/csat.xlsx${qs(q)}`, 'satisfacao.xlsx'),
+  review: (id: string, data: { reviewed: boolean; note?: string | null }) => put<{ ok: true }>(`/tenant/csat/${id}/review`, data),
+};
+
+// ─── Fila de espera + callback ──────────────────────────────────────────────
+
+export interface QueueConfig {
+  maxWaitSecs: number;
+  callback: boolean;
+  callbackAfterSecs: number;
+  offer: string;
+  thanks: string;
+}
+export type QueueCallbackStatus = 'PENDING' | 'ASSIGNED' | 'DONE' | 'FAILED' | 'CANCELLED';
+export interface QueueCallback {
+  id: string;
+  number: string;
+  status: QueueCallbackStatus;
+  attempts: number;
+  createdAt: string;
+  assignedAt: string | null;
+  closedAt?: string | null;
+  groupId: string | null;
+  assignedTo: { name: string } | null;
+  contact?: { id: string; name: string | null } | null;
+}
+
+export const queueApi = {
+  settings: () => get<QueueConfig>('/tenant/queue/settings'),
+  save: (data: QueueConfig) => put<QueueConfig>('/tenant/queue/settings', data),
+  callbacks: (q: { status?: QueueCallbackStatus }) => get<{ data: QueueCallback[] }>(`/tenant/queue-callbacks${qs(q)}`),
+  mine: () => get<{ data: QueueCallback | null }>('/tenant/queue-callbacks/mine'),
+  result: (id: string, result: 'DONE' | 'NO_ANSWER' | 'CANCELLED') =>
+    post<{ id: string; status: QueueCallbackStatus; attempts: number }>(`/tenant/queue-callbacks/${id}/result`, { result }),
+};
+
+// ─── Consolidado / painel de direcção (fase 9) ──────────────────────────────
+
+export type ConsolidatedBucket = 'day' | 'week' | 'month';
+export interface ConsolidatedReport {
+  bucket: ConsolidatedBucket;
+  kpis: {
+    contacts: number;
+    calls: AttendanceCallKpis;
+    slaSecs: number;
+    callsOut: number;
+    conversations: number;
+    conversationsResolved: number;
+    textFirstResponseSecs: number | null;
+    textSla: { met: number; missed: number; pending: number; slaPct: number | null };
+    ticketsCreated: number;
+    ticketsResolved: number;
+    ticketResolutionSecs: number | null;
+    ticketSla: TicketSlaSummary;
+    ticketsOverdueNow: number;
+    csat: CsatSummary;
+    qa: { evaluations: number; avgScore: number | null };
+  };
+  targets: { slaSecs: number; slaTargetPct: number | null; textSlaSecs: number; textSlaTargetPct: number | null; ticketSlaTargetPct: number | null };
+  byChannel: { channel: string; contacts: number; firstResponseSecs: number | null; slaPct: number | null }[];
+  ticketsByPriority: (TicketSlaSummary & { priority: import('@/types').TicketPriority; targetHours: number | null })[];
+  series: {
+    period: string; callsIn: number; callsAnswered: number; callsMissed: number; callsOut: number; conversations: number; conversationsResolved: number;
+    ticketsCreated: number; ticketsResolved: number; callsSlaPct: number | null; textSlaPct: number | null; ticketsBreached: number; ticketSlaPct: number | null;
+  }[];
+}
+export interface TicketSlaSummary { created: number; withDue: number; met: number; breached: number; open: number; slaPct: number | null; resolutionSecs: number | null }
+
+export const consolidatedApi = {
+  get: (q: { from?: string; to?: string; bucket: ConsolidatedBucket }) => get<ConsolidatedReport>(`/tenant/reports/consolidated${qs(q)}`),
+  download: (q: { from?: string; to?: string; bucket: ConsolidatedBucket }) => downloadFile(`/tenant/reports/consolidated.xlsx${qs(q)}`, 'consolidado.xlsx'),
+};
+
+// ─── Base de conhecimento (fase 10) ─────────────────────────────────────────
+
+export interface KbSummary { id: string; title: string; category: string | null; isPublished: boolean; aiEnabled: boolean; updatedAt: string; excerpt: string }
+export interface KbArticle { id: string; title: string; body: string; category: string | null; isPublished: boolean; aiEnabled: boolean; updatedAt: string; canEdit: boolean }
+export type KbInput = { title: string; body: string; category: string | null; isPublished: boolean; aiEnabled: boolean };
+
+export const kbApi = {
+  list: (q: { q?: string; category?: string; limit?: number }) => get<{ data: KbSummary[]; categories: string[] }>(`/tenant/kb${qs(q)}`),
+  get: (id: string) => get<KbArticle>(`/tenant/kb/${id}`),
+  create: (data: KbInput) => post<KbArticle>('/tenant/kb', data),
+  update: (id: string, data: KbInput) => put<KbArticle>(`/tenant/kb/${id}`, data),
+  remove: (id: string) => del<void>(`/tenant/kb/${id}`),
+};
+
+// ─── Helpdesk externo / Freshdesk (fase 3) ──────────────────────────────────
+
+export type TicketOnCall = 'NEVER' | 'AGENT_CHOICE' | 'ALWAYS';
+export interface HelpdeskStatus {
+  configured: boolean;
+  canEdit: boolean;
+  enabled?: boolean;
+  domain?: string;
+  apiKeySet?: boolean;
+  ticketOnCall?: TicketOnCall;
+  includeRecordingLink?: boolean;
+  webhookUrl?: string;
+  webhookBody?: string;
+  lastSyncAt?: string | null;
+  lastError?: string | null;
+  lastErrorAt?: string | null;
+}
+
+export const helpdeskApi = {
+  get: () => get<HelpdeskStatus>('/tenant/helpdesk'),
+  save: (data: { domain: string; apiKey?: string; enabled: boolean; ticketOnCall: TicketOnCall; includeRecordingLink: boolean }) => put<{ ok: true }>('/tenant/helpdesk', data),
+  test: () => post<{ ok: true; agent: string | null; email: string | null }>('/tenant/helpdesk/test'),
+  sync: () => post<{ ok: true; created: number; updated: number; skipped: number; unchanged: number }>('/tenant/helpdesk/sync'),
+};
+
+// ─── Estado da plataforma (fase 11) ─────────────────────────────────────────
+
+export const platformApi = {
+  status: () => get<{ ok: boolean; components: { key: string; up: boolean; since: string }[] }>('/tenant/platform-status'),
+};
+
+// ─── Chat interno da equipa ─────────────────────────────────────────────────
+
+export interface ChatRoomRow {
+  id: string;
+  kind: 'DIRECT' | 'GROUP';
+  name: string | null;
+  members: { id: string; name: string }[];
+  lastMessage: { body: string; at: string; author: string } | null;
+  lastMessageAt: string;
+  unread: number;
+  canManage: boolean;
+}
+export interface ChatMessageRow { id: string; body: string; createdAt: string; authorId: string; author: { name: string } }
+
+export const teamChatApi = {
+  rooms: () => get<{ data: ChatRoomRow[]; totalUnread: number }>('/tenant/chat/rooms'),
+  unread: () => get<{ total: number }>('/tenant/chat/unread'),
+  users: () => get<{ data: { id: string; name: string; role: string }[] }>('/tenant/chat/users').then((r) => r.data),
+  direct: (userId: string) => post<{ id: string }>('/tenant/chat/direct', { userId }),
+  createGroup: (data: { name: string; memberIds: string[] }) => post<{ id: string }>('/tenant/chat/rooms', data),
+  updateGroup: (id: string, data: { name?: string; memberIds?: string[] }) => patch<{ ok: true }>(`/tenant/chat/rooms/${id}`, data),
+  leave: (id: string) => del<void>(`/tenant/chat/rooms/${id}/me`),
+  messages: (id: string, before?: string) => get<{ data: ChatMessageRow[]; hasMore: boolean }>(`/tenant/chat/rooms/${id}/messages${qs({ before })}`),
+  send: (id: string, body: string) => post<ChatMessageRow>(`/tenant/chat/rooms/${id}/messages`, { body }),
+  read: (id: string) => post<void>(`/tenant/chat/rooms/${id}/read`),
 };

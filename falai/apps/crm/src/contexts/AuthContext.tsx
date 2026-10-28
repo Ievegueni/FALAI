@@ -59,12 +59,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!res.requiresTwoFactor) {
       localStorage.setItem('falai_token', res.token);
       setState({ user: res.user, tenant: res.tenant, loading: false });
+      // O login não traz a extensão do utilizador (webphone, screen pop): /me traz.
+      void refreshMe();
     } else {
       // store temp token for 2FA step
       sessionStorage.setItem('falai_temp_token', res.token);
     }
     return { requiresTwoFactor: res.requiresTwoFactor };
-  }, []);
+  }, [refreshMe]);
 
   const verify2fa = useCallback(async (code: string) => {
     const sessionToken = sessionStorage.getItem('falai_temp_token');

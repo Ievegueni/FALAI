@@ -52,7 +52,10 @@ export class FuturixAdapter implements SmsProvider {
   async send(params: SendSmsParams): Promise<SendSmsResult> {
     const senderId = params.senderId ?? this.config.defaultSenderId;
     // A Futurix espera o destino com indicativo e sem "+".
-    const destination = params.to.replace(/[^\d]/g, "");
+    // Números nacionais (9xxxxxxxx) e "00244…" passam a 244…: sem indicativo a
+    // Futurix recusava (422) ou encaminhava mal.
+    let destination = params.to.replace(/[^\d]/g, "").replace(/^00/, "");
+    if (/^9\d{8}$/.test(destination)) destination = `244${destination}`;
 
     if (this.config.stubMode) {
       const id = `stub_sms_${Date.now()}`;
@@ -69,10 +72,16 @@ export class FuturixAdapter implements SmsProvider {
       const providerMsgId = res.data?.data?.message_id ?? null;
       return { providerMsgId, accepted: res.data?.success !== false };
     } catch (err) {
-      const details = axios.isAxiosError(err)
-        ? `${err.response?.status ?? ""} ${JSON.stringify(err.response?.data ?? err.message)}`
-        : String(err);
-      return { providerMsgId: null, accepted: false, details };
+      if (!axios.isAxiosError(err)) return { providerMsgId: null, accepted: false, details: String(err) };
+      const status = err.response?.status;
+      const raw = JSON.stringify(err.response?.data ?? err.message);
+      return {
+        providerMsgId: null,
+        accepted: false,
+        details: futurixFailReason(status, raw),
+        // Sem resposta = timeout/rede; 429 e 5xx são do lado deles e passam.
+        retryable: status === undefined || status === 429 || status >= 500,
+      };
     }
   }
 
@@ -80,5 +89,17 @@ export class FuturixAdapter implements SmsProvider {
     if (this.config.stubMode) return { ok: true, details: "stub mode" };
     if (!this.config.apiKey) return { ok: false, details: "sem API key" };
     return { ok: true };
+  }
+}
+
+/** Motivo legível para o cliente a partir do código HTTP da Futurix. */
+export function futurixFailReason(status: number | undefined, raw: string): string {
+  switch (status) {
+    case undefined: return `Sem resposta da Futurix (timeout/rede): ${raw}`;
+    case 401: return "Futurix recusou as credenciais (401) — verificar a API key SMS do cliente";
+    case 402: return "Conta Futurix sem saldo (402) — carregar a conta junto da Futurix";
+    case 422: return `Futurix recusou a mensagem (422) — número ou remetente inválido: ${raw}`;
+    case 429: return "Futurix: demasiados pedidos (429)";
+    default: return `Futurix HTTP ${status}: ${raw}`;
   }
 }

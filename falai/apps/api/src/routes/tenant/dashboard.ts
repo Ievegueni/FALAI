@@ -1,9 +1,11 @@
 import type { FastifyPluginAsync } from "fastify";
+import { localDay } from "../../services/reportsOverview.service.js";
 import { prisma } from "@falai/db";
+import { requireProfileAccess } from "../../services/accessProfiles.js";
 import { ensureCdrSynced, mapPbxCall, pbxCallStatus, PBX_CALL_SELECT, activeInboundCalls } from "../../services/pbxCdr.service.js";
 
 export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
-  const preHandler = [fastify.verifyTenant];
+  const preHandler = [fastify.verifyTenant, requireProfileAccess("dashboard")];
 
   // GET /tenant/dashboard — key metrics for the CRM home screen
   fastify.get("/", { preHandler }, async (request) => {
@@ -27,7 +29,7 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
         prisma.campaign.count({ where: { tenantId, status: "RUNNING" } }),
         prisma.pbxCall.findMany({
           where: { tenantId, startedAt: { gte: monthStart } },
-          select: { disposition: true, talkSecs: true, durationSecs: true, startedAt: true },
+          select: { disposition: true, talkSecs: true, durationSecs: true, startedAt: true, callType: true },
         }),
         prisma.pbxCall.findMany({
           where: { tenantId },
@@ -42,7 +44,11 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
         }),
       ]);
 
-      const callsToday = monthRows.filter((c) => c.startedAt >= today).length;
+      const todayRows = monthRows.filter((c) => c.startedAt >= today);
+      const callsToday = todayRows.length;
+      // Recebidas vs efectuadas (as internas, entre extensões, não contam em nenhuma).
+      const inboundToday = todayRows.filter((c) => c.callType === "Inbound").length;
+      const outboundToday = todayRows.filter((c) => c.callType === "Outbound").length;
       const callsThisMonth = monthRows.length;
       const answeredMonth = monthRows.filter((c) => pbxCallStatus(c.disposition) === "COMPLETED");
       const avgDuration =
@@ -52,7 +58,7 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
 
       const dailyBuckets = buildBuckets(sevenDaysAgo);
       for (const c of chartRows) {
-        const bucket = dailyBuckets[c.startedAt.toISOString().slice(0, 10)];
+        const bucket = dailyBuckets[localDay(c.startedAt)];
         if (bucket) {
           bucket.total++;
           if (pbxCallStatus(c.disposition) === "COMPLETED") bucket.answered++;
@@ -62,6 +68,8 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         balanceCents: tenant.balanceCents,
         callsToday,
+        inboundToday,
+        outboundToday,
         callsThisMonth,
         answerRatePct: callsThisMonth > 0 ? (answeredMonth.length / callsThisMonth) * 100 : 0,
         avgDurationSecs: Math.round(avgDuration),
@@ -74,10 +82,11 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     // ── Tenants operador (VOICE_AI): métricas da tabela Call (IA) ──────────────
-    const [tenant, callsToday, callsThisMonth, answeredThisMonth, activeAgents, activeCampaigns, monthAgg, recentRows] =
+    const [tenant, callsToday, inboundToday, callsThisMonth, answeredThisMonth, activeAgents, activeCampaigns, monthAgg, recentRows] =
       await Promise.all([
         prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { balanceCents: true } }),
         prisma.call.count({ where: { tenantId, createdAt: { gte: today } } }),
+        prisma.call.count({ where: { tenantId, createdAt: { gte: today }, kind: "INBOUND" } }),
         prisma.call.count({ where: { tenantId, createdAt: { gte: monthStart } } }),
         prisma.call.count({ where: { tenantId, createdAt: { gte: monthStart }, status: { in: ANSWERED } } }),
         prisma.agent.count({ where: { tenantId, status: "ACTIVE", deletedAt: null } }),
@@ -106,7 +115,7 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
 
     const dailyBuckets = buildBuckets(sevenDaysAgo);
     for (const call of chartCalls) {
-      const bucket = dailyBuckets[call.createdAt.toISOString().slice(0, 10)];
+      const bucket = dailyBuckets[localDay(call.createdAt)];
       if (bucket) {
         bucket.total++;
         if (ANSWERED.includes(call.status)) bucket.answered++;
@@ -116,6 +125,9 @@ export const tenantDashboardRoutes: FastifyPluginAsync = async (fastify) => {
     return {
       balanceCents: tenant.balanceCents,
       callsToday,
+      inboundToday,
+      // Tudo o que não é de entrada: IA, campanhas, directas, OTP.
+      outboundToday: callsToday - inboundToday,
       callsThisMonth,
       answerRatePct: callsThisMonth > 0 ? (answeredThisMonth / callsThisMonth) * 100 : 0,
       avgDurationSecs: Math.round(monthAgg._avg.durationSecs ?? 0),
@@ -188,7 +200,9 @@ function buildBuckets(from: Date): Record<string, { total: number; answered: num
   for (let d = 0; d < 7; d++) {
     const day = new Date(from);
     day.setDate(day.getDate() + d);
-    buckets[day.toISOString().slice(0, 10)] = { total: 0, answered: 0 };
+    // Dia local: em UTC a meia-noite de Angola (UTC+1) caía no dia anterior e o
+    // gráfico ficava sem o dia de hoje.
+    buckets[localDay(day)] = { total: 0, answered: 0 };
   }
   return buckets;
 }

@@ -1,6 +1,6 @@
 // ─── Auth / Tenant ───────────────────────────────────────────────────────────
 
-export type TenantRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+export type TenantRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
 export type TenantStatus = 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
 
 export interface TenantUser {
@@ -10,6 +10,15 @@ export interface TenantUser {
   role: TenantRole;
   twoFaEnabled: boolean;
   createdAt: string;
+  /** Perfil definido pela Comunica no backoffice; null = sem restrição. Os módulos "none" já vêm desligados em tenant.features. */
+  accessProfile?: { id: string; name: string; permissions: Partial<Record<FeatureKey | 'dashboard', 'none' | 'read' | 'write'>> } | null;
+  /** Extensão do utilizador e grupos que supervisiona (melhoria 4) — vêm da lista da Equipa. */
+  extensionId?: string | null;
+  /** Número da extensão do utilizador (vem de /tenant/auth/me) — filtra o screen pop. */
+  extensionNumber?: string | null;
+  /** Grupos onde a extensão do utilizador atende. */
+  groupIds?: string[];
+  supervisedGroupIds?: string[];
 }
 
 export type FeatureKey =
@@ -22,7 +31,15 @@ export type FeatureKey =
   | 'webphone'
   | 'wallet'
   | 'team'
-  | 'developers';
+  | 'developers'
+  | 'reports'
+  | 'sms'
+  | 'telephony'
+  | 'inbox'
+  | 'tickets'
+  | 'quality'
+  | 'knowledge'
+  | 'teamChat';
 
 export type TenantFeatures = Record<FeatureKey, boolean>;
 
@@ -36,6 +53,10 @@ export interface Tenant {
   planId: string;
   plan: Plan;
   features?: TenantFeatures;
+  /** Logo definido pela Comunica no backoffice (data URL). Null = logo da Comunica. */
+  logoDataUrl?: string | null;
+  /** Endereço próprio do cliente no CRM (ex.: https://credito.falai.ao). Null = só os domínios gerais. */
+  crmUrl?: string | null;
   onboardingCompletedAt: string | null;
 }
 
@@ -132,7 +153,8 @@ export interface SimulateResponse {
 export interface Contact {
   id: string;
   name: string;
-  phone: string;
+  phone: string | null;
+  telegramId?: string | null;
   email: string | null;
   attributes: Record<string, string>;
   optedOutAt: string | null;
@@ -168,11 +190,12 @@ export type CallStatus =
   | 'IN_PROGRESS'
   | 'COMPLETED'
   | 'NO_ANSWER'
+  | 'BUSY'
   | 'FAILED'
   | 'CANCELLED'
   | 'ESCALATED';
 
-export type SmsStatus = 'QUEUED' | 'SENT' | 'DELIVERED' | 'FAILED';
+export type SmsStatus = 'QUEUED' | 'SENDING' | 'SENT' | 'DELIVERED' | 'FAILED';
 
 export interface SmsMessage {
   id: string;
@@ -226,6 +249,8 @@ export interface Call {
   party?: string;
   status: CallStatus;
   outcome: string | null;
+  /** Motivo técnico da falha (ex.: número inválido, sem saldo). Só em chamadas FAILED. */
+  failReason?: string | null;
   durationSecs: number | null;
   costCents: number | null;
   startedAt: string | null;
@@ -233,6 +258,35 @@ export interface Call {
   createdAt: string;
   agent: { name: string };
   contact: { name: string } | null;
+  /** Só no detalhe: ticket a que a chamada pertence. */
+  ticket?: TicketRef | null;
+  /** Chamadas de entrada: a extensão que atendeu e a tipificação (melhorias 1–2). */
+  handledBy?: { number: string; name: string | null } | null;
+  typing?: string | null;
+  /** Só no detalhe de uma chamada de entrada: percurso, tipificação e notas. */
+  attendance?: {
+    group: string | null;
+    waitSecs: number | null;
+    legs: {
+      id: string;
+      extension: string;
+      agent: string | null;
+      outcome: 'ANSWERED' | 'NO_ANSWER' | 'REJECTED' | 'BUSY' | 'CANCELLED' | 'FAILED' | null;
+      ringStartedAt: string;
+      responseSecs: number | null;
+      reason: string | null;
+    }[];
+    typing: {
+      legId: string;
+      category: string | null;
+      subcategory: string | null;
+      note: string | null;
+      typedAt: string | null;
+      typedBy: string | null;
+      pendingUntil: string | null;
+    } | null;
+    notes: { id: string; body: string; createdAt: string; author: string | null }[];
+  };
   recordingUrl: string | null;
   turns?: CallTurn[];
   variables?: Record<string, string>;
@@ -268,6 +322,11 @@ export interface Campaign {
   completedCount: number;
   failedCount: number;
   answeredCount: number;
+  /** Nunca tentados: campanha cancelada ou contacto removido. */
+  skippedCount: number;
+  optedOutCount: number;
+  /** Base de cálculo da taxa de atendimento: só quem foi realmente contactado. */
+  attemptedCount: number;
   estimatedCostCents: number | null;
   actualCostCents: number;
   scheduleJson: CampaignSchedule;
@@ -277,6 +336,38 @@ export interface Campaign {
   startedAt: string | null;
   completedAt: string | null;
   createdAt: string;
+}
+
+export type CampaignContactStatus =
+  | 'PENDING'
+  | 'QUEUED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'OPTED_OUT'
+  | 'SKIPPED';
+
+/** Um participante da campanha com o desfecho da respectiva chamada. */
+export interface CampaignContactRow {
+  id: string;
+  contactId: string;
+  name: string | null;
+  phone: string;
+  status: CampaignContactStatus;
+  attempts: number;
+  nextRetryAt: string | null;
+  optedOutAt: string | null;
+  optOutReason: string | null;
+  updatedAt: string;
+  callId: string | null;
+  callStatus: CallStatus | null;
+  outcome: string | null;
+  failReason: string | null;
+  durationSecs: number | null;
+  costCents: number | null;
+  recordingUrl: string | null;
+  answeredAt: string | null;
+  endedAt: string | null;
 }
 
 export interface CampaignSchedule {
@@ -296,7 +387,7 @@ export interface RetryPolicy {
 
 // ─── Wallet ──────────────────────────────────────────────────────────────────
 
-export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
+export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'TEXT_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
 
 export interface WalletTransaction {
   id: string;
@@ -335,6 +426,8 @@ export interface ApiKey {
 export interface DashboardMetrics {
   balanceCents: number;
   callsToday: number;
+  inboundToday: number;
+  outboundToday: number;
   callsThisMonth: number;
   answerRatePct: number;
   avgDurationSecs: number;
@@ -386,6 +479,8 @@ export interface Extension {
   security: Record<string, unknown> | null;
   isActive: boolean;
   isDefault: boolean;
+  /** Atende sozinha as chamadas de entrada (definido pelo administrador). */
+  autoAnswer?: boolean;
   phoneNumber: string | null;
   createdAt: string;
   updatedAt: string;
@@ -428,6 +523,35 @@ export interface TelephonyRole {
   _count?: { extensions: number };
 }
 
+export type IvrDestType = 'EXTENSION' | 'GROUP' | 'IVR';
+
+export interface IvrOption {
+  digit: string;
+  destType: IvrDestType;
+  destValue: string;
+}
+
+export interface IvrMenu {
+  id: string;
+  name: string;
+  greeting: string;
+  greetingAudio?: boolean; // saudação é um ficheiro carregado (não TTS)
+  welcomeAudio?: boolean; // boas-vindas carregadas, tocadas uma vez antes da saudação
+  options: IvrOption[];
+  timeoutSecs: number;
+  maxRetries: number;
+}
+
+export interface InboundRoute {
+  id: string;
+  name: string;
+  trunkId: string;
+  trunkName: string;
+  didPattern: string;
+  destType: IvrDestType | 'AI_AGENT';
+  destValue: string;
+}
+
 export interface TrunkView {
   id: string;
   tenantId: string | null;
@@ -456,4 +580,145 @@ export interface Paginated<T> {
   total: number;
   page: number;
   perPage: number;
+}
+
+// ─── Canais de texto (caixa de entrada) ──────────────────────────────────────
+
+export type Channel = 'WEBCHAT' | 'EMAIL' | 'TELEGRAM' | 'WHATSAPP';
+export type ConversationStatus = 'OPEN' | 'PENDING' | 'RESOLVED';
+export type ConversationMode = 'AI' | 'HUMAN';
+
+export interface Inbox {
+  id: string;
+  channel: Channel;
+  name: string;
+  agentId: string | null;
+  autoReply: boolean;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  secretsSet: Record<string, boolean>;
+  snippet?: string;
+  /** WhatsApp: a colar na app da Meta */
+  webhookUrl?: string;
+  verifyToken?: string;
+  poolUrl?: string;
+  /** WhatsApp: estado no pool Active/Standby do botão do site */
+  pool?: {
+    status: WaPoolStatus | null;
+    priority: number | null;
+    failCount: number;
+    lastCheckAt: string | null;
+    lastError: string | null;
+    statusAt: string | null;
+  };
+  createdAt: string;
+}
+
+export type WaPoolStatus = 'ACTIVE' | 'DEGRADED' | 'STANDBY' | 'FAILED' | 'DISABLED';
+
+export interface ConversationMessage {
+  id: string;
+  seq: number;
+  /** HUMAN = cliente; AGENT = IA (authorId nulo) ou operador; SYSTEM = nota interna */
+  role: 'HUMAN' | 'AGENT' | 'SYSTEM';
+  text: string;
+  authorId: string | null;
+  attachments: { file: string; name: string; size: number }[] | null;
+  guardrailFlags: string[] | null;
+  createdAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  status: ConversationStatus;
+  mode: ConversationMode;
+  subject: string | null;
+  assigneeId: string | null;
+  lastMessageAt: string;
+  updatedAt: string;
+  inbox: { id: string; name: string; channel: Channel };
+  contact: { id: string; name: string | null; phone: string | null; email: string | null; telegramId: string | null } | null;
+  assignee: { id: string; name: string } | null;
+  ticket?: TicketRef | null;
+  lastMessage?: { role: ConversationMessage['role']; text: string; createdAt: string } | null;
+}
+
+export interface ConversationDetail extends Conversation {
+  messages: ConversationMessage[];
+  authors: { id: string; name: string }[];
+  /** Outras conversas do mesmo contacto (todos os números e canais) */
+  previous: {
+    id: string;
+    status: ConversationStatus;
+    lastMessageAt: string;
+    messageCount: number;
+    inbox: { name: string; channel: Channel };
+  }[];
+}
+
+export interface CannedResponse {
+  id: string;
+  shortcut: string;
+  text: string;
+}
+
+// ─── Tickets ────────────────────────────────────────────────────────────────
+
+export type TicketStatus = 'OPEN' | 'PENDING' | 'ON_HOLD' | 'RESOLVED' | 'CLOSED';
+export type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+/** Referência curta a um ticket (chamada, conversa, screen pop, perfil). */
+export interface TicketRef {
+  id: string;
+  number: number;
+  subject: string;
+  status: TicketStatus;
+  priority?: TicketPriority;
+}
+
+export type TicketSlaStatus = 'MET' | 'BREACHED' | 'AT_RISK' | 'ON_TRACK';
+
+export interface Ticket extends TicketRef {
+  priority: TicketPriority;
+  description: string | null;
+  supportLevel: number;
+  source: string;
+  categoryId: string | null;
+  subcategoryId: string | null;
+  contactId: string | null;
+  assigneeId: string | null;
+  groupId: string | null;
+  dueAt: string | null;
+  /** Estado do prazo (calculado pela API): null = sem prazo. */
+  sla?: TicketSlaStatus | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  reopenCount: number;
+  externalSystem: string | null;
+  externalId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  contact: { id: string; name: string | null; phone: string | null; email: string | null } | null;
+  assignee: { id: string; name: string } | null;
+  group: { id: string; name: string } | null;
+  category: { id: string; name: string } | null;
+  subcategory: { id: string; name: string } | null;
+}
+
+export type TicketEventType =
+  | 'CREATED' | 'STATUS' | 'PRIORITY' | 'LEVEL' | 'ASSIGNEE' | 'GROUP'
+  | 'CATEGORY' | 'SUBJECT' | 'NOTE' | 'LINKED' | 'UNLINKED';
+
+export interface TicketDetail extends Ticket {
+  /** Calculado pela API com o papel de quem pede (o agente só altera os seus). */
+  canEdit: boolean;
+  events: { id: string; type: TicketEventType; fromValue: string | null; toValue: string | null; body: string | null; createdAt: string; author: { id: string; name: string } | null }[];
+  calls: { id: string; kind: CallKind; status: CallStatus; fromNumber: string | null; toNumber: string; startedAt: string | null; durationSecs: number; createdAt: string }[];
+  conversations: { id: string; status: ConversationStatus; lastMessageAt: string; inbox: { name: string; channel: Channel } }[];
+}
+
+export interface TicketMeta {
+  users: { id: string; name: string }[];
+  groups: { id: string; name: string }[];
+  categories: { id: string; parentId: string | null; name: string }[];
 }

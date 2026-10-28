@@ -14,6 +14,19 @@ export function formatAOA(cents: number): string {
   );
 }
 
+/**
+ * Montante em Kz como o utilizador o escreve (formato angolano: ponto nos
+ * milhares, vírgula nas décimas): "10.000" = 10000, "1.500,50" = 1500.5.
+ * Sem vírgula, um ponto que não separa grupos de 3 é decimal ("12.50", de
+ * valores pré-preenchidos). Inválido = NaN.
+ */
+export function parseKz(v: string): number {
+  let s = v.replace(/\s/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  return s === '' ? NaN : Number(s);
+}
+
 export function formatDate(iso: string): string {
   return formatInTimeZone(new Date(iso), TZ, 'dd/MM/yyyy HH:mm');
 }
@@ -28,12 +41,19 @@ export function formatTime(iso: string): string {
 
 export function formatDuration(secs: number): string {
   if (secs < 60) return `${secs}s`;
+  // Horas a partir de 1 h: "2627m 35s" não se lê num relatório de 30 dias.
+  if (secs >= 3600) {
+    const h = Math.floor(secs / 3600);
+    const mm = Math.floor((secs % 3600) / 60);
+    return mm > 0 ? `${h}h ${mm}m` : `${h}h`;
+  }
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
-export function formatPhone(phone: string): string {
+export function formatPhone(phone: string | null): string {
+  if (!phone) return "—";
   // Mostra sempre no formato nacional 9XX XXX XXX (sem +244).
   // Aceita dados legados em +244XXXXXXXXX e o novo formato nacional de 9 dígitos.
   const digits = phone.replace(/\D/g, '');
@@ -83,6 +103,7 @@ export const callStatusColor: Record<CallStatus, string> = {
   IN_PROGRESS: 'bg-indigo-100 text-indigo-700',
   COMPLETED: 'bg-emerald-100 text-emerald-700',
   NO_ANSWER: 'bg-amber-100 text-amber-700',
+  BUSY: 'bg-amber-100 text-amber-700',
   FAILED: 'bg-red-100 text-red-700',
   CANCELLED: 'bg-gray-100 text-gray-500',
   ESCALATED: 'bg-purple-100 text-purple-700',

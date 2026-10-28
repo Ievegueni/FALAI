@@ -5,12 +5,9 @@ import { YEASTAR_EVENTS } from "@falai/shared";
 /**
  * Chamadas a entrar (inbound): "screen pop" no CRM + registo ao vivo na tabela Call.
  *
- * Duas fontes alimentam este módulo, ambas com o payload cru do Yeastar:
- *   - PBX partilhado (VOICE_AI): eventos via WebSocket/webhook do Yeastar global;
- *     o tenant é resolvido pela extensão de destino (TenantLine) no toque, e pelo
- *     yeastarCallId nos eventos seguintes.
- *   - PBX próprio (CRM_BYO_PBX): eventos em /webhooks/pbx/:token — o token já
- *     identifica o tenant.
+ * Fonte: o PBX Yeastar próprio de um cliente CRM_BYO_PBX, com o payload cru em
+ * /webhooks/pbx/:token — o token identifica o tenant. As chamadas do motor
+ * Asterisk da plataforma entram por inboundCallRouter.service.ts.
  *
  * O registo ao vivo cria um Call (kind INBOUND) no toque e actualiza-o à medida
  * que a chamada é atendida/termina, para o cliente ver a entrada de imediato —
@@ -26,18 +23,21 @@ export interface IncomingCallPayload {
   at: string; // ISO
 }
 
-type Connection = { reply: FastifyReply };
+// idsOnly: o agente (MEMBER) só vê as suas conversas e as da fila, por isso
+// os eventos de conversa chegam-lhe só com o id — o conteúdo vem pela API,
+// que aplica o âmbito (services/userScope.ts).
+type Connection = { reply: FastifyReply; idsOnly: boolean; userId: string | null };
 
 export class IncomingCallHub {
   private connections = new Map<string, Set<Connection>>();
 
-  subscribe(tenantId: string, reply: FastifyReply): () => void {
+  subscribe(tenantId: string, reply: FastifyReply, opts: { idsOnly?: boolean; userId?: string } = {}): () => void {
     let set = this.connections.get(tenantId);
     if (!set) {
       set = new Set();
       this.connections.set(tenantId, set);
     }
-    const conn: Connection = { reply };
+    const conn: Connection = { reply, idsOnly: opts.idsOnly === true, userId: opts.userId ?? null };
     set.add(conn);
     return () => {
       const s = this.connections.get(tenantId);
@@ -51,13 +51,35 @@ export class IncomingCallHub {
     return this.connections.get(tenantId)?.size ?? 0;
   }
 
+  /** Só para estes utilizadores (ex.: membros de uma conversa do chat interno). */
+  sendToUsers(tenantId: string, userIds: Iterable<string>, event: string, data: unknown): void {
+    const set = this.connections.get(tenantId);
+    if (!set || set.size === 0) return;
+    const to = new Set(userIds);
+    const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const conn of set) {
+      if (!conn.userId || !to.has(conn.userId)) continue;
+      try {
+        conn.reply.raw.write(frame);
+      } catch {
+        // ligação morta; limpa no evento 'close'
+      }
+    }
+  }
+
   broadcast(tenantId: string, event: string, data: unknown): void {
     const set = this.connections.get(tenantId);
     if (!set || set.size === 0) return;
     const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const d = data as { conversationId?: string; conversation?: { id?: string } } | null;
+    const idsFrame = event.startsWith("conversation.")
+      ? `event: ${event}\ndata: ${JSON.stringify({ conversationId: d?.conversationId ?? d?.conversation?.id })}\n\n`
+      : frame;
     for (const conn of set) {
+      // Alertas operacionais são para supervisão, não para o agente.
+      if (conn.idsOnly && event.startsWith("alert.")) continue;
       try {
-        conn.reply.raw.write(frame);
+        conn.reply.raw.write(conn.idsOnly ? idsFrame : frame);
       } catch {
         // ligação morta; limpa no evento 'close'
       }
@@ -136,27 +158,11 @@ export async function ingestTenantPbxEvent(
   await applyEvent(fastify, tenantId, ev);
 }
 
-/** PBX partilhado: resolve o tenant pela extensão de destino (toque) ou pelo Call existente. */
-export async function ingestSharedPbxEvent(fastify: FastifyInstance, raw: Record<string, unknown>): Promise<void> {
-  const ev = parseCallEvent(raw);
-  if (!ev) return;
-
-  let tenantId: string | null = null;
-  if (ev.state === "RINGING" && !ev.isOutbound && ev.calleeNumber) {
-    tenantId = await resolveTenantByExtension(ev.calleeNumber);
-  } else {
-    // Eventos seguintes: encontra o tenant pela chamada já registada
-    const existing = await prisma.call.findUnique({
-      where: { yeastarCallId: ev.callId },
-      select: { tenantId: true },
-    });
-    tenantId = existing?.tenantId ?? null;
-  }
-  if (!tenantId) return;
-  await applyEvent(fastify, tenantId, ev);
-}
-
 async function applyEvent(fastify: FastifyInstance, tenantId: string, ev: ParsedCallEvent): Promise<void> {
+  // Fecha o screen pop no CRM quando a chamada termina
+  if (ev.state === "ENDED" || ev.state === "FAILED") {
+    fastify.incomingCalls.broadcast(tenantId, "incoming-call.ended", { callId: ev.callId });
+  }
   switch (ev.state) {
     case "RINGING":
       if (ev.isOutbound || !ev.callerNumber) return;
@@ -225,15 +231,6 @@ async function onRinging(fastify: FastifyInstance, tenantId: string, ev: ParsedC
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Resolve o tenant dono da extensão de destino (PBX partilhado). */
-export async function resolveTenantByExtension(extension: string): Promise<string | null> {
-  const line = await prisma.tenantLine.findFirst({
-    where: { extension, isActive: true },
-    select: { tenantId: true },
-  });
-  return line?.tenantId ?? null;
-}
 
 /** Procura um contacto do tenant cujo telefone corresponda ao número (pelos últimos 9 dígitos). */
 async function findContactIdByPhone(tenantId: string, phone: string): Promise<string | null> {

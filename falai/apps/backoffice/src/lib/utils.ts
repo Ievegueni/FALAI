@@ -1,6 +1,6 @@
 import { formatInTimeZone } from 'date-fns-tz';
 import { ptBR } from 'date-fns/locale';
-import type { AgentStatus, CallStatus, TenantStatus, TransactionType } from '@/types';
+import type { AgentStatus, CallStatus, CampaignStatus, TenantStatus, TransactionType } from '@/types';
 
 const TZ = 'Africa/Luanda';
 
@@ -10,6 +10,19 @@ export function formatAOA(cents: number): string {
       cents / 100,
     ) + ' Kz'
   );
+}
+
+/**
+ * Montante em Kz como o utilizador o escreve (formato angolano: ponto nos
+ * milhares, vírgula nas décimas): "10.000" = 10000, "1.500,50" = 1500.5.
+ * Sem vírgula, um ponto que não separa grupos de 3 é decimal ("12.50", de
+ * valores pré-preenchidos). Inválido = NaN.
+ */
+export function parseKz(v: string): number {
+  let s = v.replace(/\s/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  return s === '' ? NaN : Number(s);
 }
 
 export function formatDate(iso: string): string {
@@ -76,6 +89,7 @@ export const callStatusLabel: Record<CallStatus, string> = {
   IN_PROGRESS: 'Em curso',
   COMPLETED: 'Concluída',
   NO_ANSWER: 'Sem resposta',
+  BUSY: 'Ocupado',
   FAILED: 'Falhou',
   CANCELLED: 'Cancelada',
   ESCALATED: 'Escalada',
@@ -88,15 +102,35 @@ export const callStatusColor: Record<CallStatus, string> = {
   IN_PROGRESS: 'bg-indigo-100 text-indigo-700',
   COMPLETED: 'bg-emerald-100 text-emerald-700',
   NO_ANSWER: 'bg-amber-100 text-amber-700',
+  BUSY: 'bg-orange-100 text-orange-700',
   FAILED: 'bg-red-100 text-red-700',
   CANCELLED: 'bg-gray-100 text-gray-500',
   ESCALATED: 'bg-purple-100 text-purple-700',
+};
+
+export const campaignStatusLabel: Record<CampaignStatus, string> = {
+  DRAFT: 'Rascunho',
+  SCHEDULED: 'Agendada',
+  RUNNING: 'A decorrer',
+  PAUSED: 'Pausada',
+  DONE: 'Concluída',
+  CANCELLED: 'Cancelada',
+};
+
+export const campaignStatusColor: Record<CampaignStatus, string> = {
+  DRAFT: 'bg-gray-100 text-gray-700',
+  SCHEDULED: 'bg-blue-100 text-blue-700',
+  RUNNING: 'bg-indigo-100 text-indigo-700',
+  PAUSED: 'bg-amber-100 text-amber-700',
+  DONE: 'bg-emerald-100 text-emerald-700',
+  CANCELLED: 'bg-red-100 text-red-700',
 };
 
 export const txTypeLabel: Record<TransactionType, string> = {
   TOPUP: 'Carregamento',
   CALL_CHARGE: 'Chamada',
   SMS_CHARGE: 'SMS',
+  TEXT_CHARGE: 'Chat / email',
   REFUND: 'Reembolso',
   ADJUSTMENT: 'Ajuste',
   MONTHLY_FEE: 'Fee mensal',

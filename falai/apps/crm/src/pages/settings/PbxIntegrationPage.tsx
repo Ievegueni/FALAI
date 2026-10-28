@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { isConfigAdmin } from '@/lib/roles';
 
 export function PbxIntegrationPage() {
   const { t } = useTranslation();
@@ -36,6 +38,8 @@ export function PbxIntegrationPage() {
       extension: data.config.extension ?? '',
     });
   }, [data]);
+
+  const canManage = isConfigAdmin(useAuth().user?.role); // configuração técnica: só administradores
 
   const save = useMutation({
     mutationFn: () =>
@@ -135,7 +139,7 @@ export function PbxIntegrationPage() {
               hint={t('pbx.extensionHint')}
             />
 
-            <div className="flex items-center gap-2">
+            {canManage && <div className="flex items-center gap-2">
               <Button icon={<Server className="h-4 w-4" />} loading={save.isPending} onClick={() => save.mutate()}>
                 {t('pbx.save')}
               </Button>
@@ -148,7 +152,7 @@ export function PbxIntegrationPage() {
               >
                 {t('pbx.test')}
               </Button>
-            </div>
+            </div>}
             {(!data?.config.secretSet) && (
               <p className="text-xs text-gray-500">{t('pbx.saveFirst')}</p>
             )}

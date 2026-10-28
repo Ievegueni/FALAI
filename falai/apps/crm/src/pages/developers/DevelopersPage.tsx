@@ -13,6 +13,8 @@ import { Tabs } from '@/components/ui/Tabs';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { Pagination } from '@/components/ui/Pagination';
 import { useToast } from '@/contexts/ToastContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { isConfigAdmin } from '@/lib/roles';
 import { formatDate } from '@/lib/utils';
 
 const ALL_SCOPES = [
@@ -20,6 +22,11 @@ const ALL_SCOPES = [
   { key: 'calls:read', labelKey: 'developers.scopes.callsRead' },
   { key: 'otp:call', labelKey: 'developers.scopes.otpCall' },
   { key: 'sms:send', labelKey: 'developers.scopes.smsSend' },
+  { key: 'conversations:read', labelKey: 'developers.scopes.conversationsRead' },
+  { key: 'conversations:write', labelKey: 'developers.scopes.conversationsWrite' },
+  { key: 'tickets:read', labelKey: 'developers.scopes.ticketsRead' },
+  { key: 'tickets:write', labelKey: 'developers.scopes.ticketsWrite' },
+  { key: 'reports:read', labelKey: 'developers.scopes.reportsRead' },
   { key: 'contacts:write', labelKey: 'developers.scopes.contactsWrite' },
   { key: 'contacts:read', labelKey: 'developers.scopes.contactsRead' },
   { key: 'campaigns:write', labelKey: 'developers.scopes.campaignsWrite' },
@@ -154,6 +161,7 @@ function ApiKeysList() {
   const qc = useQueryClient();
   const { success, error } = useToast();
   const [showCreate, setShowCreate] = useState(false);
+  const canManage = isConfigAdmin(useAuth().user?.role); // chaves de API: só administradores
 
   const { data: keys, isLoading } = useQuery({
     queryKey: ['api-keys'],
@@ -172,9 +180,11 @@ function ApiKeysList() {
     <>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-gray-500">{t('developers.keysCount', { count: keys?.length ?? 0 })}</p>
-        <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>
-          {t('developers.newKey')}
-        </Button>
+        {canManage && (
+          <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setShowCreate(true)}>
+            {t('developers.newKey')}
+          </Button>
+        )}
       </div>
 
       {keys?.length === 0 ? (
@@ -205,13 +215,15 @@ function ApiKeysList() {
                   <p>{k.lastUsedAt ? t('developers.usedAt', { date: formatDate(k.lastUsedAt) }) : t('developers.neverUsed')}</p>
                   <p className="mt-0.5">{t('developers.createdLabel', { date: formatDate(k.createdAt) })}</p>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
-                  loading={del.isPending}
-                  onClick={() => { if (confirm(t('developers.revokeConfirm', { name: k.name }))) del.mutate(k.id); }}
-                />
+                {canManage && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />}
+                    loading={del.isPending}
+                    onClick={() => { if (confirm(t('developers.revokeConfirm', { name: k.name }))) del.mutate(k.id); }}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -225,6 +237,7 @@ function ApiKeysList() {
 function WebhookPanel() {
   const { t } = useTranslation();
   const { success, error } = useToast();
+  const canTest = isConfigAdmin(useAuth().user?.role);
   const { data: settings, isLoading } = useQuery({
     queryKey: ['settings'],
     queryFn: settingsApi.get,
@@ -263,7 +276,7 @@ function WebhookPanel() {
           )}
         </div>
         <p className="text-xs text-gray-500 mt-3"><Trans i18nKey="developers.webhookChangeHint" components={[<strong key="0" />]} /></p>
-        {settings?.webhookUrl && (
+        {canTest && settings?.webhookUrl && (
           <Button
             size="sm"
             variant="outline"
@@ -358,11 +371,12 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
         method: 'GET', path: '/v1/calls', descKey: 'developers.ep.callsList', scope: 'calls:read',
         params: [
           { name: 'status', type: 'string', descKey: 'developers.param.callStatus' },
+          { name: 'campaignId', type: 'string', descKey: 'developers.param.campaignId' },
           { name: 'limit', type: 'number', descKey: 'developers.param.limit' },
           { name: 'offset', type: 'number', descKey: 'developers.param.offset' },
         ],
         response: `{
-  "data": [ { "id": "call_xyz789", "agentId": "agt_abc123", "toNumber": "+244923000000", "status": "COMPLETED", "durationSecs": 42, "costCents": 1500, "startedAt": "...", "endedAt": "...", "createdAt": "..." } ],
+  "data": [ { "id": "call_xyz789", "agentId": "agt_abc123", "campaignId": "cmp_001", "contactId": "cnt_001", "toNumber": "+244923000000", "status": "COMPLETED", "durationSecs": 42, "costCents": 1500, "startedAt": "...", "answeredAt": "...", "endedAt": "...", "createdAt": "..." } ],
   "total": 142,
   "limit": 20,
   "offset": 0
@@ -456,6 +470,22 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
 }`,
       },
       {
+        method: 'POST', path: '/v1/contacts/bulk', descKey: 'developers.ep.contactsBulk', scope: 'contacts:write',
+        body: `{
+  "contacts": [                // obrigatório — até 1000 por pedido
+    { "phone": "+244912000001", "name": "Maria Santos", "attributes": { "empresa": "ACME" } },
+    { "phone": "912000002" },
+    { "phone": "00244912000003", "name": "João Dias" }
+  ]
+}`,
+        response: `{
+  "created": 2,               // contactos novos criados
+  "skipped": 1,               // já existiam (ou repetidos no próprio pedido)
+  "invalid": [ { "index": 5, "reason": "Invalid phone number..." } ],
+  "received": 3
+}`,
+      },
+      {
         method: 'GET', path: '/v1/contacts', descKey: 'developers.ep.contactsList', scope: 'contacts:read',
         params: [
           { name: 'search', type: 'string', descKey: 'developers.param.contactSearch' },
@@ -504,6 +534,20 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
         params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.contactId' }],
         response: `204 No Content — sem corpo`,
       },
+      {
+        method: 'POST', path: '/v1/contacts/:id/opt-out', descKey: 'developers.ep.contactsOptOut', scope: 'contacts:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.contactId' }],
+        body: `{
+  "reason": "Pedido do cliente"  // opcional
+}`,
+        response: `{
+  "id": "cnt_001",
+  "phone": "+244912000001",
+  "name": "Maria Santos",
+  "optedOutAt": "2026-07-20T12:00:00.000Z",
+  "optOutReason": "Pedido do cliente"
+}`,
+      },
     ],
   },
   {
@@ -516,7 +560,7 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
   "mode": "FIXED_SCRIPT",         // opcional — "VOICE_AI" (default) ou "FIXED_SCRIPT"
   "scriptText": "Olá, ligamos em nome da Empresa X sobre uma pendência em aberto...", // obrigatório se mode=FIXED_SCRIPT (mín. 10 caracteres)
   "agentId": "agt_abc123",        // obrigatório se mode=VOICE_AI
-  "ttsVoiceId": "pt-AO-female-1", // opcional — só usado em FIXED_SCRIPT
+  "ttsVoiceId": "CwhRBWXzGAHq8TQ4Fs17", // opcional — só usado em FIXED_SCRIPT; ID de voz da ElevenLabs, omitir usa a voz por omissão da conta
   "scheduleJson": { "startHour": 8, "endHour": 20 }, // opcional — janela horária de chamadas
   "retryPolicy": { "maxAttempts": 3, "retryDelayMinutes": 30 }, // opcional
   "throttlePerMinute": 5          // opcional — chamadas simultâneas por minuto (default 2)
@@ -580,6 +624,91 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
   "createdAt": "2026-07-20T10:00:00.000Z"
 }`,
       },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/pause', descKey: 'developers.ep.campaignsPause', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        response: `{ "ok": true, "status": "PAUSED" }`,
+      },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/resume', descKey: 'developers.ep.campaignsResume', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        response: `{ "ok": true, "status": "RUNNING" }`,
+      },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/cancel', descKey: 'developers.ep.campaignsCancel', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        response: `{ "ok": true, "status": "CANCELLED" }`,
+      },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/retry', descKey: 'developers.ep.campaignsRetry', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        body: `{
+  "scope": "FAILED"  // opcional: "FAILED" (só quem falhou/ficou por contactar) ou "ALL" (default)
+}`,
+        response: `{ "ok": true, "status": "RUNNING", "totalContacts": 150 }`,
+      },
+      {
+        method: 'GET', path: '/v1/campaigns/:id/report', descKey: 'developers.ep.campaignsReport', scope: 'campaigns:read',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        response: `{
+  "campaignId": "cmp_001",
+  "name": "Recuperação Julho",
+  "status": "RUNNING",
+  "totalContacts": 150,
+  "contacted": 132,
+  "answered": 98,
+  "failed": 18,
+  "notContacted": 18,
+  "optedOut": 0,
+  "answerRate": 0.7424,
+  "totalDurationSecs": 5480,
+  "avgDurationSecs": 42,
+  "totalCostCents": 198000,
+  "contactStatuses": { "PENDING": 18, "COMPLETED": 114, "FAILED": 18 },
+  "outcomes": { "SALE": 40, "NO_INTEREST": 58, "unknown": 34 }
+}`,
+      },
+      {
+        method: 'GET', path: '/v1/campaigns/:id/contacts', descKey: 'developers.ep.campaignsContactsList', scope: 'campaigns:read',
+        params: [
+          { name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' },
+          { name: 'status', type: 'string', descKey: 'developers.param.contactStatus' },
+          { name: 'limit', type: 'number', descKey: 'developers.param.limit' },
+          { name: 'offset', type: 'number', descKey: 'developers.param.offset' },
+        ],
+        response: `{
+  "data": [
+    {
+      "status": "FAILED", "attempts": 3, "nextRetryAt": null,
+      "contact": { "id": "cnt_001", "phone": "+244912000001", "name": "Maria Santos" },
+      "call": { "id": "call_xyz789", "outcome": null, "failReason": "Não atendeu", "durationSecs": 0, "costCents": 0, "recordingUrl": null, "endedAt": "..." }
+    }
+  ],
+  "total": 150,
+  "limit": 20,
+  "offset": 0
+}`,
+      },
+      {
+        method: 'DELETE', path: '/v1/campaigns/:id/contacts/:contactId', descKey: 'developers.ep.campaignsContactsRemoveOne', scope: 'campaigns:write',
+        params: [
+          { name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' },
+          { name: 'contactId', type: 'string', required: true, descKey: 'developers.param.contactId' },
+        ],
+        response: `204 No Content — sem corpo. 400 se o contacto já foi contactado (usa opt-out).`,
+      },
+      {
+        method: 'POST', path: '/v1/campaigns/:id/contacts/remove', descKey: 'developers.ep.campaignsContactsRemove', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        body: `{
+  "contactIds": ["cnt_001", "cnt_002"]  // obrigatório — até 5000 por pedido
+}`,
+        response: `{
+  "removed": 1,
+  "skipped": 1,
+  "skippedIds": ["cnt_002"]
+}`,
+      },
     ],
   },
   {
@@ -601,18 +730,39 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
 
 const WEBHOOK_EVENTS = [
   {
-    event: 'call.completed',
-    descKey: 'developers.wh.callCompleted',
+    event: 'call.started',
+    descKey: 'developers.wh.callStarted',
     payload: `{
-  "event": "call.completed",
-  "callId": "call_xyz789",
-  "to": "+244923000000",
-  "agentId": "agt_abc123",
-  "durationSeconds": 42,
-  "result": "SALE",
-  "sentiment": "POSITIVE",
-  "transcript": "Olá, ligo da Falaí...",
-  "timestamp": "2026-07-20T15:01:00.000Z"
+  "event": "call.started",
+  "timestamp": "2026-07-20T15:00:00.000Z",
+  "data": {
+    "callId": "call_xyz789",
+    "campaignId": "cmp_001",
+    "contactId": "cnt_001",
+    "toNumber": "+244923000000"
+  }
+}`,
+  },
+  {
+    event: 'call.ended',
+    descKey: 'developers.wh.callEnded',
+    payload: `{
+  "event": "call.ended",
+  "timestamp": "2026-07-20T15:02:11.000Z",
+  "data": {
+    "callId": "call_xyz789",
+    "campaignId": "cmp_001",
+    "contactId": "cnt_001",
+    "toNumber": "+244923000000",
+    "status": "COMPLETED",
+    "durationSecs": 74,
+    "outcome": "cliente confirmou pagamento",
+    "failReason": null,
+    "costCents": 320,
+    "recordingUrl": "https://...",
+    "startedAt": "2026-07-20T15:00:57.000Z",
+    "answeredAt": "2026-07-20T15:01:03.000Z"
+  }
 }`,
   },
   {
@@ -620,55 +770,110 @@ const WEBHOOK_EVENTS = [
     descKey: 'developers.wh.callFailed',
     payload: `{
   "event": "call.failed",
-  "callId": "call_xyz790",
-  "to": "+244923000001",
-  "reason": "provider_error",
-  "timestamp": "2026-07-20T15:02:00.000Z"
+  "timestamp": "2026-07-20T15:02:00.000Z",
+  "data": {
+    "callId": "call_xyz790",
+    "campaignId": "cmp_001",
+    "contactId": "cnt_002",
+    "toNumber": "+244923000001",
+    "failReason": "Não atendeu"
+  }
 }`,
   },
   {
-    event: 'call.no_answer',
-    descKey: 'developers.wh.callNoAnswer',
+    event: 'campaign.paused',
+    descKey: 'developers.wh.campaignPaused',
     payload: `{
-  "event": "call.no_answer",
-  "callId": "call_xyz791",
-  "to": "+244923000002",
-  "timestamp": "2026-07-20T15:03:00.000Z"
+  "event": "campaign.paused",
+  "timestamp": "2026-07-20T17:00:00.000Z",
+  "data": {
+    "campaignId": "cmp_001",
+    "reason": "manual"
+  }
 }`,
   },
   {
-    event: 'call.escalated',
-    descKey: 'developers.wh.callEscalated',
+    event: 'campaign.completed',
+    descKey: 'developers.wh.campaignCompleted',
     payload: `{
-  "event": "call.escalated",
-  "callId": "call_xyz792",
-  "to": "+244923000003",
-  "reason": "customer_request",
-  "timestamp": "2026-07-20T15:04:00.000Z"
+  "event": "campaign.completed",
+  "timestamp": "2026-07-20T18:00:00.000Z",
+  "data": {
+    "campaignId": "cmp_001",
+    "completed": 132,
+    "failed": 18
+  }
 }`,
   },
   {
-    event: 'campaign.finished',
-    descKey: 'developers.wh.campaignFinished',
+    event: 'ticket.created',
+    descKey: 'developers.wh.ticketCreated',
     payload: `{
-  "event": "campaign.finished",
-  "campaignId": "cmp_001",
-  "name": "Recuperação Julho",
-  "totalContacts": 150,
-  "completed": 132,
-  "failed": 18,
-  "timestamp": "2026-07-20T18:00:00.000Z"
+  "event": "ticket.created",
+  "timestamp": "2026-10-06T10:00:00.000Z",
+  "data": {
+    "ticketId": "tkt_abc123",
+    "number": 42,
+    "contactId": "cnt_001"
+  }
 }`,
   },
   {
-    event: 'wallet.low_balance',
-    descKey: 'developers.wh.walletLowBalance',
+    event: 'ticket.updated',
+    descKey: 'developers.wh.ticketUpdated',
     payload: `{
-  "event": "wallet.low_balance",
-  "balance": 500.00,
-  "currency": "AOA",
-  "threshold": 1000.00,
-  "timestamp": "2026-07-20T20:00:00.000Z"
+  "event": "ticket.updated",
+  "timestamp": "2026-10-06T11:30:00.000Z",
+  "data": {
+    "ticketId": "tkt_abc123",
+    "number": 42,
+    "status": "RESOLVED",
+    "contactId": "cnt_001"
+  }
+}`,
+  },
+  {
+    event: 'alert.opened',
+    descKey: 'developers.wh.alertOpened',
+    payload: `{
+  "event": "alert.opened",
+  "timestamp": "2026-10-06T10:15:00.000Z",
+  "data": {
+    "alertId": "alr_abc123",
+    "type": "LONG_WAIT",
+    "ref": "call_xyz789",
+    "groupId": "grp_suporte",
+    "value": 95,
+    "threshold": 60
+  }
+}`,
+  },
+  {
+    event: 'alert.closed',
+    descKey: 'developers.wh.alertClosed',
+    payload: `{
+  "event": "alert.closed",
+  "timestamp": "2026-10-06T10:16:30.000Z",
+  "data": {
+    "alertId": "alr_abc123",
+    "type": "LONG_WAIT",
+    "ref": "call_xyz789",
+    "groupId": "grp_suporte",
+    "endValue": 140
+  }
+}`,
+  },
+  {
+    event: 'platform.status',
+    descKey: 'developers.wh.platformStatus',
+    payload: `{
+  "event": "platform.status",
+  "timestamp": "2026-10-07T09:12:00.000Z",
+  "data": {
+    "component": "telephony",
+    "up": false,
+    "at": "2026-10-07T09:12:00.000Z"
+  }
 }`,
   },
 ];
@@ -774,9 +979,12 @@ function EndpointRow({ ep, baseUrl }: { ep: EndpointDef; baseUrl: string }) {
   );
 }
 
+// O domínio antigo (api.falai.comunica.ao) continua a responder para as integrações existentes.
+const LIVE_API_URL = 'https://api.falai.ao';
+
 function DocsPanel() {
   const { t } = useTranslation();
-  const [baseUrl, setBaseUrl] = useState('https://api.falai.ao');
+  const [baseUrl, setBaseUrl] = useState(LIVE_API_URL);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ 'developers.groups.calls': true });
   const [openWebhook, setOpenWebhook] = useState<string | null>(null);
 
@@ -792,8 +1000,8 @@ function DocsPanel() {
           <h3 className="text-sm font-semibold text-gray-900">{t('developers.baseUrl')}</h3>
           <div className="flex gap-1 rounded-lg border border-gray-200 p-0.5 bg-gray-50">
             <button
-              className={`text-xs px-3 py-1 rounded-md transition-colors ${baseUrl === 'https://api.falai.ao' ? 'bg-white shadow-sm text-gray-900 font-medium' : 'text-gray-500 hover:text-gray-700'}`}
-              onClick={() => setBaseUrl('https://api.falai.ao')}
+              className={`text-xs px-3 py-1 rounded-md transition-colors ${baseUrl === LIVE_API_URL ? 'bg-white shadow-sm text-gray-900 font-medium' : 'text-gray-500 hover:text-gray-700'}`}
+              onClick={() => setBaseUrl(LIVE_API_URL)}
             >
               {t('developers.live')}
             </button>

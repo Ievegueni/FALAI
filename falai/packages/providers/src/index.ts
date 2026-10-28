@@ -2,7 +2,7 @@ export type { TelephonyProvider, DialParams, PlayPromptParams } from "./telephon
 export { YeastarAdapter, YeastarError } from "./telephony/YeastarAdapter.js";
 export type { YeastarConfig, YeastarCdrRecord } from "./telephony/YeastarAdapter.js";
 export { AsteriskAdapter, AsteriskError } from "./telephony/AsteriskAdapter.js";
-export type { AsteriskConfig } from "./telephony/AsteriskAdapter.js";
+export type { AsteriskConfig, AriChannelInfo } from "./telephony/AsteriskAdapter.js";
 export {
   trunkEndpointId,
   extensionEndpointId,
@@ -10,6 +10,8 @@ export {
   sipAuthUserFromEndpointId,
   formatDialNumber,
   parseDialFormat,
+  holdMusicClass,
+  holdMusicDir,
 } from "./telephony/asteriskNaming.js";
 export type { DialFormat } from "./telephony/asteriskNaming.js";
 export { NoopTrunkRuntimeAdapter } from "./telephony/TrunkRuntimeAdapter.js";
@@ -40,6 +42,7 @@ export {
   BlockedAddressError,
   ALLOWED_ENDPOINT_PORTS,
 } from "./llm/urlGuard.js";
+export { assertSafeWebhookUrl, assertPublicWebhookUrl, postWebhook } from "./http/safeWebhook.js";
 
 export type { TtsProvider } from "./tts/TtsProvider.js";
 export { ElevenLabsAdapter, silentWav } from "./tts/ElevenLabsAdapter.js";

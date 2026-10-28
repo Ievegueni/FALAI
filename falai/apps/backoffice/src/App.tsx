@@ -13,6 +13,7 @@ import { TenantDetailPage } from '@/pages/tenants/TenantDetailPage';
 import { ModerationPage } from '@/pages/moderation/ModerationPage';
 import { ModelsPage } from '@/pages/models/ModelsPage';
 import { PlansPage } from '@/pages/plans/PlansPage';
+import { ProductsPage } from '@/pages/products/ProductsPage';
 import { FinancePage } from '@/pages/finance/FinancePage';
 import { HealthPage } from '@/pages/health/HealthPage';
 import { AuditPage } from '@/pages/audit/AuditPage';
@@ -20,6 +21,7 @@ import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { CallsPage } from '@/pages/calls/CallsPage';
 import { CallDetailPage } from '@/pages/calls/CallDetailPage';
 import { TrunksPage } from '@/pages/trunks/TrunksPage';
+import { FeaturesPage } from '@/pages/features/FeaturesPage';
 
 export default function App() {
   return (
@@ -40,12 +42,14 @@ export default function App() {
                 <Route path="/tenants" element={<TenantsPage />} />
                 <Route path="/tenants/new" element={<TenantNewPage />} />
                 <Route path="/tenants/:id" element={<TenantDetailPage />} />
+                <Route path="/features" element={<FeaturesPage />} />
                 <Route path="/moderation" element={<ModerationPage />} />
                 <Route path="/models" element={<ModelsPage />} />
                 <Route path="/calls" element={<CallsPage />} />
                 <Route path="/calls/:id" element={<CallDetailPage />} />
                 <Route path="/trunks" element={<TrunksPage />} />
                 <Route path="/finance" element={<FinancePage />} />
+                <Route path="/products" element={<ProductsPage />} />
                 <Route path="/plans" element={<PlansPage />} />
                 <Route path="/health" element={<HealthPage />} />
                 <Route path="/audit" element={<AuditPage />} />

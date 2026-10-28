@@ -31,7 +31,7 @@ ${NAT_LINES}
 [transport-wss]
 type=transport
 protocol=ws
-bind=127.0.0.1:${WS_PORT}
+bind=${BIND_ADDR}:${WS_PORT}
 
 ; Trunks e extensões: a API do Falaí gera este ficheiro a partir da base de
 ; dados e manda recarregar por AMI. Editar no backoffice reflecte-se no motor

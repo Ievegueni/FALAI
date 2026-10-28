@@ -5,9 +5,11 @@ import { serializeTrunk, trunkCreateSchema, trunkUpdateSchema, trunkDataFromBody
 import { scheduleTenantPbxSync } from "../../services/pbxSync.service.js";
 
 /**
- * Trunks vistos pelo tenant. Regra (docs/sip_trunk.md §1.1/§3):
- *  - trunk partilhado (tenantId null) → só-leitura no CRM (editável no backoffice);
- *  - trunk BYO (tenantId = tenant, produto CRM_BYO_PBX) → editável pelo cliente.
+ * Trunks vistos pelo tenant: só os que lhe estão associados (tenantId = tenant).
+ * Os partilhados do operador (tenantId null) não aparecem — mostravam a cada
+ * cliente os trunks e credenciais dos outros. A associação faz-se no backoffice.
+ *  - trunk associado, produto CRM_BYO_PBX → editável pelo cliente;
+ *  - trunk associado, outro produto → só-leitura (gerido pelo operador).
  */
 export const tenantTrunksRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
@@ -26,20 +28,20 @@ export const tenantTrunksRoutes: FastifyPluginAsync = async (fastify) => {
     return true;
   }
 
-  // GET /tenant/trunks — partilhados (só-leitura) + BYO próprios; marca `editable`
+  // GET /tenant/trunks — só os trunks associados ao tenant; marca `editable`
   fastify.get("/", { preHandler }, async (request) => {
     const { tenantId } = request.tenantUser!;
     const product = await productType(tenantId);
     const trunks = await prisma.trunk.findMany({
-      where: { OR: [{ tenantId: null }, { tenantId }] },
-      orderBy: [{ tenantId: "asc" }, { name: "asc" }],
+      where: { tenantId },
+      orderBy: { name: "asc" },
       include,
     });
     return {
       productType: product,
       trunks: trunks.map((t) => ({
         ...serializeTrunk(t),
-        editable: t.tenantId === tenantId && product === "CRM_BYO_PBX",
+        editable: product === "CRM_BYO_PBX",
       })),
     };
   });

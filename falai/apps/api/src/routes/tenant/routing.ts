@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import { z } from "zod";
 import { scheduleTenantPbxSync } from "../../services/pbxSync.service.js";
+import { assertTrunk, registerIvrRouting } from "../shared/ivrRouting.js";
 
 const outboundCreate = z.object({
   name: z.string().min(2).max(64),
@@ -13,15 +14,6 @@ const outboundCreate = z.object({
 });
 const outboundUpdate = outboundCreate.partial();
 
-const inboundCreate = z.object({
-  name: z.string().min(2).max(64),
-  trunkId: z.string().cuid(),
-  didPattern: z.string().min(1).max(64),
-  destType: z.enum(["EXTENSION", "GROUP", "IVR", "AI_AGENT"]),
-  destValue: z.string().min(1).max(128),
-});
-const inboundUpdate = inboundCreate.partial();
-
 export const tenantRoutingRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
 
@@ -31,12 +23,6 @@ export const tenantRoutingRoutes: FastifyPluginAsync = async (fastify) => {
       return false;
     }
     return true;
-  }
-
-  // Valida que o trunk é utilizável pelo tenant (partilhado ou próprio)
-  async function assertTrunk(tenantId: string, trunkId: string): Promise<boolean> {
-    const trunk = await prisma.trunk.findFirst({ where: { id: trunkId, OR: [{ tenantId: null }, { tenantId }] } });
-    return !!trunk;
   }
 
   const outboundInclude = { trunk: { select: { id: true, name: true } }, permissions: { select: { extensionId: true } } } as const;
@@ -116,59 +102,14 @@ export const tenantRoutingRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.status(204).send();
   });
 
-  // ── Rotas de entrada ───────────────────────────────────────────────────────
-  fastify.get("/inbound-routes", { preHandler }, async (request) => {
-    const { tenantId } = request.tenantUser!;
-    const routes = await prisma.inboundRoute.findMany({ where: { tenantId }, orderBy: { createdAt: "asc" }, include: { trunk: { select: { name: true } } } });
-    return routes.map((r) => ({ id: r.id, name: r.name, trunkId: r.trunkId, trunkName: r.trunk.name, didPattern: r.didPattern, destType: r.destType, destValue: r.destValue }));
-  });
-
-  fastify.post("/inbound-routes", { preHandler }, async (request, reply) => {
-    const { tenantId, role, sub } = request.tenantUser!;
-    if (!requireManager(role, reply)) return;
-    const body = inboundCreate.parse(request.body);
-    if (!(await assertTrunk(tenantId, body.trunkId))) return reply.status(400).send({ error: "Trunk inválido" });
-
-    const route = await prisma.inboundRoute.create({
-      data: { tenantId, name: body.name, trunkId: body.trunkId, didPattern: body.didPattern, destType: body.destType, destValue: body.destValue },
-    });
-    await fastify.audit({ actorType: "TENANT_USER", actorId: sub, action: "tenant.inbound_route.created", targetType: "InboundRoute", targetId: route.id, ip: request.ip });
-    scheduleTenantPbxSync(tenantId);
-    return reply.status(201).send({ id: route.id });
-  });
-
-  fastify.put<{ Params: { id: string } }>("/inbound-routes/:id", { preHandler }, async (request, reply) => {
-    const { tenantId, role, sub } = request.tenantUser!;
-    if (!requireManager(role, reply)) return;
-    const body = inboundUpdate.parse(request.body);
-
-    const existing = await prisma.inboundRoute.findFirst({ where: { id: request.params.id, tenantId } });
-    if (!existing) return reply.status(404).send({ error: "Rota não encontrada" });
-    if (body.trunkId && !(await assertTrunk(tenantId, body.trunkId))) return reply.status(400).send({ error: "Trunk inválido" });
-
-    await prisma.inboundRoute.update({
-      where: { id: existing.id },
-      data: {
-        ...(body.name !== undefined ? { name: body.name } : {}),
-        ...(body.trunkId !== undefined ? { trunkId: body.trunkId } : {}),
-        ...(body.didPattern !== undefined ? { didPattern: body.didPattern } : {}),
-        ...(body.destType !== undefined ? { destType: body.destType } : {}),
-        ...(body.destValue !== undefined ? { destValue: body.destValue } : {}),
-      },
-    });
-    await fastify.audit({ actorType: "TENANT_USER", actorId: sub, action: "tenant.inbound_route.updated", targetType: "InboundRoute", targetId: existing.id, ip: request.ip });
-    scheduleTenantPbxSync(tenantId);
-    return { ok: true };
-  });
-
-  fastify.delete<{ Params: { id: string } }>("/inbound-routes/:id", { preHandler }, async (request, reply) => {
-    const { tenantId, role, sub } = request.tenantUser!;
-    if (!requireManager(role, reply)) return;
-    const existing = await prisma.inboundRoute.findFirst({ where: { id: request.params.id, tenantId } });
-    if (!existing) return reply.status(404).send({ error: "Rota não encontrada" });
-    await prisma.inboundRoute.delete({ where: { id: existing.id } });
-    await fastify.audit({ actorType: "TENANT_USER", actorId: sub, action: "tenant.inbound_route.deleted", targetType: "InboundRoute", targetId: existing.id, ip: request.ip });
-    scheduleTenantPbxSync(tenantId);
-    return reply.status(204).send();
+  // Rotas de entrada e menus IVR — ver routes/shared/ivrRouting.ts
+  registerIvrRouting(fastify, {
+    base: "",
+    preHandler,
+    ctx: async (request, reply, write) => {
+      const { tenantId, role, sub } = request.tenantUser!;
+      if (write && !requireManager(role, reply)) return null;
+      return { tenantId, actorType: "TENANT_USER", actorId: sub };
+    },
   });
 };

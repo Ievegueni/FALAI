@@ -68,6 +68,7 @@ export function serializeExtension(ext: Extension) {
     security: ext.security,
     isActive: ext.isActive,
     isDefault: ext.isDefault,
+    autoAnswer: ext.autoAnswer,
     phoneNumber: ext.phoneNumber,
     createdAt: ext.createdAt,
     updatedAt: ext.updatedAt,

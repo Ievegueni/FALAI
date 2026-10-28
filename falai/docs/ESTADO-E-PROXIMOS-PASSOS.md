@@ -3,8 +3,8 @@
 > **Este é o ficheiro para ler no início de cada sessão.** Diz o que está feito,
 > o que falta e por onde continuar. Actualizar no fim de cada sessão.
 >
-> Última actualização: **21/08/2026**
-> Branch actual: `docs/deploy-guide` · Último commit: `9876bf1`
+> Última actualização: **13/10/2026** (secção 3.5)
+> Branch actual: `docs/deploy-guide` · Último commit: `077daf0`
 > **Atenção: há trabalho não commitado** (ver secção 6).
 
 ---
@@ -41,6 +41,11 @@ Duas frentes abertas, por esta ordem:
   não muda com nenhuma decisão de negócio.
 - O que **desapareceu do âmbito**: toda a paridade com o Yeastar (IVR, filas,
   grupos de toque, voicemail, softphone próprio). Era o plano antigo.
+- **Excepção (25/09/2026): o IVR voltou ao âmbito**, a pedido. Menus no CRM
+  (Telefonia → IVR), saudação por TTS, DTMF encaminha para extensão, grupo ou
+  submenu; rotas de entrada (DID → destino) também têm UI agora. Só no motor
+  Asterisk. Código: `inboundCallRouter.service.ts` (secção IVR) e
+  `routes/tenant/routing.ts` (`/tenant/routing/ivr`).
 
 Documento de referência completo: `docs/AVALIACAO-MODELO-SIP-ANGOVOIP.txt`
 (secções 9-C a 11 são as decisões actuais).
@@ -69,6 +74,41 @@ Documento de referência completo: `docs/AVALIACAO-MODELO-SIP-ANGOVOIP.txt`
 | Backoffice: planos, tenants, utilizadores do tenant, moderação, settings, API keys dos provedores (encriptadas em `SystemSetting`) | ✅ |
 | Módulo Clínica (flag `clinicEnabled`, ficha em `Contact.attributes`) | ✅ |
 | Guia de deploy em VPS | ✅ `DEPLOY.md` |
+
+### 3.1c Canais de texto (WhatsApp, Telegram, widget web, email) — construído em 22/09
+
+Plano em `docs/PLANO-CANAIS-TEXTO.md`. Fases 1–5 feitas + billing da fase 6.
+Testado localmente: widget num site de terceiros, webhook Telegram (bot falso),
+threading de email com mensagens cruas, caixa de entrada no CRM em tempo real.
+
+- Schema: `Inbox`, `Conversation`, `Message`, `CannedResponse`;
+  `Contact.phone` opcional + `email`/`telegramId`; `Agent.ttsVoiceId` opcional
+  (chamadas de voz recusam agente sem voz); `Plan.pricePerTextMessageCents`;
+  `TxType.TEXT_CHARGE`. Três migrações `20260922*`.
+- Motor: `processTextTurn()` extraído do `TurnProcessor` (voz usa-o).
+  Núcleo em `services/textChannels.service.ts`; email em `email.service.ts`.
+- Rotas: `/tenant/inboxes`, `/tenant/conversations`, `/tenant/canned-responses`,
+  `/webhooks/telegram/:inboxId`, `/public/chat/*` (widget em `apps/api/public/widget.js`),
+  `/v1/conversations` (scopes `conversations:read|write`).
+- CRM: `/inbox` (3 colunas) e `/inbox/settings` (canais + respostas rápidas).
+  Backoffice: preço por resposta da IA no plano.
+
+**WhatsApp Business** (Cloud API da Meta) acrescentado — ver plano. Falta: templates
+(mensagens fora das 24 h), descarregar media, testar com número real.
+
+**Falta:** testar com bot de Telegram real (precisa `PUBLIC_API_URL` em HTTPS) e
+caixa IMAP/SMTP real; SPF/DKIM do domínio de envio; script de importação do
+Hoory (precisa de um export real para mapear); métricas de texto nos relatórios;
+`PER_CONVERSATION` (só há preço por resposta). Deploy: `PUBLIC_API_URL`,
+`UPLOADS_DIR` (anexos, por omissão `apps/api/uploads`).
+
+### 3.1d Funcionalidades por cliente — aplicadas na API (22/09)
+
+Backoffice → **Funcionalidades**: matriz clientes × funcionalidades (grava por
+célula). Desligado = some do CRM **e** a API responde 403 (`gateFeature` em
+`index.ts`, `services/features.ts`). Funcionalidades novas nascem desligadas
+(`inbox`); o plano continua a mandar (sem IA → sem agentes/campanhas; sem SMS
+no plano → sem SMS). API_BYOM: UI desligada, API regida pelos scopes.
 
 ### 3.1b Terceiro produto: `API_BYOM` — construído em 21/08, por correr
 
@@ -102,7 +142,7 @@ integração pronto a entregar: `docs/API-BYOM.md`.
 - ✅ Portas RTP `10000-10100/udp` e `5060` mapeadas no Docker.
 - ✅ `EXTERNAL_IP=102.130.202.155` preenchido em `infra/asterisk/.env` (resolve
   a causa nº1 de "áudio só num sentido").
-- ✅ API ligada ao motor por **ARI** (`TELEPHONY_ENGINE=asterisk`); a aplicação
+- ✅ API ligada ao motor por **ARI** (único motor; o Yeastar global foi removido a 02/10/2026 — só resta no produto CRM_BYO_PBX); a aplicação
   `falai` aparece registada no Asterisk.
 - ✅ `asteriskRuntime.service` gera a config PJSIP **global** a partir da BD e
   sincroniza por AMI; `asteriskStatus.service` lê estado.
@@ -125,7 +165,91 @@ integração pronto a entregar: `docs/API-BYOM.md`.
 5. Endpoints nomeados pelo número colidiam → nomeados pelo **utilizador SIP**.
 6. Health check disparava reloads do motor → só confirma que o AMI responde.
 
+### 3.4 Varredura de segurança/dinheiro (07/10, `feat/tickets`, por commitar)
+
+- **Reservas de chamadas** persistidas em `Call.reservedCents`; `settleCall` e
+  `releaseCallReservation` (packages/db) zeram-na de forma atómica — nunca há
+  reembolso duplo. Devolvida no arranque da API (`releaseOrphanReservations`),
+  na reconciliação de chamadas presas e em falhas de marcação.
+- **Webhook do cliente (SSRF)**: só `https` (http fora de produção), sem
+  localhost/IPs privados/link-local/metadata. Validado ao gravar (com DNS) e no
+  envio (worker e `/webhook-test`, com o IP verificado no momento da ligação).
+- **Campanhas**: `Campaign.pausedReason`; o carregamento ProxyPay só retoma as
+  pausadas por `LOW_BALANCE`.
+- **Widget**: email/telefone do visitante já não ligam a conversa a um Contact
+  existente (ficam numa nota interna).
+- **JWT do CRM**: utilizador e papel revalidados na BD a cada pedido.
+- **SMS**: `SmsStatus.SENDING` (claim + reserva atómicos; órfãs no arranque →
+  FAILED com saldo devolvido, sem reenvio); destinatários deduplicados por
+  telefone; segmentos pelo GSM 03.38 real; 429/5xx/timeout com nova tentativa
+  nas campanhas; enviar/campanhas só OWNER/ADMIN/MANAGER.
+- **Webhook `/webhooks/sms`**: se `FUTURIX_SMS_WEBHOOK_SECRET` estiver definido
+  (.env ou SystemSetting), o URL configurado na Futurix tem de ser
+  `https://<api>/webhooks/sms?token=<segredo>`; sem ele aceita tudo como antes
+  e a API avisa no arranque (`sms.webhook.no_secret`).
+- **Migrações** `20260924130000_whatsapp_number_unique` e
+  `20260925115900_drop_legacy_ivr` passaram a abortar com mensagem clara (números
+  WhatsApp duplicados / tabelas IVR antigas com linhas). Nunca estiveram em
+  `main`; o checksum mudou — numa BD onde já correram, actualizar o checksum em
+  `_prisma_migrations` (sha256 do ficheiro) ou o `migrate dev` pede reset.
+  Verificação manual antes do deploy:
+  ```sql
+  SELECT config->>'phoneNumberId', count(*) FROM "Inbox"
+  WHERE channel='WHATSAPP' AND "deletedAt" IS NULL GROUP BY 1 HAVING count(*) > 1;
+  ```
+
 ---
+
+### 3.5 Relatórios, ASA, SLA e satisfação (13/10, `feat/tickets`, 4 commits) — por testar
+
+- **SLA de voz**: limiar e meta por grupo; desistências curtas (5 s, configurável)
+  fora do SLA e do abandono; ASA (antes "TME"), ASA 90 %, maior espera, por hora,
+  mapa dia da semana × hora, SLA por dia contra a meta. Metas em
+  `services/serviceTargets.ts` (Tenant.serviceTargets, JSON — sem migração).
+- **Texto e tickets**: SLA da 1.ª resposta por canal; prazo dos tickets por
+  prioridade (automático, recalcula se não foi escrito à mão), filtro
+  "Atrasados", alertas `TEXT_SLA_BELOW`, `TICKET_DUE_SOON`, `TICKET_OVERDUE`.
+- **Satisfação**: comentário nas notas 1–2 (SMS e texto), lista de negativas
+  para a supervisão tratar, nota por agente, evolução diária, análise IA v3.
+- **Excel**: todos os separadores dos Relatórios exportam e espelham o ecrã
+  (Atendimento, Por agente, Por grupo, Recusas, Tipificação, Chamadas, Tempo
+  dos agentes, Satisfação, Consolidado, Resumo); comparação com o período anterior.
+- **Migrações novas (só aditivas)**: `20261013150000_sla_alert_types`,
+  `20261013160000_csat_comment_review`.
+- **Por fazer**: repor a BD de dev (ficou vazia a 13/10 — `migrate deploy` +
+  seeds), arrancar a API (a porta 3000 estava ocupada pelo projecto ARA) e testar
+  tudo no browser e no Excel. Página própria do agente não feita: o agente já vê
+  os seus números (âmbito SELF) no separador Atendimento.
+
+### 3.6 Fila de espera, callback e estados do agente (13–14/10, `feat/tickets`, commit 2966784) — por testar com chamadas reais
+
+- **Fila real** (`inboundCallRouter.service.ts`, secção "Fila"): sem agente livre
+  (em chamada, a tocar, pausa, pós-chamada, a tratar callback) quem liga espera
+  com música e a chamada toca sozinha no primeiro que ficar livre, por ordem de
+  chegada. `Tenant.queueConfig.maxWaitSecs` (0 = comportamento antigo).
+- **Callback** (`callQueue.service.ts`): oferta por TTS ao fim de N s, tecla 1 =
+  consentimento → `QueueCallback`. Despacho entrega ao primeiro agente livre
+  (CRM aberto) por SSE; o popup do CRM liga sozinho pelo webphone em 10 s.
+  "Não atendeu" volta à fila (5 min, máx. 3 tentativas).
+- **Sinal**: cabeçalho `X-Falai-Queue-Wait` no INVITE → bip próprio, notificação
+  do sistema e "Da fila · esperou m:ss" no webphone.
+- **Estados do agente**: relatório de tempo com conversa/pós-chamada/disponível
+  + linha do tempo por agente (`/tenant/reports/agent-states`). "PAUSE BREAK",
+  "REMUP" etc. são motivos de pausa configuráveis.
+- UI: Supervisão → separador Callbacks; Supervisão → Definições → Fila.
+- Migração `20261013170000_call_queue_callback` aplicada na BD dev (13/10); por aplicar em produção (com backup).
+- Limite: chamadas de saída do webphone não contam como "ocupado" nem como conversa.
+- **Sinal de chamada na saída** do webphone (tom 425 Hz gerado no browser, `lib/ringtone.ts`).
+- **TV da sala (`/wallboard`)**: ecrã inteiro escuro, 2 em 2 s — em espera/maior espera,
+  atendidas, perdidas, SLA vs meta, ASA/TMA, callbacks, grelha de agentes por estado,
+  fila ao vivo, ranking do dia (atendidas, TMA, CSAT), alertas. `?group=<id>` por sala.
+  Rota `GET /tenant/supervision/wallboard` — **nunca devolve números de clientes**, só o
+  nome do contacto. Entra com uma conta de supervisor da sala; fica fora do AppLayout
+  (sem SSE) para não contar como agente ligado. Botão "Modo TV" na Supervisão.
+- **Demo local**: `npx tsx --env-file=.env scripts/seed-atendimento.ts` (tenant Demo
+  Company; contas `sala@`, `ana@`, `bruno@`, `carla@`, `delcio@`, `edna@demo.com`,
+  password `Demo1234!`) + `DEMO_LIVE=1` no `.env` (só dev: `services/demoLive.ts` mostra
+  as chamadas `demo-*` como ao vivo). Reiniciar a API **antes** do seed (o arranque fecha sessões abertas).
 
 ## 4. O QUE FALTA FAZER
 
@@ -239,22 +363,17 @@ Não existe nada disto ainda (`grep externalMedia` não devolve nada no código)
 
 ---
 
-## 6. Trabalho não commitado (arrumar no início da próxima sessão)
+## 6. Branch `feat/canais-texto` (por fazer merge)
 
-Está tudo na árvore de trabalho, typecheck limpo, mas **sem commit**:
+Dois commits: (a) `refactor: preparar o núcleo…` — mexe em código que já
+corre (Contact.phone, ttsVoiceId, TurnProcessor, dispatcher, guardrail);
+(b) `feat: canais de texto…` — só código novo. Se (b) der problemas, reverte-se
+sozinho (as tabelas novas ficam vazias e inofensivas); (a) só se reverte com (b).
 
-```
-Novos:     apps/api/src/services/asteriskRuntime.service.ts
-           apps/api/src/services/asteriskStatus.service.ts
-           packages/providers/src/telephony/AsteriskAdapter.ts
-           packages/providers/src/telephony/asteriskNaming.ts
-           infra/                (Asterisk em Docker, templates, scripts)
-           packages/db/prisma/migrations/20260727224114_add_telephony_engine/
-Alterados: 19 ficheiros (api, backoffice, schema.prisma, providers, .env.example)
-```
-
-Sugestão: `feat(telephony): motor Asterisk como cliente SIP da ANGOVOIP`.
-Estamos em `docs/deploy-guide` — criar branch própria antes de commitar.
+Antes do deploy: correr as 3 migrações `20260922*` numa cópia da base de
+produção (Postgres ≥ 12 por causa do `ALTER TYPE … ADD VALUE`), `pnpm install`
+(imapflow, mailparser, nodemailer), definir `PUBLIC_API_URL`; opcionais
+`UPLOADS_DIR` e `WIDGET_JS_PATH`.
 
 ---
 
@@ -276,7 +395,7 @@ docker compose -f infra/asterisk/docker-compose.yml restart
 ```
 
 Config importante: `infra/asterisk/.env` (EXTERNAL_IP) e `.env` da raiz
-(`TELEPHONY_ENGINE`, `ASTERISK_ARI_*`, `ASTERISK_AMI_*`,
+(`ASTERISK_ARI_*` — obrigatório, `ASTERISK_AMI_*`,
 `ASTERISK_DIAL_FORMAT`, `ASTERISK_CALLER_ID`).
 
 **Regra de trabalho:** reiniciar sempre API/CRM/backoffice afectados depois de

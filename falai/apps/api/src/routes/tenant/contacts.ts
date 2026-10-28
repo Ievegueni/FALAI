@@ -1,3 +1,5 @@
+import { readTable, extractRows, resolveContactsFromFile } from "../../services/contactFile.service.js";
+import { contactSearchWhere } from "../../services/contactProfile.service.js";
 import type { FastifyPluginAsync } from "fastify";
 import { Queue } from "bullmq";
 import { randomUUID } from "crypto";
@@ -5,7 +7,7 @@ import { prisma } from "@falai/db";
 import { z } from "zod";
 import { parse as csvParse } from "csv-parse/sync";
 import * as XLSX from "xlsx";
-import { QUEUES, JOBS } from "@falai/shared";
+import { QUEUES, JOBS, normalizeAoPhone } from "@falai/shared";
 import { config } from "../../config.js";
 
 const createSchema = z.object({
@@ -20,18 +22,13 @@ const updateSchema = z.object({
   attributes: z.record(z.unknown()).optional(),
 });
 
-/**
- * Normaliza para o formato nacional de Angola (9 dígitos, sem indicativo +244).
- * É este o formato que o trunk da Yeastar encaminha; guardar sem +244 mantém a
- * base de dados alinhada com o que o cliente vê e com o que a PBX espera.
- */
-function normalizePhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("244") && digits.length === 12) return digits.slice(3);
-  if (digits.startsWith("00244") && digits.length === 14) return digits.slice(5);
-  if (digits.length === 9) return digits; // já em formato nacional
-  return null;
-}
+// Criação em lote. Sem isto, carregar N contactos custava N pedidos e batia no
+// rate-limit global (ver `index.ts`): era esse o 429 que os clientes viam ao
+// importar listas por script.
+const bulkCreateSchema = z.object({
+  contacts: z.array(createSchema).min(1).max(1000),
+});
+
 
 interface ContactRow {
   phone: string;
@@ -53,7 +50,7 @@ function parseContactRows(rows: ContactRow[], tenantId: string): {
       return;
     }
 
-    const normalized = normalizePhone(rawPhone);
+    const normalized = normalizeAoPhone(rawPhone);
     if (!normalized) {
       errors.push({ row: i + 2, raw: rawPhone, reason: "Formato de telefone inválido" });
       return;
@@ -76,23 +73,21 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /tenant/contacts
   fastify.get<{
-    Querystring: { q?: string; limit?: string; offset?: string; optedOut?: string };
+    Querystring: { q?: string; search?: string; limit?: string; offset?: string; optedOut?: string };
   }>("/", { preHandler }, async (request) => {
     const { tenantId } = request.tenantUser!;
-    const { q, limit = "100", offset = "0", optedOut } = request.query;
+    const { limit = "100", offset = "0", optedOut } = request.query;
+    // O CRM envia `search`; a API pública documentou `q`.
+    const q = (request.query.search ?? request.query.q ?? "").trim();
 
+    // Pesquisa normalizada e indexada (nome/número, incluindo números extra).
+    const where = {
+      ...(q ? contactSearchWhere(tenantId, q) : { tenantId }),
+      ...(optedOut === "true" && { optedOutAt: { not: null } }),
+      ...(optedOut === "false" && { optedOutAt: null }),
+    };
     const contacts = await prisma.contact.findMany({
-      where: {
-        tenantId,
-        ...(q && {
-          OR: [
-            { phone: { contains: q } },
-            { name: { contains: q, mode: "insensitive" } },
-          ],
-        }),
-        ...(optedOut === "true" && { optedOutAt: { not: null } }),
-        ...(optedOut === "false" && { optedOutAt: null }),
-      },
+      where,
       orderBy: { createdAt: "desc" },
       take: parseInt(limit, 10),
       skip: parseInt(offset, 10),
@@ -107,7 +102,7 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
       },
     });
 
-    const total = await prisma.contact.count({ where: { tenantId } });
+    const total = await prisma.contact.count({ where });
     return { contacts, total };
   });
 
@@ -116,8 +111,11 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
     const body = createSchema.parse(request.body);
     const { tenantId } = request.tenantUser!;
 
-    const phone = normalizePhone(body.phone);
+    const phone = normalizeAoPhone(body.phone);
     if (!phone) return reply.status(400).send({ error: "Formato de telefone inválido. Use o número nacional de 9 dígitos (ex: 9XX XXX XXX)." });
+    // Número extra de outro contacto (ver ContactPhone): não cria um duplicado.
+    const extra = await prisma.contactPhone.findUnique({ where: { tenantId_phone: { tenantId, phone } }, select: { contactId: true } });
+    if (extra) return reply.status(409).send({ error: "Já existe um contacto com este número.", contactId: extra.contactId });
 
     const contact = await prisma.contact.upsert({
       where: { tenantId_phone: { tenantId, phone } },
@@ -134,6 +132,50 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return reply.status(201).send({ contact });
+  });
+
+  // POST /tenant/contacts/bulk — cria até 1000 contactos num único pedido.
+  // Números repetidos (no lote ou já em base) são ignorados, não actualizados:
+  // para alterar um contacto existente usa-se o PATCH.
+  fastify.post("/bulk", { preHandler }, async (request, reply) => {
+    const body = bulkCreateSchema.parse(request.body);
+    const { tenantId } = request.tenantUser!;
+
+    const valid: Array<{ tenantId: string; phone: string; name?: string; attributes?: object }> = [];
+    const invalid: Array<{ index: number; phone: string; reason: string }> = [];
+    const seen = new Set<string>();
+    let duplicatesInPayload = 0;
+
+    body.contacts.forEach((c, index) => {
+      const phone = normalizeAoPhone(c.phone);
+      if (!phone) {
+        invalid.push({ index, phone: c.phone, reason: "Formato de telefone inválido. Use o número nacional de 9 dígitos (ex: 9XX XXX XXX)." });
+        return;
+      }
+      if (seen.has(phone)) {
+        duplicatesInPayload++;
+        return;
+      }
+      seen.add(phone);
+      valid.push({
+        tenantId,
+        phone,
+        ...(c.name !== undefined && { name: c.name }),
+        ...(c.attributes !== undefined && { attributes: c.attributes as object }),
+      });
+    });
+
+    const { count: created } = valid.length
+      ? await prisma.contact.createMany({ data: valid, skipDuplicates: true })
+      : { count: 0 };
+
+    return reply.status(201).send({
+      created,
+      // Já existiam em base (skipDuplicates) ou vinham repetidos no próprio lote.
+      skipped: valid.length - created + duplicatesInPayload,
+      invalid,
+      received: body.contacts.length,
+    });
   });
 
   // GET /tenant/contacts/:id
@@ -158,10 +200,12 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
     // Se o telefone mudar, normaliza para o formato nacional e garante que não colide com outro contacto
     let normalizedPhone: string | undefined;
     if (body.phone !== undefined) {
-      const normalized = normalizePhone(body.phone);
+      const normalized = normalizeAoPhone(body.phone);
       if (!normalized) return reply.status(400).send({ error: "Formato de telefone inválido. Use o número nacional de 9 dígitos (ex: 9XX XXX XXX)." });
       if (normalized !== existing.phone) {
-        const clash = await prisma.contact.findFirst({ where: { tenantId, phone: normalized, id: { not: existing.id } } });
+        const clash =
+          (await prisma.contact.findFirst({ where: { tenantId, phone: normalized, id: { not: existing.id } } })) ??
+          (await prisma.contactPhone.findFirst({ where: { tenantId, phone: normalized, contactId: { not: existing.id } } }));
         if (clash) return reply.status(409).send({ error: "Já existe um contacto com este número." });
       }
       normalizedPhone = normalized;
@@ -209,6 +253,28 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return { ok: true };
+  });
+
+  // POST /tenant/contacts/from-file — números de um ficheiro para uma campanha
+  // (voz ou SMS). Reutiliza os contactos que já existem (pelo número), cria só
+  // os que faltam e devolve os ids — ver services/contactFile.service.ts.
+  fastify.post("/from-file", { preHandler }, async (request, reply) => {
+    const { tenantId } = request.tenantUser!;
+    if (!request.isMultipart()) return reply.status(400).send({ error: "Envie o ficheiro num campo 'file' (multipart)" });
+    const file = await request.file();
+    if (!file) return reply.status(400).send({ error: "Nenhum ficheiro enviado" });
+    let rows;
+    try {
+      rows = extractRows(readTable(await file.toBuffer(), file.filename));
+    } catch (err) {
+      return reply.status(400).send({ error: err instanceof Error ? err.message : "Não foi possível ler o ficheiro" });
+    }
+    if (rows.length === 0) return reply.status(400).send({ error: "Não encontrei números no ficheiro" });
+    try {
+      return await resolveContactsFromFile(tenantId, rows);
+    } catch (err) {
+      return reply.status(400).send({ error: err instanceof Error ? err.message : "Erro ao processar o ficheiro" });
+    }
   });
 
   // POST /tenant/contacts/import — CSV or XLSX upload

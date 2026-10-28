@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { MessageSquare, Send, Megaphone, AlertCircle } from 'lucide-react';
-import { smsApi, contactsApi, ApiError } from '@/lib/api';
+import { smsApi, ApiError } from '@/lib/api';
+import { ContactFileUpload } from '@/components/contacts/ContactFileUpload';
 import { Header } from '@/components/layout/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -12,11 +13,15 @@ import { Tabs } from '@/components/ui/Tabs';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/contexts/ToastContext';
-import { formatAOA, formatDate, formatPhone } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { isOpsManager } from '@/lib/roles';
+import { campaignStatusColor, campaignStatusLabel, formatAOA, formatDate, formatPhone } from '@/lib/utils';
+import { Pagination } from '@/components/ui/Pagination';
 import type { SmsStatus } from '@/types';
 
 const statusColor: Record<SmsStatus, string> = {
   QUEUED: 'bg-amber-100 text-amber-700',
+  SENDING: 'bg-amber-100 text-amber-700',
   SENT: 'bg-blue-100 text-blue-700',
   DELIVERED: 'bg-emerald-100 text-emerald-700',
   FAILED: 'bg-red-100 text-red-700',
@@ -24,6 +29,9 @@ const statusColor: Record<SmsStatus, string> = {
 
 export function SmsPage() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  // Envio gasta saldo: só OWNER/ADMIN/MANAGER (a API devolve 403 aos restantes)
+  const mayOperate = !!user && isOpsManager(user.role);
   const [tab, setTab] = useState('send');
 
   const { data: config, isLoading } = useQuery({ queryKey: ['sms-config'], queryFn: smsApi.config });
@@ -57,9 +65,9 @@ export function SmsPage() {
           ]}
         />
 
-        {tab === 'send' && <SendTab canSend={!!config?.enabled && !!config?.configured} priceCents={config?.pricePerSegmentCents ?? 0} />}
+        {tab === 'send' && <SendTab canSend={mayOperate && !!config?.enabled && !!config?.configured} priceCents={config?.pricePerSegmentCents ?? 0} />}
         {tab === 'history' && <HistoryTab />}
-        {tab === 'campaigns' && <CampaignsTab canSend={!!config?.enabled && !!config?.configured} />}
+        {tab === 'campaigns' && <CampaignsTab canSend={mayOperate && !!config?.enabled && !!config?.configured} />}
       </div>
     </div>
   );
@@ -72,10 +80,16 @@ function SendTab({ canSend, priceCents }: { canSend: boolean; priceCents: number
   const [to, setTo] = useState('');
   const [body, setBody] = useState('');
 
+  // Um pedido por tecla gastava o limite de 500 pedidos/min do utilizador.
+  const [previewBody, setPreviewBody] = useState('');
+  useEffect(() => {
+    const id = setTimeout(() => setPreviewBody(body), 400);
+    return () => clearTimeout(id);
+  }, [body]);
   const { data: preview } = useQuery({
-    queryKey: ['sms-preview', body],
-    queryFn: () => smsApi.preview(body),
-    enabled: body.length > 0,
+    queryKey: ['sms-preview', previewBody],
+    queryFn: () => smsApi.preview(previewBody),
+    enabled: previewBody.length > 0,
   });
 
   const send = useMutation({
@@ -123,7 +137,8 @@ function SendTab({ canSend, priceCents }: { canSend: boolean; priceCents: number
 
 function HistoryTab() {
   const { t } = useTranslation();
-  const { data, isLoading } = useQuery({ queryKey: ['sms-history'], queryFn: () => smsApi.list() });
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useQuery({ queryKey: ['sms-history', page], queryFn: () => smsApi.list({ page }) });
 
   if (isLoading) return <PageSpinner />;
   if (!data || data.data.length === 0)
@@ -153,6 +168,7 @@ function HistoryTab() {
           ))}
         </tbody>
       </table>
+      <Pagination page={page} total={data.total} perPage={data.perPage} onPage={setPage} />
     </Card>
   );
 }
@@ -164,21 +180,23 @@ function CampaignsTab({ canSend }: { canSend: boolean }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [body, setBody] = useState('');
+  const [audience, setAudience] = useState<'ALL' | 'FILE'>('ALL');
+  const [fileIds, setFileIds] = useState<string[]>([]);
 
   const { data: campaigns, isLoading } = useQuery({ queryKey: ['sms-campaigns'], queryFn: smsApi.campaigns });
 
   const create = useMutation({
-    mutationFn: async () => {
-      // Envia a todos os contactos (1ª versão); refinamentos de segmentação depois
-      const contacts = await contactsApi.list({ page: 1 });
-      const contactIds = contacts.data.map((c) => c.id);
-      return smsApi.createCampaign({ name, body, contactIds });
-    },
+    mutationFn: () =>
+      audience === 'ALL'
+        ? smsApi.createCampaign({ name, body, allContacts: true })
+        : smsApi.createCampaign({ name, body, contactIds: fileIds }),
     onSuccess: () => {
       toast.success(t('sms.campaignCreated'));
       setCreating(false);
       setName('');
       setBody('');
+      setAudience('ALL');
+      setFileIds([]);
       void qc.invalidateQueries({ queryKey: ['sms-campaigns'] });
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : t('common.saveError')),
@@ -190,6 +208,7 @@ function CampaignsTab({ canSend }: { canSend: boolean }) {
       toast.success(t('sms.campaignStarted'));
       void qc.invalidateQueries({ queryKey: ['sms-campaigns'] });
     },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('common.saveError')),
   });
 
   if (isLoading) return <PageSpinner />;
@@ -216,8 +235,26 @@ function CampaignsTab({ canSend }: { canSend: boolean }) {
             />
             <p className="mt-1 text-xs text-gray-400">{t('sms.templateHint')}</p>
           </div>
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-gray-700">{t('sms.audience')}</label>
+            <div className="flex gap-2">
+              {(['ALL', 'FILE'] as const).map((a) => (
+                <button
+                  key={a}
+                  type="button"
+                  onClick={() => setAudience(a)}
+                  className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    audience === a ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {a === 'ALL' ? t('sms.audienceAll') : t('sms.audienceFile')}
+                </button>
+              ))}
+            </div>
+            {audience === 'FILE' && <ContactFileUpload onResolved={(r) => setFileIds(r.contacts.map((c) => c.id))} />}
+          </div>
           <div className="flex gap-2">
-            <Button disabled={!name || !body || create.isPending} onClick={() => create.mutate()}>
+            <Button disabled={!name || !body || (audience === 'FILE' && fileIds.length === 0) || create.isPending} onClick={() => create.mutate()}>
               {t('common.create')}
             </Button>
             <Button variant="outline" onClick={() => setCreating(false)}>{t('common.cancel')}</Button>
@@ -239,8 +276,8 @@ function CampaignsTab({ canSend }: { canSend: boolean }) {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Badge className="bg-gray-100 text-gray-600">{c.status}</Badge>
-                {(c.status === 'DRAFT') && (
+                <Badge className={campaignStatusColor[c.status]}>{campaignStatusLabel(c.status)}</Badge>
+                {canSend && c.status === 'DRAFT' && (
                   <Button size="sm" onClick={() => start.mutate(c.id)} disabled={start.isPending || c.totalRecipients === 0}>
                     {t('sms.startCampaign')}
                   </Button>
