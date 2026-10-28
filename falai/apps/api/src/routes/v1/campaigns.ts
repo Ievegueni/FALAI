@@ -3,6 +3,7 @@ import { prisma, type Prisma } from "@falai/db";
 import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
 import { normalizeAoPhone, INVALID_PHONE_MESSAGE as INVALID_PHONE } from "@falai/shared";
 import { isRemovable, planRemoval } from "../../services/campaignContactRemoval.js";
+import { findBlockedScriptTerms } from "../../services/scriptPolicy.js";
 
 /** Estados em que ainda faz sentido mexer na lista de contactos da campanha. */
 const CONTACT_EDITABLE_STATUSES = ["DRAFT", "SCHEDULED", "PAUSED", "RUNNING"];
@@ -73,6 +74,14 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
     if (mode === "FIXED_SCRIPT") {
       if (!body.scriptText || body.scriptText.trim().length < 10) {
         return reply.status(400).send({ error: "scriptText is required (min 10 chars) for FIXED_SCRIPT mode" });
+      }
+      const blocked = findBlockedScriptTerms(body.scriptText);
+      if (blocked.length) {
+        return reply.status(422).send({
+          error: "scriptText contains wording that is not allowed in automated calls (legal threats, seizure, salary deduction, debtor lists). Remove it and resend.",
+          reason: "SCRIPT_POLICY_VIOLATION",
+          blockedTerms: blocked,
+        });
       }
     } else if (!body.agentId) {
       return reply.status(400).send({ error: "agentId is required for VOICE_AI mode" });

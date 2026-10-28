@@ -2,6 +2,17 @@ import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "@falai/db";
 import { z } from "zod";
 import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
+import { findBlockedScriptTerms } from "../../services/scriptPolicy.js";
+
+function scriptPolicyError(scriptText: string | undefined) {
+  const blocked = scriptText ? findBlockedScriptTerms(scriptText) : [];
+  if (!blocked.length) return null;
+  return {
+    error: `O script tem expressões que não são permitidas em chamadas automáticas: ${blocked.join(", ")}. Retire-as e volte a gravar.`,
+    reason: "SCRIPT_POLICY_VIOLATION",
+    blockedTerms: blocked,
+  };
+}
 
 const scheduleSchema = z.object({
   // "NOW" ignora a janela: a campanha liga assim que for lançada. Sem isto, uma
@@ -111,6 +122,9 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
     const body = createSchema.parse(request.body);
     const { tenantId, sub: userId } = request.tenantUser!;
 
+    const policyError = scriptPolicyError(body.scriptText);
+    if (policyError) return reply.status(422).send(policyError);
+
     if (body.mode === "VOICE_AI" || !body.mode) {
       const agent = await prisma.agent.findFirst({
         where: { id: body.agentId!, tenantId, status: "ACTIVE", deletedAt: null },
@@ -184,6 +198,9 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
     if (!["DRAFT", "SCHEDULED", "PAUSED"].includes(existing.status)) {
       return reply.status(400).send({ error: "Campanha em curso não pode ser editada. Pausa primeiro." });
     }
+
+    const policyError = scriptPolicyError(body.scriptText);
+    if (policyError) return reply.status(422).send(policyError);
 
     // O agente tem de ser deste cliente: sem isto, uma campanha podia passar a
     // ligar com o agente (prompt e voz) de outro cliente.
