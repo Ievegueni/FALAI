@@ -48,6 +48,7 @@ export type { TtsProvider } from "./tts/TtsProvider.js";
 export { ElevenLabsAdapter, silentWav } from "./tts/ElevenLabsAdapter.js";
 export type { ElevenLabsConfig } from "./tts/ElevenLabsAdapter.js";
 export { MacOsTtsAdapter } from "./tts/MacOsTtsAdapter.js";
+export { PiperTtsAdapter } from "./tts/PiperTtsAdapter.js";
 
 export type { SmsProvider, SendSmsParams, SendSmsResult } from "./sms/SmsProvider.js";
 export { countSegments } from "./sms/SmsProvider.js";
