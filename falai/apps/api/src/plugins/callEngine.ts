@@ -1,6 +1,6 @@
 import fp from "fastify-plugin";
 import { Queue } from "bullmq";
-import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter } from "@falai/providers";
+import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter, PiperTtsAdapter } from "@falai/providers";
 import type { TtsProvider, LlmProvider } from "@falai/providers";
 import { TtsVoiceValidator } from "../services/ttsVoices.service.js";
 import { prisma, releaseOrphanReservations } from "@falai/db";
@@ -42,16 +42,23 @@ export default fp(async (fastify) => {
     stubMode: llmStub,
   });
 
-  // TTS_PROVIDER=macos usa say+afconvert localmente (sem API externa)
-  const useMacTts = process.env["TTS_PROVIDER"] === "macos";
-  const tts: TtsProvider = useMacTts
-    ? new MacOsTtsAdapter("Joana")
-    : new ElevenLabsAdapter({
-        apiKey: providers.elevenlabs.apiKey,
-        stubMode: stubMode || !providers.elevenlabs.apiKey,
-      });
+  // TTS_PROVIDER=macos usa say+afconvert; =piper usa Piper+ffmpeg (PT-PT). Ambos locais, sem API externa.
+  const ttsProvider = process.env["TTS_PROVIDER"];
+  const tts: TtsProvider =
+    ttsProvider === "macos"
+      ? new MacOsTtsAdapter("Joana")
+      : ttsProvider === "piper"
+        ? new PiperTtsAdapter(
+            process.env["PIPER_BIN"] ?? "piper",
+            process.env["PIPER_MODEL"] ?? "/opt/piper/pt_PT-tugao-medium.onnx",
+          )
+        : new ElevenLabsAdapter({
+            apiKey: providers.elevenlabs.apiKey,
+            stubMode: stubMode || !providers.elevenlabs.apiKey,
+          });
 
-  const defaultVoiceId = useMacTts ? "Joana" : providers.elevenlabs.defaultVoiceId;
+  const defaultVoiceId =
+    ttsProvider === "macos" ? "Joana" : ttsProvider === "piper" ? "pt_PT-tugao" : providers.elevenlabs.defaultVoiceId;
 
   fastify.decorate("ttsVoices", new TtsVoiceValidator(fastify.redis, tts));
 
