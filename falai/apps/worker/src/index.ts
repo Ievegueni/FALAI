@@ -102,7 +102,8 @@ const webhooksOutWorker = new Worker(
 
     log.info({ jobId: job.id, status }, "webhooks_out.delivered");
   },
-  { connection, concurrency: 20 }
+  // Sem isto os jobs concluídos ficavam no Redis para sempre e encheram-no (incidente 2026-10-30).
+  { connection, concurrency: 20, removeOnComplete: { count: 1000 }, removeOnFail: { count: 1000 } }
 );
 
 webhooksOutWorker.on("failed", async (job, err) => {
@@ -215,7 +216,7 @@ const purgeWorker = new Worker(
         log.warn({ jobName: job.name }, "purge.unknown_job");
     }
   },
-  { connection, concurrency: 1 }
+  { connection, concurrency: 1, removeOnComplete: { count: 100 }, removeOnFail: { count: 100 } }
 );
 
 purgeWorker.on("failed", (job, err) => log.error({ jobId: job?.id, err }, "purge.job.failed"));
