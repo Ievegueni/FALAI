@@ -4,6 +4,14 @@ import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
 import { normalizeAoPhone, INVALID_PHONE_MESSAGE as INVALID_PHONE } from "@falai/shared";
 import { isRemovable, planRemoval } from "../../services/campaignContactRemoval.js";
 import { findBlockedScriptTerms } from "../../services/scriptPolicy.js";
+import { validateCampaignLineGroup } from "../../services/lineGroups.js";
+
+async function tenantLineGroups(tenantId: string) {
+  return prisma.tenant.findUniqueOrThrow({
+    where: { id: tenantId },
+    select: { lineGroupLimits: true, defaultLineGroup: true },
+  });
+}
 
 /** Estados em que ainda faz sentido mexer na lista de contactos da campanha. */
 const CONTACT_EDITABLE_STATUSES = ["DRAFT", "SCHEDULED", "PAUSED", "RUNNING"];
@@ -22,7 +30,7 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
         select: {
           id: true, name: true, status: true, mode: true, agentId: true,
           totalContacts: true, completed: true, failedCount: true,
-          scheduleJson: true, createdAt: true, updatedAt: true,
+          scheduleJson: true, lineGroup: true, createdAt: true, updatedAt: true,
         },
         orderBy: { createdAt: "desc" },
         take: limit,
@@ -43,7 +51,7 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       select: {
         id: true, tenantId: true, name: true, status: true, mode: true, agentId: true, scriptText: true, ttsVoiceId: true,
         totalContacts: true, completed: true, failedCount: true,
-        scheduleJson: true, retryPolicy: true, throttlePerMinute: true,
+        scheduleJson: true, retryPolicy: true, throttlePerMinute: true, lineGroup: true,
         summary: true, createdAt: true, updatedAt: true,
       },
     });
@@ -63,6 +71,7 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       scheduleJson?: Record<string, unknown>;
       retryPolicy?: Record<string, unknown>;
       throttlePerMinute?: number;
+      lineGroup?: string | null;
     };
 
     if (!body.name) return reply.status(400).send({ error: "name is required" });
@@ -101,11 +110,17 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       if (!voiceCheck.ok) return reply.status(400).send({ error: voiceCheck.error });
     }
 
+    const lineGroup = validateCampaignLineGroup(body.lineGroup, await tenantLineGroups(tenantId));
+    if (!lineGroup.ok) {
+      return reply.status(400).send({ error: lineGroup.error, ...(lineGroup.allowed && { allowedLineGroups: lineGroup.allowed }) });
+    }
+
     const campaign = await prisma.campaign.create({
       data: {
         tenantId,
         mode,
         name: body.name,
+        ...(lineGroup.value != null && { lineGroup: lineGroup.value }),
         ...(body.agentId !== undefined && { agentId: body.agentId }),
         ...(body.scriptText !== undefined && { scriptText: body.scriptText }),
         ...(body.ttsVoiceId !== undefined && { ttsVoiceId: body.ttsVoiceId }),
@@ -113,10 +128,34 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
         ...(body.retryPolicy !== undefined && { retryPolicy: body.retryPolicy as Prisma.InputJsonValue }),
         ...(body.throttlePerMinute !== undefined && { throttlePerMinute: body.throttlePerMinute }),
       },
-      select: { id: true, name: true, status: true, mode: true, agentId: true, createdAt: true },
+      select: { id: true, name: true, status: true, mode: true, agentId: true, lineGroup: true, createdAt: true },
     });
 
     return reply.status(201).send(campaign);
+  });
+
+  // PATCH /v1/campaigns/:id — por agora só muda o grupo de linhas. Vale em
+  // qualquer estado (incluindo RUNNING): o dispatcher lê-o em cada ciclo.
+  fastify.patch("/v1/campaigns/:id", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
+    const tenantId = request.apiKey!.tenantId;
+    const { id } = request.params as { id: string };
+    const body = (request.body ?? {}) as { lineGroup?: string | null };
+
+    const existing = await prisma.campaign.findFirst({ where: { id, tenantId }, select: { id: true } });
+    if (!existing) return reply.status(404).send({ error: "Campaign not found" });
+
+    if (body.lineGroup === undefined) return reply.status(400).send({ error: "lineGroup is required" });
+    const lineGroup = validateCampaignLineGroup(body.lineGroup, await tenantLineGroups(tenantId));
+    if (!lineGroup.ok) {
+      return reply.status(400).send({ error: lineGroup.error, ...(lineGroup.allowed && { allowedLineGroups: lineGroup.allowed }) });
+    }
+
+    const campaign = await prisma.campaign.update({
+      where: { id },
+      data: { lineGroup: lineGroup.value ?? null },
+      select: { id: true, name: true, status: true, lineGroup: true, updatedAt: true },
+    });
+    return reply.send(campaign);
   });
 
   // POST /v1/campaigns/:id/contacts — põe contactos numa campanha DRAFT/SCHEDULED.

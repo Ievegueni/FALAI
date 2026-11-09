@@ -176,6 +176,12 @@ model Tenant {
   webhookUrl           String?
   webhookSecret        String?
   maxConcurrent        Int                 @default(1)
+  // Grupos de linhas: divide as `maxConcurrent` por tipo de campanha, ex.
+  // { "COBRANCA": 6, "MARKETING": 6 }. Cada grupo só usa as suas linhas; o
+  // total do cliente (`maxConcurrent`) continua a valer por cima. null = sem grupos.
+  lineGroupLimits      Json?
+  // Grupo das campanhas criadas sem `lineGroup` (ex.: "COBRANCA").
+  defaultLineGroup     String?
   // Overrides de funcionalidades por tenant (Json { agents, campaigns, contacts, ... }).
   // Sobrepõe-se aos defaults e às capacidades do plano; ver services/features.ts
   features             Json?
@@ -1004,6 +1010,8 @@ model Campaign {
   scheduleJson      Json?
   retryPolicy       Json?
   throttlePerMinute Int               @default(2)
+  // Grupo de linhas (ver Tenant.lineGroupLimits). null = grupo por omissão do cliente.
+  lineGroup         String?
   totalContacts     Int               @default(0)
   completed         Int               @default(0)
   failedCount       Int               @default(0)

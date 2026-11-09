@@ -832,6 +832,7 @@
       "contactsDelete": "永久删除联系人",
       "contactsOptOut": "永久阻止再次联系此联系人",
       "campaignsCreate": "创建新活动（AI 坐席或固定 TTS 话术）",
+      "campaignsUpdate": "更改活动的线路组（例如催收或营销）",
       "campaignsAddContacts": "批量添加联系人到活动（每次最多 5000 个）。可直接传入 phones 或 contacts 号码：不存在的自动创建，已存在的直接复用，不会重复创建",
       "campaignsLaunch": "启动活动并立即开始拨打电话",
       "campaignsList": "列出租户的活动",

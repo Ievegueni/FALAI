@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
-import { prisma, chargeMonthlyInvoice } from "@falai/db";
+import { prisma, chargeMonthlyInvoice, Prisma } from "@falai/db";
 import { z } from "zod";
 import { assertPublicWebhookUrl } from "@falai/providers";
 import { hashPassword } from "../../services/auth.service.js";
@@ -15,6 +15,7 @@ import { checkNumber } from "../../services/waPool.service.js";
 import { registerIvrRouting, type RoutingCtx } from "../shared/ivrRouting.js";
 import { registerExtensions } from "../shared/extensions.js";
 import { crmUrlFor, subdomainError } from "../../services/tenantHost.js";
+import { normalizeLineGroup, parseLineGroupLimits, LINE_GROUP_MAX_LIMIT } from "../../services/lineGroups.js";
 
 const lineCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -77,6 +78,9 @@ const updateSchema = z.object({
   aiReportDailyLimit: z.number().int().min(0).max(1000).optional(), // análises IA dos relatórios por dia (0 = desligado)
   // Endereço próprio no CRM (credito → credito.falai.ao). "" ou null = sem endereço próprio.
   subdomain: z.string().trim().toLowerCase().nullable().optional(),
+  // Grupos de linhas: { "COBRANCA": 6, "MARKETING": 6 }; {} ou null = sem grupos.
+  lineGroupLimits: z.record(z.string(), z.number().int().min(1).max(LINE_GROUP_MAX_LIMIT)).nullable().optional(),
+  defaultLineGroup: z.string().max(40).nullable().optional(),
 });
 
 const smsConfigSchema = z.object({
@@ -140,6 +144,8 @@ function mapTenant(t: any) {
       : null,
     // O limite efectivo: é este que o dispatcher de campanhas respeita.
     maxConcurrentCalls: t.maxConcurrent,
+    lineGroupLimits: parseLineGroupLimits(t.lineGroupLimits),
+    defaultLineGroup: t.defaultLineGroup ?? null,
     billingModeOverride: t.billingModeOverride ?? null,
     pricePerMinuteOverrideCents: t.pricePerMinuteOverrideCents ?? null,
     recordCalls: t.recordCalls ?? false,
@@ -299,6 +305,43 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(400).send({ error: "Define o texto da mensagem antes de ligar o SMS automático" });
     }
 
+    // Grupos de linhas: normaliza os nomes ("Cobrança" → "COBRANCA") e garante
+    // que o grupo por omissão é um dos grupos.
+    let lineGroupLimits: Record<string, number> | null | undefined;
+    if (body.lineGroupLimits !== undefined) {
+      if (body.lineGroupLimits === null || Object.keys(body.lineGroupLimits).length === 0) {
+        lineGroupLimits = null;
+      } else {
+        lineGroupLimits = {};
+        for (const [k, v] of Object.entries(body.lineGroupLimits)) {
+          const name = normalizeLineGroup(k);
+          if (!name) return reply.status(400).send({ error: `Nome de grupo inválido: "${k}" (letras, números, _ ou -, máx. 32)` });
+          if (lineGroupLimits[name] !== undefined) return reply.status(400).send({ error: `Grupo repetido: ${name}` });
+          lineGroupLimits[name] = v;
+        }
+      }
+    }
+    let defaultLineGroup: string | null | undefined;
+    if (body.defaultLineGroup !== undefined) {
+      defaultLineGroup = body.defaultLineGroup ? normalizeLineGroup(body.defaultLineGroup) : null;
+      if (body.defaultLineGroup && !defaultLineGroup) return reply.status(400).send({ error: "Grupo por omissão inválido" });
+    }
+    if (lineGroupLimits !== undefined || defaultLineGroup !== undefined) {
+      const current = await prisma.tenant.findUnique({
+        where: { id: request.params.id },
+        select: { lineGroupLimits: true, defaultLineGroup: true },
+      });
+      const finalLimits = lineGroupLimits !== undefined ? (lineGroupLimits ?? {}) : parseLineGroupLimits(current?.lineGroupLimits);
+      let finalDefault = defaultLineGroup !== undefined ? defaultLineGroup : (current?.defaultLineGroup ?? null);
+      // Sem grupos, o grupo por omissão não faz sentido; se o grupo por omissão
+      // foi removido da lista, recusa em vez de deixar campanhas sem limite.
+      if (Object.keys(finalLimits).length === 0) finalDefault = null;
+      else if (finalDefault && finalLimits[finalDefault] === undefined) {
+        return reply.status(400).send({ error: `O grupo por omissão (${finalDefault}) tem de estar na lista de grupos` });
+      }
+      defaultLineGroup = finalDefault;
+    }
+
     invalidateTenantFeatures(request.params.id); // pode mudar de plano
     const tenant = await prisma.tenant.update({
       where: { id: request.params.id },
@@ -320,6 +363,8 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.missedCallSmsText !== undefined && { missedCallSmsText: body.missedCallSmsText }),
         ...(body.aiReportDailyLimit !== undefined && { aiReportDailyLimit: body.aiReportDailyLimit }),
         ...(subdomain !== undefined && { subdomain }),
+        ...(lineGroupLimits !== undefined && { lineGroupLimits: lineGroupLimits ?? Prisma.DbNull }),
+        ...(defaultLineGroup !== undefined && { defaultLineGroup }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },
     }).catch((err: { code?: string }) => {

@@ -3,6 +3,14 @@ import { prisma } from "@falai/db";
 import { z } from "zod";
 import { enqueueWebhook } from "../../services/webhookDispatch.service.js";
 import { findBlockedScriptTerms } from "../../services/scriptPolicy.js";
+import { validateCampaignLineGroup } from "../../services/lineGroups.js";
+
+async function tenantLineGroups(tenantId: string) {
+  return prisma.tenant.findUniqueOrThrow({
+    where: { id: tenantId },
+    select: { lineGroupLimits: true, defaultLineGroup: true },
+  });
+}
 
 function scriptPolicyError(scriptText: string | undefined) {
   const blocked = scriptText ? findBlockedScriptTerms(scriptText) : [];
@@ -36,6 +44,7 @@ const createSchema = z.object({
     .object({ maxAttempts: z.number().int().min(1).max(5), retryDelayMinutes: z.number().int().min(1) })
     .optional(),
   throttlePerMinute: z.number().int().min(1).max(100).default(2),
+  lineGroup: z.string().max(40).nullable().optional(),
 }).refine(
   (d) => d.mode === "FIXED_SCRIPT" ? !!d.scriptText : !!d.agentId,
   { message: "VOICE_AI requer agentId; FIXED_SCRIPT requer scriptText" }
@@ -51,6 +60,7 @@ const updateSchema = z.object({
     .object({ maxAttempts: z.number().int().min(1).max(5), retryDelayMinutes: z.number().int().min(1) })
     .optional(),
   throttlePerMinute: z.number().int().min(1).max(100).optional(),
+  lineGroup: z.string().max(40).nullable().optional(),
 });
 
 const addContactsSchema = z.object({
@@ -137,10 +147,14 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       if (!voiceCheck.ok) return reply.status(400).send({ error: voiceCheck.error });
     }
 
+    const lineGroup = validateCampaignLineGroup(body.lineGroup, await tenantLineGroups(tenantId));
+    if (!lineGroup.ok) return reply.status(400).send({ error: lineGroup.error, allowedLineGroups: lineGroup.allowed });
+
     const campaign = await prisma.campaign.create({
       data: {
         tenantId,
         mode: body.mode,
+        ...(lineGroup.value != null && { lineGroup: lineGroup.value }),
         ...(body.agentId && { agentId: body.agentId }),
         ...(body.scriptText !== undefined && { scriptText: body.scriptText }),
         ...(body.ttsVoiceId !== undefined && { ttsVoiceId: body.ttsVoiceId }),
@@ -217,9 +231,13 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       if (!voiceCheck.ok) return reply.status(400).send({ error: voiceCheck.error });
     }
 
+    const lineGroup = validateCampaignLineGroup(body.lineGroup, await tenantLineGroups(tenantId));
+    if (!lineGroup.ok) return reply.status(400).send({ error: lineGroup.error, allowedLineGroups: lineGroup.allowed });
+
     const campaign = await prisma.campaign.update({
       where: { id: existing.id },
       data: {
+        ...(lineGroup.value !== undefined && { lineGroup: lineGroup.value }),
         ...(body.name !== undefined && { name: body.name }),
         ...(body.agentId !== undefined && { agentId: body.agentId }),
         ...(body.scriptText !== undefined && { scriptText: body.scriptText }),
@@ -824,6 +842,7 @@ export const tenantCampaignsRoutes: FastifyPluginAsync = async (fastify) => {
       scheduleJson: campaign.scheduleJson,
       retryPolicy: campaign.retryPolicy,
       throttlePerMinute: campaign.throttlePerMinute,
+      lineGroup: campaign.lineGroup,
       summary,
       startedAt: null,
       completedAt: null,

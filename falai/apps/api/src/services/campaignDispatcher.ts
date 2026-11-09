@@ -6,6 +6,7 @@ import { reserveBalance, computeReservation, effectivePrice, type PriceConfig } 
 import { resolveOutboundExtension, NoOutboundLineError } from "./outboundExtension.service.js";
 import { enqueueWebhook } from "./webhookDispatch.service.js";
 import { parseRetryPolicy } from "./callSettlement.service.js";
+import { resolveLineGroup, lineGroupCallFilter } from "./lineGroups.js";
 
 const DISPATCH_INTERVAL_MS = 30_000; // every 30 seconds
 
@@ -145,9 +146,10 @@ export class CampaignDispatcher {
       scriptText: string | null;
       ttsVoiceId: string | null;
       throttlePerMinute: number;
+      lineGroup: string | null;
       scheduleJson: unknown;
       retryPolicy: unknown;
-      tenant: { balanceCents: number; creditLimitCents: number; maxConcurrent: number; billingModeOverride: BillingMode | null; pricePerMinuteOverrideCents: number | null; plan: { billingMode: BillingMode; pricePerMinuteCents: number; pricePerCallCents: number } };
+      tenant: { balanceCents: number; creditLimitCents: number; maxConcurrent: number; lineGroupLimits: unknown; defaultLineGroup: string | null; billingModeOverride: BillingMode | null; pricePerMinuteOverrideCents: number | null; plan: { billingMode: BillingMode; pricePerMinuteCents: number; pricePerCallCents: number } };
       agent: { systemPrompt: string; ttsVoiceId: string | null; maxCallSeconds: number; maxTurnSeconds: number; escalationNumber: string | null } | null;
     },
     now: Date
@@ -229,8 +231,30 @@ export class CampaignDispatcher {
       return;
     }
 
+    // Grupo de linhas (ex.: cobrança/marketing): cada grupo só usa as suas.
+    let groupFree = Infinity;
+    const lineGroup = resolveLineGroup(campaign.lineGroup, tenant);
+    if (lineGroup) {
+      const groupActive = await prisma.call.count({
+        where: {
+          tenantId: campaign.tenantId,
+          status: { in: ["DIALING", "RINGING", "IN_PROGRESS"] },
+          ...lineGroupCallFilter(lineGroup),
+        },
+      });
+      if (groupActive >= lineGroup.limit) {
+        this.log.warn(
+          { campaignId: campaign.id, tenantId: campaign.tenantId, lineGroup: lineGroup.group, groupActive, groupLimit: lineGroup.limit },
+          "dispatcher.campaign_waiting_for_group_slot"
+        );
+        return;
+      }
+      groupFree = lineGroup.limit - groupActive;
+    }
+
     const slotsAvailable = Math.min(
       tenant.maxConcurrent - activeCalls,
+      groupFree,
       campaign.throttlePerMinute
     );
 

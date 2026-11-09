@@ -834,6 +834,7 @@
       "contactsDelete": "Eliminar um contacto permanentemente",
       "contactsOptOut": "Impedir permanentemente que o contacto seja contactado",
       "campaignsCreate": "Criar uma nova campanha (IA por agente ou script fixo por TTS)",
+      "campaignsUpdate": "Mudar o grupo de linhas de uma campanha (ex.: cobrança ou marketing)",
       "campaignsAddContacts": "Adicionar contactos em massa a uma campanha (até 5000 por pedido). Aceita phones ou contacts com os números directamente: quem não existir é criado, quem já existir é reaproveitado sem duplicar",
       "campaignsLaunch": "Iniciar a campanha e disparar as chamadas imediatamente",
       "campaignsList": "Listar campanhas do tenant",

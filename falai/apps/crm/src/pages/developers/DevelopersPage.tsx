@@ -563,7 +563,8 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
   "ttsVoiceId": "CwhRBWXzGAHq8TQ4Fs17", // opcional — só usado em FIXED_SCRIPT; ID de voz da ElevenLabs, omitir usa a voz por omissão da conta
   "scheduleJson": { "startHour": 8, "endHour": 20 }, // opcional — janela horária de chamadas
   "retryPolicy": { "maxAttempts": 3, "retryDelayMinutes": 30 }, // opcional
-  "throttlePerMinute": 5          // opcional — chamadas simultâneas por minuto (default 2)
+  "throttlePerMinute": 5,         // opcional — chamadas simultâneas por minuto (default 2)
+  "lineGroup": "COBRANCA"         // opcional — grupo de linhas (ex.: COBRANCA, MARKETING); sem ele vai para o grupo por omissão da conta
 }`,
         response: `{
   "id": "cmp_001",
@@ -571,7 +572,22 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
   "status": "DRAFT",
   "mode": "FIXED_SCRIPT",
   "agentId": null,
+  "lineGroup": "COBRANCA",
   "createdAt": "2026-07-20T10:00:00.000Z"
+}`,
+      },
+      {
+        method: 'PATCH', path: '/v1/campaigns/:id', descKey: 'developers.ep.campaignsUpdate', scope: 'campaigns:write',
+        params: [{ name: 'id', type: 'string', required: true, descKey: 'developers.param.campaignId' }],
+        body: `{
+  "lineGroup": "MARKETING"   // obrigatório — muda o grupo de linhas (vale também com a campanha a correr); null = grupo por omissão
+}`,
+        response: `{
+  "id": "cmp_001",
+  "name": "Recuperação Julho",
+  "status": "RUNNING",
+  "lineGroup": "MARKETING",
+  "updatedAt": "2026-07-20T10:05:00.000Z"
 }`,
       },
       {
@@ -621,6 +637,7 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
   "completed": 132,
   "failedCount": 18,
   "throttlePerMinute": 5,
+  "lineGroup": "COBRANCA",
   "createdAt": "2026-07-20T10:00:00.000Z"
 }`,
       },

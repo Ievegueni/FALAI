@@ -214,6 +214,9 @@ export interface Tenant {
   planId: string;
   plan: Plan;
   maxConcurrentCalls: number;
+  /** Grupos de linhas, ex. { COBRANCA: 6, MARKETING: 6 }. Vazio = sem grupos. */
+  lineGroupLimits?: Record<string, number>;
+  defaultLineGroup?: string | null;
   features?: TenantFeatures;
   featureOverrides?: Partial<TenantFeatures>;
   /** Funcionalidades que o plano desliga e nenhum override liga. */

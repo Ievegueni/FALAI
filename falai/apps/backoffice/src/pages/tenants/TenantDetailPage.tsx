@@ -11,6 +11,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { TenantIvrTab } from './TenantIvrTab';
 import { TenantExtensionsTab } from './TenantExtensionsTab';
 import { TenantAccessProfilesTab } from './TenantAccessProfilesTab';
+import { TenantLineGroups } from './TenantLineGroups';
 import {
   formatAOA, formatDate, formatDuration, parseKz,
   tenantStatusColor, tenantStatusLabel,
@@ -498,6 +499,13 @@ export function TenantDetailPage() {
                   <span className="text-xs text-gray-400">plano: {tenant.plan?.maxConcurrentCalls ?? '–'}</span>
                 </dd>
               </div>
+              <TenantLineGroups
+                tenantId={tenant.id}
+                maxConcurrent={tenant.maxConcurrentCalls ?? 1}
+                lineGroupLimits={tenant.lineGroupLimits ?? {}}
+                defaultLineGroup={tenant.defaultLineGroup ?? null}
+                onSaved={invalidateTenant}
+              />
               <div className="flex justify-between items-center gap-4">
                 <dt className="text-gray-500">Análises IA dos relatórios / dia</dt>
                 <dd className="flex items-center gap-2">
