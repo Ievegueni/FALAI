@@ -1012,6 +1012,11 @@ model Campaign {
   throttlePerMinute Int               @default(2)
   // Grupo de linhas (ver Tenant.lineGroupLimits). null = grupo por omissão do cliente.
   lineGroup         String?
+  // SMS enviado a quem ATENDEU a chamada desta campanha (ex.: "envio-lhe o link
+  // por SMS"). null = não envia. Aceita {nome}, {numero} e {empresa}.
+  postCallSmsText     String?         @db.Text
+  // Remetente dessa SMS; null = o remetente do cliente (Tenant.smsSenderId).
+  postCallSmsSenderId String?
   totalContacts     Int               @default(0)
   completed         Int               @default(0)
   failedCount       Int               @default(0)
@@ -1109,6 +1114,9 @@ model SmsMessage {
   // automático por chamada não atendida — é por aqui que o travão de um SMS por
   // número por dia conta só os automáticos, sem ser enganado por um envio manual.
   trigger       String?
+  // Chamada que originou a mensagem (SMS pós-chamada). Serve o travão de uma
+  // SMS por chamada. Sem FK: a mensagem não deve impedir apagar a chamada.
+  callId        String?
   failReason    String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
@@ -1117,6 +1125,7 @@ model SmsMessage {
   @@index([providerMsgId])
   // Serve o travão de um SMS automático por número por dia.
   @@index([tenantId, toNumber, trigger, createdAt])
+  @@index([callId])
 }
 
 // Campanha de SMS em massa (espelha as campanhas de voz, mas para SMS).

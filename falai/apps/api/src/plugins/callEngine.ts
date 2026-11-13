@@ -11,6 +11,7 @@ import { TurnProcessor } from "../services/TurnProcessor.js";
 import { CallEngineService } from "../services/CallEngineService.js";
 import { settleCampaignContact } from "../services/callSettlement.service.js";
 import { notifyMissedCall } from "../services/missedCallSms.service.js";
+import { notifyPostCall } from "../services/postCallSms.service.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -77,6 +78,9 @@ export default fp(async (fastify) => {
       // Settle campaign contact (retry or mark done)
       settleCampaignContact({ callId, tenantId, status, log: fastify.log })
         .catch((err) => fastify.log.error({ err, callId }, "settlement.failed"));
+
+      // SMS pós-chamada da campanha (ex.: link prometido no áudio). Nunca lança.
+      void notifyPostCall({ fastify, tenantId, callId, status, log: fastify.log });
 
       // Não atenderam o agente: responde-se por SMS, se o cliente o tiver
       // pedido. Vai daqui e não do CallEngineService para o motor de conversa

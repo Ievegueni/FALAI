@@ -97,6 +97,10 @@ export interface SendSmsInput {
   campaignId?: string | null;
   /** O que originou a mensagem; ausente = envio manual. Ver SmsMessage.trigger. */
   trigger?: string;
+  /** Remetente desta mensagem; ausente = o do cliente (Tenant.smsSenderId). */
+  senderId?: string | null;
+  /** Chamada que originou a mensagem (SMS pós-chamada). */
+  callId?: string | null;
 }
 
 export interface SentSms {
@@ -115,6 +119,7 @@ export async function sendSms(fastify: FastifyInstance, tenantId: string, input:
   if (!cfg.smsEnabled) throw new SmsDisabledError();
   if (!cfg.apiKey) throw new SmsNotConfiguredError();
 
+  const senderId = input.senderId || cfg.senderId;
   const segments = countSegments(input.body);
   const costCents = segments * cfg.pricePerSegmentCents;
 
@@ -137,8 +142,9 @@ export async function sendSms(fastify: FastifyInstance, tenantId: string, input:
       segments,
       costCents,
       status: "SENDING",
-      senderId: cfg.senderId,
+      senderId,
       ...(contactId ? { contactId } : {}),
+      ...(input.callId ? { callId: input.callId } : {}),
       ...(input.campaignId ? { campaignId: input.campaignId } : {}),
       ...(input.trigger ? { trigger: input.trigger } : {}),
     },
@@ -153,7 +159,7 @@ export async function sendSms(fastify: FastifyInstance, tenantId: string, input:
     const res = await adapter.send({
       to: input.to,
       body: input.body,
-      ...(cfg.senderId ? { senderId: cfg.senderId } : {}),
+      ...(senderId ? { senderId } : {}),
       reference: msg.id,
     });
     if (res.accepted) {

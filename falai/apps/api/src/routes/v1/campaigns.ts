@@ -5,6 +5,12 @@ import { normalizeAoPhone, INVALID_PHONE_MESSAGE as INVALID_PHONE } from "@falai
 import { isRemovable, planRemoval } from "../../services/campaignContactRemoval.js";
 import { findBlockedScriptTerms } from "../../services/scriptPolicy.js";
 import { validateCampaignLineGroup } from "../../services/lineGroups.js";
+import { parsePostCallSms, tenantCanSendSms, type PostCallSmsInput } from "../../services/postCallSms.service.js";
+
+const SMS_NOT_CONFIGURED = {
+  error: "SMS is not enabled for this account; postCallSms cannot be used. Contact support.",
+  code: "SMS_NOT_CONFIGURED",
+};
 
 async function tenantLineGroups(tenantId: string) {
   return prisma.tenant.findUniqueOrThrow({
@@ -52,12 +58,17 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
         id: true, tenantId: true, name: true, status: true, mode: true, agentId: true, scriptText: true, ttsVoiceId: true,
         totalContacts: true, completed: true, failedCount: true,
         scheduleJson: true, retryPolicy: true, throttlePerMinute: true, lineGroup: true,
+        postCallSmsText: true, postCallSmsSenderId: true,
         summary: true, createdAt: true, updatedAt: true,
       },
     });
 
     if (!campaign || campaign.tenantId !== tenantId) return reply.status(404).send({ error: "Campaign not found" });
-    return reply.send(campaign);
+    const { postCallSmsText, postCallSmsSenderId, ...rest } = campaign;
+    return reply.send({
+      ...rest,
+      postCallSms: postCallSmsText ? { text: postCallSmsText, senderId: postCallSmsSenderId } : null,
+    });
   });
 
   fastify.post("/v1/campaigns", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
@@ -72,6 +83,7 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       retryPolicy?: Record<string, unknown>;
       throttlePerMinute?: number;
       lineGroup?: string | null;
+      postCallSms?: PostCallSmsInput;
     };
 
     if (!body.name) return reply.status(400).send({ error: "name is required" });
@@ -115,12 +127,21 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       return reply.status(400).send({ error: lineGroup.error, ...(lineGroup.allowed && { allowedLineGroups: lineGroup.allowed }) });
     }
 
+    let postCallSms: { text: string; senderId: string | null } | null = null;
+    if (body.postCallSms !== undefined) {
+      const parsed = parsePostCallSms(body.postCallSms);
+      if (!parsed.ok) return reply.status(400).send({ error: parsed.error });
+      postCallSms = parsed.value;
+      if (postCallSms && !(await tenantCanSendSms(tenantId))) return reply.status(422).send(SMS_NOT_CONFIGURED);
+    }
+
     const campaign = await prisma.campaign.create({
       data: {
         tenantId,
         mode,
         name: body.name,
         ...(lineGroup.value != null && { lineGroup: lineGroup.value }),
+        ...(postCallSms && { postCallSmsText: postCallSms.text, postCallSmsSenderId: postCallSms.senderId }),
         ...(body.agentId !== undefined && { agentId: body.agentId }),
         ...(body.scriptText !== undefined && { scriptText: body.scriptText }),
         ...(body.ttsVoiceId !== undefined && { ttsVoiceId: body.ttsVoiceId }),
@@ -131,31 +152,48 @@ export async function v1CampaignsRoutes(fastify: FastifyInstance): Promise<void>
       select: { id: true, name: true, status: true, mode: true, agentId: true, lineGroup: true, createdAt: true },
     });
 
-    return reply.status(201).send(campaign);
+    return reply.status(201).send({ ...campaign, postCallSms });
   });
 
-  // PATCH /v1/campaigns/:id — por agora só muda o grupo de linhas. Vale em
-  // qualquer estado (incluindo RUNNING): o dispatcher lê-o em cada ciclo.
+  // PATCH /v1/campaigns/:id — muda o grupo de linhas e/ou a SMS pós-chamada.
+  // Vale em qualquer estado (incluindo RUNNING): ambos são lidos a cada chamada.
   fastify.patch("/v1/campaigns/:id", { preHandler: [fastify.verifyScope("campaigns:write")] }, async (request, reply) => {
     const tenantId = request.apiKey!.tenantId;
     const { id } = request.params as { id: string };
-    const body = (request.body ?? {}) as { lineGroup?: string | null };
+    const body = (request.body ?? {}) as { lineGroup?: string | null; postCallSms?: PostCallSmsInput };
 
     const existing = await prisma.campaign.findFirst({ where: { id, tenantId }, select: { id: true } });
     if (!existing) return reply.status(404).send({ error: "Campaign not found" });
 
-    if (body.lineGroup === undefined) return reply.status(400).send({ error: "lineGroup is required" });
-    const lineGroup = validateCampaignLineGroup(body.lineGroup, await tenantLineGroups(tenantId));
-    if (!lineGroup.ok) {
-      return reply.status(400).send({ error: lineGroup.error, ...(lineGroup.allowed && { allowedLineGroups: lineGroup.allowed }) });
+    if (body.lineGroup === undefined && body.postCallSms === undefined) {
+      return reply.status(400).send({ error: "lineGroup or postCallSms is required" });
+    }
+    const data: Prisma.CampaignUpdateInput = {};
+    if (body.lineGroup !== undefined) {
+      const lineGroup = validateCampaignLineGroup(body.lineGroup, await tenantLineGroups(tenantId));
+      if (!lineGroup.ok) {
+        return reply.status(400).send({ error: lineGroup.error, ...(lineGroup.allowed && { allowedLineGroups: lineGroup.allowed }) });
+      }
+      data.lineGroup = lineGroup.value ?? null;
+    }
+    if (body.postCallSms !== undefined) {
+      const parsed = parsePostCallSms(body.postCallSms);
+      if (!parsed.ok) return reply.status(400).send({ error: parsed.error });
+      if (parsed.value && !(await tenantCanSendSms(tenantId))) return reply.status(422).send(SMS_NOT_CONFIGURED);
+      data.postCallSmsText = parsed.value?.text ?? null;
+      data.postCallSmsSenderId = parsed.value?.senderId ?? null;
     }
 
     const campaign = await prisma.campaign.update({
       where: { id },
-      data: { lineGroup: lineGroup.value ?? null },
-      select: { id: true, name: true, status: true, lineGroup: true, updatedAt: true },
+      data,
+      select: { id: true, name: true, status: true, lineGroup: true, postCallSmsText: true, postCallSmsSenderId: true, updatedAt: true },
     });
-    return reply.send(campaign);
+    const { postCallSmsText, postCallSmsSenderId, ...rest } = campaign;
+    return reply.send({
+      ...rest,
+      postCallSms: postCallSmsText ? { text: postCallSmsText, senderId: postCallSmsSenderId } : null,
+    });
   });
 
   // POST /v1/campaigns/:id/contacts — põe contactos numa campanha DRAFT/SCHEDULED.
