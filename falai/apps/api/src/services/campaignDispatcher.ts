@@ -64,6 +64,14 @@ function isWithinWindow(schedule: unknown, now: Date): boolean {
 
 export class CampaignDispatcher {
   private timer: ReturnType<typeof setInterval> | null = null;
+  // Tudo o que conta vagas e marca chamadas passa por esta fila, uma coisa de
+  // cada vez. Antes, o tick (30 s) e os processNow() que cada criação de
+  // campanha dispara corriam em paralelo: todos liam as mesmas vagas livres
+  // antes de as chamadas dos outros existirem na BD e o cliente passava muito
+  // do maxConcurrent (ex.: FÁCIL CRÉDITO com 20-30 simultâneas às 08:00 e
+  // 09:00, quando entram os lotes novos, e o operador a rejeitar chamadas).
+  private queue: Promise<void> = Promise.resolve();
+  private tickQueued = false;
 
   constructor(
     private telephony: TelephonyProvider,
@@ -74,7 +82,17 @@ export class CampaignDispatcher {
   start(): void {
     if (this.timer) return;
     this.timer = setInterval(() => {
-      this.tick().catch((err) => this.log.error({ err }, "dispatcher.tick_error"));
+      // Se ainda há um tick à espera ou a correr, não se empilha outro.
+      if (this.tickQueued) {
+        this.log.warn("dispatcher.tick_skipped_previous_running");
+        return;
+      }
+      this.tickQueued = true;
+      this.serialize(() => this.tick())
+        .catch((err) => this.log.error({ err }, "dispatcher.tick_error"))
+        .finally(() => {
+          this.tickQueued = false;
+        });
     }, DISPATCH_INTERVAL_MS);
     this.log.info({ intervalMs: DISPATCH_INTERVAL_MS }, "dispatcher.started");
   }
@@ -84,6 +102,13 @@ export class CampaignDispatcher {
       clearInterval(this.timer);
       this.timer = null;
     }
+  }
+
+  /** Corre `fn` depois de tudo o que já está na fila (nunca em paralelo). */
+  private serialize(fn: () => Promise<void>): Promise<void> {
+    const run = this.queue.then(fn, fn);
+    this.queue = run.catch(() => undefined);
+    return run;
   }
 
   private async tick(): Promise<void> {
@@ -115,6 +140,10 @@ export class CampaignDispatcher {
 
   /** Processa imediatamente uma campanha específica sem esperar pelo próximo tick. */
   async processNow(campaignId: string): Promise<void> {
+    return this.serialize(() => this.processNowUnlocked(campaignId));
+  }
+
+  private async processNowUnlocked(campaignId: string): Promise<void> {
     const now = new Date();
     const campaign = await prisma.campaign.findFirst({
       where: { id: campaignId, status: "RUNNING" },
