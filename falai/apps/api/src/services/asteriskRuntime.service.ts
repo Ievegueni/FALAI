@@ -30,6 +30,7 @@ import { chmod, chown, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TrunkRuntimeAdapter, PbxSyncPayload, PbxSyncResult } from "@falai/providers";
 import { trunkEndpointId, extensionEndpointId, extensionWebEndpointId, holdMusicClass, holdMusicDir } from "@falai/providers";
+import { pickOutboundTrunk, sharedOutboundTrunk } from "./tenantOutboundTrunk.js";
 
 const AMI_URL = process.env["ASTERISK_AMI_URL"] ?? "";
 const AMI_USER = process.env["ASTERISK_AMI_USER"] ?? "";
@@ -156,7 +157,10 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
   }
 
   private buildGlobals(payload: PbxSyncPayload): string {
-    const trunk = payload.trunks.find((t) => t.enabled);
+    // Saída por omissão = só um tronco PARTILHADO (tenantId nulo). Antes era
+    // "o primeiro tronco ativo", e bastava a ordem da BD mudar para todos os
+    // clientes saírem pelo tronco privado de outro.
+    const trunk = sharedOutboundTrunk(payload.trunks);
 
     // CDR do webphone/hardphone: o contexto [falai-cdr] do extensions.conf
     // entrega a chamada terminada à API por CURL. Precisa de saber o endereço
@@ -355,6 +359,19 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
     }
 
     for (const e of payload.extensions) {
+      // Cliente com tronco próprio: as chamadas marcadas nesta extensão saem
+      // por ele (variáveis de canal sobrepõem-se às globais do dialplan
+      // [from-internal]). Se o tronco dele estiver desligado, o endpoint
+      // aponta para um que não existe e a chamada falha: nunca sai pelo
+      // partilhado. Ver tenantOutboundTrunk.ts.
+      const choice = pickOutboundTrunk(e.tenantId, payload.trunks);
+      const outVars =
+        choice.kind === "own"
+          ? [`set_var=TRUNK_ENDPOINT=${trunkEndpointId(choice.trunk.name)}`, `set_var=TRUNK_USER=${choice.trunk.authUser}`]
+          : choice.kind === "own_disabled"
+            ? ["set_var=TRUNK_ENDPOINT=tronco_proprio_desligado", "set_var=TRUNK_USER=0"]
+            : [];
+
       // O endpoint chama-se como o UTILIZADOR SIP, não como o número: é assim
       // que o PJSIP identifica quem se regista, e é o que impede dois clientes
       // com a extensão 1000 de colidirem. Ver extensionEndpointId().
@@ -388,6 +405,7 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         "force_rport=yes",
         "rewrite_contact=yes",
         `callerid=${e.callerId} <${e.number}>`,
+        ...outVars,
         ""
       );
 
@@ -423,6 +441,7 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         "allow=opus,ulaw,alaw",
         "dtmf_mode=rfc4733",
         `callerid=${e.callerId} <${e.number}>`,
+        ...outVars,
         ""
       );
     }

@@ -10,6 +10,7 @@ import { ZodError } from "zod";
 import { config } from "./config.js";
 import { resolveProviderConfig, type ResolvedProviderConfig } from "./services/providerConfig.service.js";
 import { AsteriskAdapter, trunkEndpointId, parseDialFormat, type TelephonyProvider } from "@falai/providers";
+import { pickOutboundTrunk } from "./services/tenantOutboundTrunk.js";
 import { registerInboundCallRouter } from "./services/inboundCallRouter.service.js";
 import { startDirectCallSweeper, registerDirectCallEvents } from "./services/directCall.service.js";
 import { prisma } from "@falai/db";
@@ -268,14 +269,16 @@ async function buildApp() {
     // partilhado (tenantId nulo). Nunca o de outro cliente — antes isto era
     // "o primeiro trunk activo", e um cliente saía pelo trunk e com o
     // Caller ID de outro. Sem tenant conhecido só se aceitam partilhados.
+    // Cliente com tronco próprio de registo desligado: não sai (null), nunca
+    // pelo partilhado. Ver services/tenantOutboundTrunk.ts.
     resolveTrunk: async (tenantId?: string) => {
-      const trunk = await prisma.trunk.findFirst({
-        where: tenantId
-          ? { enabled: true, OR: [{ tenantId }, { tenantId: null }] }
-          : { enabled: true, tenantId: null },
-        orderBy: [{ tenantId: { sort: "desc", nulls: "last" } }, { createdAt: "asc" }],
-        select: { name: true, authUser: true },
+      const trunks = await prisma.trunk.findMany({
+        where: tenantId ? { OR: [{ tenantId }, { tenantId: null }] } : { tenantId: null },
+        orderBy: { createdAt: "asc" },
+        select: { name: true, authUser: true, tenantId: true, enabled: true, type: true },
       });
+      const choice = pickOutboundTrunk(tenantId, trunks);
+      const trunk = choice.kind === "own_disabled" ? null : choice.trunk;
       if (!trunk) return null;
       return {
         endpoint: trunkEndpointId(trunk.name),
