@@ -9,4 +9,8 @@ export const isConfigAdmin = (role: Role) => role === 'OWNER' || role === 'ADMIN
 /** Gestão da operação: equipa, supervisão, tipificações. */
 export const isOpsManager = (role: Role) => isConfigAdmin(role) || role === 'MANAGER';
 /** Vê a conta inteira (o resto vê a sua equipa ou só o que é seu). */
-export const seesWholeTenant = (role: Role) => isOpsManager(role) || role === 'VIEWER';
+export const seesWholeTenant = (role: Role) => isOpsManager(role) || role === 'VIEWER' || role === 'AUDITOR';
+/** Qualidade: grelhas, auditoria com IA e rever avaliações de outros. */
+export const isQaAdmin = (role: Role) => isOpsManager(role) || role === 'AUDITOR';
+/** Avalia (e trata os rascunhos da IA). */
+export const canEvaluate = (role: Role) => isQaAdmin(role) || role === 'SUPERVISOR';

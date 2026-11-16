@@ -69,7 +69,7 @@ export const tenantAgentTimeRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get<{ Params: { userId: string } }>("/tenant/team/:userId/shifts", { preHandler, config: { feature: "team" } }, async (request, reply) => {
     const user = request.tenantUser!;
-    if (user.sub !== request.params.userId && !(await canManageShifts(user, request.params.userId)) && user.role !== "VIEWER") {
+    if (user.sub !== request.params.userId && !(await canManageShifts(user, request.params.userId)) && user.role !== "VIEWER" && user.role !== "AUDITOR") {
       return reply.status(403).send({ error: "Sem acesso aos turnos deste utilizador" });
     }
     const rows = await prisma.shift.findMany({

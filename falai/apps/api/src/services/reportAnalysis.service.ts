@@ -250,7 +250,7 @@ export const dataHash = (input: AnalysisInput) => sha([PROMPT_VERSION, input]);
 /** USD por milhão de tokens (entrada, saída). Desconhecido → preço do Sonnet. */
 const PRICES: Record<string, [number, number]> = {
   "claude-sonnet-4-6": [3, 15],
-  "claude-sonnet-5": [3, 15],
+  "claude-sonnet-5": [2, 10],
   "claude-opus-5-5": [15, 75],
   "claude-haiku-4-5-20251001": [1, 5],
 };

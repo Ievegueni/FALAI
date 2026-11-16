@@ -78,6 +78,7 @@ const ROLE_KEYS: Record<string, string> = {
   SUPERVISOR: 'team.roleSupervisor',
   MEMBER: 'team.roleMember',
   VIEWER: 'team.roleViewer',
+  AUDITOR: 'team.roleAuditor',
 };
 
 /** Função do utilizador e, se tiver, o perfil de acesso (ex.: "Membro · Operador"). */

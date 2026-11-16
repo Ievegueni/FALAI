@@ -16,6 +16,7 @@
  */
 import type { AsteriskAdapter } from "@falai/providers";
 import type { FastifyBaseLogger } from "fastify";
+import { extname, resolve, sep } from "node:path";
 import { prisma } from "@falai/db";
 import { getSetting } from "./settings.service.js";
 
@@ -64,6 +65,31 @@ export async function recordingSettings(): Promise<RecordingSettings> {
 function normalize(value: string | null, valid: (v: string) => boolean, fallback: string): string {
   const trimmed = (value ?? "").trim();
   return trimmed && valid(trimmed) ? trimmed : fallback;
+}
+
+/** Tipo de conteúdo da gravação, pela extensão com que foi gravada. */
+export function recordingContentType(file: string): string {
+  switch (extname(file).toLowerCase()) {
+    case ".ogg": return "audio/ogg";
+    case ".wav": case ".wav49": return "audio/wav";
+    case ".gsm": return "audio/x-gsm";
+    case ".g722": return "audio/G722";
+    case ".alaw": case ".ulaw": return "audio/basic";
+    default: return "application/octet-stream";
+  }
+}
+
+/**
+ * Caminho absoluto da gravação. O valor vem da nossa base de dados, mas
+ * confirma-se na mesma que cai dentro da pasta de gravações: um valor estragado
+ * não pode virar uma forma de ler ficheiros do servidor. null = fora da pasta.
+ */
+export async function recordingFilePath(recordingUrl: string): Promise<string | null | "NO_DIR"> {
+  const { dir } = await recordingSettings();
+  if (!dir) return "NO_DIR";
+  const base = resolve(dir);
+  const file = resolve(base, recordingUrl);
+  return file !== base && file.startsWith(base + sep) ? file : null;
 }
 
 /** O ficheiro desta chamada, relativo à pasta de gravações. */

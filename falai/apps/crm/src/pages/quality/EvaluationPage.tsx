@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Check, Flag } from 'lucide-react';
-import { qaApi, type QaAnswer, type QaDefinition } from '@/lib/api';
+import { ArrowLeft, Check, Flag, Sparkles, Trash2 } from 'lucide-react';
+import { qaApi, type QaAnswer, type QaCriterionType, type QaDefinition, type QaEvaluationDetail } from '@/lib/api';
+import { CallEvidence } from '@/components/calls/CallEvidence';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -13,10 +14,22 @@ import { useToast } from '@/contexts/ToastContext';
 import { clsx, formatDate } from '@/lib/utils';
 import { QaStatusBadge, scoreClass } from './QualityBits';
 
-const ANSWERS: QaAnswer[] = ['YES', 'NO', 'NA'];
+const ANSWERS: Record<QaCriterionType, QaAnswer[]> = {
+  yesno: ['YES', 'NO', 'NA'],
+  scale: ['1', '2', '3', '4', '5', 'NA'],
+  auto_form: ['YES', 'NO', 'NA'],
+};
+const answerClass = (a: QaAnswer) =>
+  a === 'YES' || a === '5' || a === '4' ? 'bg-emerald-600 text-white' : a === 'NO' || a === '1' || a === '2' ? 'bg-red-600 text-white' : a === '3' ? 'bg-amber-500 text-white' : 'bg-gray-600 text-white';
 
 /** Grelha de critérios: Conforme / Não conforme / Não aplicável. */
-function CriteriaGrid({ def, answers, onChange }: { def: QaDefinition; answers: Record<string, QaAnswer>; onChange?: (id: string, a: QaAnswer) => void }) {
+function CriteriaGrid({ def, answers, onChange, findings }: {
+  def: QaDefinition;
+  answers: Record<string, QaAnswer>;
+  onChange?: (id: string, a: QaAnswer) => void;
+  /** Justificação da IA por critério (rascunhos e avaliações vindas da IA). */
+  findings?: Record<string, { reason: string; quote: string }>;
+}) {
   const { t } = useTranslation();
   return (
     <div className="space-y-4">
@@ -30,25 +43,31 @@ function CriteriaGrid({ def, answers, onChange }: { def: QaDefinition; answers: 
                   {c.label}
                   <span className="ml-2 text-xs text-gray-400">×{c.weight}</span>
                   {c.critical && <span className="ml-2 rounded bg-red-50 px-1.5 text-xs text-red-600">{t('quality.critical')}</span>}
+                  {c.type === 'auto_form' && <span className="ml-2 rounded bg-gray-100 px-1.5 text-xs text-gray-500">{t('quality.auto')}</span>}
                 </p>
                 <div className="inline-flex rounded-lg border border-gray-300 p-0.5">
-                  {ANSWERS.map((a) => (
+                  {ANSWERS[c.type ?? 'yesno'].map((a) => (
                     <button
                       key={a}
                       type="button"
-                      disabled={!onChange}
+                      // O automático responde o sistema (a ficha foi preenchida na chamada?)
+                      disabled={!onChange || c.type === 'auto_form'}
                       onClick={() => onChange?.(c.id!, a)}
                       className={clsx(
                         'rounded-md px-2.5 py-1 text-xs',
-                        answers[c.id!] === a
-                          ? a === 'YES' ? 'bg-emerald-600 text-white' : a === 'NO' ? 'bg-red-600 text-white' : 'bg-gray-600 text-white'
-                          : 'text-gray-600 hover:bg-gray-100 disabled:hover:bg-transparent',
+                        answers[c.id!] === a ? answerClass(a) : 'text-gray-600 hover:bg-gray-100 disabled:hover:bg-transparent',
                       )}
                     >
-                      {t(`quality.answer.${a}`)}
+                      {/^\d$/.test(a) ? a : t(`quality.answer.${a}`)}
                     </button>
                   ))}
                 </div>
+                {findings?.[c.id!] && (
+                  <div className="w-full rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-900">
+                    <p>{findings[c.id!]!.reason}</p>
+                    {findings[c.id!]!.quote && <p className="mt-1 italic text-violet-700">“{findings[c.id!]!.quote}”</p>}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -93,6 +112,7 @@ export function NewEvaluationPage() {
               </select>
               {ref.callId && <Link to={`/calls/${ref.callId}`} className="text-sm text-blue-600 hover:underline">{t('quality.openCall')}</Link>}
             </Card>
+            {ref.callId && <CallEvidence callId={ref.callId} />}
             {form && <CriteriaGrid def={form.definition} answers={answers} onChange={(id, a) => setAnswers((x) => ({ ...x, [id]: a }))} />}
             <Card>
               <Textarea label={t('quality.comment')} rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t('quality.commentPlaceholder')} />
@@ -103,6 +123,49 @@ export function NewEvaluationPage() {
           </>
         )}
       </div>
+    </>
+  );
+}
+
+/** Rascunho da IA: o auditor corrige o que for preciso e submete (ou descarta). */
+function AiDraftReview({ ev }: { ev: QaEvaluationDetail }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { success, error } = useToast();
+  const [answers, setAnswers] = useState(ev.answers);
+  const [comment, setComment] = useState(ev.aiFindings?.summary ?? '');
+  const done = (msg: string) => { success(msg); void qc.invalidateQueries({ queryKey: ['qa'] }); };
+  const submit = useMutation({
+    mutationFn: () => qaApi.submitDraft(ev.id, { answers, ...(comment.trim() && { comment: comment.trim() }) }),
+    onSuccess: () => done(t('quality.submitted')),
+    onError: (e: Error) => error(e.message),
+  });
+  const discard = useMutation({
+    mutationFn: () => qaApi.discardDraft(ev.id),
+    onSuccess: () => { done(t('quality.discarded')); navigate('/quality'); },
+    onError: (e: Error) => error(e.message),
+  });
+  return (
+    <>
+      <Card className="flex gap-3 border-violet-200 bg-violet-50 text-sm text-violet-900">
+        <Sparkles className="mt-0.5 h-4 w-4 flex-shrink-0" />
+        <div>
+          <p className="font-medium">{t('quality.aiDraftTitle')}</p>
+          <p className="text-xs text-violet-700">{t('quality.aiDraftHint')}</p>
+        </div>
+      </Card>
+      {ev.callId && <CallEvidence callId={ev.callId} divergences={ev.aiFindings?.divergences} />}
+      <CriteriaGrid def={ev.formSnapshot} answers={answers} findings={ev.aiFindings?.criteria ?? {}} {...(ev.canEdit && { onChange: (cid: string, a: QaAnswer) => setAnswers((x) => ({ ...x, [cid]: a })) })} />
+      {ev.canEdit && (
+        <Card className="space-y-3">
+          <Textarea label={t('quality.comment')} rows={4} value={comment} onChange={(e) => setComment(e.target.value)} />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" icon={<Trash2 className="h-4 w-4" />} loading={discard.isPending} onClick={() => discard.mutate()}>{t('quality.discard')}</Button>
+            <Button icon={<Check className="h-4 w-4" />} loading={submit.isPending} onClick={() => submit.mutate()}>{t('quality.submit')}</Button>
+          </div>
+        </Card>
+      )}
     </>
   );
 }
@@ -140,7 +203,7 @@ export function EvaluationPage() {
           <div>
             <p className="text-lg font-semibold text-gray-900">{ev.agent.name}</p>
             <p className="text-xs text-gray-500">
-              {ev.formSnapshot.name} · {t('quality.by', { name: ev.evaluator.name })} · {formatDate(ev.createdAt)}
+              {ev.formSnapshot.name} · {t('quality.by', { name: ev.evaluator?.name ?? t('quality.ai') })} · {formatDate(ev.createdAt)}
               {ev.callId && <> · <Link to={`/calls/${ev.callId}`} className="text-blue-600 hover:underline">{t('quality.openCall')}</Link></>}
             </p>
           </div>
@@ -151,7 +214,9 @@ export function EvaluationPage() {
         </Card>
         {ev.criticalFail && <Card className="border-red-200 bg-red-50 text-sm text-red-700">{t('quality.criticalFail')}</Card>}
 
-        <CriteriaGrid def={ev.formSnapshot} answers={answers ?? ev.answers} {...(editing && { onChange: (cid: string, a: QaAnswer) => setAnswers((x) => ({ ...x!, [cid]: a })) })} />
+        {ev.status === 'AI_DRAFT' ? <AiDraftReview key={ev.id} ev={ev} /> : <>
+        {ev.callId && <CallEvidence callId={ev.callId} divergences={ev.aiFindings?.divergences} />}
+        <CriteriaGrid def={ev.formSnapshot} answers={answers ?? ev.answers} {...(ev.aiFindings && { findings: ev.aiFindings.criteria })} {...(editing && { onChange: (cid: string, a: QaAnswer) => setAnswers((x) => ({ ...x!, [cid]: a })) })} />
 
         {ev.comment && <Card><p className="mb-1 text-xs font-medium text-gray-500">{t('quality.comment')}</p><p className="whitespace-pre-wrap text-sm text-gray-800">{ev.comment}</p></Card>}
         {ev.agentComment && <Card><p className="mb-1 text-xs font-medium text-gray-500">{t('quality.agentComment')}</p><p className="whitespace-pre-wrap text-sm text-gray-800">{ev.agentComment}</p></Card>}
@@ -185,6 +250,7 @@ export function EvaluationPage() {
             <p className="text-xs text-gray-400">{t('quality.auditHint')}</p>
           </Card>
         )}
+        </>}
       </div>
     </>
   );

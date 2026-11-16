@@ -58,21 +58,23 @@ export const tenantCallersRoutes: FastifyPluginAsync = async (fastify) => {
     const q = lookupSchema.parse(request.query);
     let raw: string | null | undefined = q.number;
     let callId: string | null = null;
+    let groupId: string | null = null; // grupo da chamada: escolhe a ficha que abre
     if (q.legId) {
       const leg = await prisma.callLeg.findFirst({
         where: { id: q.legId, tenantId },
-        select: { callId: true, call: { select: { fromNumber: true } } },
+        select: { callId: true, call: { select: { fromNumber: true, groupId: true } } },
       });
       if (!leg) return reply.status(404).send({ error: "Chamada não encontrada" });
       raw = leg.call.fromNumber;
       callId = leg.callId;
+      groupId = leg.call.groupId;
     } else if (q.number === undefined) {
       return reply.status(400).send({ error: "Indique legId ou number" });
     }
 
     const panel = await buildCallerPanel(tenantId, raw);
     if (panel.contact) await audit(request, panel.contact.id, { via: q.legId ? "leg" : "number", callId });
-    return { ...panel, callId };
+    return { ...panel, callId, groupId };
   });
 
   // GET /tenant/callers/:contactId/history?before=&limit= — "ver mais"

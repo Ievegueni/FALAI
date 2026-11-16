@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, Upload, Users, Search, Phone, PhoneCall, Trash2, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { contactsApi } from '@/lib/api';
+import { contactsApi, contactFormsApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -163,10 +163,13 @@ export function ContactsPage() {
   // Pré-preenche a pesquisa a partir do URL (ex.: screen pop de chamada a entrar → /contacts?search=+244…)
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') ?? '');
   const [showCreate, setShowCreate] = useState(false);
+  // "Incompletos": contactos a quem falta algum campo da ficha escolhida.
+  const [incompleteForm, setIncompleteForm] = useState('');
+  const { data: forms } = useQuery({ queryKey: ['contact-forms'], queryFn: () => contactFormsApi.list(), retry: false });
 
   const { data, isLoading } = useQuery({
-    queryKey: ['contacts', page, search],
-    queryFn: () => contactsApi.list({ page, search: search || undefined }),
+    queryKey: ['contacts', page, search, incompleteForm],
+    queryFn: () => contactsApi.list({ page, search: search || undefined, incompleteForm: incompleteForm || undefined }),
   });
 
   return (
@@ -195,6 +198,16 @@ export function ContactsPage() {
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             />
           </div>
+          {!!forms?.length && (
+            <select
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+              value={incompleteForm}
+              onChange={(e) => { setIncompleteForm(e.target.value); setPage(1); }}
+            >
+              <option value="">{t('contactForms.allContacts')}</option>
+              {forms.map((f) => <option key={f.id} value={f.id}>{t('contactForms.incompleteIn', { name: f.name })}</option>)}
+            </select>
+          )}
           {data && (
             <p className="shrink-0 whitespace-nowrap text-sm text-gray-500">{t('contacts.count', { count: data.total })}</p>
           )}

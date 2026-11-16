@@ -22,6 +22,7 @@ import { clsx, formatDuration, formatPhone } from '@/lib/utils';
 import { isOpsManager } from '@/lib/roles';
 import { AlertsHistory, OpenAlerts, TargetsCard } from './AlertsPanels';
 import { CallbacksList, QueueSettings } from './QueuePanels';
+import { ContactFormsAdmin } from '@/components/calls/ContactFormBits';
 
 /**
  * Supervisão em tempo real (melhoria 4). O painel pergunta à API de 2 em 2 s
@@ -323,6 +324,7 @@ export function SupervisionPage() {
             ...(isAdmin
               ? [
                   { key: 'log', label: t('supervision.tabLog') },
+                  { key: 'forms', label: t('contactForms.tab') },
                   { key: 'settings', label: t('supervision.tabSettings') },
                 ]
               : []),
@@ -332,6 +334,7 @@ export function SupervisionPage() {
         {tab === 'alerts' && <AlertsHistory />}
         {tab === 'callbacks' && <CallbacksList />}
         {tab === 'log' && isAdmin && <Log />}
+        {tab === 'forms' && isAdmin && <ContactFormsAdmin />}
         {tab === 'settings' && isAdmin && <><TargetsCard /><QueueSettings /><Settings /></>}
       </div>
     </>

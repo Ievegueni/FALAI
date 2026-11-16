@@ -11,7 +11,7 @@ export type CallStatus =
 export type CallStats = Record<'total' | CallStatus, number>;
 export type CampaignStatus = 'DRAFT' | 'SCHEDULED' | 'RUNNING' | 'PAUSED' | 'DONE' | 'CANCELLED';
 export type CampaignMode = 'VOICE_AI' | 'FIXED_SCRIPT';
-export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'TEXT_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
+export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'TEXT_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE' | 'QA_CHARGE';
 
 export interface AdminUser {
   id: string;
@@ -109,7 +109,7 @@ export interface TenantLineInput {
   isActive?: boolean;
 }
 
-export type TenantRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
+export type TenantRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER' | 'AUDITOR';
 
 export interface TenantUser {
   id: string;
@@ -231,6 +231,8 @@ export interface Tenant {
   /** Análise IA dos relatórios (melhoria 6). */
   aiReportDailyLimit?: number;
   aiReportUsageMonth?: { analyses: number; inputTokens: number; outputTokens: number; costUsd: number };
+  /** Auditoria de chamadas com IA: preço por minuto transcrito (0 = grátis). */
+  qaAiPricePerMinCents?: number;
   lines?: TenantLine[];
   users?: TenantUser[];
   createdAt: string;

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { hashPassword } from "../../services/auth.service.js";
 import { isConfigAdmin, isOpsManager } from "../../services/userScope.js";
 
-const MANAGER_ASSIGNABLE = new Set(["SUPERVISOR", "MEMBER", "VIEWER"]);
+const MANAGER_ASSIGNABLE = new Set(["SUPERVISOR", "MEMBER", "VIEWER", "AUDITOR"]);
 
 const password = z.string().min(8, "A password deve ter pelo menos 8 caracteres").max(128);
 
@@ -12,7 +12,7 @@ const password = z.string().min(8, "A password deve ter pelo menos 8 caracteres"
 const updateSchema = z.object({
   name: z.string().trim().min(2).max(100).optional(),
   password: password.optional(),
-  role: z.enum(["ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER"]).optional(),
+  role: z.enum(["ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER", "AUDITOR"]).optional(),
   extensionId: z.string().nullable().optional(),
   groupIds: z.array(z.string()).max(200).optional(),
   supervisedGroupIds: z.array(z.string()).max(200).optional(),
@@ -23,7 +23,7 @@ const createSchema = updateSchema.extend({
   email: z.string().trim().toLowerCase().email(),
   name: z.string().trim().min(2).max(100),
   password,
-  role: z.enum(["ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER"]),
+  role: z.enum(["ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER", "AUDITOR"]),
 });
 
 const userSelect = {

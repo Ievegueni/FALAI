@@ -59,6 +59,7 @@ import { tenantSettingsRoutes } from "./routes/tenant/settings.js";
 import { tenantRejectReasonsRoutes } from "./routes/tenant/rejectReasons.js";
 import { tenantCallTypingRoutes } from "./routes/tenant/callTyping.js";
 import { tenantCallersRoutes } from "./routes/tenant/callers.js";
+import { tenantContactFormsRoutes } from "./routes/tenant/contactForms.js";
 import { tenantSupervisionRoutes } from "./routes/tenant/supervision.js";
 import { SupervisionManager } from "./services/supervision.service.js";
 import { resumeRunningSmsCampaigns } from "./services/smsCampaign.service.js";
@@ -394,6 +395,7 @@ async function buildApp() {
   await gated(fastify, "webphone", tenantRejectReasonsRoutes);
   await gated(fastify, "webphone", tenantCallTypingRoutes);
   await gated(fastify, "webphone", tenantCallersRoutes);
+  await gated(fastify, "webphone", tenantContactFormsRoutes);
   await gated(fastify, "webphone", tenantSupervisionRoutes);
   await gated(fastify, "webphone", tenantAlertsRoutes);
   await gated(fastify, "webphone", tenantAgentTimeRoutes);

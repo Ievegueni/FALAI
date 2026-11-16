@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { ClipboardCheck, ArrowLeft, Phone, PhoneIncoming, Clock, DollarSign, XCircle, Play, Tag, Route, StickyNote, Pencil } from 'lucide-react';
-import { callsApi } from '@/lib/api';
+import { ClipboardCheck, ArrowLeft, Phone, PhoneIncoming, Clock, DollarSign, XCircle, Tag, Route, StickyNote, Pencil, Sparkles } from 'lucide-react';
+import { callsApi, qaApi } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -11,9 +11,10 @@ import { Card } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { TypingModal } from './TypingPanel';
+import { CallEvidence } from '@/components/calls/CallEvidence';
 import { TicketLinkOrCreate } from '@/components/tickets/TicketBits';
 import { useAuth } from '@/contexts/AuthContext';
-import { isOpsManager } from '@/lib/roles';
+import { canEvaluate as canEvaluateRole } from '@/lib/roles';
 import {
   callStatusLabel,
   callStatusColor,
@@ -31,11 +32,13 @@ export function CallDetailPage() {
   const { success, error } = useToast();
   // Avaliar (QA, fase 7): supervisão, com a funcionalidade ligada.
   const { user, tenant } = useAuth();
-  const canEvaluate = tenant?.features?.quality === true && (isOpsManager(user?.role) || user?.role === 'SUPERVISOR');
+  const canEvaluate = tenant?.features?.quality === true && canEvaluateRole(user?.role);
+  const aiAudit = useMutation({
+    mutationFn: () => qaApi.aiAudit(id!),
+    onSuccess: (ev) => navigate(`/quality/evaluations/${ev.id}`),
+    onError: (e: Error) => error(e.message),
+  });
 
-  // A gravação vem por uma rota autenticada, por isso chega como blob e
-  // transforma-se num object URL — que tem de ser libertado ao sair.
-  const [recordingSrc, setRecordingSrc] = useState<string | null>(null);
   const [typingLegId, setTypingLegId] = useState<string | null>(null);
 
   const { data: call, isLoading } = useQuery({
@@ -46,27 +49,6 @@ export function CallDetailPage() {
       return status && ['IN_PROGRESS', 'DIALING', 'RINGING', 'QUEUED'].includes(status) ? 3000 : false;
     },
   });
-
-  const hasRecording = !!call?.recordingUrl;
-  useEffect(() => {
-    if (!hasRecording || !id) return;
-    let objectUrl: string | null = null;
-    let cancelled = false;
-    void callsApi
-      .recording(id)
-      .then((url) => {
-        // Se o ecrã já mudou entretanto, o URL criado aqui não chega a ser
-        // usado — libertá-lo evita segurar o ficheiro em memória.
-        if (cancelled) { URL.revokeObjectURL(url); return; }
-        objectUrl = url;
-        setRecordingSrc(url);
-      })
-      .catch(() => setRecordingSrc(null));
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [hasRecording, id]);
 
   const cancel = useMutation({
     mutationFn: () => callsApi.cancel(id!),
@@ -148,6 +130,11 @@ export function CallDetailPage() {
             {canEvaluate && !isLive && (
               <Button size="sm" variant="outline" icon={<ClipboardCheck className="h-3.5 w-3.5" />} onClick={() => navigate(`/quality/new?callId=${call.id}`)}>
                 {t('quality.evaluate')}
+              </Button>
+            )}
+            {canEvaluate && !isLive && call.recordingUrl && (
+              <Button size="sm" variant="outline" icon={<Sparkles className="h-3.5 w-3.5" />} loading={aiAudit.isPending} onClick={() => aiAudit.mutate()}>
+                {t('quality.aiAudit')}
               </Button>
             )}
             <TicketLinkOrCreate ticket={call.ticket} contactId={call.contactId} callId={call.id} />
@@ -287,17 +274,8 @@ export function CallDetailPage() {
           onClose={() => { setTypingLegId(null); void qc.invalidateQueries({ queryKey: ['calls', id] }); }}
         />
 
-        {/* Recording */}
-        {call.recordingUrl && recordingSrc && (
-          <Card>
-            <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-              <Play className="h-4 w-4" /> {t('calls.detail.recording')}
-            </h2>
-            <audio controls className="w-full" src={recordingSrc}>
-              {t('calls.detail.audioUnsupported')}
-            </audio>
-          </Card>
-        )}
+        {/* Gravação, ficha, métricas e transcrição da gravação */}
+        <CallEvidence callId={call.id} />
 
         {/* Transcript */}
         {call.turns && call.turns.length > 0 && (

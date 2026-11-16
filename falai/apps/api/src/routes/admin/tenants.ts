@@ -81,6 +81,7 @@ const updateSchema = z.object({
   // Grupos de linhas: { "COBRANCA": 6, "MARKETING": 6 }; {} ou null = sem grupos.
   lineGroupLimits: z.record(z.string(), z.number().int().min(1).max(LINE_GROUP_MAX_LIMIT)).nullable().optional(),
   defaultLineGroup: z.string().max(40).nullable().optional(),
+  qaAiPricePerMinCents: z.number().int().min(0).max(1_000_000).optional(), // auditoria IA, por minuto transcrito (0 = grátis)
 });
 
 const smsConfigSchema = z.object({
@@ -104,7 +105,7 @@ const userCreateSchema = z.object({
   name: z.string().min(2).max(100),
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(["OWNER", "ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER"]).optional(),
+  role: z.enum(["OWNER", "ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER", "AUDITOR"]).optional(),
   accessProfileId: z.string().nullable().optional(),
 });
 
@@ -153,6 +154,7 @@ function mapTenant(t: any) {
     missedCallSms: t.missedCallSms ?? false,
     missedCallSmsText: t.missedCallSmsText ?? null,
     aiReportDailyLimit: t.aiReportDailyLimit ?? 20,
+    qaAiPricePerMinCents: t.qaAiPricePerMinCents ?? 0,
     // features efectivas (o que o cliente vê) + overrides crus (o que o operador definiu)
     features: computeFeatures({
       overrides: t.features,
@@ -365,6 +367,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(subdomain !== undefined && { subdomain }),
         ...(lineGroupLimits !== undefined && { lineGroupLimits: lineGroupLimits ?? Prisma.DbNull }),
         ...(defaultLineGroup !== undefined && { defaultLineGroup }),
+        ...(body.qaAiPricePerMinCents !== undefined && { qaAiPricePerMinCents: body.qaAiPricePerMinCents }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },
     }).catch((err: { code?: string }) => {

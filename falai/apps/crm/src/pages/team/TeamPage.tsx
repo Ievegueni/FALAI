@@ -24,6 +24,7 @@ const ROLE_LABEL_KEYS: Record<TenantRole, string> = {
   SUPERVISOR: 'team.roleSupervisor',
   MEMBER: 'team.roleMember',
   VIEWER: 'team.roleViewer',
+  AUDITOR: 'team.roleAuditor',
 };
 
 const ROLE_COLORS: Record<TenantRole, string> = {
@@ -33,17 +34,19 @@ const ROLE_COLORS: Record<TenantRole, string> = {
   SUPERVISOR: 'bg-amber-100 text-amber-700',
   MEMBER: 'bg-gray-100 text-gray-700',
   VIEWER: 'bg-slate-100 text-slate-600',
+  AUDITOR: 'bg-teal-100 text-teal-700',
 };
 
-const ROLE_OPTIONS: TenantRole[] = ['ADMIN', 'MANAGER', 'SUPERVISOR', 'MEMBER', 'VIEWER'];
+const ROLE_OPTIONS: TenantRole[] = ['ADMIN', 'MANAGER', 'SUPERVISOR', 'MEMBER', 'VIEWER', 'AUDITOR'];
 // O gestor (MANAGER) só gere estes — administradores e gestores só um administrador.
-const MANAGER_ASSIGNABLE = new Set<TenantRole>(['SUPERVISOR', 'MEMBER', 'VIEWER']);
+const MANAGER_ASSIGNABLE = new Set<TenantRole>(['SUPERVISOR', 'MEMBER', 'VIEWER', 'AUDITOR']);
 const ROLE_OPT_KEYS: Record<string, string> = {
   ADMIN: 'team.roleAdminOpt',
   MANAGER: 'team.roleManagerOpt',
   SUPERVISOR: 'team.roleSupervisorOpt',
   MEMBER: 'team.roleMemberOpt',
   VIEWER: 'team.roleViewerOpt',
+  AUDITOR: 'team.roleAuditorOpt',
 };
 
 function GroupChecks({ groups, value, onChange, disabled }: {
@@ -240,6 +243,7 @@ export function TeamPage() {
             <p><Trans i18nKey="team.legendSupervisor" components={[<strong key="0" />]} /></p>
             <p><Trans i18nKey="team.legendMember" components={[<strong key="0" />]} /></p>
             <p><Trans i18nKey="team.legendViewer" components={[<strong key="0" />]} /></p>
+            <p><Trans i18nKey="team.legendAuditor" components={[<strong key="0" />]} /></p>
           </div>
         </div>
 

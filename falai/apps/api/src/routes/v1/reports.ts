@@ -192,7 +192,8 @@ export async function v1ReportsRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get("/v1/reports/qa", pre, async (request) => {
     const q = parse(request);
     const rows = await prisma.qaEvaluation.findMany({
-      where: { tenantId: tenantOf(request), createdAt: q.range },
+      // Rascunhos da IA ainda não são avaliações — só depois de o auditor submeter.
+      where: { tenantId: tenantOf(request), createdAt: q.range, status: { not: "AI_DRAFT" } },
       orderBy: { createdAt: "asc" },
       ...q.page,
       select: {
@@ -205,7 +206,7 @@ export async function v1ReportsRoutes(fastify: FastifyInstance): Promise<void> {
         ...r,
         createdAt: iso(createdAt),
         agent: agent.name,
-        evaluator: evaluator.name,
+        evaluator: evaluator?.name ?? null,
         form: form?.name ?? null,
       })),
     };

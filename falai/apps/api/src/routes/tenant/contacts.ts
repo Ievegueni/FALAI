@@ -1,9 +1,10 @@
 import { readTable, extractRows, resolveContactsFromFile } from "../../services/contactFile.service.js";
 import { contactSearchWhere } from "../../services/contactProfile.service.js";
+import { completenessKeys, type FormField } from "../../services/contactForms.service.js";
 import type { FastifyPluginAsync } from "fastify";
 import { Queue } from "bullmq";
 import { randomUUID } from "crypto";
-import { prisma } from "@falai/db";
+import { Prisma, prisma } from "@falai/db";
 import { z } from "zod";
 import { parse as csvParse } from "csv-parse/sync";
 import * as XLSX from "xlsx";
@@ -73,18 +74,37 @@ export const tenantContactsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /tenant/contacts
   fastify.get<{
-    Querystring: { q?: string; search?: string; limit?: string; offset?: string; optedOut?: string };
-  }>("/", { preHandler }, async (request) => {
+    Querystring: { q?: string; search?: string; limit?: string; offset?: string; optedOut?: string; incompleteForm?: string };
+  }>("/", { preHandler }, async (request, reply) => {
     const { tenantId } = request.tenantUser!;
     const { limit = "100", offset = "0", optedOut } = request.query;
     // O CRM envia `search`; a API pública documentou `q`.
     const q = (request.query.search ?? request.query.q ?? "").trim();
 
     // Pesquisa normalizada e indexada (nome/número, incluindo números extra).
-    const where = {
+    // "Incompletos": falta algum campo (sem condição) da ficha indicada.
+    // ponytail: lista os ids em SQL (o Prisma não filtra "falta uma destas chaves
+    // no JSON"); passar a coluna gerada/índice se uma conta tiver centenas de milhares.
+    let incompleteIds: string[] | undefined;
+    if (request.query.incompleteForm) {
+      const form = await prisma.contactForm.findFirst({ where: { id: request.query.incompleteForm, tenantId }, select: { fields: true } });
+      if (!form) return reply.status(400).send({ error: "Ficha inválida" });
+      const keys = completenessKeys(form.fields as FormField[]);
+      const rows = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "Contact"
+        WHERE "tenantId" = ${tenantId}
+          AND EXISTS (
+            SELECT 1 FROM unnest(${keys}::text[]) k
+            WHERE coalesce("attributes" ->> k, '') = ''
+          )`;
+      incompleteIds = rows.map((r) => r.id);
+    }
+
+    const where: Prisma.ContactWhereInput = {
       ...(q ? contactSearchWhere(tenantId, q) : { tenantId }),
       ...(optedOut === "true" && { optedOutAt: { not: null } }),
       ...(optedOut === "false" && { optedOutAt: null }),
+      ...(incompleteIds && { id: { in: incompleteIds } }),
     };
     const contacts = await prisma.contact.findMany({
       where,

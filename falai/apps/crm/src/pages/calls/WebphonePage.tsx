@@ -345,6 +345,8 @@ export function WebphonePage() {
       {/* Painel do cliente (melhoria 3): no toque e durante a chamada; ao
           recusar, não atender ou desligar, a sessão acaba e o painel fecha. */}
       {incomingLegId && (incoming || callState === 'in-call') && <CallerPanel key={incomingLegId} legId={incomingLegId} />}
+      {/* Chamada de saída: o mesmo painel, pelo número marcado (ficha incluída). */}
+      {!incomingLegId && inCall && target.trim() && <CallerPanel key={`out-${target}`} number={target.trim()} />}
       </div>
       <div className="px-6 pb-6">
         <UntypedList extensionId={extensionId} onPick={setTypingLegId} />

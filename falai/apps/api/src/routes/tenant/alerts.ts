@@ -10,7 +10,10 @@ import { isOpsManager, userScope } from "../../services/userScope.js";
  * supervisor vê os dos seus grupos (e os da conta, sem grupo); agente não vê.
  */
 
-const ALERT_TYPES = ["LONG_WAIT", "LONG_HANDLE", "NO_AGENTS", "SLA_BELOW", "ABANDON_ABOVE", "TMA_ABOVE"] as const;
+const ALERT_TYPES = [
+  "LONG_WAIT", "LONG_HANDLE", "NO_AGENTS", "SLA_BELOW", "ABANDON_ABOVE", "TMA_ABOVE",
+  "TEXT_SLA_BELOW", "TICKET_DUE_SOON", "TICKET_OVERDUE", "QA_LOW_STREAK",
+] as const;
 
 const listQuery = z.object({
   open: z.enum(["true", "false"]).optional(),
@@ -71,8 +74,16 @@ export const tenantAlertsRoutes: FastifyPluginAsync = async (fastify) => {
       prisma.extensionGroup.findMany({ where: { tenantId }, select: { id: true, name: true } }),
     ]);
     const groupName = new Map(groups.map((g) => [g.id, g.name]));
+    // Alerta de qualidade: a ref é o agente — mostra-se o nome dele no lugar do grupo.
+    const agentIds = rows.filter((a) => a.type === "QA_LOW_STREAK").map((a) => a.ref);
+    const agentName = new Map(
+      agentIds.length ? (await prisma.tenantUser.findMany({ where: { tenantId, id: { in: agentIds } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]) : []
+    );
     return {
-      data: rows.map(({ openKey: _k, ...a }) => ({ ...a, group: a.groupId ? (groupName.get(a.groupId) ?? null) : null })),
+      data: rows.map(({ openKey: _k, ...a }) => ({
+        ...a,
+        group: a.type === "QA_LOW_STREAK" ? (agentName.get(a.ref) ?? null) : a.groupId ? (groupName.get(a.groupId) ?? null) : null,
+      })),
       total,
       page: q.page,
       perPage: q.perPage,

@@ -63,6 +63,7 @@ enum TenantRole {
   SUPERVISOR // supervisão em tempo real dos grupos que lhe são atribuídos (melhoria 4)
   MEMBER
   VIEWER
+  AUDITOR // qualidade: vê toda a operação, só altera grelhas e avaliações (ver plugins/tenantAuth.ts)
 }
 
 enum AdminRole {
@@ -129,6 +130,7 @@ enum TxType {
   REFUND
   ADJUSTMENT
   MONTHLY_FEE
+  QA_CHARGE // transcrição de chamadas para a auditoria com IA (por minuto)
 }
 
 enum SmsStatus {
@@ -155,8 +157,8 @@ enum CampaignContactStatus {
 // ============ TENANTS & ACESSO ============
 
 model Tenant {
-  id                   String              @id @default(cuid())
-  name                 String
+  id                          String              @id @default(cuid())
+  name                        String
   // Logo do cliente mostrado no CRM (data URL, ≤ 256 KB). Null = logo da Comunica.
   logoDataUrl          String?             @db.Text
   // Endereço próprio no CRM: <subdomain>.<TENANT_BASE_DOMAIN> (ex.: credito.falai.ao).
@@ -184,116 +186,146 @@ model Tenant {
   defaultLineGroup     String?
   // Overrides de funcionalidades por tenant (Json { agents, campaigns, contacts, ... }).
   // Sobrepõe-se aos defaults e às capacidades do plano; ver services/features.ts
-  features             Json?
+  features                    Json?
   // Override do modo de cobrança do plano (null = usa o do plano)
-  billingModeOverride  BillingMode?
+  billingModeOverride         BillingMode?
   // Preço por minuto próprio do cliente, em cêntimos (null = usa o do plano).
   // Vale para PER_MINUTE e PER_SECOND; ver effectivePrice em billing.service.
   pricePerMinuteOverrideCents Int?
   // Gravação das chamadas deste cliente. Desligado por defeito de propósito:
   // gravar sem o cliente ter pedido é uma decisão que não nos compete tomar.
-  recordCalls          Boolean             @default(false)
+  recordCalls                 Boolean             @default(false)
   // Toca o aviso de que a chamada vai ser gravada, assim que alguém atende.
   // Separado de recordCalls porque nem todos os clientes precisam do aviso —
   // e quem precisa não pode depender de se lembrar de o ligar à parte.
-  recordingAnnounce    Boolean             @default(false)
-  lines                TenantLine[]
+  recordingAnnounce           Boolean             @default(false)
+  lines                       TenantLine[]
   // Motor de telefonia deste cliente. Permite migrar tenant a tenant para o
   // motor próprio (Asterisk) e reverter mudando só este campo, sem redeploy.
   // Ver docs/PLANO-INDEPENDENCIA-PBX.txt §15.2.
-  telephonyEngine      TelephonyEngine     @default(YEASTAR)
+  telephonyEngine             TelephonyEngine     @default(YEASTAR)
   // PBX próprio do cliente (bring-your-own-PBX) — só usado quando plan.productType = CRM_BYO_PBX
-  pbxBaseUrl           String?
-  pbxClientId          String?
-  pbxClientSecret      String? // encriptado (AES-256-GCM) via crypto.service
-  pbxExtension         String? // extensão de saída por defeito
-  pbxConnected         Boolean             @default(false) // resultado do último teste de ligação
-  pbxLastSyncAt        DateTime? // último sync de CDR do PBX do cliente
-  pbxWebhookToken      String?             @unique // token do URL de webhook do PBX do cliente
-  pbxCalls             PbxCall[]
+  pbxBaseUrl                  String?
+  pbxClientId                 String?
+  pbxClientSecret             String? // encriptado (AES-256-GCM) via crypto.service
+  pbxExtension                String? // extensão de saída por defeito
+  pbxConnected                Boolean             @default(false) // resultado do último teste de ligação
+  pbxLastSyncAt               DateTime? // último sync de CDR do PBX do cliente
+  pbxWebhookToken             String?             @unique // token do URL de webhook do PBX do cliente
+  pbxCalls                    PbxCall[]
   // SMS (gateway Futurix) — credenciais e preço configurados por tenant no backoffice
-  smsApiKey            String? // encriptado (AES-256-GCM) via crypto.service
-  smsSenderId          String? // remetente (alfanumérico) atribuído ao cliente
-  smsPriceSegmentCents Int? // preço por segmento (definido no backoffice; null = usa o do plano)
+  smsApiKey                   String? // encriptado (AES-256-GCM) via crypto.service
+  smsSenderId                 String? // remetente (alfanumérico) atribuído ao cliente
+  smsPriceSegmentCents        Int? // preço por segmento (definido no backoffice; null = usa o do plano)
   // SMS automático a quem ficou sem resposta. Desligado por defeito: cada SMS
   // destes é cobrado ao cliente, por isso ligar-se sozinho seria cobrar-lhe algo
   // que ele não pediu.
-  missedCallSms        Boolean             @default(false)
-  missedCallSmsText    String? // template da mensagem; aceita {numero} e {empresa}
-  smsMessages          SmsMessage[]
-  smsCampaigns         SmsCampaign[]
-  nextBillingAt        DateTime? // data do próximo débito da subscrição mensal
-  invoices             Invoice[]
-  deletedAt            DateTime?
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
-  apiKeys              ApiKey[]
-  users                TenantUser[]
-  accessProfiles       AccessProfile[]
+  missedCallSms               Boolean             @default(false)
+  missedCallSmsText           String? // template da mensagem; aceita {numero} e {empresa}
+  smsMessages                 SmsMessage[]
+  smsCampaigns                SmsCampaign[]
+  nextBillingAt               DateTime? // data do próximo débito da subscrição mensal
+  invoices                    Invoice[]
+  deletedAt                   DateTime?
+  createdAt                   DateTime            @default(now())
+  updatedAt                   DateTime            @updatedAt
+  apiKeys                     ApiKey[]
+  users                       TenantUser[]
+  accessProfiles              AccessProfile[]
   // Análise dos relatórios com IA (melhoria 6)
-  aiReportDailyLimit   Int              @default(20) // análises novas por dia (definido no backoffice)
-  aiReportAgentNames   Boolean          @default(false) // enviar à IA o nome dos agentes (senão, só a extensão)
-  reportAnalyses       ReportAnalysis[]
-  agents               Agent[]
-  models               TenantModel[]
-  calls                Call[]
-  campaigns            Campaign[]
-  transactions         WalletTransaction[]
-  contacts             Contact[]
+  aiReportDailyLimit          Int                 @default(20) // análises novas por dia (definido no backoffice)
+  aiReportAgentNames          Boolean             @default(false) // enviar à IA o nome dos agentes (senão, só a extensão)
+  reportAnalyses              ReportAnalysis[]
+  agents                      Agent[]
+  models                      TenantModel[]
+  calls                       Call[]
+  campaigns                   Campaign[]
+  transactions                WalletTransaction[]
+  contacts                    Contact[]
   // Módulo PBX nativo (Extensões/Trunk) — ver docs/sip_trunk.md
-  extensions           Extension[]
-  trunks               Trunk[]
-  extensionGroups      ExtensionGroup[]
-  roles                Role[]
-  outboundRoutes       OutboundRoute[]
-  inboundRoutes        InboundRoute[]
-  ivrMenus             IvrMenu[]
+  extensions                  Extension[]
+  trunks                      Trunk[]
+  extensionGroups             ExtensionGroup[]
+  roles                       Role[]
+  outboundRoutes              OutboundRoute[]
+  inboundRoutes               InboundRoute[]
+  ivrMenus                    IvrMenu[]
   // Canais de texto — ver docs/PLANO-CANAIS-TEXTO.md
-  inboxes              Inbox[]
-  conversations        Conversation[]
-  cannedResponses      CannedResponse[]
+  inboxes                     Inbox[]
+  conversations               Conversation[]
+  cannedResponses             CannedResponse[]
   // Relatórios de atendimento — ver CallLeg
-  callLegs             CallLeg[]
-  rejectReasons        RejectReason[]
+  callLegs                    CallLeg[]
+  rejectReasons               RejectReason[]
   // Tipificação de chamadas (melhoria 2): obrigatória ou não, e quanto tempo o
   // agente fica indisponível à espera de tipificar antes de contar como "não tipificada".
-  callCategories       CallCategory[]
-  typingRequired       Boolean             @default(false)
-  typingMaxSecs        Int                 @default(60)
+  callCategories              CallCategory[]
+  typingRequired              Boolean             @default(false)
+  typingMaxSecs               Int                 @default(60)
   // Supervisão (melhoria 4): avisar o agente em modo Escuta (Sussurro e
   // Intervenção avisam sempre) e aviso ao cliente de que a chamada pode ser
   // monitorizada (Lei 22/11) — áudio custom/monitor_<tenantId>.
-  supervisionNotifyListen Boolean          @default(false)
-  monitoringNotice     Boolean             @default(false)
-  supervisionEvents    SupervisionEvent[]
+  supervisionNotifyListen     Boolean             @default(false)
+  monitoringNotice            Boolean             @default(false)
+  supervisionEvents           SupervisionEvent[]
   // Tickets — ver docs/PLANO-CENTRO-ATENDIMENTO.md. ticketSeq dá o número
   // sequencial do próximo ticket (incremento atómico, sem corrida).
-  ticketSeq            Int                 @default(0)
-  tickets              Ticket[]
+  ticketSeq                   Int                 @default(0)
+  tickets                     Ticket[]
   // Metas e limites de alerta (fase 4): { slaThresholdSecs, slaTargetPct,
   // maxWaitSecs, maxHandleSecs, minAvailableAgents, maxAbandonPct, maxTmaSecs }.
   // Validado em services/alerts.service.ts. Null = sem alertas.
-  serviceTargets       Json?
-  alerts               Alert[]
+  serviceTargets              Json?
+  alerts                      Alert[]
   // Agentes (fase 5): motivos de pausa, pausas, sessões e turnos
-  pauseReasons         PauseReason[]
-  agentPauses          AgentPause[]
-  agentSessions        AgentSession[]
-  shifts               Shift[]
+  pauseReasons                PauseReason[]
+  agentPauses                 AgentPause[]
+  agentSessions               AgentSession[]
+  shifts                      Shift[]
   // Qualidade (fase 7)
-  qaForms              QaForm[]
-  qaEvaluations        QaEvaluation[]
+  qaForms                     QaForm[]
+  qaEvaluations               QaEvaluation[]
   // Satisfação (fase 8): { voice, text, sms, question, thanks } — validado em
   // services/csat.service.ts. Null = sem inquéritos.
-  csatConfig           Json?
-  csatResponses        CsatResponse[]
-  kbArticles           KbArticle[]
-  helpdesk             HelpdeskConnection?
-  chatRooms            ChatRoom[]
+  csatConfig                  Json?
+  csatResponses               CsatResponse[]
+  kbArticles                  KbArticle[]
+  helpdesk                    HelpdeskConnection?
+  chatRooms                   ChatRoom[]
   // Fila de espera das chamadas de entrada: { maxWaitSecs, callback,
   // callbackAfterSecs, offer, thanks } — ver services/callQueue.service.ts.
-  queueConfig          Json?
-  queueCallbacks       QueueCallback[]
+  queueConfig                 Json?
+  queueCallbacks              QueueCallback[]
+  // Auditoria com IA: grelha usada, % das chamadas atendidas auditadas sozinhas
+  // (0 = desligado) e preço por minuto transcrito (backoffice; 0 = grátis).
+  qaAiFormId                  String?
+  qaAiSamplePct               Int                 @default(0)
+  qaAiPricePerMinCents        Int                 @default(0)
+  // Palavras que não se dizem ao cliente (métricas da transcrição) e nota abaixo
+  // da qual 3 avaliações seguidas abrem um alerta (0 = sem alerta).
+  qaForbiddenWords            String[]            @default([])
+  qaAlertThreshold            Int                 @default(0)
+  // Fichas de recolha de dados durante a chamada
+  contactForms                ContactForm[]
+}
+
+// Ficha de recolha de dados que o agente preenche durante a chamada. Os valores
+// gravam-se em Contact.attributes (pela chave de cada campo) e uma cópia em
+// Call.formData quando se sabe a chamada.
+// fields: [{ key, label, type: text|number|date|email|select|yesno, required, options? }]
+model ContactForm {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  fields    Json
+  // Grupos de atendimento onde esta ficha abre por omissão (vazio = nenhum)
+  groupIds  String[] @default([])
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
 }
 
 // Linha de chamadas de um cliente. Cada tenant pode ter uma ou mais linhas
@@ -494,17 +526,17 @@ model InboundRoute {
 // Menu de voz (IVR): toca a saudação e encaminha pelo dígito premido.
 // O áudio é gerado por TTS ao gravar e fica no Asterisk como custom/ivr_<id>.
 model IvrMenu {
-  id          String   @id @default(cuid())
-  tenantId    String
-  tenant      Tenant   @relation(fields: [tenantId], references: [id])
-  name        String
-  greeting    String // texto lido ao chamador (TTS), ou descrição se greetingAudio
-  greetingAudio Boolean @default(false) // true = ficheiro carregado pelo cliente, não se regera por TTS
-  welcomeAudio Boolean @default(false) // true = há boas-vindas carregadas (custom/ivr_<id>_welcome), tocadas uma vez antes da saudação
-  options     Json // [{ digit: "1", destType: "EXTENSION"|"GROUP"|"IVR", destValue }]
-  timeoutSecs Int      @default(3) // espera por um dígito depois da saudação
-  maxRetries  Int      @default(2) // repetições da saudação antes de desistir
-  createdAt   DateTime @default(now())
+  id            String   @id @default(cuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  name          String
+  greeting      String // texto lido ao chamador (TTS), ou descrição se greetingAudio
+  greetingAudio Boolean  @default(false) // true = ficheiro carregado pelo cliente, não se regera por TTS
+  welcomeAudio  Boolean  @default(false) // true = há boas-vindas carregadas (custom/ivr_<id>_welcome), tocadas uma vez antes da saudação
+  options       Json // [{ digit: "1", destType: "EXTENSION"|"GROUP"|"IVR", destValue }]
+  timeoutSecs   Int      @default(3) // espera por um dígito depois da saudação
+  maxRetries    Int      @default(2) // repetições da saudação antes de desistir
+  createdAt     DateTime @default(now())
 
   @@unique([tenantId, name])
 }
@@ -566,37 +598,37 @@ model ApiKey {
 }
 
 model TenantUser {
-  id              String         @id @default(cuid())
-  tenantId        String
-  tenant          Tenant         @relation(fields: [tenantId], references: [id])
-  name            String
-  email           String         @unique
-  passwordHash    String
-  role            TenantRole     @default(MEMBER)
+  id               String            @id @default(cuid())
+  tenantId         String
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  name             String
+  email            String            @unique
+  passwordHash     String
+  role             TenantRole        @default(MEMBER)
   // Perfil de acesso definido no backoffice. Null = sem restrição além do role.
-  accessProfileId String?
-  accessProfile   AccessProfile? @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
-  twoFaSecret     String?
+  accessProfileId  String?
+  accessProfile    AccessProfile?    @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
+  twoFaSecret      String?
   // Extensão do utilizador (agente ou supervisor). É por ela que o supervisor
   // ouve e que se impede supervisionar a própria chamada.
-  extensionId     String?        @unique
-  extension       Extension?     @relation(fields: [extensionId], references: [id], onDelete: SetNull)
+  extensionId      String?           @unique
+  extension        Extension?        @relation(fields: [extensionId], references: [id], onDelete: SetNull)
   supervisedGroups SupervisorGroup[]
-  lastLoginAt     DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  conversations   Conversation[]
-  assignedTickets Ticket[]       @relation("TicketAssignee")
-  ticketEvents    TicketEvent[]
-  pauses          AgentPause[]
-  sessions        AgentSession[]
-  shifts          Shift[]
-  qaEvaluated     QaEvaluation[] @relation("QaAgent")
-  qaEvaluations   QaEvaluation[] @relation("QaEvaluator")
-  csatResponses   CsatResponse[]
-  chatMemberships ChatMember[]
-  chatMessages    ChatMessage[]
-  callbacks       QueueCallback[]
+  lastLoginAt      DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  conversations    Conversation[]
+  assignedTickets  Ticket[]          @relation("TicketAssignee")
+  ticketEvents     TicketEvent[]
+  pauses           AgentPause[]
+  sessions         AgentSession[]
+  shifts           Shift[]
+  qaEvaluated      QaEvaluation[]    @relation("QaAgent")
+  qaEvaluations    QaEvaluation[]    @relation("QaEvaluator")
+  csatResponses    CsatResponse[]
+  chatMemberships  ChatMember[]
+  chatMessages     ChatMessage[]
+  callbacks        QueueCallback[]
 }
 
 // Perfil de acesso ao CRM, gerido pela Comunica no backoffice. A matriz diz,
@@ -775,54 +807,58 @@ model AgentVersion {
 // ============ CHAMADAS ============
 
 model Call {
-  id                String     @id @default(cuid())
+  id                String          @id @default(cuid())
   tenantId          String
-  tenant            Tenant     @relation(fields: [tenantId], references: [id])
+  tenant            Tenant          @relation(fields: [tenantId], references: [id])
   agentId           String?
-  agent             Agent?     @relation(fields: [agentId], references: [id])
-  kind              CallKind   @default(AI_AGENT)
+  agent             Agent?          @relation(fields: [agentId], references: [id])
+  kind              CallKind        @default(AI_AGENT)
   campaignId        String?
-  campaign          Campaign?  @relation(fields: [campaignId], references: [id])
+  campaign          Campaign?       @relation(fields: [campaignId], references: [id])
   contactId         String?
-  contact           Contact?   @relation(fields: [contactId], references: [id])
+  contact           Contact?        @relation(fields: [contactId], references: [id])
   toNumber          String
   fromNumber        String? // origem — preenchido em chamadas de entrada (kind INBOUND)
   variables         Json?
-  status            CallStatus @default(QUEUED)
+  status            CallStatus      @default(QUEUED)
   outcome           String?
-  yeastarCallId     String?    @unique
+  yeastarCallId     String?         @unique
   startedAt         DateTime?
   answeredAt        DateTime?
   endedAt           DateTime?
-  durationSecs      Int        @default(0)
-  billedSecs        Int        @default(0)
-  costCents         Int        @default(0)
-  providerCostCents Int        @default(0)
+  durationSecs      Int             @default(0)
+  billedSecs        Int             @default(0)
+  costCents         Int             @default(0)
+  providerCostCents Int             @default(0)
   // Saldo reservado no arranque e ainda não acertado (settleCall) nem devolvido
   // (releaseCallReservation). Posto a 0 de forma atómica por quem o consome —
   // é isso que impede reembolso duplo. >0 numa chamada terminada = órfã.
-  reservedCents     Int        @default(0)
+  reservedCents     Int             @default(0)
+  // Chamadas da IA: não usado (os turnos estão em CallTurn). Chamadas humanas:
+  // transcrição da gravação para a auditoria com IA —
+  // { source: "recording", durationSecs, utterances: [{ speaker, start, text }] }
   transcript        Json?
-  summary           String?    @db.Text
+  summary           String?         @db.Text
+  formData          Json? // ficha preenchida nesta chamada { formId, values, by, at }
   // Caminho do ficheiro de gravação RELATIVO à pasta de gravações (ver
   // RECORDING_DIR). Nunca é servido directamente ao browser: a rota
   // /tenant/calls/:id/recording é que lê o ficheiro, já com o tenant validado.
   recordingUrl      String?
   failReason        String?
-  webhookDelivered  Boolean    @default(false)
+  webhookDelivered  Boolean         @default(false)
   // Chamadas de entrada: quando começou a tocar em extensões (fim do IVR) e
   // por que grupo. Base do tempo de espera nos relatórios de atendimento.
   queuedAt          DateTime?
   groupId           String?
   group             ExtensionGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
   turns             CallTurn[]
   legs              CallLeg[]
   notes             ContactNote[]
   // Ticket a que a chamada pertence (um ticket junta várias interacções).
   ticketId          String?
-  ticket            Ticket?    @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  ticket            Ticket?         @relation(fields: [ticketId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, kind, startedAt])
   @@index([tenantId, contactId, startedAt]) // histórico do cliente (screen pop)
@@ -881,22 +917,22 @@ model CallLeg {
 // Tipificação de chamadas em 2 níveis: categoria (parentId null) → subcategoria.
 // Desactiva-se em vez de apagar, para o histórico continuar a ter o nome.
 model CallCategory {
-  id        String              @id @default(cuid())
-  tenantId  String
-  tenant    Tenant              @relation(fields: [tenantId], references: [id])
-  parentId  String?
-  parent    CallCategory?       @relation("CallCategoryTree", fields: [parentId], references: [id])
-  children  CallCategory[]      @relation("CallCategoryTree")
-  name      String
-  isActive  Boolean             @default(true)
-  sortOrder Int                 @default(0)
+  id         String              @id @default(cuid())
+  tenantId   String
+  tenant     Tenant              @relation(fields: [tenantId], references: [id])
+  parentId   String?
+  parent     CallCategory?       @relation("CallCategoryTree", fields: [parentId], references: [id])
+  children   CallCategory[]      @relation("CallCategoryTree")
+  name       String
+  isActive   Boolean             @default(true)
+  sortOrder  Int                 @default(0)
   // Só nas categorias: grupos que a podem usar. Vazio = todos.
-  groups    CallCategoryGroup[]
-  legs      CallLeg[]           @relation("LegCategory")
-  subLegs   CallLeg[]           @relation("LegSubcategory")
-  tickets    Ticket[]           @relation("TicketCategory")
-  subTickets Ticket[]           @relation("TicketSubcategory")
-  createdAt DateTime            @default(now())
+  groups     CallCategoryGroup[]
+  legs       CallLeg[]           @relation("LegCategory")
+  subLegs    CallLeg[]           @relation("LegSubcategory")
+  tickets    Ticket[]            @relation("TicketCategory")
+  subTickets Ticket[]            @relation("TicketSubcategory")
+  createdAt  DateTime            @default(now())
 
   @@index([tenantId])
 }
@@ -1409,42 +1445,42 @@ enum TicketEventType {
 }
 
 model Ticket {
-  id             String          @id @default(cuid())
-  tenantId       String
-  tenant         Tenant          @relation(fields: [tenantId], references: [id])
-  number         Int // sequencial por tenant (Tenant.ticketSeq)
-  subject        String
-  description    String?         @db.Text
-  status         TicketStatus    @default(OPEN)
-  priority       TicketPriority  @default(MEDIUM)
-  supportLevel   Int             @default(1) // 1º, 2º ou 3º nível
-  categoryId     String?
-  category       CallCategory?   @relation("TicketCategory", fields: [categoryId], references: [id], onDelete: SetNull)
-  subcategoryId  String?
-  subcategory    CallCategory?   @relation("TicketSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
-  contactId      String?
-  contact        Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  assigneeId     String?
-  assignee       TenantUser?     @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  groupId        String? // equipa responsável
-  group          ExtensionGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  source         String          @default("MANUAL") // MANUAL | CALL | WHATSAPP | WEB | EMAIL | TELEGRAM | API
-  dueAt          DateTime?
-  resolvedAt     DateTime?
-  closedAt       DateTime?
-  reopenCount    Int             @default(0)
-  externalSystem String? // "FRESHDESK" quando é espelho
-  externalId     String?
+  id               String          @id @default(cuid())
+  tenantId         String
+  tenant           Tenant          @relation(fields: [tenantId], references: [id])
+  number           Int // sequencial por tenant (Tenant.ticketSeq)
+  subject          String
+  description      String?         @db.Text
+  status           TicketStatus    @default(OPEN)
+  priority         TicketPriority  @default(MEDIUM)
+  supportLevel     Int             @default(1) // 1º, 2º ou 3º nível
+  categoryId       String?
+  category         CallCategory?   @relation("TicketCategory", fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId    String?
+  subcategory      CallCategory?   @relation("TicketSubcategory", fields: [subcategoryId], references: [id], onDelete: SetNull)
+  contactId        String?
+  contact          Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  assigneeId       String?
+  assignee         TenantUser?     @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  groupId          String? // equipa responsável
+  group            ExtensionGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  source           String          @default("MANUAL") // MANUAL | CALL | WHATSAPP | WEB | EMAIL | TELEGRAM | API
+  dueAt            DateTime?
+  resolvedAt       DateTime?
+  closedAt         DateTime?
+  reopenCount      Int             @default(0)
+  externalSystem   String? // "FRESHDESK" quando é espelho
+  externalId       String?
   // Última versão local (updatedAt) já enviada ao helpdesk externo. Se o
   // ticket mudou depois disto há alterações por enviar — e a sincronização
   // de lá para cá não as pisa.
   externalSyncedAt DateTime?
-  createdById    String? // TenantUser (null = API/sistema)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  events         TicketEvent[]
-  calls          Call[]
-  conversations  Conversation[]
+  createdById      String? // TenantUser (null = API/sistema)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  events           TicketEvent[]
+  calls            Call[]
+  conversations    Conversation[]
 
   @@unique([tenantId, number])
   @@unique([tenantId, externalSystem, externalId])
@@ -1483,6 +1519,7 @@ enum AlertType {
   TEXT_SLA_BELOW // SLA dos canais de texto (1.ª resposta) do dia abaixo da meta
   TICKET_DUE_SOON // ticket em aberto a menos de ticketWarnMins do prazo (ref = ticket)
   TICKET_OVERDUE // ticket em aberto com o prazo ultrapassado (ref = ticket)
+  QA_LOW_STREAK // agente com as últimas 3 avaliações abaixo de Tenant.qaAlertThreshold (ref = agente)
 }
 
 model Alert {
@@ -1560,14 +1597,14 @@ model AgentSession {
 // Turno semanal: dia da semana (0 = domingo) e minutos desde a meia-noite.
 // ponytail: turnos não passam da meia-noite; partir em dois se for preciso.
 model Shift {
-  id        String     @id @default(cuid())
-  tenantId  String
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  userId    String
-  user      TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  weekday   Int
-  startMin  Int
-  endMin    Int
+  id       String     @id @default(cuid())
+  tenantId String
+  tenant   Tenant     @relation(fields: [tenantId], references: [id])
+  userId   String
+  user     TenantUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekday  Int
+  startMin Int
+  endMin   Int
 
   @@index([tenantId, userId])
 }
@@ -1593,6 +1630,7 @@ model QaForm {
 }
 
 enum QaStatus {
+  AI_DRAFT // feita pela IA, à espera de o auditor rever e submeter (o agente não a vê)
   SUBMITTED // feita, à espera do agente
   ACKNOWLEDGED // o agente leu
   DISPUTED // o agente contestou
@@ -1600,29 +1638,31 @@ enum QaStatus {
 }
 
 model QaEvaluation {
-  id             String     @id @default(cuid())
+  id             String      @id @default(cuid())
   tenantId       String
-  tenant         Tenant     @relation(fields: [tenantId], references: [id])
+  tenant         Tenant      @relation(fields: [tenantId], references: [id])
   formId         String?
-  form           QaForm?    @relation(fields: [formId], references: [id], onDelete: SetNull)
+  form           QaForm?     @relation(fields: [formId], references: [id], onDelete: SetNull)
   formSnapshot   Json
   callId         String?
   conversationId String?
   ticketId       String?
   agentId        String // TenantUser avaliado
-  agent          TenantUser @relation("QaAgent", fields: [agentId], references: [id], onDelete: Cascade)
-  evaluatorId    String
-  evaluator      TenantUser @relation("QaEvaluator", fields: [evaluatorId], references: [id], onDelete: Cascade)
+  agent          TenantUser  @relation("QaAgent", fields: [agentId], references: [id], onDelete: Cascade)
+  evaluatorId    String? // null enquanto for rascunho da IA
+  evaluator      TenantUser? @relation("QaEvaluator", fields: [evaluatorId], references: [id], onDelete: Cascade)
   answers        Json // { [criterionId]: "YES" | "NO" | "NA" }
+  // Auditoria com IA: { summary, model, criteria: { [criterionId]: { reason, quote } } }
+  aiFindings     Json?
   score          Float // 0–100, calculado no servidor
-  criticalFail   Boolean    @default(false)
-  comment        String?    @db.Text
-  status         QaStatus   @default(SUBMITTED)
-  agentComment   String?    @db.Text // contestação ou nota do agente
+  criticalFail   Boolean     @default(false)
+  comment        String?     @db.Text
+  status         QaStatus    @default(SUBMITTED)
+  agentComment   String?     @db.Text // contestação ou nota do agente
   acknowledgedAt DateTime?
-  resolution     String?    @db.Text // resposta à contestação
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  resolution     String?     @db.Text // resposta à contestação
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   @@index([tenantId, createdAt])
   @@index([tenantId, agentId, createdAt])
@@ -1689,23 +1729,23 @@ model KbArticle {
 // outros helpdesks sem mudar o esquema (hoje só FRESHDESK).
 
 model HelpdeskConnection {
-  id             String    @id @default(cuid())
-  tenantId       String    @unique
-  tenant         Tenant    @relation(fields: [tenantId], references: [id])
-  provider       String    @default("FRESHDESK")
-  enabled        Boolean   @default(false)
-  domain         String // ex.: "mano.freshdesk.com"
-  apiKey         String // encriptada (AES-256-GCM) via crypto.service
+  id                   String    @id @default(cuid())
+  tenantId             String    @unique
+  tenant               Tenant    @relation(fields: [tenantId], references: [id])
+  provider             String    @default("FRESHDESK")
+  enabled              Boolean   @default(false)
+  domain               String // ex.: "mano.freshdesk.com"
+  apiKey               String // encriptada (AES-256-GCM) via crypto.service
   // Token do URL do webhook que o helpdesk chama (/webhooks/helpdesk/:token)
-  webhookToken   String    @unique
+  webhookToken         String    @unique
   // NEVER | AGENT_CHOICE | ALWAYS — criar ticket no fim da chamada atendida
-  ticketOnCall   String    @default("AGENT_CHOICE")
-  includeRecordingLink Boolean @default(false)
-  lastSyncAt     DateTime? // última reconciliação bem-sucedida
-  lastError      String?
-  lastErrorAt    DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  ticketOnCall         String    @default("AGENT_CHOICE")
+  includeRecordingLink Boolean   @default(false)
+  lastSyncAt           DateTime? // última reconciliação bem-sucedida
+  lastError            String?
+  lastErrorAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }
 
 // ============ CHAT INTERNO DA EQUIPA ============

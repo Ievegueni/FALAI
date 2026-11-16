@@ -3,7 +3,7 @@
 > **Este é o ficheiro para ler no início de cada sessão.** Diz o que está feito,
 > o que falta e por onde continuar. Actualizar no fim de cada sessão.
 >
-> Última actualização: **13/10/2026** (secção 3.5)
+> Última actualização: **16/11/2026** (secção 3.7)
 > Branch actual: `docs/deploy-guide` · Último commit: `077daf0`
 > **Atenção: há trabalho não commitado** (ver secção 6).
 
@@ -250,6 +250,49 @@ integração pronto a entregar: `docs/API-BYOM.md`.
   Company; contas `sala@`, `ana@`, `bruno@`, `carla@`, `delcio@`, `edna@demo.com`,
   password `Demo1234!`) + `DEMO_LIVE=1` no `.env` (só dev: `services/demoLive.ts` mostra
   as chamadas `demo-*` como ao vivo). Reiniciar a API **antes** do seed (o arranque fecha sessões abertas).
+
+### 3.7 Auditor, auditoria com IA e fichas de recolha (16/11, `feat/tickets`, por commitar) — por testar com chamadas reais
+
+Migração `20261116120000_auditor_qa_ai_contact_forms` (só aditiva), aplicada **só em dev**.
+
+- **Papel `AUDITOR`**: vê tudo (âmbito ALL) e só escreve em `/tenant/qa/*`. A regra
+  está em `plugins/tenantAuth.ts`, como a do VIEWER. Atribuível pelo gestor e no backoffice.
+- **Auditoria com IA** (`services/qaAi.service.ts`): transcreve a gravação com o
+  Deepgram (`transcribeFile`, com separação de oradores) e guarda-a em `Call.transcript`.
+  Depois o Claude preenche a grelha e fica uma `QaEvaluation` `AI_DRAFT`, sem avaliador,
+  que o agente não vê. O auditor revê e submete (`POST …/submit`) ou descarta (`DELETE`).
+  Arranca sozinha no fim da gravação, por amostra (`Tenant.qaAiSamplePct`, grelha em
+  `qaAiFormId`, configurada no CRM → Qualidade → Auditoria IA), ou à mão pelo botão
+  "Auditar com IA" (detalhe da chamada e amostra). Cobra-se `Tenant.qaAiPricePerMinCents`
+  por minuto de chamada (backoffice; por omissão 0), com `TxType QA_CHARGE`. O saldo é
+  reservado antes e devolvido se a transcrição falhar.
+- **Fichas de recolha** (`ContactForm`): o gestor cria-as em Supervisão → Fichas e o
+  agente abre-as no painel da chamada (entrada e saída do webphone). Os valores vão
+  para `Contact.attributes`, pela chave do campo, e para `Call.formData` quando a
+  chamada é de entrada.
+- Testado contra a API em dev: papéis, rascunho/submeter/descartar, visibilidade e
+  validação da ficha. **Por testar**: Deepgram e Claude reais (o dev está em `AI_STUB_MODE`),
+  com uma gravação verdadeira.
+- Limites conhecidos (comentários `ponytail:`): as auditorias correm em fila em memória
+  (perdem-se se a API reiniciar) e nas chamadas de saída não se guarda a cópia em `Call.formData`.
+- **Melhorias (16/11, tarde)**, migração `20261116180000_qa_forms_improvements`, só em dev:
+  - Ficha: tipos NIF/BI (só o formato; não há dígito de controlo publicado) e província
+    (as 21, com município em texto livre), campos condicionais (`showIf`), ficha por grupo
+    (`ContactForm.groupIds`). Abre já dentro do painel da chamada, com barra de progresso.
+    Contactos → filtro "Incompletos em: ficha".
+  - Qualidade: critérios em escala 1–5 e "Automático: ficha preenchida" (YES/NO pelo
+    `Call.formData`). Separador "Por rever", ordenado por eliminatórios e notas mais baixas.
+    O auditor revê com a gravação, a transcrição clicável, a ficha, as métricas e as
+    divergências ficha↔conversa (vêm da IA). Métricas sem IA: fala por orador, maior
+    silêncio, interrupções e palavras proibidas (`Tenant.qaForbiddenWords`). Relatório por
+    critério e por semana. Alerta `QA_LOW_STREAK` quando há 3 avaliações seguidas abaixo de
+    `Tenant.qaAlertThreshold`; fecha quando a última volta a passar.
+  - **Deploy na VPS: seguir `docs/DEPLOY-QUALIDADE-IA.md`** (backup, migrações, gravações, backoffice, teste com trunk).
+  - Modelos: a transcrição da auditoria usa o Deepgram **Nova-3** e o Claude passa a
+    **Sonnet 5** (`AI_REPORT_MODEL`, que também serve a análise de relatórios), sem raciocínio
+    (`thinking: disabled`). A IA das chamadas em tempo real continua no Nova-2.
+  - Fora disto (ver resposta de 16/11): sugestões da IA em tempo real e modo bot (dependem do
+    `externalMedia`), marcador progressivo/preditivo, sentimento, comentários com tempo.
 
 ## 4. O QUE FALTA FAZER
 

@@ -44,6 +44,15 @@ export default fp(async (fastify) => {
         if (user.role === "VIEWER" && !["GET", "HEAD"].includes(request.method) && !request.url.startsWith("/tenant/auth/")) {
           return reply.status(403).send({ error: "O seu papel só permite consultar" });
         }
+        // AUDITOR: consulta tudo, mas só altera a qualidade (grelhas e avaliações).
+        if (
+          user.role === "AUDITOR" &&
+          !["GET", "HEAD"].includes(request.method) &&
+          !request.url.startsWith("/tenant/auth/") &&
+          !request.url.startsWith("/tenant/qa/")
+        ) {
+          return reply.status(403).send({ error: "O perfil de auditor só altera a qualidade" });
+        }
 
         request.tenantUser = user;
       } catch {

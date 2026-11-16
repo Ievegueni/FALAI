@@ -119,6 +119,35 @@ export class DeepgramAdapter implements SttProvider {
     };
   }
 
+  /**
+   * Transcrição de um ficheiro inteiro (gravação de chamada), com separação de
+   * quem fala. Em stub devolve null: não há transcrição a fingir.
+   */
+  async transcribeFile(
+    audio: Buffer,
+    mimetype: string,
+  ): Promise<{ durationSecs: number; utterances: { speaker: number; start: number; end: number; text: string }[] } | null> {
+    if (this.config.stubMode) return null;
+    const { result, error } = await createClient(this.config.apiKey).listen.prerecorded.transcribeFile(audio, {
+      model: this.config.model ?? "nova-2",
+      language: this.config.language ?? "pt",
+      smart_format: true,
+      diarize: true,
+      utterances: true,
+      mimetype,
+    });
+    if (error || !result) throw error ?? new Error("Deepgram não devolveu a transcrição");
+    return {
+      durationSecs: Math.round(result.metadata?.duration ?? 0),
+      utterances: (result.results?.utterances ?? []).map((u) => ({
+        speaker: u.speaker ?? 0,
+        start: Math.round(u.start * 10) / 10,
+        end: Math.round(u.end * 10) / 10,
+        text: u.transcript,
+      })),
+    };
+  }
+
   async healthCheck(): Promise<{ ok: boolean; details?: string }> {
     if (this.config.stubMode) return { ok: true, details: "stub mode" };
     try {
