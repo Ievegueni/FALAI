@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Fastify from "fastify";
 
+// Utilizadores ADMIN: o OWNER passou a ter 2FA obrigatória (segurança do login)
+// e este teste é só sobre o endereço.
 /**
  * Endereço próprio do cliente (credito.falai.ao): o login fica preso a esse
  * cliente, e o ecrã de login sabe de quem é o endereço. Pelos domínios gerais
@@ -8,8 +10,8 @@ import Fastify from "fastify";
  */
 
 const users: Record<string, { id: string; email: string; tenantId: string; passwordHash: string; twoFaSecret: string | null; role: string; name: string; accessProfile: null; tenant: { id: string; status: string; deletedAt: null; subdomain: string | null } }> = {
-  "ana@credito.ao": { id: "u1", email: "ana@credito.ao", tenantId: "t_cred", passwordHash: "ok", twoFaSecret: null, role: "OWNER", name: "Ana", accessProfile: null, tenant: { id: "t_cred", status: "ACTIVE", deletedAt: null, subdomain: "credito" } },
-  "rui@solluar.ao": { id: "u2", email: "rui@solluar.ao", tenantId: "t_sol", passwordHash: "ok", twoFaSecret: null, role: "OWNER", name: "Rui", accessProfile: null, tenant: { id: "t_sol", status: "ACTIVE", deletedAt: null, subdomain: null } },
+  "ana@credito.ao": { id: "u1", email: "ana@credito.ao", tenantId: "t_cred", passwordHash: "ok", twoFaSecret: null, role: "ADMIN", name: "Ana", accessProfile: null, tenant: { id: "t_cred", status: "ACTIVE", deletedAt: null, subdomain: "credito" } },
+  "rui@solluar.ao": { id: "u2", email: "rui@solluar.ao", tenantId: "t_sol", passwordHash: "ok", twoFaSecret: null, role: "ADMIN", name: "Rui", accessProfile: null, tenant: { id: "t_sol", status: "ACTIVE", deletedAt: null, subdomain: null } },
 };
 const tenants: Record<string, { name: string; logoDataUrl: string | null; subdomain: string | null }> = {
   t_cred: { name: "FACIL CREDITO", logoDataUrl: null, subdomain: "credito" },
@@ -28,7 +30,12 @@ const prisma = {
 vi.mock("@falai/db", () => ({ prisma }));
 vi.mock("../../services/auth.service.js", () => ({
   hashPassword: vi.fn(),
-  verifyPassword: vi.fn(async (hash: string, pw: string) => hash === "ok" && pw === "certa"),
+  verifyPasswordOrDummy: vi.fn(async (hash: string | undefined, pw: string) => hash === "ok" && pw === "certa"),
+  isLoginLocked: vi.fn(async () => false),
+  recordLoginFailure: vi.fn(async () => {}),
+  clearLoginFailures: vi.fn(async () => {}),
+  LOCKED_MESSAGE: "bloqueada",
+  tenantRoleRequires2Fa: (role: string) => role === "OWNER",
   generateTotpSecret: vi.fn(),
   generateTotpQrCode: vi.fn(),
   verifyTotp: vi.fn(),
@@ -44,6 +51,7 @@ async function app() {
   const f = Fastify();
   f.decorate("verifyTenant", async () => {});
   f.decorate("audit", audit);
+  f.decorate("redis", {} as never);
   await f.register(tenantAuthRoutes, { prefix: "/tenant/auth" });
   return f;
 }

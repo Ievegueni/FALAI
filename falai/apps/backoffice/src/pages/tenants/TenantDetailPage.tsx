@@ -248,6 +248,15 @@ export function TenantDetailPage() {
     onError: (e: Error) => toast.error(e.message || 'Erro ao redefinir password.'),
   });
 
+  const reset2faMut = useMutation({
+    mutationFn: (userId: string) => tenantsApi.resetUser2fa(id!, userId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin', 'tenant', id] });
+      toast.success('2FA reposta. O utilizador volta a configurá-la no próximo login.');
+    },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao repor a 2FA.'),
+  });
+
   const createUserMut = useMutation({
     mutationFn: () => tenantsApi.createUser(id!, {
       ...userForm,
@@ -710,6 +719,19 @@ export function TenantDetailPage() {
                   >
                     Redefinir password
                   </Button>
+                  {u.twoFaEnabled && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      icon={<Shield className="h-4 w-4" />}
+                      loading={reset2faMut.isPending && reset2faMut.variables === u.id}
+                      onClick={() => {
+                        if (confirm(`Repor a 2FA de ${u.name}?\n\nUse quando o utilizador perdeu o telemóvel. As sessões abertas terminam.`)) reset2faMut.mutate(u.id);
+                      }}
+                    >
+                      Repor 2FA
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

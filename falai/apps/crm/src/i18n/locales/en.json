@@ -66,7 +66,10 @@
     "title": "2FA Verification",
     "subtitle": "Enter the code from your authenticator app",
     "verify": "Verify",
-    "invalidCode": "Invalid code"
+    "invalidCode": "Invalid code",
+    "setupTitle": "Turn on 2-step verification",
+    "setupSubtitle": "It is required for your account. Scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator…) and enter the 6-digit code.",
+    "setupSecret": "Or enter this key in the app:"
   },
   "onboarding": {
     "welcome": "Welcome to Falaí",
@@ -725,7 +728,11 @@
     "twoFaConfirm": "Confirm",
     "twoFaDone": "2FA enabled",
     "twoFaDisable": "Disable 2FA",
-    "twoFaOff": "2FA disabled"
+    "twoFaOff": "2FA disabled",
+    "twoFaRequired": "2FA is on and required for the account owner.",
+    "sessionsTitle": "Sessions",
+    "sessionsHint": "Signs you out of every computer and phone where your account is open, including this one.",
+    "sessionsButton": "Sign out of all devices"
   },
   "pbx": {
     "title": "PBX integration",

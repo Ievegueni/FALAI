@@ -1013,7 +1013,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
 
       await prisma.tenantUser.update({
         where: { id: user.id },
-        data: { passwordHash: await hashPassword(password) },
+        data: { passwordHash: await hashPassword(password), tokenVersion: { increment: 1 } },
       });
 
       await fastify.audit({
@@ -1022,6 +1022,29 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         after: { tenantId: request.params.id, email: user.email } as object, ip: request.ip,
       });
 
+      return { ok: true };
+    },
+  );
+
+  // POST /admin/tenants/:id/users/:userId/reset-2fa — para quem perdeu o telemóvel.
+  // Termina as sessões; se a 2FA for obrigatória (OWNER), volta a activá-la no próximo login.
+  fastify.post<{ Params: { id: string; userId: string } }>(
+    "/:id/users/:userId/reset-2fa",
+    { preHandler },
+    async (request, reply) => {
+      const admin = request.adminUser!;
+      const user = await prisma.tenantUser.findFirst({
+        where: { id: request.params.userId, tenantId: request.params.id },
+        select: { id: true, email: true },
+      });
+      if (!user) return reply.status(404).send({ error: "Utilizador não encontrado" });
+
+      await prisma.tenantUser.update({ where: { id: user.id }, data: { twoFaSecret: null, tokenVersion: { increment: 1 } } });
+      await fastify.audit({
+        actorType: "ADMIN", actorId: admin.sub, action: "tenant.user.2fa_reset",
+        targetType: "TenantUser", targetId: user.id,
+        after: { tenantId: request.params.id, email: user.email } as object, ip: request.ip,
+      });
       return { ok: true };
     },
   );

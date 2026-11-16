@@ -26,10 +26,14 @@ export default fp(async (fastify) => {
         // novo. Substitui a leitura do tenant que já se fazia (mesma 1 query).
         const dbUser = await prisma.tenantUser.findUnique({
           where: { id: claims.sub },
-          select: { tenantId: true, role: true, tenant: { select: { status: true, deletedAt: true } } },
+          select: { tenantId: true, role: true, tokenVersion: true, tenant: { select: { status: true, deletedAt: true } } },
         });
         if (!dbUser || dbUser.tenantId !== claims.tenantId) {
           return reply.status(401).send({ error: "Sessão inválida — utilizador já não existe" });
+        }
+        // tokenVersion diferente = sessão terminada (password mudada, 2FA reposta, "sair de todos").
+        if (dbUser.tokenVersion !== (claims.tv ?? 0)) {
+          return reply.status(401).send({ error: "Sessão terminada. Inicie sessão novamente." });
         }
 
         const { tenant } = dbUser;

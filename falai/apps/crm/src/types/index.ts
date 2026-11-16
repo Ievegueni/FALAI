@@ -63,6 +63,8 @@ export interface Tenant {
 export interface LoginResponse {
   token: string;
   requiresTwoFactor: boolean;
+  /** 2FA obrigatória e ainda por activar: QR e chave para a app. */
+  setup?: { secret: string; qrCode: string };
   user: TenantUser;
   tenant: Tenant;
 }

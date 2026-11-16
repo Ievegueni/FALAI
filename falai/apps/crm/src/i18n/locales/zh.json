@@ -64,7 +64,10 @@
     "title": "两步验证",
     "subtitle": "请输入身份验证器应用中的验证码",
     "verify": "验证",
-    "invalidCode": "验证码无效"
+    "invalidCode": "验证码无效",
+    "setupTitle": "启用两步验证",
+    "setupSubtitle": "您的账户必须启用。请用身份验证器应用（Google Authenticator、Microsoft Authenticator…）扫描二维码并输入 6 位验证码。",
+    "setupSecret": "或在应用中输入此密钥："
   },
   "onboarding": {
     "welcome": "欢迎使用 Falaí",
@@ -723,7 +726,11 @@
     "twoFaConfirm": "确认",
     "twoFaDone": "2FA 已启用",
     "twoFaDisable": "停用 2FA",
-    "twoFaOff": "2FA 已停用"
+    "twoFaOff": "2FA 已停用",
+    "twoFaRequired": "两步验证已启用，账户所有者必须使用。",
+    "sessionsTitle": "会话",
+    "sessionsHint": "在所有打开您账户的电脑和手机上退出登录，包括当前设备。",
+    "sessionsButton": "在所有设备上退出登录"
   },
   "pbx": {
     "title": "PBX 集成",

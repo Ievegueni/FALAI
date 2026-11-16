@@ -8,6 +8,7 @@ import { Redis } from "ioredis";
 import { ZodError } from "zod";
 
 import { config } from "./config.js";
+import { encryptLegacyTotpSecrets } from "./services/auth.service.js";
 import { resolveProviderConfig, type ResolvedProviderConfig } from "./services/providerConfig.service.js";
 import { AsteriskAdapter, trunkEndpointId, parseDialFormat, type TelephonyProvider } from "@falai/providers";
 import { pickOutboundTrunk } from "./services/tenantOutboundTrunk.js";
@@ -503,6 +504,11 @@ async function main() {
   const app = await buildApp();
   try {
     await app.listen({ port: config.PORT, host: config.HOST });
+
+    // Segredos 2FA de antes da cifra: cifra-os uma vez (idempotente).
+    void encryptLegacyTotpSecrets()
+      .then((n) => n > 0 && app.log.info({ n }, "auth.totp_secrets_encrypted"))
+      .catch((err) => app.log.warn({ err }, "auth.totp_encrypt_failed"));
 
     // Projecta a configuração PBX para o motor próprio. Fire-and-forget: se o
     // motor estiver em baixo, a API arranca na mesma e volta a sincronizar na

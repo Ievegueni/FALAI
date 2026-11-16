@@ -26,6 +26,12 @@ export const tenantEventsRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(401).send({ error: "Não autenticado" });
     }
 
+    // Mesma revogação que o verifyTenant: utilizador apagado ou sessão terminada.
+    const user = await prisma.tenantUser.findUnique({ where: { id: payload.sub }, select: { tenantId: true, tokenVersion: true } });
+    if (!user || user.tenantId !== payload.tenantId || user.tokenVersion !== (payload.tv ?? 0)) {
+      return reply.status(401).send({ error: "Sessão terminada" });
+    }
+
     const tenant = await prisma.tenant.findUnique({
       where: { id: payload.tenantId },
       select: { status: true, deletedAt: true },

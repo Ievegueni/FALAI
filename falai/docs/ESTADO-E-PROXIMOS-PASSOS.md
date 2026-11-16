@@ -294,6 +294,25 @@ Migração `20261116120000_auditor_qa_ai_contact_forms` (só aditiva), aplicada 
   - Fora disto (ver resposta de 16/11): sugestões da IA em tempo real e modo bot (dependem do
     `externalMedia`), marcador progressivo/preditivo, sentimento, comentários com tempo.
 
+### 3.8 Segurança do login (17/11, `feat/tickets`, por commitar) — testado contra a API em dev
+
+Migração `20261117090000_login_security` (só aditiva: `tokenVersion` em `TenantUser` e
+`AdminUser`), aplicada **só em dev**. **Deploy: `docs/DEPLOY-SEGURANCA-LOGIN.md`.**
+
+- Bloqueio por conta: 5 falhas → 15 min (Redis `login:fail:{tenant|admin}:{email}`), além do rate-limit por IP.
+- Login responde igual e no mesmo tempo com email inexistente (hash descartável) e só
+  diz "conta suspensa" depois da password certa.
+- `tokenVersion` no JWT (`tv`), verificado em `verifyTenant`, `authenticate` e no SSE.
+  Sobe ao mudar/redefinir password, repor 2FA e em `POST /…/auth/logout-all`.
+- Segredo TOTP cifrado com `encryptSecret` (`ENCRYPTION_KEY`); os antigos cifram-se no arranque.
+- 2FA obrigatória para admins e OWNER: o login devolve `setup` (QR) e a activação acontece
+  no próprio `/2fa/verify`. Máx. 5 tentativas por sessão de 2FA; código não reutilizável.
+  OWNER não a pode desligar; backoffice tem "Repor 2FA".
+- Regras de password em `hashPassword` (todos os sítios passam por lá). `/tenant/auth/register` limitado a 5/h por IP.
+- CSP e cabeçalhos: só documentados em `DEPLOY.md` §8 (nginx, começar em Report-Only).
+- **Não feito:** token em cookie httpOnly (mudava API, CRM, backoffice, SSE e webphone);
+  a CSP cobre o risco principal. Fluxo de admin testado só por typecheck, é igual ao do CRM.
+
 ## 4. O QUE FALTA FAZER
 
 ### 4.0 API_BYOM — validar contra base de dados (fazer primeiro, é rápido)
