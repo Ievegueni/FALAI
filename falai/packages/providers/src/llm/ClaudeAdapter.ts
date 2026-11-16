@@ -45,7 +45,9 @@ export class ClaudeAdapter implements LlmProvider {
 
   constructor(config: ClaudeConfig) {
     this.config = config;
-    this.client = new Anthropic({ apiKey: config.apiKey });
+    // fetch nativo do Node: o node-fetch 2.7 que o SDK 0.30 usa por omissão dá
+    // "Premature close" ao descomprimir o gzip das respostas da Anthropic (Node 22).
+    this.client = new Anthropic({ apiKey: config.apiKey, fetch: globalThis.fetch as unknown as NonNullable<ConstructorParameters<typeof Anthropic>[0]>["fetch"] });
   }
 
   async generateTurnResponse(params: {
