@@ -287,6 +287,7 @@ Migração `20261116120000_auditor_qa_ai_contact_forms` (só aditiva), aplicada 
     silêncio, interrupções e palavras proibidas (`Tenant.qaForbiddenWords`). Relatório por
     critério e por semana. Alerta `QA_LOW_STREAK` quando há 3 avaliações seguidas abaixo de
     `Tenant.qaAlertThreshold`; fecha quando a última volta a passar.
+  - **Deploy na VPS: seguir `docs/DEPLOY-QUALIDADE-IA.md`** (backup, migrações, gravações, backoffice, teste com trunk).
   - Modelos: a transcrição da auditoria usa o Deepgram **Nova-3** e o Claude passa a
     **Sonnet 5** (`AI_REPORT_MODEL`, que também serve a análise de relatórios), sem raciocínio
     (`thinking: disabled`). A IA das chamadas em tempo real continua no Nova-2.
