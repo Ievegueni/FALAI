@@ -12,6 +12,10 @@ export function TwoFactorPage() {
   const [digits, setDigits] = useState(Array(6).fill(''));
   const [loading, setLoading] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  // 2FA obrigatória e ainda por activar: o login deixou aqui o QR e a chave.
+  const [setup] = useState<{ secret: string; qrCode: string } | null>(() => {
+    try { return JSON.parse(sessionStorage.getItem('falai_admin_2fa_setup') ?? 'null'); } catch { return null; }
+  });
 
   function handleChange(idx: number, val: string) {
     if (!/^\d*$/.test(val)) return;
@@ -33,8 +37,8 @@ export function TwoFactorPage() {
     try {
       await verify2fa(code);
       navigate('/dashboard');
-    } catch {
-      toast.error('Código inválido ou expirado.');
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : 'Código inválido ou expirado.');
       setDigits(Array(6).fill(''));
       inputRefs.current[0]?.focus();
     } finally {
@@ -49,9 +53,21 @@ export function TwoFactorPage() {
           <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
             <ShieldCheck className="h-5 w-5" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900">Verificação 2FA</h2>
-          <p className="mt-1 text-sm text-gray-500 text-center">Insira o código da sua aplicação autenticadora</p>
+          <h2 className="text-lg font-semibold text-gray-900">{setup ? 'Active a verificação em 2 passos' : 'Verificação 2FA'}</h2>
+          <p className="mt-1 text-sm text-gray-500 text-center">
+            {setup
+              ? 'É obrigatória no backoffice. Leia o código QR com uma app de autenticação (Google Authenticator, Microsoft Authenticator…) e introduza o código de 6 dígitos.'
+              : 'Insira o código da sua aplicação autenticadora'}
+          </p>
         </div>
+
+        {setup && (
+          <div className="mb-6 text-center">
+            <img src={setup.qrCode} alt="QR 2FA" className="mx-auto h-44 w-44" />
+            <p className="mt-3 text-xs text-gray-500">Ou introduza esta chave na app:</p>
+            <code className="mt-1 block break-all font-mono text-sm text-gray-900 select-all">{setup.secret}</code>
+          </div>
+        )}
 
         <div className="flex justify-center gap-2 mb-6">
           {digits.map((d, i) => (

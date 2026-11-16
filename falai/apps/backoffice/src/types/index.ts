@@ -24,6 +24,8 @@ export interface AdminUser {
 export interface AdminLoginResponse {
   token: string;
   requiresTwoFactor: boolean;
+  /** 2FA ainda por activar (obrigatória no backoffice): QR e chave para a app. */
+  setup?: { secret: string; qrCode: string };
   user: AdminUser;
 }
 

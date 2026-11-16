@@ -201,6 +201,9 @@ export const tenantsApi = {
   resetUserPassword: (id: string, userId: string, password: string) =>
     post<{ ok: boolean }>(`/admin/tenants/${id}/users/${userId}/reset-password`, { password }),
 
+  resetUser2fa: (id: string, userId: string) =>
+    post<{ ok: boolean }>(`/admin/tenants/${id}/users/${userId}/reset-2fa`),
+
   setUserAccessProfile: (id: string, userId: string, accessProfileId: string | null) =>
     put<{ ok: true; accessProfileId: string | null }>(`/admin/tenants/${id}/users/${userId}/access-profile`, { accessProfileId }),
 

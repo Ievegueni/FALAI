@@ -15,6 +15,10 @@ export function TwoFactorPage() {
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  // Activação obrigatória: o login deixou aqui o QR e a chave.
+  const [setup] = useState<{ secret: string; qrCode: string } | null>(() => {
+    try { return JSON.parse(sessionStorage.getItem('falai_2fa_setup') ?? 'null'); } catch { return null; }
+  });
 
   useEffect(() => {
     inputRefs.current[0]?.focus();
@@ -59,11 +63,18 @@ export function TwoFactorPage() {
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600">
           <ShieldCheck className="h-6 w-6 text-white" />
         </div>
-        <h1 className="text-2xl font-bold text-white">{t('twofa.title')}</h1>
-        <p className="mt-1 text-sm text-slate-400">{t('twofa.subtitle')}</p>
+        <h1 className="text-2xl font-bold text-white">{t(setup ? 'twofa.setupTitle' : 'twofa.title')}</h1>
+        <p className="mt-1 text-sm text-slate-400">{t(setup ? 'twofa.setupSubtitle' : 'twofa.subtitle')}</p>
       </div>
 
       <div className="rounded-2xl bg-white p-8 shadow-2xl">
+        {setup && (
+          <div className="mb-6 text-center">
+            <img src={setup.qrCode} alt="QR 2FA" className="mx-auto h-44 w-44" />
+            <p className="mt-3 text-xs text-gray-500">{t('twofa.setupSecret')}</p>
+            <code className="mt-1 block break-all font-mono text-sm text-gray-900 select-all">{setup.secret}</code>
+          </div>
+        )}
         <div className="flex justify-center gap-2">
           {digits.map((digit, i) => (
             <input

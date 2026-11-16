@@ -10,6 +10,7 @@ export interface AdminJwtPayload {
   email: string;
   role: AdminRole;
   type: "admin";
+  tv?: number; // tokenVersion; tokens antigos não o têm (= 0)
 }
 
 export interface TenantJwtPayload {
@@ -18,6 +19,7 @@ export interface TenantJwtPayload {
   email: string;
   role: TenantRole;
   type: "tenant";
+  tv?: number; // tokenVersion; tokens antigos não o têm (= 0)
 }
 
 declare module "fastify" {
@@ -54,8 +56,9 @@ export default fp(async (fastify) => {
 
         // Revalida na BD: um admin removido não deve manter acesso até o token expirar
         const admin = request.user as AdminJwtPayload;
-        const exists = await prisma.adminUser.findUnique({ where: { id: admin.sub }, select: { id: true } });
-        if (!exists) {
+        // tokenVersion diferente = sessão terminada (password mudada, "sair de todos").
+        const row = await prisma.adminUser.findUnique({ where: { id: admin.sub }, select: { tokenVersion: true } });
+        if (!row || row.tokenVersion !== (admin.tv ?? 0)) {
           return reply.status(401).send({ error: "Sessão inválida" });
         }
 

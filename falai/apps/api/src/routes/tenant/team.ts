@@ -197,7 +197,8 @@ export const tenantTeamRoutes: FastifyPluginAsync = async (fastify) => {
       where: { id: target.id },
       data: {
         ...(body.name && { name: body.name }),
-        ...(body.password && { passwordHash: await hashPassword(body.password) }),
+        // Password nova termina as sessões abertas com a antiga.
+        ...(body.password && { passwordHash: await hashPassword(body.password), tokenVersion: { increment: 1 } }),
         ...(body.role && { role: body.role }),
         ...(body.extensionId !== undefined && { extensionId: body.extensionId }),
         ...(checked.supervisedGroupIds && {

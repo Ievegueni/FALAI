@@ -64,6 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       // store temp token for 2FA step
       sessionStorage.setItem('falai_temp_token', res.token);
+      if (res.setup) sessionStorage.setItem('falai_2fa_setup', JSON.stringify(res.setup));
+      else sessionStorage.removeItem('falai_2fa_setup');
     }
     return { requiresTwoFactor: res.requiresTwoFactor };
   }, [refreshMe]);
@@ -74,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // The sessionToken (from /login) identifies the pending 2FA login.
     const { token } = await authApi.twoFaVerify(sessionToken, code);
     sessionStorage.removeItem('falai_temp_token');
+    sessionStorage.removeItem('falai_2fa_setup');
     localStorage.setItem('falai_token', token);
     await refreshMe();
   }, [refreshMe]);
@@ -81,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem('falai_token');
     sessionStorage.removeItem('falai_temp_token');
+    sessionStorage.removeItem('falai_2fa_setup');
     setState({ user: null, tenant: null, loading: false });
   }, []);
 

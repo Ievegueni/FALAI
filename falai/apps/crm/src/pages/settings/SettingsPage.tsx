@@ -222,8 +222,9 @@ export function SettingsPage() {
       </fieldset>
 
       {/* 2FA é do próprio utilizador: fora do fieldset, qualquer papel a activa. */}
-      <div className="px-6 pb-6 max-w-2xl">
+      <div className="px-6 pb-6 max-w-2xl space-y-4">
         <TwoFactorCard />
+        <SessionsCard />
       </div>
     </>
   );
@@ -255,7 +256,9 @@ function TwoFactorCard() {
   return (
     <Card>
       <h2 className="text-sm font-semibold text-gray-900 mb-2">{t('settings.twoFaTitle')}</h2>
-      {user?.twoFaEnabled ? (
+      {user?.twoFaEnabled && user.role === 'OWNER' ? (
+        <p className="text-sm text-gray-600">{t('settings.twoFaRequired')}</p>
+      ) : user?.twoFaEnabled ? (
         <div className="space-y-3">
           <p className="text-sm text-gray-600">{t('settings.twoFaEnabled')}</p>
           <div className="flex items-end gap-2">
@@ -299,6 +302,27 @@ function TwoFactorCard() {
           </div>
         </div>
       )}
+    </Card>
+  );
+}
+
+function SessionsCard() {
+  const { t } = useTranslation();
+  const { logout } = useAuth();
+  const { error } = useToast();
+  const revoke = useMutation({
+    mutationFn: authApi.logoutAll,
+    onSuccess: () => logout(),
+    onError: (e: Error) => error(e.message),
+  });
+
+  return (
+    <Card>
+      <h2 className="text-sm font-semibold text-gray-900 mb-2">{t('settings.sessionsTitle')}</h2>
+      <p className="text-sm text-gray-600 mb-3">{t('settings.sessionsHint')}</p>
+      <Button variant="danger" loading={revoke.isPending} onClick={() => revoke.mutate()}>
+        {t('settings.sessionsButton')}
+      </Button>
     </Card>
   );
 }

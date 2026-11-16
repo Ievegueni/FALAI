@@ -49,6 +49,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState({ user: res.user, loading: false });
     } else {
       sessionStorage.setItem('falai_admin_temp', res.token);
+      if (res.setup) sessionStorage.setItem('falai_admin_2fa_setup', JSON.stringify(res.setup));
+      else sessionStorage.removeItem('falai_admin_2fa_setup');
     }
     return { requiresTwoFactor: res.requiresTwoFactor };
   }, []);
@@ -58,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!sessionToken) throw new Error('Sessão expirada');
     const { token } = await authApi.twoFaVerify(sessionToken, code);
     sessionStorage.removeItem('falai_admin_temp');
+    sessionStorage.removeItem('falai_admin_2fa_setup');
     localStorage.setItem('falai_admin_token', token);
     await refresh();
   }, [refresh]);

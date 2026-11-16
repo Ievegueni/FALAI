@@ -4,12 +4,22 @@ import { prisma } from "@falai/db";
 import { z } from "zod";
 import {
   hashPassword,
-  verifyPassword,
+  verifyPasswordOrDummy,
   generateTotpSecret,
   generateTotpQrCode,
   verifyTotp,
+  verifyTotpOnce,
+  sealTotpSecret,
   issueTenantToken,
   pending2FaTenantKey,
+  isLoginLocked,
+  recordLoginFailure,
+  clearLoginFailures,
+  LOCKED_MESSAGE,
+  createPending2Fa,
+  takePending2FaAttempt,
+  endPending2Fa,
+  tenantRoleRequires2Fa,
 } from "../../services/auth.service.js";
 import { computeFeatures } from "../../services/features.js";
 import { applyProfile, sanitizePermissions, type ProfilePermissions } from "../../services/accessProfiles.js";
@@ -50,8 +60,6 @@ function profileOf(user: { role: string; accessProfile: { id: string; name: stri
 
 const accessProfileSelect = { select: { id: true, name: true, permissions: true } } as const;
 
-const PENDING_2FA_TTL = 5 * 60;
-
 const registerSchema = z.object({
   tenantName: z.string().min(2).max(150),
   tenantEmail: z.string().email(),
@@ -76,7 +84,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.verifyTenant];
 
   // POST /tenant/auth/register — self-service registration
-  fastify.post("/register", async (request, reply) => {
+  fastify.post("/register", { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } }, async (request, reply) => {
     const body = registerSchema.parse(request.body);
 
     // Must have at least one active plan to assign
@@ -130,75 +138,107 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /tenant/auth/login
   fastify.post("/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = loginSchema.parse(request.body);
+    const redis = fastify.redis;
+
+    if (await isLoginLocked(redis, "tenant", body.email)) return reply.status(429).send({ error: LOCKED_MESSAGE });
 
     const user = await prisma.tenantUser.findUnique({
       where: { email: body.email },
       include: { tenant: { select: { id: true, status: true, deletedAt: true } }, accessProfile: accessProfileSelect },
     });
 
-    if (!user) return reply.status(401).send({ error: "Credenciais inválidas" });
+    // Password primeiro, e com o mesmo custo exista ou não o email: nem o tempo
+    // nem a mensagem dizem que emails estão registados.
+    const passwordOk = await verifyPasswordOrDummy(user?.passwordHash, body.password);
+    if (!user || !passwordOk) {
+      await recordLoginFailure(redis, "tenant", body.email);
+      if (user) {
+        await fastify.audit({
+          actorType: "TENANT_USER",
+          actorId: user.id,
+          action: "tenant.login.failed",
+          targetType: "TenantUser",
+          targetId: user.id,
+          ip: request.ip,
+        });
+      }
+      return reply.status(401).send({ error: "Credenciais inválidas" });
+    }
+    await clearLoginFailures(redis, "tenant", body.email);
 
     const tenantOk = user.tenant && !user.tenant.deletedAt &&
       user.tenant.status !== "SUSPENDED" && user.tenant.status !== "CLOSED";
     if (!tenantOk) return reply.status(403).send({ error: "Conta suspensa ou encerrada" });
 
-    const passwordOk = await verifyPassword(user.passwordHash, body.password);
-    if (!passwordOk) {
-      await fastify.audit({
-        actorType: "TENANT_USER",
-        actorId: user.id,
-        action: "tenant.login.failed",
-        targetType: "TenantUser",
-        targetId: user.id,
-        ip: request.ip,
-      });
-      return reply.status(401).send({ error: "Credenciais inválidas" });
-    }
-
-    if (!user.twoFaSecret) {
-      const token = await issueTenantToken(fastify, user.id);
-      await prisma.tenantUser.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-      await fastify.audit({
-        actorType: "TENANT_USER",
-        actorId: user.id,
-        action: "tenant.login",
-        targetType: "TenantUser",
-        targetId: user.id,
-        ip: request.ip,
-      });
-      const tenantRecord = await prisma.tenant.findUnique({
-        where: { id: user.tenantId },
-        select: tenantClientSelect,
-      });
-      const accessProfile = profileOf(user);
+    // Com 2FA (ou obrigada a ela): fica pendente até o código. Sem 2FA e com
+    // 2FA obrigatória, a resposta traz o QR para a activar já neste login.
+    if (user.twoFaSecret || tenantRoleRequires2Fa(user.role)) {
+      const sessionToken = randomBytes(32).toString("hex");
+      if (user.twoFaSecret) {
+        await createPending2Fa(redis, pending2FaTenantKey(sessionToken), { userId: user.id });
+        return { requiresTwoFactor: true, token: sessionToken };
+      }
+      const secret = generateTotpSecret();
+      await createPending2Fa(redis, pending2FaTenantKey(sessionToken), { userId: user.id, enrollSecret: secret });
       return {
-        token,
-        requiresTwoFactor: false,
-        user: { id: user.id, name: user.name, email: user.email, role: user.role, twoFaEnabled: false, accessProfile },
-        tenant: shapeTenant(tenantRecord, accessProfile?.permissions ?? null),
+        requiresTwoFactor: true,
+        token: sessionToken,
+        setup: { secret, qrCode: await generateTotpQrCode(user.email, secret, "Falaí") },
       };
     }
 
-    const sessionToken = randomBytes(32).toString("hex");
-    await fastify.redis.set(pending2FaTenantKey(sessionToken), user.id, "EX", PENDING_2FA_TTL);
-    return reply.status(200).send({ requiresTwoFactor: true, token: sessionToken });
+    const token = await issueTenantToken(fastify, user.id);
+    await prisma.tenantUser.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    await fastify.audit({
+      actorType: "TENANT_USER",
+      actorId: user.id,
+      action: "tenant.login",
+      targetType: "TenantUser",
+      targetId: user.id,
+      ip: request.ip,
+    });
+    const tenantRecord = await prisma.tenant.findUnique({
+      where: { id: user.tenantId },
+      select: tenantClientSelect,
+    });
+    const accessProfile = profileOf(user);
+    return {
+      token,
+      requiresTwoFactor: false,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, twoFaEnabled: false, accessProfile },
+      tenant: shapeTenant(tenantRecord, accessProfile?.permissions ?? null),
+    };
   });
 
-  // POST /tenant/auth/2fa/verify
+  // POST /tenant/auth/2fa/verify — código da app; se for a activação obrigatória, grava a 2FA
   fastify.post("/2fa/verify", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = totpSchema.parse(request.body);
+    const redis = fastify.redis;
+    const key = pending2FaTenantKey(body.sessionToken);
 
-    const userId = await fastify.redis.get(pending2FaTenantKey(body.sessionToken));
-    if (!userId) return reply.status(401).send({ error: "Sessão expirada ou inválida" });
+    const pending = await takePending2FaAttempt(redis, key);
+    if (!pending) return reply.status(401).send({ error: "Sessão expirada ou inválida. Inicie sessão novamente." });
 
-    const user = await prisma.tenantUser.findUnique({ where: { id: userId } });
-    if (!user?.twoFaSecret) return reply.status(401).send({ error: "Sessão inválida" });
+    const user = await prisma.tenantUser.findUnique({ where: { id: pending.userId } });
+    const stored = pending.enrollSecret ? sealTotpSecret(pending.enrollSecret) : user?.twoFaSecret;
+    if (!user || !stored) return reply.status(401).send({ error: "Sessão inválida" });
 
-    if (!verifyTotp(user.twoFaSecret, body.code)) {
+    if (!(await verifyTotpOnce(redis, `tenant:${user.id}`, stored, body.code))) {
       return reply.status(401).send({ error: "Código 2FA inválido" });
     }
 
-    await fastify.redis.del(pending2FaTenantKey(body.sessionToken));
+    await endPending2Fa(redis, key);
+    if (pending.enrollSecret) {
+      await prisma.tenantUser.update({ where: { id: user.id }, data: { twoFaSecret: stored } });
+      await fastify.audit({
+        actorType: "TENANT_USER",
+        actorId: user.id,
+        action: "tenant.2fa.enabled",
+        targetType: "TenantUser",
+        targetId: user.id,
+        ip: request.ip,
+      });
+    }
     const token = await issueTenantToken(fastify, user.id);
     await prisma.tenantUser.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     await fastify.audit({
@@ -211,6 +251,21 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return { token };
+  });
+
+  // POST /tenant/auth/logout-all — termina a sessão em todos os dispositivos
+  fastify.post("/logout-all", { preHandler }, async (request) => {
+    const user = request.tenantUser!;
+    await prisma.tenantUser.update({ where: { id: user.sub }, data: { tokenVersion: { increment: 1 } } });
+    await fastify.audit({
+      actorType: "TENANT_USER",
+      actorId: user.sub,
+      action: "tenant.sessions.revoked",
+      targetType: "TenantUser",
+      targetId: user.sub,
+      ip: request.ip,
+    });
+    return { ok: true };
   });
 
   // POST /tenant/auth/2fa/setup — protected
@@ -231,7 +286,7 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
     if (!secret) return reply.status(400).send({ error: "Setup 2FA expirado. Recomeça o processo." });
     if (!verifyTotp(secret, code)) return reply.status(400).send({ error: "Código inválido" });
 
-    await prisma.tenantUser.update({ where: { id: user.sub }, data: { twoFaSecret: secret } });
+    await prisma.tenantUser.update({ where: { id: user.sub }, data: { twoFaSecret: sealTotpSecret(secret) } });
     await fastify.redis.del(`tenant:2fa:setup:${user.sub}`);
 
     await fastify.audit({
@@ -250,9 +305,12 @@ export const tenantAuthRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post<{ Body: { code: string } }>("/2fa/disable", { preHandler, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const user = request.tenantUser!;
     const { code } = totpSchema.pick({ code: true }).parse(request.body);
-    const row = await prisma.tenantUser.findUnique({ where: { id: user.sub }, select: { twoFaSecret: true } });
+    const row = await prisma.tenantUser.findUnique({ where: { id: user.sub }, select: { twoFaSecret: true, role: true } });
     if (!row?.twoFaSecret) return reply.status(400).send({ error: "A 2FA não está activa" });
-    if (!verifyTotp(row.twoFaSecret, code)) return reply.status(400).send({ error: "Código inválido" });
+    if (tenantRoleRequires2Fa(row.role)) return reply.status(403).send({ error: "A 2FA é obrigatória para o dono da conta" });
+    if (!(await verifyTotpOnce(fastify.redis, `tenant:${user.sub}`, row.twoFaSecret, code))) {
+      return reply.status(400).send({ error: "Código inválido" });
+    }
 
     await prisma.tenantUser.update({ where: { id: user.sub }, data: { twoFaSecret: null } });
     await fastify.audit({

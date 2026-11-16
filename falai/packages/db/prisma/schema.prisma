@@ -596,7 +596,10 @@ model TenantUser {
   // Perfil de acesso definido no backoffice. Null = sem restrição além do role.
   accessProfileId  String?
   accessProfile    AccessProfile?    @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
+  // Cifrado (AES-GCM, ENCRYPTION_KEY). Ver auth.service sealTotpSecret.
   twoFaSecret      String?
+  // Sobe ao mudar a password, repor a 2FA ou terminar sessões: invalida os JWT antigos.
+  tokenVersion     Int               @default(0)
   // Extensão do utilizador (agente ou supervisor). É por ela que o supervisor
   // ouve e que se impede supervisionar a própria chamada.
   extensionId      String?           @unique
@@ -646,6 +649,7 @@ model AdminUser {
   passwordHash String
   role         AdminRole @default(OPERATOR)
   twoFaSecret  String?
+  tokenVersion Int       @default(0)
   lastLoginAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

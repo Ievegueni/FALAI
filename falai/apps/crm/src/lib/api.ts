@@ -147,6 +147,7 @@ export const authApi = {
   },
 
   twoFaDisable: (code: string) => post<{ ok: boolean }>('/tenant/auth/2fa/disable', { code }),
+  logoutAll: () => post<{ ok: boolean }>('/tenant/auth/logout-all'),
 };
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

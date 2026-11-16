@@ -285,6 +285,22 @@ server {
 }
 ```
 
+### Cabeçalhos de segurança (CRM e backoffice)
+
+O token de sessão fica no `localStorage` do browser. Se um dia entrar código malicioso na página (XSS), a Content-Security-Policy impede-o de correr ou de enviar o token para fora. Junta isto **dentro de cada `server { }`** (CRM e backoffice):
+
+```nginx
+    add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss://$host; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+```
+
+Começa em **`-Report-Only`**: o browser só avisa, não bloqueia. Usa o CRM uns dias (chamadas, webphone, gravações, relatórios) com a consola do browser aberta (F12). Se não aparecer nenhuma mensagem `Content-Security-Policy`, troca `Content-Security-Policy-Report-Only` por `Content-Security-Policy` e recarrega o nginx. Se aparecer, o aviso diz o endereço que falta: acrescenta-o à directiva indicada (ex.: um domínio de gravações em `media-src`).
+
+> Se a API estiver noutro domínio (ex.: `api.teu-dominio.com`) em vez de atrás do mesmo nginx, acrescenta-o a `connect-src` e `media-src`.
+
 Activar + TLS:
 
 ```bash

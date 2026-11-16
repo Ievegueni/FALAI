@@ -3,84 +3,96 @@ import { randomBytes } from "crypto";
 import { prisma } from "@falai/db";
 import { adminLoginSchema, adminTotpSchema } from "@falai/shared";
 import {
-  verifyPassword,
+  verifyPasswordOrDummy,
   hashPassword,
   verifyTotp,
+  verifyTotpOnce,
+  sealTotpSecret,
   generateTotpSecret,
   generateTotpQrCode,
   issueAdminToken,
   pending2FaKey,
+  isLoginLocked,
+  recordLoginFailure,
+  clearLoginFailures,
+  LOCKED_MESSAGE,
+  createPending2Fa,
+  takePending2FaAttempt,
+  endPending2Fa,
 } from "../../services/auth.service.js";
-
-const PENDING_2FA_TTL = 5 * 60;
 
 export const adminAuthRoutes: FastifyPluginAsync = async (fastify) => {
   const preHandler = [fastify.authenticate];
 
-  // POST /admin/auth/login
+  // POST /admin/auth/login — a 2FA é obrigatória no backoffice: quem ainda não
+  // a tem recebe o QR e activa-a neste mesmo login.
   fastify.post("/login", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = adminLoginSchema.parse(request.body);
+    const redis = fastify.redis;
+
+    if (await isLoginLocked(redis, "admin", body.email)) return reply.status(429).send({ error: LOCKED_MESSAGE });
 
     const admin = await prisma.adminUser.findUnique({ where: { email: body.email } });
-    if (!admin) {
+    const passwordOk = await verifyPasswordOrDummy(admin?.passwordHash, body.password);
+    if (!admin || !passwordOk) {
+      await recordLoginFailure(redis, "admin", body.email);
+      if (admin) {
+        await fastify.audit({
+          actorType: "ADMIN",
+          actorId: admin.id,
+          action: "admin.login.failed",
+          targetType: "AdminUser",
+          targetId: admin.id,
+          ip: request.ip,
+        });
+      }
       return reply.status(401).send({ error: "Credenciais inválidas" });
     }
-
-    const passwordOk = await verifyPassword(admin.passwordHash, body.password);
-    if (!passwordOk) {
-      await fastify.audit({
-        actorType: "ADMIN",
-        actorId: admin.id,
-        action: "admin.login.failed",
-        targetType: "AdminUser",
-        targetId: admin.id,
-        ip: request.ip,
-      });
-      return reply.status(401).send({ error: "Credenciais inválidas" });
-    }
-
-    if (!admin.twoFaSecret) {
-      const token = await issueAdminToken(fastify, admin.id);
-      await prisma.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
-      await fastify.audit({
-        actorType: "ADMIN",
-        actorId: admin.id,
-        action: "admin.login",
-        targetType: "AdminUser",
-        targetId: admin.id,
-        ip: request.ip,
-      });
-      return {
-        token,
-        requiresTwoFactor: false,
-        user: { id: admin.id, name: admin.name, email: admin.email, role: admin.role, twoFaEnabled: false },
-      };
-    }
+    await clearLoginFailures(redis, "admin", body.email);
 
     const sessionToken = randomBytes(32).toString("hex");
-    await fastify.redis.set(pending2FaKey(sessionToken), admin.id, "EX", PENDING_2FA_TTL);
-    return reply.status(200).send({ requiresTwoFactor: true, token: sessionToken });
+    if (admin.twoFaSecret) {
+      await createPending2Fa(redis, pending2FaKey(sessionToken), { userId: admin.id });
+      return { requiresTwoFactor: true, token: sessionToken };
+    }
+    const secret = generateTotpSecret();
+    await createPending2Fa(redis, pending2FaKey(sessionToken), { userId: admin.id, enrollSecret: secret });
+    return {
+      requiresTwoFactor: true,
+      token: sessionToken,
+      setup: { secret, qrCode: await generateTotpQrCode(admin.email, secret) },
+    };
   });
 
-  // POST /admin/auth/2fa/verify
+  // POST /admin/auth/2fa/verify — código da app; se for a activação, grava a 2FA
   fastify.post("/2fa/verify", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
     const body = adminTotpSchema.parse(request.body);
+    const redis = fastify.redis;
+    const key = pending2FaKey(body.sessionToken);
 
-    const adminId = await fastify.redis.get(pending2FaKey(body.sessionToken));
-    if (!adminId) {
-      return reply.status(401).send({ error: "Sessão expirada ou inválida" });
-    }
+    const pending = await takePending2FaAttempt(redis, key);
+    if (!pending) return reply.status(401).send({ error: "Sessão expirada ou inválida. Inicie sessão novamente." });
 
-    const admin = await prisma.adminUser.findUnique({ where: { id: adminId } });
-    if (!admin?.twoFaSecret) {
-      return reply.status(401).send({ error: "Sessão inválida" });
-    }
+    const admin = await prisma.adminUser.findUnique({ where: { id: pending.userId } });
+    const stored = pending.enrollSecret ? sealTotpSecret(pending.enrollSecret) : admin?.twoFaSecret;
+    if (!admin || !stored) return reply.status(401).send({ error: "Sessão inválida" });
 
-    if (!verifyTotp(admin.twoFaSecret, body.code)) {
+    if (!(await verifyTotpOnce(redis, `admin:${admin.id}`, stored, body.code))) {
       return reply.status(401).send({ error: "Código 2FA inválido" });
     }
 
-    await fastify.redis.del(pending2FaKey(body.sessionToken));
+    await endPending2Fa(redis, key);
+    if (pending.enrollSecret) {
+      await prisma.adminUser.update({ where: { id: admin.id }, data: { twoFaSecret: stored } });
+      await fastify.audit({
+        actorType: "ADMIN",
+        actorId: admin.id,
+        action: "admin.2fa.enabled",
+        targetType: "AdminUser",
+        targetId: admin.id,
+        ip: request.ip,
+      });
+    }
     const token = await issueAdminToken(fastify, admin.id);
     await prisma.adminUser.update({ where: { id: admin.id }, data: { lastLoginAt: new Date() } });
     await fastify.audit({
@@ -93,6 +105,21 @@ export const adminAuthRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     return { token };
+  });
+
+  // POST /admin/auth/logout-all — termina a sessão em todos os dispositivos
+  fastify.post("/logout-all", { preHandler }, async (request) => {
+    const admin = request.adminUser!;
+    await prisma.adminUser.update({ where: { id: admin.sub }, data: { tokenVersion: { increment: 1 } } });
+    await fastify.audit({
+      actorType: "ADMIN",
+      actorId: admin.sub,
+      action: "admin.sessions.revoked",
+      targetType: "AdminUser",
+      targetId: admin.sub,
+      ip: request.ip,
+    });
+    return { ok: true };
   });
 
   // POST /admin/auth/2fa/setup
@@ -117,7 +144,7 @@ export const adminAuthRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(400).send({ error: "Código inválido" });
     }
 
-    await prisma.adminUser.update({ where: { id: admin.sub }, data: { twoFaSecret: secret } });
+    await prisma.adminUser.update({ where: { id: admin.sub }, data: { twoFaSecret: sealTotpSecret(secret) } });
     await fastify.redis.del(`admin:2fa:setup:${admin.sub}`);
     await fastify.audit({
       actorType: "ADMIN",
