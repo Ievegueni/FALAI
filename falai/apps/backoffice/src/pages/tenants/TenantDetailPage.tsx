@@ -26,6 +26,7 @@ const ROLE_LABELS: Record<TenantRole, string> = {
   SUPERVISOR: 'Supervisor',
   MEMBER: 'Agente',
   VIEWER: 'Leitura',
+  AUDITOR: 'Auditor',
 };
 
 const BILLING_LABELS: Record<BillingMode, string> = {
@@ -301,6 +302,12 @@ export function TenantDetailPage() {
     onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar o limite.'),
   });
 
+  const qaAiPriceMut = useMutation({
+    mutationFn: (cents: number) => tenantsApi.update(id!, { qaAiPricePerMinCents: cents } as never),
+    onSuccess: () => { invalidateTenant(); toast.success('Preço da auditoria IA actualizado.'); },
+    onError: (e: Error) => toast.error(e.message || 'Erro ao actualizar o preço.'),
+  });
+
   const billingOverrideMut = useMutation({
     mutationFn: (mode: BillingMode | null) => tenantsApi.update(id!, { billingModeOverride: mode } as never),
     onSuccess: () => { invalidateTenant(); toast.success('Modo de cobrança do cliente actualizado.'); },
@@ -517,6 +524,26 @@ export function TenantDetailPage() {
                     }}
                   />
                   <span className="text-xs text-gray-400">0 = desligado</span>
+                </dd>
+              </div>
+              <div className="flex justify-between items-center gap-4">
+                <dt className="text-gray-500">Auditoria IA de chamadas (Kz/min)</dt>
+                <dd className="flex items-center gap-2">
+                  <Input
+                    className="w-24 text-right"
+                    key={tenant.qaAiPricePerMinCents ?? 0}
+                    defaultValue={String((tenant.qaAiPricePerMinCents ?? 0) / 100)}
+                    disabled={qaAiPriceMut.isPending}
+                    onBlur={(e) => {
+                      const cents = Math.round(parseKz(e.target.value || '0') * 100);
+                      if (Number.isNaN(cents) || cents < 0) {
+                        e.target.value = String((tenant.qaAiPricePerMinCents ?? 0) / 100);
+                        return;
+                      }
+                      if (cents !== (tenant.qaAiPricePerMinCents ?? 0)) qaAiPriceMut.mutate(cents);
+                    }}
+                  />
+                  <span className="text-xs text-gray-400">0 = grátis</span>
                 </dd>
               </div>
               {tenant.aiReportUsageMonth && (
@@ -1093,6 +1120,7 @@ export function TenantDetailPage() {
             <option value="SUPERVISOR">Supervisor</option>
             <option value="MEMBER">Agente</option>
             <option value="VIEWER">Leitura</option>
+            <option value="AUDITOR">Auditor</option>
           </Select>
           {userForm.role !== 'OWNER' && (
             <Select

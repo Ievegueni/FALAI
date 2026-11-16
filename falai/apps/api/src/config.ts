@@ -37,7 +37,7 @@ const envSchema = z.object({
   // mesmo com chaves configuradas. Para desenvolvimento. Só "true" liga.
   AI_STUB_MODE: z.string().optional().transform((v) => v === "true"),
   // Modelo da análise dos relatórios (melhoria 6); por omissão o mesmo das chamadas.
-  AI_REPORT_MODEL: z.string().default("claude-sonnet-4-6"),
+  AI_REPORT_MODEL: z.string().default("claude-sonnet-5"), // análise de relatórios e auditoria de chamadas com IA
 
   DEEPGRAM_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),

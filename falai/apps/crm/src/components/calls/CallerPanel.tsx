@@ -12,6 +12,7 @@ import { useToast } from '@/contexts/ToastContext';
 import { clsx, formatDuration } from '@/lib/utils';
 import { TicketLinkOrCreate, TicketRefList, useTicketsEnabled } from '@/components/tickets/TicketBits';
 import { KbQuickSearch } from '@/components/knowledge/KbBits';
+import { ContactFormFill } from './ContactFormBits';
 import { Ticket as TicketIcon } from 'lucide-react';
 
 /**
@@ -191,6 +192,9 @@ export function CallerPanel({ legId, number, onClose }: { legId?: string | null;
           <Ban className="h-3.5 w-3.5" /> {t('callerPanel.optedOut')}
         </p>
       )}
+
+      {/* Ficha de recolha de dados — abre já, grava no perfil do cliente */}
+      <ContactFormFill contactId={contact.id} attributes={contact.attributes} legId={legId ?? null} groupId={data?.groupId ?? null} onSaved={refresh} />
 
       {/* Destaques */}
       <div className="grid grid-cols-2 gap-3">

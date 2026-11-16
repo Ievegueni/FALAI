@@ -132,7 +132,8 @@
     "ADJUSTMENT": "调整",
     "MONTHLY_FEE": "月费",
     "SMS_CHARGE": "短信",
-    "TEXT_CHARGE": "文字消息"
+    "TEXT_CHARGE": "文字消息",
+    "QA_CHARGE": "AI 质检"
   },
   "days": [
     "日",
@@ -554,7 +555,13 @@
       "wait": "等待 {{secs}}",
       "responseIn": "{{secs}} 后接听",
       "notesTitle": "通话备注",
-      "typedAt": "于 {{when}} 分类"
+      "typedAt": "于 {{when}} 分类",
+      "autoTranscript": "录音自动转写",
+      "speaker": "说话人 {{n}}",
+      "metricsTitle": "对话",
+      "longestSilence": "最长静默",
+      "interruptions": "打断",
+      "forbiddenSaid": "禁用词"
     },
     "inbound": "来电",
     "searchPlaceholder": "搜索号码或联系人",
@@ -671,7 +678,10 @@
       "4": "星期四",
       "5": "星期五",
       "6": "星期六"
-    }
+    },
+    "roleAuditor": "审核员",
+    "roleAuditorOpt": "审核员 — 质检",
+    "legendAuditor": "<0>审核员</0> — 查看全部运营（通话、录音、对话、报表），仅可修改质检：评分表、评估与 AI 质检。"
   },
   "settings": {
     "title": "设置",
@@ -1737,7 +1747,8 @@
       "TMA_ABOVE": "平均处理时长超限",
       "TEXT_SLA_BELOW": "文字 SLA 低于目标",
       "TICKET_DUE_SOON": "工单即将到期",
-      "TICKET_OVERDUE": "工单已超期"
+      "TICKET_OVERDUE": "工单已超期",
+      "QA_LOW_STREAK": "质量下降"
     },
     "type": {
       "LONG_WAIT": "来电已等待 {{value}}（阈值 {{threshold}}）",
@@ -1748,7 +1759,8 @@
       "TMA_ABOVE": "当日平均处理时长 {{value}}（阈值 {{threshold}}）",
       "TEXT_SLA_BELOW": "今日文字 SLA 为 {{value}}（目标 {{threshold}}）",
       "TICKET_DUE_SOON": "工单即将到期：剩余 {{value}}",
-      "TICKET_OVERDUE": "工单已超期 {{value}}"
+      "TICKET_OVERDUE": "工单已超期 {{value}}",
+      "QA_LOW_STREAK": "连续 3 次评估低于阈值：平均 {{value}}（阈值 {{threshold}}）"
     },
     "groupTargetsTitle": "按组目标",
     "groupTargetsHint": "留空 = 使用总目标。有自己目标的组会单独触发 SLA 警报。",
@@ -1814,7 +1826,8 @@
       "SUBMITTED": "待确认",
       "ACKNOWLEDGED": "已确认",
       "DISPUTED": "已申诉",
-      "RESOLVED": "已复核"
+      "RESOLVED": "已复核",
+      "AI_DRAFT": "AI 草稿"
     },
     "col": {
       "date": "日期",
@@ -1826,7 +1839,44 @@
       "evaluations": "评估数",
       "avgScore": "平均质检得分",
       "criticalFails": "否决项",
-      "disputed": "申诉"
+      "disputed": "申诉",
+      "section": "部分",
+      "criterion": "标准",
+      "avgPct": "平均",
+      "answered": "回答数",
+      "failed": "不合格"
+    },
+    "ai": "AI",
+    "aiAudit": "AI 质检",
+    "tabAi": "AI 质检",
+    "aiIntro": "AI 转写录音，按评分表填写并附理由，生成草稿。审核员复核后提交；坐席仅在提交后可见。",
+    "aiForm": "AI 使用的评分表",
+    "aiSample": "自动质检的已接通话比例",
+    "aiSampleHint": "0 = 仅在点击\"AI 质检\"时进行。仅限有录音且由坐席接听的通话。",
+    "aiPrice": "费用：每通话分钟 {{price}} Kz，从余额扣除。",
+    "aiFree": "目前不按分钟收费。",
+    "aiDraftTitle": "AI 草稿",
+    "aiDraftHint": "确认或修改每项标准后提交。坐席仅在提交后可见评估。",
+    "discard": "丢弃",
+    "submitted": "评估已提交",
+    "discarded": "草稿已丢弃",
+    "auto": "自动",
+    "tabReview": "待复核",
+    "reviewHint": "待复核的 AI 草稿：否决项与最低分优先。",
+    "divergences": "资料表与客户所说不一致",
+    "divergenceLine": "资料表为\"{{form}}\"，客户说\"{{said}}\"",
+    "weekly": "每周趋势",
+    "byCriterion": "按标准",
+    "nEvaluations_one": "{{count}} 次",
+    "nEvaluations_other": "{{count}} 次",
+    "forbiddenWords": "禁用词（逗号分隔）",
+    "forbiddenWordsPlaceholder": "例如：不关我事、不知道",
+    "alertThreshold": "告警：连续 3 次评估低于 (%)",
+    "alertThresholdHint": "0 = 不告警。显示在 监控 → 告警。",
+    "criterionType": {
+      "yesno": "是/否",
+      "scale": "1–5 分",
+      "auto_form": "自动：已填资料表"
     }
   },
   "kb": {
@@ -1963,5 +2013,40 @@
     "offline": "连接中断",
     "allGroups": "全部组",
     "fullscreen": "全屏"
+  },
+  "contactForms": {
+    "tab": "资料表",
+    "open": "资料表",
+    "new": "新建资料表",
+    "edit": "编辑资料表",
+    "name": "资料表名称",
+    "label": "字段",
+    "required": "必填",
+    "options": "选项，用逗号分隔",
+    "addField": "添加字段",
+    "none": "暂无资料表。",
+    "intro": "坐席在通话中填写的字段，填写内容保存到客户资料。",
+    "keyHint": "不同资料表中同名字段视为同一客户数据。",
+    "type": {
+      "text": "文本",
+      "number": "数字",
+      "date": "日期",
+      "email": "邮箱",
+      "select": "列表",
+      "yesno": "是/否",
+      "nif": "税号",
+      "bi": "身份证",
+      "province": "省份"
+    },
+    "progress": "{{done}}/{{total}}",
+    "save": "保存资料表",
+    "nifHint": "身份证或公司税号（10 位）",
+    "groups": "默认在以下组中打开",
+    "groupsHint": "这些组的通话会直接打开此资料表，其他情况打开第一个。",
+    "showIf": "仅在以下情况显示",
+    "always": "始终",
+    "showIfHint": "要用新字段作为条件，请先保存资料表。",
+    "allContacts": "全部联系人",
+    "incompleteIn": "未完成：{{name}}"
   }
 }

@@ -10,6 +10,7 @@ import { prisma, type Prisma } from "@falai/db";
  *   SUPERVISOR     a sua equipa: os grupos que supervisiona e os agentes deles
  *   MEMBER         agente: só o que é seu (atribuído a si, ou por atribuir na fila dele)
  *   VIEWER         consulta de tudo, sem alterar nada
+ *   AUDITOR        consulta de tudo; só altera grelhas e avaliações de qualidade
  */
 
 export const CONFIG_ROLES = new Set(["OWNER", "ADMIN"]);
@@ -34,7 +35,7 @@ export type UserScope =
     };
 
 export async function userScope(user: { sub: string; tenantId: string; role: string }): Promise<UserScope> {
-  if (isOpsManager(user.role) || user.role === "VIEWER") return { kind: "ALL" };
+  if (isOpsManager(user.role) || user.role === "VIEWER" || user.role === "AUDITOR") return { kind: "ALL" };
 
   let groupIds: string[];
   let extensionIds: string[];

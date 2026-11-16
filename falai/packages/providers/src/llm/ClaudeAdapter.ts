@@ -137,7 +137,12 @@ export class ClaudeAdapter implements LlmProvider {
         tools: [params.tool],
         tool_choice: { type: "tool", name: params.tool.name },
         messages: [{ role: "user", content: params.user }],
-      },
+        // Sem raciocínio, como no Sonnet 4.6: no Sonnet 5 vem ligado por omissão e
+        // gastaria o max_tokens antes da resposta. O SDK 0.30 não conhece o campo
+        // nos tipos, mas envia-o. (Opus 5.5 / Fable 5.1 recusam isto — e a escolha
+        // forçada da ferramenta — se um dia se mudar para eles.)
+        thinking: { type: "disabled" },
+      } as Anthropic.MessageCreateParamsNonStreaming,
       { timeout: params.timeoutMs ?? 60_000, maxRetries: 1 },
     );
     const block = response.content.find((b) => b.type === "tool_use") as Anthropic.ToolUseBlock | undefined;

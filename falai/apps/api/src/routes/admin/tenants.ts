@@ -74,6 +74,7 @@ const updateSchema = z.object({
   missedCallSms: z.boolean().optional(),
   missedCallSmsText: z.string().max(480).nullable().optional(),
   aiReportDailyLimit: z.number().int().min(0).max(1000).optional(), // análises IA dos relatórios por dia (0 = desligado)
+  qaAiPricePerMinCents: z.number().int().min(0).max(1_000_000).optional(), // auditoria IA, por minuto transcrito (0 = grátis)
 });
 
 const smsConfigSchema = z.object({
@@ -97,7 +98,7 @@ const userCreateSchema = z.object({
   name: z.string().min(2).max(100),
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum(["OWNER", "ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER"]).optional(),
+  role: z.enum(["OWNER", "ADMIN", "MANAGER", "SUPERVISOR", "MEMBER", "VIEWER", "AUDITOR"]).optional(),
   accessProfileId: z.string().nullable().optional(),
 });
 
@@ -142,6 +143,7 @@ function mapTenant(t: any) {
     missedCallSms: t.missedCallSms ?? false,
     missedCallSmsText: t.missedCallSmsText ?? null,
     aiReportDailyLimit: t.aiReportDailyLimit ?? 20,
+    qaAiPricePerMinCents: t.qaAiPricePerMinCents ?? 0,
     // features efectivas (o que o cliente vê) + overrides crus (o que o operador definiu)
     features: computeFeatures({
       overrides: t.features,
@@ -306,6 +308,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.missedCallSms !== undefined && { missedCallSms: body.missedCallSms }),
         ...(body.missedCallSmsText !== undefined && { missedCallSmsText: body.missedCallSmsText }),
         ...(body.aiReportDailyLimit !== undefined && { aiReportDailyLimit: body.aiReportDailyLimit }),
+        ...(body.qaAiPricePerMinCents !== undefined && { qaAiPricePerMinCents: body.qaAiPricePerMinCents }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },
     });

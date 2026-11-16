@@ -13,7 +13,7 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { useToast } from '@/contexts/ToastContext';
 import { alertText, alertValue } from '@/components/alerts/alertText';
 
-const TYPES: AlertType[] = ['LONG_WAIT', 'LONG_HANDLE', 'NO_AGENTS', 'SLA_BELOW', 'ABANDON_ABOVE', 'TMA_ABOVE', 'TEXT_SLA_BELOW', 'TICKET_DUE_SOON', 'TICKET_OVERDUE'];
+const TYPES: AlertType[] = ['LONG_WAIT', 'LONG_HANDLE', 'NO_AGENTS', 'SLA_BELOW', 'ABANDON_ABOVE', 'TMA_ABOVE', 'TEXT_SLA_BELOW', 'TICKET_DUE_SOON', 'TICKET_OVERDUE', 'QA_LOW_STREAK'];
 
 /** Alertas abertos agora (topo do painel ao vivo). Some quando não há nenhum. */
 export function OpenAlerts() {

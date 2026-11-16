@@ -1,10 +1,10 @@
 import type { FastifyPluginAsync } from "fastify";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { resolve, sep, extname } from "node:path";
 import { prisma, type Prisma } from "@falai/db";
 import { z } from "zod";
-import { recordingSettings } from "../../services/callRecording.service.js";
+import { recordingContentType, recordingFilePath } from "../../services/callRecording.service.js";
+import { transcriptMetrics, type CallTranscript } from "../../services/qaAi.service.js";
 import { YeastarAdapter } from "@falai/providers";
 import { reserveBalance, computeReservation, effectivePrice } from "../../services/billing.service.js";
 import { releaseCallReservation } from "@falai/db";
@@ -79,18 +79,6 @@ type CallRow = {
     createdAt: Date;
   }[];
 };
-
-/** Tipo de conteúdo da gravação, pela extensão com que foi gravada. */
-function recordingContentType(file: string): string {
-  switch (extname(file).toLowerCase()) {
-    case ".ogg": return "audio/ogg";
-    case ".wav": case ".wav49": return "audio/wav";
-    case ".gsm": return "audio/x-gsm";
-    case ".g722": return "audio/G722";
-    case ".alaw": case ".ulaw": return "audio/basic";
-    default: return "application/octet-stream";
-  }
-}
 
 function mapCall(c: CallRow) {
   const direction = c.kind === "INBOUND" ? "inbound" : "outbound";
@@ -265,7 +253,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       select: {
         id: true, agentId: true, kind: true, contactId: true, toNumber: true, fromNumber: true, status: true,
         outcome: true, failReason: true, durationSecs: true, costCents: true, variables: true, recordingUrl: true,
-        startedAt: true, endedAt: true, createdAt: true,
+        startedAt: true, endedAt: true, createdAt: true, transcript: true, formData: true,
         agent: { select: { name: true } },
         contact: { select: { name: true } },
         ticket: { select: { id: true, number: true, subject: true, status: true } },
@@ -276,7 +264,14 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       },
     });
     if (call) {
-      if (call.kind !== "INBOUND") return { call: mapCall(call) };
+      // Transcrição da gravação (auditoria com IA), as suas métricas e a ficha preenchida na chamada
+      const transcript = call.transcript as CallTranscript | null;
+      const metrics =
+        transcript?.source === "recording"
+          ? transcriptMetrics(transcript, (await prisma.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { qaForbiddenWords: true } })).qaForbiddenWords)
+          : null;
+      const extras = { transcript: call.transcript, metrics, formData: call.formData };
+      if (call.kind !== "INBOUND") return { call: { ...mapCall(call), ...extras } };
       // Chamada de entrada: percurso (pernas), tipificação com a observação e
       // as notas feitas durante a chamada (melhorias 1–3).
       const [extra, legs, notes] = await Promise.all([
@@ -312,6 +307,7 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
       return {
         call: {
           ...mapCall(call),
+          ...extras,
           attendance: {
             group: extra?.group?.name ?? null,
             waitSecs: secs(extra?.queuedAt, extra?.answeredAt),
@@ -367,15 +363,9 @@ export const tenantCallsRoutes: FastifyPluginAsync = async (fastify) => {
     });
     if (!call?.recordingUrl) return reply.status(404).send({ error: "Gravação não encontrada" });
 
-    const { dir } = await recordingSettings();
-    if (!dir) return reply.status(503).send({ error: "Pasta de gravações não configurada" });
-
-    // O caminho vem da nossa base de dados, mas confirma-se na mesma que cai
-    // dentro da pasta de gravações: um valor estragado não pode virar uma forma
-    // de ler ficheiros do servidor.
-    const base = resolve(dir);
-    const file = resolve(base, call.recordingUrl);
-    if (file !== base && !file.startsWith(base + sep)) {
+    const file = await recordingFilePath(call.recordingUrl);
+    if (file === "NO_DIR") return reply.status(503).send({ error: "Pasta de gravações não configurada" });
+    if (!file) {
       request.log.error({ callId: request.params.id }, "call_recording.path_outside_dir");
       return reply.status(404).send({ error: "Gravação não encontrada" });
     }

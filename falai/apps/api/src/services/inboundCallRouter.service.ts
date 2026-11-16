@@ -18,6 +18,7 @@
  * plano — o mesmo padrão "regista e cobra de uma só vez, sem reservas" do
  * webphoneCdr.service.ts.
  */
+import { maybeAutoAudit } from "./qaAi.service.js";
 import type { AsteriskAdapter } from "@falai/providers";
 import { extensionEndpointId, extensionWebEndpointId, holdMusicClass } from "@falai/providers";
 import type { CallEvent } from "@falai/shared";
@@ -183,6 +184,7 @@ export function registerInboundCallRouter(
     // linha da tabela Call pelo nome do ficheiro.
     if (event.type === "RECORDING_FINISHED") {
       await saveFinishedRecording(event.recordingName, event.format, log);
+      await maybeAutoAudit(fastify, event.recordingName, log).catch((err) => log.error({ err }, "qa_ai.auto_failed"));
       return;
     }
     if (event.type === "RECORDING_FAILED") {

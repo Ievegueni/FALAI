@@ -46,7 +46,7 @@ export const tenantContactProfileRoutes: FastifyPluginAsync = async (fastify) =>
     });
 
   const canEdit = (request: FastifyRequest, reply: FastifyReply) => {
-    if (request.tenantUser!.role !== "VIEWER") return true;
+    if (request.tenantUser!.role !== "VIEWER" && request.tenantUser!.role !== "AUDITOR") return true;
     void reply.status(403).send({ error: "O perfil Leitor só pode consultar" });
     return false;
   };

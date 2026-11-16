@@ -407,7 +407,7 @@ export function ContactDetailPage() {
 
   const clinicEnabled = tenant?.plan?.clinicEnabled === true;
   const ticketsEnabled = useTicketsEnabled();
-  const canEdit = user?.role !== 'VIEWER';
+  const canEdit = user?.role !== 'VIEWER' && user?.role !== 'AUDITOR';
   const canMerge = !!user && MERGE_ROLES.has(user.role);
 
   const { data: profile, isLoading } = useQuery({

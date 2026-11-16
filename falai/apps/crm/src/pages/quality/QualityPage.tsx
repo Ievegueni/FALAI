@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2 } from 'lucide-react';
-import { qaApi, type QaDefinition, type QaForm, type QaStatus } from '@/lib/api';
+import { Plus, Sparkles, Trash2 } from 'lucide-react';
+import { qaApi, type QaCriterionType, type QaDefinition, type QaForm, type QaStatus } from '@/lib/api';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -14,25 +14,30 @@ import { PageSpinner } from '@/components/ui/Spinner';
 import { Tabs } from '@/components/ui/Tabs';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { isOpsManager } from '@/lib/roles';
-import { clsx, formatDate, formatDuration, formatPhone } from '@/lib/utils';
+import { canEvaluate, isQaAdmin } from '@/lib/roles';
+import { clsx, formatDate, formatDateShort, formatDuration, formatPhone } from '@/lib/utils';
 import { QaStatusBadge, scoreClass } from './QualityBits';
 
-const STATUSES: QaStatus[] = ['SUBMITTED', 'ACKNOWLEDGED', 'DISPUTED', 'RESOLVED'];
+const STATUSES: QaStatus[] = ['AI_DRAFT', 'SUBMITTED', 'ACKNOWLEDGED', 'DISPUTED', 'RESOLVED'];
 const th = 'px-4 py-2.5 font-medium';
 const td = 'px-4 py-2.5';
 
-function Evaluations() {
+/** Lista de avaliações. Com `fixedStatus` (separador "Por rever") a API ordena por prioridade. */
+function Evaluations({ fixedStatus }: { fixedStatus?: QaStatus }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [f, setF] = useState({ status: '' as QaStatus | '', page: 1 });
+  const [f, setF] = useState({ status: (fixedStatus ?? '') as QaStatus | '', page: 1 });
   const { data, isLoading } = useQuery({ queryKey: ['qa', 'list', f], queryFn: () => qaApi.list({ page: f.page, ...(f.status && { status: f.status }) }) });
   return (
     <div className="space-y-4">
-      <select className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" value={f.status} onChange={(e) => setF({ status: e.target.value as QaStatus | '', page: 1 })}>
-        <option value="">{t('quality.allStatuses')}</option>
-        {STATUSES.map((s) => <option key={s} value={s}>{t(`quality.status.${s}`)}</option>)}
-      </select>
+      {fixedStatus ? (
+        <p className="text-sm text-gray-600">{t('quality.reviewHint')}</p>
+      ) : (
+        <select className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" value={f.status} onChange={(e) => setF({ status: e.target.value as QaStatus | '', page: 1 })}>
+          <option value="">{t('quality.allStatuses')}</option>
+          {STATUSES.map((s) => <option key={s} value={s}>{t(`quality.status.${s}`)}</option>)}
+        </select>
+      )}
       {isLoading || !data ? <PageSpinner /> : data.total === 0 ? (
         <Card><p className="py-6 text-center text-sm text-gray-400">{t('quality.empty')}</p></Card>
       ) : (
@@ -47,7 +52,7 @@ function Evaluations() {
                   <td className={`${td} text-gray-600`}>{formatDate(e.createdAt)}</td>
                   <td className={`${td} font-medium text-gray-900`}>{e.agent.name}</td>
                   <td className={`${td} text-gray-600`}>{e.form?.name ?? '—'}</td>
-                  <td className={`${td} text-gray-600`}>{e.evaluator.name}</td>
+                  <td className={`${td} text-gray-600`}>{e.evaluator?.name ?? t('quality.ai')}</td>
                   <td className={clsx(td, 'font-semibold', scoreClass(e.score))}>{e.score}{e.criticalFail && ' ⚠'}</td>
                   <td className={td}><QaStatusBadge status={e.status} /></td>
                 </tr>
@@ -67,6 +72,8 @@ function Summary() {
   const [from, setFrom] = useState(monthAgo);
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
   const { data, isLoading } = useQuery({ queryKey: ['qa', 'summary', from, to], queryFn: () => qaApi.summary({ from, to }) });
+  const { data: report } = useQuery({ queryKey: ['qa', 'report', from, to], queryFn: () => qaApi.report({ from, to }) });
+  const maxWeek = Math.max(100, ...(report?.weekly.map((w) => w.avgScore) ?? []));
   return (
     <div className="space-y-4">
       <Card className="flex flex-wrap items-end gap-4">
@@ -94,12 +101,57 @@ function Summary() {
           </table>
         </Card>
       )}
+      {report && report.weekly.length > 0 && (
+        <Card>
+          <h2 className="mb-3 text-sm font-semibold text-gray-900">{t('quality.weekly')}</h2>
+          <div className="space-y-1.5">
+            {report.weekly.map((w) => (
+              <div key={w.week} className="flex items-center gap-3 text-sm">
+                <span className="w-24 text-gray-500 tabular-nums">{formatDateShort(w.week)}</span>
+                <div className="h-2 flex-1 rounded-full bg-gray-100">
+                  <div className={clsx('h-2 rounded-full', w.avgScore >= 85 ? 'bg-emerald-500' : w.avgScore >= 70 ? 'bg-amber-500' : 'bg-red-500')} style={{ width: `${(w.avgScore / maxWeek) * 100}%` }} />
+                </div>
+                <span className={clsx('w-12 text-right font-semibold tabular-nums', scoreClass(w.avgScore))}>{w.avgScore}</span>
+                <span className="w-20 text-right text-xs text-gray-400">{t('quality.nEvaluations', { count: w.evaluations })}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {report && report.byCriterion.length > 0 && (
+        <Card padding={false} className="overflow-x-auto">
+          <h2 className="px-4 pt-4 text-sm font-semibold text-gray-900">{t('quality.byCriterion')}</h2>
+          <table className="mt-2 w-full text-sm">
+            <thead className="bg-gray-50 text-left text-xs text-gray-500">
+              <tr>{['section', 'criterion', 'avgPct', 'answered', 'failed'].map((k) => <th key={k} className={th}>{t(`quality.col.${k}`)}</th>)}</tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {report.byCriterion.map((c) => (
+                <tr key={`${c.section}/${c.label}`}>
+                  <td className={`${td} text-gray-500`}>{c.section}</td>
+                  <td className={`${td} text-gray-900`}>{c.label}</td>
+                  <td className={clsx(td, 'font-semibold', scoreClass(c.avgPct))}>{c.avgPct}%</td>
+                  <td className={td}>{c.answered}</td>
+                  <td className={td}>{c.failed}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
     </div>
   );
 }
 
 function Sample() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { error } = useToast();
+  const aiAudit = useMutation({
+    mutationFn: (callId: string) => qaApi.aiAudit(callId),
+    onSuccess: (ev) => navigate(`/quality/evaluations/${ev.id}`),
+    onError: (e: Error) => error(e.message),
+  });
   const [days, setDays] = useState(7);
   const { data, isLoading, refetch, isFetching } = useQuery({ queryKey: ['qa', 'sample', days], queryFn: () => qaApi.sample({ days, perAgent: 2 }) });
   return (
@@ -119,7 +171,12 @@ function Sample() {
               {a.calls.map((c) => (
                 <li key={c.id} className="flex items-center justify-between gap-3 py-2 text-sm">
                   <Link to={`/calls/${c.id}`} className="text-gray-700 hover:text-blue-600">{formatPhone(c.fromNumber)} · {formatDate(c.at)} · {formatDuration(c.durationSecs)}</Link>
-                  <Link to={`/quality/new?callId=${c.id}`}><Button size="sm">{t('quality.evaluate')}</Button></Link>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" icon={<Sparkles className="h-3.5 w-3.5" />} loading={aiAudit.isPending && aiAudit.variables === c.id} disabled={aiAudit.isPending} onClick={() => aiAudit.mutate(c.id)}>
+                      {t('quality.aiAudit')}
+                    </Button>
+                    <Link to={`/quality/new?callId=${c.id}`}><Button size="sm">{t('quality.evaluate')}</Button></Link>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -162,9 +219,14 @@ function FormEditor({ form, onClose }: { form: QaForm | 'new'; onClose: () => vo
                 <label className="flex items-center gap-1 text-xs text-gray-600">{t('quality.weight')}
                   <input type="number" min={1} max={100} value={c.weight} onChange={(e) => upd((d) => { d.sections[si]!.criteria[ci]!.weight = Math.max(1, Number(e.target.value) || 1); })} className="w-16 rounded-lg border border-gray-300 px-2 py-1.5 text-sm" />
                 </label>
-                <label className="flex items-center gap-1 text-xs text-gray-600">
-                  <input type="checkbox" checked={c.critical} onChange={(e) => upd((d) => { d.sections[si]!.criteria[ci]!.critical = e.target.checked; })} />{t('quality.critical')}
-                </label>
+                <select className="rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs" value={c.type ?? 'yesno'} onChange={(e) => upd((d) => { d.sections[si]!.criteria[ci]!.type = e.target.value as QaCriterionType; })}>
+                  {(['yesno', 'scale', 'auto_form'] as const).map((ty) => <option key={ty} value={ty}>{t(`quality.criterionType.${ty}`)}</option>)}
+                </select>
+                {c.type !== 'scale' && (
+                  <label className="flex items-center gap-1 text-xs text-gray-600">
+                    <input type="checkbox" checked={c.critical} onChange={(e) => upd((d) => { d.sections[si]!.criteria[ci]!.critical = e.target.checked; })} />{t('quality.critical')}
+                  </label>
+                )}
                 {s.criteria.length > 1 && <Button size="sm" variant="ghost" icon={<Trash2 className="h-3.5 w-3.5 text-red-500" />} onClick={() => upd((d) => { d.sections[si]!.criteria.splice(ci, 1); })} />}
               </div>
             ))}
@@ -212,12 +274,65 @@ function Forms() {
   );
 }
 
+/** Auditoria com IA: grelha usada e % das chamadas atendidas que a IA audita sozinha. */
+function AiSettings() {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const { success, error } = useToast();
+  const { data: forms } = useQuery({ queryKey: ['qa', 'forms'], queryFn: () => qaApi.forms() });
+  const { data, isLoading } = useQuery({ queryKey: ['qa', 'ai-settings'], queryFn: qaApi.aiSettings });
+  type Draft = { formId: string | null; samplePct: number; forbiddenWords: string; alertThreshold: number };
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const v: Draft | null = draft ?? (data ? { formId: data.formId, samplePct: data.samplePct, forbiddenWords: data.forbiddenWords.join(', '), alertThreshold: data.alertThreshold } : null);
+  const save = useMutation({
+    mutationFn: () => qaApi.setAiSettings({ ...v!, forbiddenWords: v!.forbiddenWords.split(',').map((w) => w.trim()).filter(Boolean) }),
+    onSuccess: () => { success(t('common.saved')); setDraft(null); void qc.invalidateQueries({ queryKey: ['qa', 'ai-settings'] }); },
+    onError: (e: Error) => error(e.message),
+  });
+  if (isLoading || !v || !data) return <PageSpinner />;
+  return (
+    <Card className="max-w-xl space-y-4">
+      <p className="text-sm text-gray-600">{t('quality.aiIntro')}</p>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-500">{t('quality.aiForm')}</label>
+        <select className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm" value={v.formId ?? ''} onChange={(e) => setDraft({ ...v, formId: e.target.value || null })}>
+          <option value="">—</option>
+          {forms?.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-500">{t('quality.aiSample')}</label>
+        <div className="flex items-center gap-2">
+          <input type="number" min={0} max={100} value={v.samplePct} onChange={(e) => setDraft({ ...v, samplePct: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} className="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+          <span className="text-sm text-gray-500">%</span>
+        </div>
+        <p className="mt-1 text-xs text-gray-400">{t('quality.aiSampleHint')}</p>
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-500">{t('quality.forbiddenWords')}</label>
+        <textarea rows={2} value={v.forbiddenWords} onChange={(e) => setDraft({ ...v, forbiddenWords: e.target.value })} placeholder={t('quality.forbiddenWordsPlaceholder')} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-gray-500">{t('quality.alertThreshold')}</label>
+        <input type="number" min={0} max={100} value={v.alertThreshold} onChange={(e) => setDraft({ ...v, alertThreshold: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })} className="w-24 rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+        <p className="mt-1 text-xs text-gray-400">{t('quality.alertThresholdHint')}</p>
+      </div>
+      <p className="text-xs text-gray-500">
+        {data.pricePerMinCents > 0 ? t('quality.aiPrice', { price: (data.pricePerMinCents / 100).toFixed(2) }) : t('quality.aiFree')}
+      </p>
+      <div className="flex justify-end">
+        <Button loading={save.isPending} disabled={!draft} onClick={() => save.mutate()}>{t('common.save')}</Button>
+      </div>
+    </Card>
+  );
+}
+
 export function QualityPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const ops = isOpsManager(user?.role);
-  const evaluator = ops || user?.role === 'SUPERVISOR';
-  const [tab, setTab] = useState('evaluations');
+  const ops = isQaAdmin(user?.role);
+  const evaluator = canEvaluate(user?.role);
+  const [tab, setTab] = useState(evaluator ? 'review' : 'evaluations');
   return (
     <>
       <Header title={t('quality.title')} />
@@ -226,16 +341,19 @@ export function QualityPage() {
           active={tab}
           onChange={setTab}
           tabs={[
+            ...(evaluator ? [{ key: 'review', label: t('quality.tabReview') }] : []),
             { key: 'evaluations', label: t('quality.tabEvaluations') },
             { key: 'summary', label: t('quality.tabSummary') },
             ...(evaluator ? [{ key: 'sample', label: t('quality.tabSample') }] : []),
-            ...(ops ? [{ key: 'forms', label: t('quality.tabForms') }] : []),
+            ...(ops ? [{ key: 'forms', label: t('quality.tabForms') }, { key: 'ai', label: t('quality.tabAi') }] : []),
           ]}
         />
-        {tab === 'evaluations' && <Evaluations />}
+        {tab === 'review' && evaluator && <Evaluations key="review" fixedStatus="AI_DRAFT" />}
+        {tab === 'evaluations' && <Evaluations key="all" />}
         {tab === 'summary' && <Summary />}
         {tab === 'sample' && evaluator && <Sample />}
         {tab === 'forms' && ops && <Forms />}
+        {tab === 'ai' && ops && <AiSettings />}
       </div>
     </>
   );

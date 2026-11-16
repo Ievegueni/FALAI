@@ -202,7 +202,7 @@ export async function buildConsolidated(tenantId: string, from: Date, to: Date, 
     // Atrasados agora (de qualquer data): o que está a falhar neste momento.
     prisma.ticket.count({ where: { tenantId, status: { in: ["OPEN", "PENDING", "ON_HOLD"] }, dueAt: { lt: now } } }),
     prisma.csatResponse.findMany({ where: { tenantId, createdAt: range, score: { not: null } }, select: { score: true } }),
-    prisma.qaEvaluation.aggregate({ where: { tenantId, createdAt: range }, _avg: { score: true }, _count: { _all: true } }),
+    prisma.qaEvaluation.aggregate({ where: { tenantId, createdAt: range, status: { not: "AI_DRAFT" } }, _avg: { score: true }, _count: { _all: true } }),
   ]);
   const targets = parseTargets(tenant?.serviceTargets);
   const slaSecs = targets.slaThresholdSecs;

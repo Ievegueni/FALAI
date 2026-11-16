@@ -298,10 +298,10 @@ export interface ContactProfile {
 }
 
 export const contactsApi = {
-  list: async (params?: { page?: number; search?: string; optedOut?: boolean }) => {
+  list: async (params?: { page?: number; search?: string; optedOut?: boolean; incompleteForm?: string }) => {
     const page = params?.page ?? 1;
     const raw = await get<{ contacts: Contact[]; total: number }>(
-      `/tenant/contacts${qs({ ...pageRange(page), search: params?.search, optedOut: params?.optedOut })}`,
+      `/tenant/contacts${qs({ ...pageRange(page), search: params?.search, optedOut: params?.optedOut, incompleteForm: params?.incompleteForm })}`,
     );
     return toPaginated(raw.contacts, raw.total, page);
   },
@@ -566,6 +566,8 @@ export interface CallerNote {
 export interface CallerPanelData {
   caller: CallerInfo;
   callId: string | null;
+  /** Grupo da chamada de entrada: decide a ficha que abre. */
+  groupId?: string | null;
   contact: {
     id: string;
     name: string | null;
@@ -1402,7 +1404,7 @@ export const ticketsApi = {
 
 // ─── Metas e alertas operacionais (fase 4) ──────────────────────────────────
 
-export type AlertType = 'LONG_WAIT' | 'LONG_HANDLE' | 'NO_AGENTS' | 'SLA_BELOW' | 'ABANDON_ABOVE' | 'TMA_ABOVE' | 'TEXT_SLA_BELOW' | 'TICKET_DUE_SOON' | 'TICKET_OVERDUE';
+export type AlertType = 'LONG_WAIT' | 'LONG_HANDLE' | 'NO_AGENTS' | 'SLA_BELOW' | 'ABANDON_ABOVE' | 'TMA_ABOVE' | 'TEXT_SLA_BELOW' | 'TICKET_DUE_SOON' | 'TICKET_OVERDUE' | 'QA_LOW_STREAK';
 
 export interface OpsAlert {
   id: string;
@@ -1487,22 +1489,34 @@ export const agentTimeApi = {
 
 // ─── Qualidade (fase 7) ─────────────────────────────────────────────────────
 
-export type QaAnswer = 'YES' | 'NO' | 'NA';
-export type QaStatus = 'SUBMITTED' | 'ACKNOWLEDGED' | 'DISPUTED' | 'RESOLVED';
-export interface QaCriterion { id?: string; label: string; weight: number; critical: boolean }
+export type QaAnswer = 'YES' | 'NO' | 'NA' | '1' | '2' | '3' | '4' | '5';
+export type QaCriterionType = 'yesno' | 'scale' | 'auto_form';
+export type QaStatus = 'AI_DRAFT' | 'SUBMITTED' | 'ACKNOWLEDGED' | 'DISPUTED' | 'RESOLVED';
+export interface QaCriterion { id?: string; label: string; weight: number; critical: boolean; type?: QaCriterionType }
 export interface QaDefinition { sections: { title: string; criteria: QaCriterion[] }[] }
 export interface QaForm { id: string; name: string; isActive: boolean; definition: QaDefinition; updatedAt: string }
 type Person = { id: string; name: string };
 export interface QaEvaluationRow {
   id: string; score: number; criticalFail: boolean; status: QaStatus; createdAt: string;
   callId: string | null; conversationId: string | null; ticketId: string | null;
-  form: { name: string } | null; agent: Person; evaluator: Person;
+  form: { name: string } | null; agent: Person; evaluator: Person | null; // null = rascunho da IA
 }
 export interface QaEvaluationDetail extends QaEvaluationRow {
   formSnapshot: QaDefinition & { name: string };
   answers: Record<string, QaAnswer>;
   comment: string | null; agentComment: string | null; resolution: string | null; acknowledgedAt: string | null;
   canEdit: boolean; isMine: boolean;
+  aiFindings: {
+    summary: string;
+    model: string;
+    criteria: Record<string, { reason: string; quote: string }>;
+    divergences?: { field: string; formValue: string; said: string; quote: string }[];
+  } | null;
+}
+export interface QaAiSettings { formId: string | null; samplePct: number; pricePerMinCents: number; forbiddenWords: string[]; alertThreshold: number }
+export interface QaReport {
+  byCriterion: { section: string; label: string; avgPct: number; answered: number; failed: number }[];
+  weekly: { week: string; avgScore: number; evaluations: number }[];
 }
 export interface QaSummaryRow { agentId: string; agent: string; evaluations: number; avgScore: number | null; criticalFails: number; disputed: number }
 export interface QaSampleRow { agentId: string; agent: string; calls: { id: string; at: string; fromNumber: string | null; durationSecs: number }[] }
@@ -1522,6 +1536,36 @@ export const qaApi = {
   dispute: (id: string, comment: string) => post<unknown>(`/tenant/qa/evaluations/${id}/dispute`, { comment }),
   summary: (q: { from?: string; to?: string }) => get<{ data: QaSummaryRow[] }>(`/tenant/qa/summary${qs(q)}`).then((r) => r.data),
   sample: (q: { days?: number; perAgent?: number }) => get<{ data: QaSampleRow[] }>(`/tenant/qa/sample${qs(q)}`).then((r) => r.data),
+  // Auditoria com IA
+  aiSettings: () => get<QaAiSettings>('/tenant/qa/ai/settings'),
+  setAiSettings: (data: { formId: string | null; samplePct: number; forbiddenWords?: string[]; alertThreshold?: number }) => put<{ ok: true }>('/tenant/qa/ai/settings', data),
+  report: (q: { from?: string; to?: string }) => get<QaReport>(`/tenant/qa/report${qs(q)}`),
+  aiAudit: (callId: string) => post<{ id: string }>(`/tenant/qa/ai/calls/${callId}`, {}),
+  submitDraft: (id: string, data: { answers: Record<string, QaAnswer>; comment?: string }) => post<{ ok: true }>(`/tenant/qa/evaluations/${id}/submit`, data),
+  discardDraft: (id: string) => del<{ ok: true }>(`/tenant/qa/evaluations/${id}`),
+};
+
+// ─── Fichas de recolha de dados durante a chamada ───────────────────────────
+
+export type ContactFieldType = 'text' | 'number' | 'date' | 'email' | 'select' | 'yesno' | 'nif' | 'bi' | 'province';
+export interface ContactField {
+  key?: string; label: string; type: ContactFieldType; required: boolean; options?: string[];
+  /** Só aparece quando o campo `key` (sim/não ou lista, anterior) tem o valor `equals`. */
+  showIf?: { key: string; equals: string | boolean };
+}
+export interface ContactForm { id: string; name: string; isActive: boolean; fields: ContactField[]; groupIds: string[]; updatedAt: string }
+/** As 21 províncias (espelha PROVINCES em apps/api/src/services/contactForms.service.ts). */
+export const PROVINCES = [
+  'Bengo', 'Benguela', 'Bié', 'Cabinda', 'Cuando', 'Cuanza Norte', 'Cuanza Sul', 'Cubango', 'Cunene', 'Huambo', 'Huíla',
+  'Ícolo e Bengo', 'Luanda', 'Lunda Norte', 'Lunda Sul', 'Malanje', 'Moxico', 'Moxico Leste', 'Namibe', 'Uíge', 'Zaire',
+];
+
+export const contactFormsApi = {
+  list: (all = false) => get<{ data: ContactForm[] }>(`/tenant/contact-forms${all ? '?all=1' : ''}`).then((r) => r.data),
+  create: (data: { name: string; fields: ContactField[]; groupIds?: string[] }) => post<ContactForm>('/tenant/contact-forms', data),
+  update: (id: string, data: { name: string; fields: ContactField[]; groupIds?: string[]; isActive?: boolean }) => put<ContactForm>(`/tenant/contact-forms/${id}`, data),
+  fill: (contactId: string, data: { formId: string; values: Record<string, unknown>; legId?: string }) =>
+    post<{ ok: true; attributes: Record<string, unknown> }>(`/tenant/callers/${contactId}/form`, data),
 };
 
 // ─── Satisfação / CSAT (fase 8) ─────────────────────────────────────────────

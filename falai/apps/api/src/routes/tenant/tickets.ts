@@ -193,7 +193,7 @@ export const tenantTicketsRoutes: FastifyPluginAsync = async (fastify) => {
     });
     if (!ticket) return reply.status(404).send({ error: "Ticket não encontrado" });
     const sla = ticketSlaStatus(ticket, new Date(), (await tenantTargets(tenantId)).ticketWarnMins);
-    return { ...ticket, sla, canEdit: ticket.status !== "CLOSED" && request.tenantUser!.role !== "VIEWER" && canEditTicket(scope, ticket) };
+    return { ...ticket, sla, canEdit: ticket.status !== "CLOSED" && !["VIEWER", "AUDITOR"].includes(request.tenantUser!.role) && canEditTicket(scope, ticket) };
   });
 
   // POST /tenant/tickets

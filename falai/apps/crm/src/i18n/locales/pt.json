@@ -132,7 +132,8 @@
     "ADJUSTMENT": "Ajuste",
     "MONTHLY_FEE": "Fee mensal",
     "SMS_CHARGE": "SMS",
-    "TEXT_CHARGE": "Chat / email"
+    "TEXT_CHARGE": "Chat / email",
+    "QA_CHARGE": "Auditoria IA"
   },
   "days": [
     "Dom",
@@ -554,7 +555,13 @@
       "wait": "espera {{secs}}",
       "responseIn": "atendeu em {{secs}}",
       "notesTitle": "Notas da chamada",
-      "typedAt": "Tipificada em {{when}}"
+      "typedAt": "Tipificada em {{when}}",
+      "autoTranscript": "Transcrição automática da gravação",
+      "speaker": "Orador {{n}}",
+      "metricsTitle": "Conversa",
+      "longestSilence": "Maior silêncio",
+      "interruptions": "Interrupções",
+      "forbiddenSaid": "Palavras proibidas"
     },
     "inbound": "Entrada",
     "searchPlaceholder": "Pesquisar número ou contacto",
@@ -671,7 +678,10 @@
       "4": "Quinta",
       "5": "Sexta",
       "6": "Sábado"
-    }
+    },
+    "roleAuditor": "Auditor",
+    "roleAuditorOpt": "Auditor — qualidade",
+    "legendAuditor": "<0>AUDITOR</0> — vê toda a operação (chamadas, gravações, conversas, relatórios) e só altera a qualidade: grelhas, avaliações e auditoria com IA."
   },
   "settings": {
     "title": "Definições",
@@ -1809,7 +1819,8 @@
       "TMA_ABOVE": "TMA acima do limite",
       "TEXT_SLA_BELOW": "SLA de texto abaixo da meta",
       "TICKET_DUE_SOON": "Ticket perto do prazo",
-      "TICKET_OVERDUE": "Ticket fora do prazo"
+      "TICKET_OVERDUE": "Ticket fora do prazo",
+      "QA_LOW_STREAK": "Qualidade em queda"
     },
     "type": {
       "LONG_WAIT": "Chamada em espera há {{value}} (limite {{threshold}})",
@@ -1820,7 +1831,8 @@
       "TMA_ABOVE": "TMA do dia em {{value}} (limite {{threshold}})",
       "TEXT_SLA_BELOW": "SLA de texto do dia em {{value}} (meta {{threshold}})",
       "TICKET_DUE_SOON": "Ticket perto do prazo: faltam {{value}}",
-      "TICKET_OVERDUE": "Ticket fora do prazo há {{value}}"
+      "TICKET_OVERDUE": "Ticket fora do prazo há {{value}}",
+      "QA_LOW_STREAK": "3 avaliações seguidas abaixo do limite: média {{value}} (limite {{threshold}})"
     },
     "groupTargetsTitle": "Metas por grupo",
     "groupTargetsHint": "Vazio = usa a meta geral. O alerta de SLA de um grupo com meta própria abre à parte.",
@@ -1886,7 +1898,8 @@
       "SUBMITTED": "Por confirmar",
       "ACKNOWLEDGED": "Confirmada",
       "DISPUTED": "Contestada",
-      "RESOLVED": "Revista"
+      "RESOLVED": "Revista",
+      "AI_DRAFT": "Rascunho IA"
     },
     "col": {
       "date": "Data",
@@ -1898,7 +1911,44 @@
       "evaluations": "Avaliações",
       "avgScore": "QA score médio",
       "criticalFails": "Eliminatórios",
-      "disputed": "Contestadas"
+      "disputed": "Contestadas",
+      "section": "Secção",
+      "criterion": "Critério",
+      "avgPct": "Média",
+      "answered": "Respostas",
+      "failed": "Não conforme"
+    },
+    "ai": "IA",
+    "aiAudit": "Auditar com IA",
+    "tabAi": "Auditoria IA",
+    "aiIntro": "A IA transcreve a gravação, preenche a grelha com justificação e deixa um rascunho. O auditor revê e submete; o agente só vê a avaliação depois disso.",
+    "aiForm": "Grelha usada pela IA",
+    "aiSample": "Chamadas atendidas auditadas automaticamente",
+    "aiSampleHint": "0 = só quando se carrega em \"Auditar com IA\". Só chamadas gravadas e atendidas por um agente.",
+    "aiPrice": "Custo: {{price}} Kz por minuto de chamada, debitado do saldo.",
+    "aiFree": "Sem custo por minuto de momento.",
+    "aiDraftTitle": "Rascunho da IA",
+    "aiDraftHint": "Confirme ou corrija cada critério e submeta. O agente só vê a avaliação depois de submetida.",
+    "discard": "Descartar",
+    "submitted": "Avaliação submetida",
+    "discarded": "Rascunho descartado",
+    "auto": "automático",
+    "tabReview": "Por rever",
+    "reviewHint": "Rascunhos da IA por rever: primeiro os que têm critérios eliminatórios e as notas mais baixas.",
+    "divergences": "Ficha diferente do que o cliente disse",
+    "divergenceLine": "na ficha \"{{form}}\", o cliente disse \"{{said}}\"",
+    "weekly": "Evolução semanal",
+    "byCriterion": "Por critério",
+    "nEvaluations_one": "{{count}} aval.",
+    "nEvaluations_other": "{{count}} aval.",
+    "forbiddenWords": "Palavras proibidas (separadas por vírgulas)",
+    "forbiddenWordsPlaceholder": "ex.: não é comigo, não sei, problema seu",
+    "alertThreshold": "Alerta: 3 avaliações seguidas abaixo de (%)",
+    "alertThresholdHint": "0 = sem alerta. Aparece em Supervisão → Alertas.",
+    "criterionType": {
+      "yesno": "Sim/Não",
+      "scale": "Escala 1–5",
+      "auto_form": "Automático: ficha preenchida"
     }
   },
   "kb": {
@@ -2035,5 +2085,40 @@
     "offline": "Sem ligação",
     "allGroups": "Todos os grupos",
     "fullscreen": "Ecrã inteiro"
+  },
+  "contactForms": {
+    "tab": "Fichas",
+    "open": "Ficha de dados",
+    "new": "Nova ficha",
+    "edit": "Editar ficha",
+    "name": "Nome da ficha",
+    "label": "Campo",
+    "required": "Obrigatório",
+    "options": "Opções, separadas por vírgulas",
+    "addField": "Adicionar campo",
+    "none": "Ainda não há fichas.",
+    "intro": "Campos que o agente preenche durante a chamada. O que se preenche fica no perfil do cliente.",
+    "keyHint": "Campos com o mesmo nome em fichas diferentes são o mesmo dado do cliente.",
+    "type": {
+      "text": "Texto",
+      "number": "Número",
+      "date": "Data",
+      "email": "Email",
+      "select": "Lista",
+      "yesno": "Sim/Não",
+      "nif": "NIF",
+      "bi": "BI",
+      "province": "Província"
+    },
+    "progress": "{{done}}/{{total}}",
+    "save": "Gravar ficha",
+    "nifHint": "BI ou NIF da empresa (10 dígitos)",
+    "groups": "Abre por omissão nos grupos",
+    "groupsHint": "Nas chamadas destes grupos a ficha abre já. Nos outros abre a primeira.",
+    "showIf": "Mostrar só quando",
+    "always": "sempre",
+    "showIfHint": "Para usar um campo novo como condição, grave a ficha primeiro.",
+    "allContacts": "Todos os contactos",
+    "incompleteIn": "Incompletos em: {{name}}"
   }
 }

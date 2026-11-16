@@ -1,6 +1,6 @@
 // ─── Auth / Tenant ───────────────────────────────────────────────────────────
 
-export type TenantRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER';
+export type TenantRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'SUPERVISOR' | 'MEMBER' | 'VIEWER' | 'AUDITOR';
 export type TenantStatus = 'TRIAL' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
 
 export interface TenantUser {
@@ -288,6 +288,15 @@ export interface Call {
   recordingUrl: string | null;
   turns?: CallTurn[];
   variables?: Record<string, string>;
+  /** Só no detalhe: transcrição da gravação (auditoria com IA) e ficha preenchida na chamada. */
+  transcript?: { source: 'recording'; durationSecs: number; utterances: { speaker: number; start: number; end?: number; text: string }[] } | null;
+  metrics?: {
+    talk: { speaker: number; secs: number; pct: number }[] | null;
+    longestSilenceSecs: number | null;
+    interruptions: number | null;
+    forbidden: { word: string; start: number; speaker: number }[];
+  } | null;
+  formData?: { formId: string; form: string; values: Record<string, unknown>; at: string } | null;
 }
 
 export interface CallTurn {
@@ -385,7 +394,7 @@ export interface RetryPolicy {
 
 // ─── Wallet ──────────────────────────────────────────────────────────────────
 
-export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'TEXT_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE';
+export type TransactionType = 'TOPUP' | 'CALL_CHARGE' | 'SMS_CHARGE' | 'TEXT_CHARGE' | 'REFUND' | 'ADJUSTMENT' | 'MONTHLY_FEE' | 'QA_CHARGE';
 
 export interface WalletTransaction {
   id: string;

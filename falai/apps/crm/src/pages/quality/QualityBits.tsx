@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/Badge';
 import type { QaStatus } from '@/lib/api';
 
 const STATUS_CLASS: Record<QaStatus, string> = {
+  AI_DRAFT: 'bg-violet-100 text-violet-700',
   SUBMITTED: 'bg-blue-100 text-blue-700',
   ACKNOWLEDGED: 'bg-emerald-100 text-emerald-700',
   DISPUTED: 'bg-amber-100 text-amber-700',

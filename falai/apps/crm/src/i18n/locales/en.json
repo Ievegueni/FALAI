@@ -132,7 +132,8 @@
     "ADJUSTMENT": "Adjustment",
     "MONTHLY_FEE": "Monthly fee",
     "SMS_CHARGE": "SMS",
-    "TEXT_CHARGE": "Chat / email"
+    "TEXT_CHARGE": "Chat / email",
+    "QA_CHARGE": "AI audit"
   },
   "days": [
     "Sun",
@@ -554,7 +555,13 @@
       "wait": "wait {{secs}}",
       "responseIn": "answered in {{secs}}",
       "notesTitle": "Call notes",
-      "typedAt": "Typed on {{when}}"
+      "typedAt": "Typed on {{when}}",
+      "autoTranscript": "Automatic transcript of the recording",
+      "speaker": "Speaker {{n}}",
+      "metricsTitle": "Conversation",
+      "longestSilence": "Longest silence",
+      "interruptions": "Interruptions",
+      "forbiddenSaid": "Forbidden words"
     },
     "inbound": "Inbound",
     "searchPlaceholder": "Search number or contact",
@@ -671,7 +678,10 @@
       "4": "Thursday",
       "5": "Friday",
       "6": "Saturday"
-    }
+    },
+    "roleAuditor": "Auditor",
+    "roleAuditorOpt": "Auditor — quality",
+    "legendAuditor": "<0>AUDITOR</0> — sees the whole operation (calls, recordings, conversations, reports) and only changes quality: forms, evaluations and AI audit."
   },
   "settings": {
     "title": "Settings",
@@ -1809,7 +1819,8 @@
       "TMA_ABOVE": "AHT above limit",
       "TEXT_SLA_BELOW": "Text SLA below target",
       "TICKET_DUE_SOON": "Ticket near deadline",
-      "TICKET_OVERDUE": "Ticket overdue"
+      "TICKET_OVERDUE": "Ticket overdue",
+      "QA_LOW_STREAK": "Quality dropping"
     },
     "type": {
       "LONG_WAIT": "Call waiting for {{value}} (limit {{threshold}})",
@@ -1820,7 +1831,8 @@
       "TMA_ABOVE": "Daily AHT at {{value}} (limit {{threshold}})",
       "TEXT_SLA_BELOW": "Today's text SLA at {{value}} (target {{threshold}})",
       "TICKET_DUE_SOON": "Ticket near deadline: {{value}} left",
-      "TICKET_OVERDUE": "Ticket overdue by {{value}}"
+      "TICKET_OVERDUE": "Ticket overdue by {{value}}",
+      "QA_LOW_STREAK": "3 evaluations in a row below the limit: average {{value}} (limit {{threshold}})"
     },
     "groupTargetsTitle": "Targets per group",
     "groupTargetsHint": "Empty = uses the general target. A group with its own target gets its own SLA alert.",
@@ -1886,7 +1898,8 @@
       "SUBMITTED": "Pending",
       "ACKNOWLEDGED": "Acknowledged",
       "DISPUTED": "Disputed",
-      "RESOLVED": "Reviewed"
+      "RESOLVED": "Reviewed",
+      "AI_DRAFT": "AI draft"
     },
     "col": {
       "date": "Date",
@@ -1898,7 +1911,44 @@
       "evaluations": "Evaluations",
       "avgScore": "Average QA score",
       "criticalFails": "Critical fails",
-      "disputed": "Disputed"
+      "disputed": "Disputed",
+      "section": "Section",
+      "criterion": "Criterion",
+      "avgPct": "Average",
+      "answered": "Answers",
+      "failed": "Non-compliant"
+    },
+    "ai": "AI",
+    "aiAudit": "Audit with AI",
+    "tabAi": "AI audit",
+    "aiIntro": "The AI transcribes the recording, fills in the form with reasons and leaves a draft. The auditor reviews and submits; the agent only sees it after that.",
+    "aiForm": "Form used by the AI",
+    "aiSample": "Answered calls audited automatically",
+    "aiSampleHint": "0 = only when \"Audit with AI\" is pressed. Only recorded calls answered by an agent.",
+    "aiPrice": "Cost: {{price}} Kz per call minute, charged to the balance.",
+    "aiFree": "No per-minute cost at the moment.",
+    "aiDraftTitle": "AI draft",
+    "aiDraftHint": "Confirm or correct each criterion and submit. The agent only sees the evaluation once submitted.",
+    "discard": "Discard",
+    "submitted": "Evaluation submitted",
+    "discarded": "Draft discarded",
+    "auto": "automatic",
+    "tabReview": "To review",
+    "reviewHint": "AI drafts to review: critical failures and lowest scores first.",
+    "divergences": "Form differs from what the customer said",
+    "divergenceLine": "form has \"{{form}}\", customer said \"{{said}}\"",
+    "weekly": "Weekly trend",
+    "byCriterion": "By criterion",
+    "nEvaluations_one": "{{count}} eval.",
+    "nEvaluations_other": "{{count}} evals.",
+    "forbiddenWords": "Forbidden words (comma-separated)",
+    "forbiddenWordsPlaceholder": "e.g. not my problem, I don't know",
+    "alertThreshold": "Alert: 3 evaluations in a row below (%)",
+    "alertThresholdHint": "0 = no alert. Shows in Supervision → Alerts.",
+    "criterionType": {
+      "yesno": "Yes/No",
+      "scale": "Scale 1–5",
+      "auto_form": "Automatic: form filled in"
     }
   },
   "kb": {
@@ -2035,5 +2085,40 @@
     "offline": "Offline",
     "allGroups": "All groups",
     "fullscreen": "Full screen"
+  },
+  "contactForms": {
+    "tab": "Forms",
+    "open": "Data form",
+    "new": "New form",
+    "edit": "Edit form",
+    "name": "Form name",
+    "label": "Field",
+    "required": "Required",
+    "options": "Options, comma-separated",
+    "addField": "Add field",
+    "none": "No forms yet.",
+    "intro": "Fields the agent fills in during the call. What is filled in is saved to the customer profile.",
+    "keyHint": "Fields with the same name in different forms are the same customer data.",
+    "type": {
+      "text": "Text",
+      "number": "Number",
+      "date": "Date",
+      "email": "Email",
+      "select": "List",
+      "yesno": "Yes/No",
+      "nif": "NIF",
+      "bi": "ID card (BI)",
+      "province": "Province"
+    },
+    "progress": "{{done}}/{{total}}",
+    "save": "Save form",
+    "nifHint": "ID card or company NIF (10 digits)",
+    "groups": "Opens by default in groups",
+    "groupsHint": "On calls from these groups the form opens straight away. Otherwise the first one opens.",
+    "showIf": "Show only when",
+    "always": "always",
+    "showIfHint": "To use a new field as a condition, save the form first.",
+    "allContacts": "All contacts",
+    "incompleteIn": "Incomplete in: {{name}}"
   }
 }
