@@ -219,6 +219,8 @@ export interface Tenant {
   /** Grupos de linhas, ex. { COBRANCA: 6, MARKETING: 6 }. Vazio = sem grupos. */
   lineGroupLimits?: Record<string, number>;
   defaultLineGroup?: string | null;
+  /** Voz do script fixo por grupo, ex. { MARKETING: 'elevenlabs:<id>' }. */
+  lineGroupVoices?: Record<string, string>;
   features?: TenantFeatures;
   featureOverrides?: Partial<TenantFeatures>;
   /** Funcionalidades que o plano desliga e nenhum override liga. */

@@ -94,3 +94,37 @@ export function validateCampaignLineGroup(
   }
   return { ok: true, value: name };
 }
+
+/** Id de voz aceite na configuração de um grupo (ex.: "elevenlabs:A26KfvFuSKaMzhhYkSlQ"). */
+export const LINE_GROUP_VOICE_RE = /^[A-Za-z0-9_:.-]{1,100}$/;
+
+/**
+ * Voz por grupo de linhas, ex. { "MARKETING": "elevenlabs:A26KfvFuSKaMzhhYkSlQ" }.
+ * Lê o Json do tenant; ignora entradas inválidas.
+ */
+export function parseLineGroupVoices(json: unknown): Record<string, string> {
+  if (!json || typeof json !== "object" || Array.isArray(json)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(json as Record<string, unknown>)) {
+    const name = normalizeLineGroup(k);
+    if (!name || typeof v !== "string" || !LINE_GROUP_VOICE_RE.test(v.trim())) continue;
+    out[name] = v.trim();
+  }
+  return out;
+}
+
+/**
+ * Voz do script fixo de uma campanha: a do grupo (se o cliente a definiu)
+ * sobrepõe-se à da campanha, porque o cliente pode mandar sempre a mesma voz
+ * pela API (a FÁCIL manda um id ElevenLabs em todas) e quem decide a voz do
+ * marketing somos nós, no backoffice.
+ */
+export function resolveScriptVoice(
+  campaign: { lineGroup: string | null; ttsVoiceId: string | null },
+  tenant: { defaultLineGroup: string | null; lineGroupVoices: unknown },
+  defaultVoice: string
+): string {
+  const group = normalizeLineGroup(campaign.lineGroup) ?? normalizeLineGroup(tenant.defaultLineGroup);
+  const groupVoice = group ? parseLineGroupVoices(tenant.lineGroupVoices)[group] : undefined;
+  return groupVoice ?? campaign.ttsVoiceId ?? defaultVoice;
+}

@@ -1,6 +1,6 @@
 import fp from "fastify-plugin";
 import { Queue } from "bullmq";
-import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter, PiperTtsAdapter } from "@falai/providers";
+import { DeepgramAdapter, ClaudeAdapter, ElevenLabsAdapter, MacOsTtsAdapter, PiperTtsAdapter, RoutingTtsAdapter } from "@falai/providers";
 import type { TtsProvider, LlmProvider } from "@falai/providers";
 import { TtsVoiceValidator } from "../services/ttsVoices.service.js";
 import { prisma, releaseOrphanReservations } from "@falai/db";
@@ -45,7 +45,11 @@ export default fp(async (fastify) => {
 
   // TTS_PROVIDER=macos usa say+afconvert; =piper usa Piper+ffmpeg (PT-PT). Ambos locais, sem API externa.
   const ttsProvider = process.env["TTS_PROVIDER"];
-  const tts: TtsProvider =
+  const elevenlabsKey = providers.elevenlabs.apiKey;
+  const elevenlabs = elevenlabsKey
+    ? new ElevenLabsAdapter({ apiKey: elevenlabsKey, stubMode })
+    : null;
+  const primaryTts: TtsProvider =
     ttsProvider === "macos"
       ? new MacOsTtsAdapter("Joana")
       : ttsProvider === "piper"
@@ -53,13 +57,16 @@ export default fp(async (fastify) => {
             process.env["PIPER_BIN"] ?? "piper",
             process.env["PIPER_MODEL"] ?? "/opt/piper/pt_PT-tugao-medium.onnx",
           )
-        : new ElevenLabsAdapter({
-            apiKey: providers.elevenlabs.apiKey,
-            stubMode: stubMode || !providers.elevenlabs.apiKey,
-          });
+        : elevenlabs ?? new ElevenLabsAdapter({ apiKey: "", stubMode: true });
 
   const defaultVoiceId =
     ttsProvider === "macos" ? "Joana" : ttsProvider === "piper" ? "pt_PT-tugao" : providers.elevenlabs.defaultVoiceId;
+
+  // Vozes "elevenlabs:<id>" (ex.: voz do grupo MARKETING de um cliente) vão
+  // para a ElevenLabs mesmo com o Piper como principal; se falhar, Piper.
+  const tts: TtsProvider = new RoutingTtsAdapter(primaryTts, defaultVoiceId, elevenlabs, ({ voiceId, error }) =>
+    fastify.log.warn({ voiceId, error }, "tts.elevenlabs_fallback"),
+  );
 
   fastify.decorate("ttsVoices", new TtsVoiceValidator(fastify.redis, tts));
 

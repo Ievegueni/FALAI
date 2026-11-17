@@ -5,13 +5,14 @@ import { tenantsApi } from '@/lib/api';
 import { Button, Input, Select } from '@/components/ui';
 import { useToast } from '@/contexts/ToastContext';
 
-interface Row { name: string; limit: string }
+interface Row { name: string; limit: string; voice: string }
 
 interface Props {
   tenantId: string;
   maxConcurrent: number;
   lineGroupLimits: Record<string, number>;
   defaultLineGroup: string | null;
+  lineGroupVoices: Record<string, string>;
   onSaved: () => void;
 }
 
@@ -19,18 +20,21 @@ interface Props {
  * Grupos de linhas: divide as chamadas simultâneas do cliente por tipo de
  * campanha (ex.: 6 cobrança + 6 marketing). Cada campanha escolhe o grupo
  * (`lineGroup` na API); as que não escolhem vão para o grupo por omissão.
+ *
+ * Voz (opcional): substitui a voz do script fixo das campanhas do grupo.
+ * "elevenlabs:<id>" usa a ElevenLabs (com recurso ao Piper se falhar).
  */
-export function TenantLineGroups({ tenantId, maxConcurrent, lineGroupLimits, defaultLineGroup, onSaved }: Props) {
+export function TenantLineGroups({ tenantId, maxConcurrent, lineGroupLimits, defaultLineGroup, lineGroupVoices, onSaved }: Props) {
   const toast = useToast();
-  const fromProps = () => Object.entries(lineGroupLimits).map(([name, limit]) => ({ name, limit: String(limit) }));
+  const fromProps = () => Object.entries(lineGroupLimits).map(([name, limit]) => ({ name, limit: String(limit), voice: lineGroupVoices[name] ?? '' }));
   const [rows, setRows] = useState<Row[]>(fromProps);
   const [def, setDef] = useState(defaultLineGroup ?? '');
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setRows(fromProps()); setDef(defaultLineGroup ?? ''); }, [JSON.stringify(lineGroupLimits), defaultLineGroup]);
+  useEffect(() => { setRows(fromProps()); setDef(defaultLineGroup ?? ''); }, [JSON.stringify(lineGroupLimits), JSON.stringify(lineGroupVoices), defaultLineGroup]);
 
   const saveMut = useMutation({
-    mutationFn: (body: { lineGroupLimits: Record<string, number> | null; defaultLineGroup: string | null }) =>
+    mutationFn: (body: { lineGroupLimits: Record<string, number> | null; defaultLineGroup: string | null; lineGroupVoices: Record<string, string> | null }) =>
       tenantsApi.update(tenantId, body as never),
     onSuccess: () => { onSaved(); toast.success('Grupos de linhas actualizados.'); },
     onError: (e: Error) => toast.error(e.message || 'Erro ao gravar os grupos.'),
@@ -42,16 +46,26 @@ export function TenantLineGroups({ tenantId, maxConcurrent, lineGroupLimits, def
 
   const save = () => {
     const limits: Record<string, number> = {};
+    const voices: Record<string, string> = {};
     for (const r of rows) {
       const name = norm(r.name);
       if (!name) continue;
       const n = parseInt(r.limit, 10);
       if (Number.isNaN(n) || n < 1 || n > 50) { toast.error(`Limite inválido no grupo ${name} (1 a 50).`); return; }
       limits[name] = n;
+      const voice = r.voice.trim();
+      if (voice) {
+        if (!/^[A-Za-z0-9_:.-]{1,100}$/.test(voice)) { toast.error(`Voz inválida no grupo ${name}.`); return; }
+        voices[name] = voice;
+      }
     }
     const empty = Object.keys(limits).length === 0;
     const defaultName = !empty && def && limits[norm(def)] !== undefined ? norm(def) : null;
-    saveMut.mutate({ lineGroupLimits: empty ? null : limits, defaultLineGroup: defaultName });
+    saveMut.mutate({
+      lineGroupLimits: empty ? null : limits,
+      defaultLineGroup: defaultName,
+      lineGroupVoices: Object.keys(voices).length ? voices : null,
+    });
   };
 
   return (
@@ -62,7 +76,7 @@ export function TenantLineGroups({ tenantId, maxConcurrent, lineGroupLimits, def
           variant="ghost"
           size="sm"
           icon={<Plus className="h-4 w-4" />}
-          onClick={() => setRows([...rows, { name: '', limit: '1' }])}
+          onClick={() => setRows([...rows, { name: '', limit: '1', voice: '' }])}
         >
           Grupo
         </Button>
@@ -85,6 +99,13 @@ export function TenantLineGroups({ tenantId, maxConcurrent, lineGroupLimits, def
             className="w-20 text-right"
             value={r.limit}
             onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, limit: e.target.value } : x)))}
+          />
+          <Input
+            className="flex-1"
+            placeholder="Voz (opcional)"
+            title="Voz do script fixo deste grupo. Ex.: elevenlabs:A26KfvFuSKaMzhhYkSlQ (Adilson). Vazio = voz normal."
+            value={r.voice}
+            onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, voice: e.target.value } : x)))}
           />
           <Button variant="ghost" size="sm" icon={<Trash2 className="h-4 w-4" />} onClick={() => setRows(rows.filter((_, j) => j !== i))} />
         </div>

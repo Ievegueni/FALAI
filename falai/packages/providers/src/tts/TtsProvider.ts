@@ -3,7 +3,13 @@ export interface TtsProvider {
     text: string;
     voiceId: string;
     language?: string;
-  }): Promise<{ wavBuffer: Buffer; durationMs: number; characters: number }>;
+  }): Promise<{
+    wavBuffer: Buffer;
+    durationMs: number;
+    characters: number;
+    /** true quando a voz pedida falhou e o áudio saiu da voz de recurso (ver RoutingTtsAdapter). */
+    fallback?: boolean;
+  }>;
 
   healthCheck(): Promise<{ ok: boolean; details?: string }>;
 

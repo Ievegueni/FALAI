@@ -184,6 +184,10 @@ model Tenant {
   lineGroupLimits      Json?
   // Grupo das campanhas criadas sem `lineGroup` (ex.: "COBRANCA").
   defaultLineGroup     String?
+  // Voz do script fixo por grupo, ex. { "MARKETING": "elevenlabs:A26KfvFuSKaMzhhYkSlQ" }.
+  // Sobrepõe-se ao ttsVoiceId da campanha; "elevenlabs:" usa a ElevenLabs mesmo
+  // com o Piper como principal (com recurso ao Piper se falhar). null = sem vozes.
+  lineGroupVoices      Json?
   // Overrides de funcionalidades por tenant (Json { agents, campaigns, contacts, ... }).
   // Sobrepõe-se aos defaults e às capacidades do plano; ver services/features.ts
   features                    Json?

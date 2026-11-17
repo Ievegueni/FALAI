@@ -520,6 +520,7 @@ export function TenantDetailPage() {
                 maxConcurrent={tenant.maxConcurrentCalls ?? 1}
                 lineGroupLimits={tenant.lineGroupLimits ?? {}}
                 defaultLineGroup={tenant.defaultLineGroup ?? null}
+                lineGroupVoices={tenant.lineGroupVoices ?? {}}
                 onSaved={invalidateTenant}
               />
               <div className="flex justify-between items-center gap-4">

@@ -15,7 +15,7 @@ import { checkNumber } from "../../services/waPool.service.js";
 import { registerIvrRouting, type RoutingCtx } from "../shared/ivrRouting.js";
 import { registerExtensions } from "../shared/extensions.js";
 import { crmUrlFor, subdomainError } from "../../services/tenantHost.js";
-import { normalizeLineGroup, parseLineGroupLimits, LINE_GROUP_MAX_LIMIT } from "../../services/lineGroups.js";
+import { normalizeLineGroup, parseLineGroupLimits, LINE_GROUP_MAX_LIMIT, parseLineGroupVoices, LINE_GROUP_VOICE_RE } from "../../services/lineGroups.js";
 
 const lineCreateSchema = z.object({
   name: z.string().min(1).max(100),
@@ -81,6 +81,7 @@ const updateSchema = z.object({
   // Grupos de linhas: { "COBRANCA": 6, "MARKETING": 6 }; {} ou null = sem grupos.
   lineGroupLimits: z.record(z.string(), z.number().int().min(1).max(LINE_GROUP_MAX_LIMIT)).nullable().optional(),
   defaultLineGroup: z.string().max(40).nullable().optional(),
+  lineGroupVoices: z.record(z.string(), z.string().trim().regex(LINE_GROUP_VOICE_RE)).nullable().optional(),
   qaAiPricePerMinCents: z.number().int().min(0).max(1_000_000).optional(), // auditoria IA, por minuto transcrito (0 = grátis)
 });
 
@@ -147,6 +148,7 @@ function mapTenant(t: any) {
     maxConcurrentCalls: t.maxConcurrent,
     lineGroupLimits: parseLineGroupLimits(t.lineGroupLimits),
     defaultLineGroup: t.defaultLineGroup ?? null,
+    lineGroupVoices: parseLineGroupVoices(t.lineGroupVoices),
     billingModeOverride: t.billingModeOverride ?? null,
     pricePerMinuteOverrideCents: t.pricePerMinuteOverrideCents ?? null,
     recordCalls: t.recordCalls ?? false,
@@ -344,6 +346,18 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
       defaultLineGroup = finalDefault;
     }
 
+    // Voz por grupo: nomes normalizados como os limites; vazio = sem vozes.
+    let lineGroupVoices: Record<string, string> | null | undefined;
+    if (body.lineGroupVoices !== undefined) {
+      lineGroupVoices = null;
+      for (const [k, v] of Object.entries(body.lineGroupVoices ?? {})) {
+        const name = normalizeLineGroup(k);
+        if (!name) return reply.status(400).send({ error: `Nome de grupo inválido: "${k}"` });
+        if (!v) continue;
+        (lineGroupVoices ??= {})[name] = v;
+      }
+    }
+
     invalidateTenantFeatures(request.params.id); // pode mudar de plano
     const tenant = await prisma.tenant.update({
       where: { id: request.params.id },
@@ -367,6 +381,7 @@ export const adminTenantsRoutes: FastifyPluginAsync = async (fastify) => {
         ...(subdomain !== undefined && { subdomain }),
         ...(lineGroupLimits !== undefined && { lineGroupLimits: lineGroupLimits ?? Prisma.DbNull }),
         ...(defaultLineGroup !== undefined && { defaultLineGroup }),
+        ...(lineGroupVoices !== undefined && { lineGroupVoices: lineGroupVoices ?? Prisma.DbNull }),
         ...(body.qaAiPricePerMinCents !== undefined && { qaAiPricePerMinCents: body.qaAiPricePerMinCents }),
       },
       include: { plan: true, _count: { select: { agents: true, calls: true, contacts: true } } },

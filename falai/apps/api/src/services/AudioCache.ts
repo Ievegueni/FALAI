@@ -91,9 +91,12 @@ export class AudioCache {
 
     const exists = await this.redis.exists(cacheKey);
     if (!exists) {
-      const { wavBuffer } = await this.tts.synthesize({ text, voiceId });
+      const { wavBuffer, fallback } = await this.tts.synthesize({ text, voiceId });
       await this.telephony.uploadPrompt(name, wavBuffer);
-      await this.redis.set(cacheKey, "1");
+      // Áudio da voz de recurso (a voz pedida falhou): só 1 h, para voltar a
+      // tentar a voz certa mais tarde em vez de ficar com o recurso para sempre.
+      if (fallback) await this.redis.set(cacheKey, "1", "EX", 3600);
+      else await this.redis.set(cacheKey, "1");
     }
 
     return name;

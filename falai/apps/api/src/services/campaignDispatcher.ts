@@ -6,7 +6,7 @@ import { reserveBalance, computeReservation, effectivePrice, type PriceConfig } 
 import { resolveOutboundExtension, NoOutboundLineError } from "./outboundExtension.service.js";
 import { enqueueWebhook } from "./webhookDispatch.service.js";
 import { parseRetryPolicy } from "./callSettlement.service.js";
-import { resolveLineGroup, lineGroupCallFilter } from "./lineGroups.js";
+import { resolveLineGroup, lineGroupCallFilter, resolveScriptVoice } from "./lineGroups.js";
 
 const DISPATCH_INTERVAL_MS = 30_000; // every 30 seconds
 
@@ -178,7 +178,7 @@ export class CampaignDispatcher {
       lineGroup: string | null;
       scheduleJson: unknown;
       retryPolicy: unknown;
-      tenant: { balanceCents: number; creditLimitCents: number; maxConcurrent: number; lineGroupLimits: unknown; defaultLineGroup: string | null; billingModeOverride: BillingMode | null; pricePerMinuteOverrideCents: number | null; plan: { billingMode: BillingMode; pricePerMinuteCents: number; pricePerCallCents: number } };
+      tenant: { balanceCents: number; creditLimitCents: number; maxConcurrent: number; lineGroupLimits: unknown; defaultLineGroup: string | null; lineGroupVoices: unknown; billingModeOverride: BillingMode | null; pricePerMinuteOverrideCents: number | null; plan: { billingMode: BillingMode; pricePerMinuteCents: number; pricePerCallCents: number } };
       agent: { systemPrompt: string; ttsVoiceId: string | null; maxCallSeconds: number; maxTurnSeconds: number; escalationNumber: string | null } | null;
     },
     now: Date
@@ -302,7 +302,7 @@ export class CampaignDispatcher {
     if (campaign.mode === "FIXED_SCRIPT") {
       let scriptPromptName: string;
       try {
-        const voiceId = campaign.ttsVoiceId ?? this.callEngine.audioCache.defaultVoice;
+        const voiceId = resolveScriptVoice(campaign, tenant, this.callEngine.audioCache.defaultVoice);
         scriptPromptName = await this.callEngine.audioCache.prepareScriptPrompt(
           campaign.id,
           campaign.scriptText ?? "",

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   normalizeLineGroup,
+  resolveScriptVoice,
   parseLineGroupLimits,
   resolveLineGroup,
   lineGroupCallFilter,
@@ -73,5 +74,32 @@ describe("validateCampaignLineGroup", () => {
   });
   it("cliente sem grupos aceita qualquer nome válido", () => {
     expect(validateCampaignLineGroup("VENDAS", { lineGroupLimits: null, defaultLineGroup: null })).toEqual({ ok: true, value: "VENDAS" });
+  });
+});
+
+describe("resolveScriptVoice", () => {
+  const tenant = {
+    defaultLineGroup: "COBRANCA",
+    lineGroupVoices: { MARKETING: "elevenlabs:A26KfvFuSKaMzhhYkSlQ", lixo: 3 },
+  };
+
+  it("a voz do grupo sobrepõe-se à da campanha", () => {
+    expect(resolveScriptVoice({ lineGroup: "MARKETING", ttsVoiceId: "CwhRBWXzGAHq8TQ4Fs17" }, tenant, "pt_PT-tugao"))
+      .toBe("elevenlabs:A26KfvFuSKaMzhhYkSlQ");
+  });
+
+  it("grupo sem voz mantém a da campanha", () => {
+    expect(resolveScriptVoice({ lineGroup: "COBRANCA", ttsVoiceId: "CwhRBWXzGAHq8TQ4Fs17" }, tenant, "pt_PT-tugao"))
+      .toBe("CwhRBWXzGAHq8TQ4Fs17");
+  });
+
+  it("campanha sem grupo usa o grupo por omissão", () => {
+    expect(resolveScriptVoice({ lineGroup: null, ttsVoiceId: null }, { ...tenant, defaultLineGroup: "MARKETING" }, "pt_PT-tugao"))
+      .toBe("elevenlabs:A26KfvFuSKaMzhhYkSlQ");
+  });
+
+  it("sem vozes configuradas, cai na voz por omissão", () => {
+    expect(resolveScriptVoice({ lineGroup: "MARKETING", ttsVoiceId: null }, { defaultLineGroup: null, lineGroupVoices: null }, "pt_PT-tugao"))
+      .toBe("pt_PT-tugao");
   });
 });
