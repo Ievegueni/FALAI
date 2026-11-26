@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, ClipboardList, Plus, Trash2 } from 'lucide-react';
-import { contactFormsApi, telephonyApi, PROVINCES, type ContactField, type ContactFieldType, type ContactForm } from '@/lib/api';
+import { callersApi, contactFormsApi, telephonyApi, PROVINCES, type ContactField, type ContactFieldType, type ContactForm } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -23,12 +23,22 @@ const filled = (v: unknown) => v !== undefined && v !== null && v !== '';
 /** Espelha isVisible da API: sem condição, ou o campo-pai tem o valor pedido. */
 const visible = (f: ContactField, values: Record<string, unknown>) => !f.showIf || values[f.showIf.key] === f.showIf.equals;
 
-/** Ficha no painel da chamada: a do grupo da chamada (ou a primeira), já aberta. */
-export function ContactFormFill({ contactId, attributes, legId, groupId, onSaved }: {
-  contactId: string;
+/**
+ * Ficha no painel da chamada: a do grupo da chamada (ou a primeira), já aberta.
+ *
+ * Com `contactId` nulo é um número que ainda não está na base: a ficha aparece
+ * na mesma, com o nome e o telefone no topo, e gravar cria o contacto e guarda
+ * a ficha de uma vez. Antes o agente só via um botão "Criar contacto" (nome e
+ * telefone) e a ficha só abria depois disso, o que ninguém fazia a meio da
+ * chamada (pedido da AFERREIRA, 2026-11-26).
+ */
+export function ContactFormFill({ contactId, attributes, legId, groupId, newPhone, onSaved }: {
+  contactId: string | null;
   attributes: Record<string, unknown> | null;
   legId?: string | null;
   groupId?: string | null;
+  /** Só para contacto novo: o número da chamada, pré-preenchido. */
+  newPhone?: string;
   onSaved: () => void;
 }) {
   const { t } = useTranslation();
@@ -38,6 +48,12 @@ export function ContactFormFill({ contactId, attributes, legId, groupId, onSaved
   const [formId, setFormId] = useState('');
   const [values, setValues] = useState<Record<string, unknown>>({});
   const form = forms?.find((f) => f.id === formId);
+  const isNew = !contactId;
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState(newPhone ?? '');
+  // Contacto criado numa tentativa anterior cuja ficha falhou a validação:
+  // a nova tentativa só grava a ficha, não volta a criar (daria 409).
+  const [createdId, setCreatedId] = useState<string | null>(null);
 
   const start = (f: ContactForm) => {
     setFormId(f.id);
@@ -51,7 +67,14 @@ export function ContactFormFill({ contactId, attributes, legId, groupId, onSaved
   }, [forms, groupId]);
 
   const save = useMutation({
-    mutationFn: () => contactFormsApi.fill(contactId, { formId: form!.id, values, ...(legId && { legId }) }),
+    mutationFn: async () => {
+      let id = contactId ?? createdId;
+      if (!id) {
+        id = (await callersApi.quickCreate({ name: name.trim(), phone: phone.trim(), ...(legId && { legId }) })).id;
+        setCreatedId(id);
+      }
+      return contactFormsApi.fill(id, { formId: form!.id, values, ...(legId && { legId }) });
+    },
     onSuccess: () => { success(t('common.saved')); onSaved(); },
     onError: (e: Error) => error(e.message),
   });
@@ -66,14 +89,26 @@ export function ContactFormFill({ contactId, attributes, legId, groupId, onSaved
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
         {open ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
         <ClipboardList className="h-4 w-4 text-blue-600" />
-        <span className="flex-1 truncate text-sm font-medium text-gray-900">{form.name}</span>
+        <span className="flex-1 truncate text-sm font-medium text-gray-900">{isNew ? t('contactForms.newContactTitle', { name: form.name }) : form.name}</span>
         <span className="text-xs tabular-nums text-gray-500">{t('contactForms.progress', { done, total: base.length })}</span>
       </button>
       <div className="mx-3 mb-2 h-1.5 overflow-hidden rounded-full bg-gray-200" role="progressbar" aria-valuenow={done} aria-valuemax={base.length}>
         <div className="h-full bg-blue-600 transition-all" style={{ width: `${base.length ? (done / base.length) * 100 : 0}%` }} />
       </div>
       {open && (
-        <form className="space-y-3 px-3 pb-3" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+        <form className="space-y-3 px-3 pb-3" onSubmit={(e) => { e.preventDefault(); if (!isNew || createdId || name.trim()) save.mutate(); }}>
+          {isNew && !createdId && (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-gray-700">{t('common.name')}<span className="text-red-500"> *</span></span>
+                <input className={field} value={name} onChange={(e) => setName(e.target.value)} maxLength={120} required />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-gray-700">{t('callerPanel.phone')}</span>
+                <input className={field} value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" />
+              </label>
+            </>
+          )}
           {forms.length > 1 && (
             <select className={field} value={form.id} onChange={(e) => start(forms.find((f) => f.id === e.target.value)!)}>
               {forms.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
@@ -124,7 +159,9 @@ export function ContactFormFill({ contactId, attributes, legId, groupId, onSaved
             );
           })}
           <div className="flex justify-end">
-            <Button type="submit" size="sm" loading={save.isPending}>{t('contactForms.save')}</Button>
+            <Button type="submit" size="sm" loading={save.isPending} disabled={isNew && !createdId && !name.trim()}>
+              {isNew && !createdId ? t('contactForms.createAndSave') : t('contactForms.save')}
+            </Button>
           </div>
         </form>
       )}

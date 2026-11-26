@@ -2105,6 +2105,8 @@
     "go": "Open the new address"
   },
   "contactForms": {
+    "newContactTitle": "New customer · {{name}}",
+    "createAndSave": "Create customer and save",
     "tab": "Forms",
     "open": "Data form",
     "new": "New form",

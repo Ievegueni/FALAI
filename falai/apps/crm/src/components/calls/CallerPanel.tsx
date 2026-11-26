@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { UserRound, EyeOff, UserPlus, Pencil, Plus, X, History, StickyNote, MessageSquare, Ban } from 'lucide-react';
-import { callersApi, type CallerHistoryItem } from '@/lib/api';
+import { callersApi, contactFormsApi, type CallerHistoryItem } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -67,6 +67,8 @@ export function CallerPanel({ legId, number, onClose }: { legId?: string | null;
     staleTime: 30_000,
   });
   const refresh = () => void qc.invalidateQueries({ queryKey: key });
+  // Mesma consulta (e cache) da ContactFormFill: decide se o número novo vê a ficha.
+  const { data: forms } = useQuery({ queryKey: ['contact-forms'], queryFn: () => contactFormsApi.list(), staleTime: 60_000 });
 
   const [more, setMore] = useState<CallerHistoryItem[]>([]);
   const [hasMore, setHasMore] = useState<boolean | null>(null);
@@ -136,12 +138,16 @@ export function CallerPanel({ legId, number, onClose }: { legId?: string | null;
     return <Card className="w-full lg:max-w-md">{header(<EyeOff className="h-5 w-5" />, t('callerPanel.hidden'))}</Card>;
   }
 
-  // ── Não identificado: contacto rápido ──
+  // ── Não identificado: a ficha abre já (cria o contacto ao gravar); sem
+  //    fichas configuradas, fica o contacto rápido de sempre ──
   if (!contact) {
     return (
       <Card className="w-full lg:max-w-md space-y-4">
         {header(<UserRound className="h-5 w-5" />, t('callerPanel.unknown'), caller.display)}
-        {caller.national &&
+        {caller.national && (forms?.length ?? 0) > 0 && (
+          <ContactFormFill contactId={null} attributes={null} newPhone={caller.national} legId={legId ?? null} groupId={data?.groupId ?? null} onSaved={refresh} />
+        )}
+        {caller.national && !forms?.length &&
           (creating ? (
             <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (creating.name.trim()) create.mutate(); }}>
               <Input label={t('common.name')} value={creating.name} onChange={(e) => setCreating({ ...creating, name: e.target.value })} autoFocus maxLength={120} />
@@ -160,6 +166,8 @@ export function CallerPanel({ legId, number, onClose }: { legId?: string | null;
     );
   }
 
+  // Os dados gravados pelas fichas ficam pela chave do campo; mostra-se o rótulo.
+  const fieldLabels = new Map((forms ?? []).flatMap((f) => f.fields.map((x) => [x.key!, x.label] as const)));
   const history = [...(data?.history?.data ?? []), ...more];
   const showMore = hasMore ?? data?.history?.hasMore ?? false;
 
@@ -238,7 +246,7 @@ export function CallerPanel({ legId, number, onClose }: { legId?: string | null;
               .slice(0, 8)
               .map(([k, v]) => (
                 <div key={k} className="contents">
-                  <dt className="truncate text-gray-500">{k}</dt>
+                  <dt className="truncate text-gray-500">{fieldLabels.get(k) ?? k}</dt>
                   <dd className="truncate text-gray-800">{String(v)}</dd>
                 </div>
               ))}

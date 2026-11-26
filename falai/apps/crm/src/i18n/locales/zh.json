@@ -2024,6 +2024,8 @@
     "fullscreen": "全屏"
   },
   "contactForms": {
+    "newContactTitle": "新客户 · {{name}}",
+    "createAndSave": "创建客户并保存",
     "tab": "资料表",
     "open": "资料表",
     "new": "新建资料表",
