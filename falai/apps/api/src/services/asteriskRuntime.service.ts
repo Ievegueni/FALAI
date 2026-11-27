@@ -371,6 +371,9 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
           : choice.kind === "own_disabled"
             ? ["set_var=TRUNK_ENDPOINT=tronco_proprio_desligado", "set_var=TRUNK_USER=0"]
             : [];
+      // Limite de chamadas de saída em simultâneo, verificado no dialplan
+      // (sair). Vale para o hardphone e o webphone da mesma extensão.
+      const limitVars = e.maxCalls != null ? [`set_var=FALAI_MAX_CALLS=${e.maxCalls}`] : [];
 
       // O endpoint chama-se como o UTILIZADOR SIP, não como o número: é assim
       // que o PJSIP identifica quem se regista, e é o que impede dois clientes
@@ -419,6 +422,7 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         "rewrite_contact=yes",
         `callerid=${e.callerId} <${e.number}>`,
         ...outVars,
+        ...limitVars,
         ""
       );
 
@@ -455,6 +459,7 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         "dtmf_mode=rfc4733",
         `callerid=${e.callerId} <${e.number}>`,
         ...outVars,
+        ...limitVars,
         ""
       );
     }

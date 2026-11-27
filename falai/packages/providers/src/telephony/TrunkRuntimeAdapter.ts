@@ -42,6 +42,8 @@ export interface SipExtensionConfig {
   sipAuthSecret: string;
   maxIpRegs: number;
   maxWebRegs: number;
+  /** Chamadas de saída simultâneas; null/undefined = sem limite. */
+  maxCalls?: number | null;
   disallowIntl: boolean;
   ringTimeoutS: number;
 }

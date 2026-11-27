@@ -426,6 +426,9 @@ model Extension {
   autoAnswer     Boolean                   @default(false)
   maxIpRegs      Int                       @default(4)
   maxWebRegs     Int                       @default(3)
+  // Chamadas de saída simultâneas (hardphone + webphone). null = sem limite.
+  // Aplicado no dialplan [from-internal] -> sair (FALAI_MAX_CALLS).
+  maxCalls       Int?
   // Config por aba (JSON)
   presence       Json? // { forwarding, ringStrategy, ringTimeoutS:30 }
   voicemail      Json? // { enabled, pinAuth, emailNotify, greeting }

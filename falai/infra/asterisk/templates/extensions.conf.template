@@ -68,10 +68,17 @@ exten => sair,1,NoOp(A enviar ${SAIDA} pelo trunk ${TRUNK_ENDPOINT})
 ; Guarda quem marcou ANTES de o CALLERID passar a ser o do trunk — é assim que
 ; a API sabe de que cliente é a chamada.
  same => n,Set(FALAI_ENDPOINT=${CHANNEL(endpoint)})
+; Limite de chamadas em simultâneo da extensão (Extension.maxCalls, chega como
+; FALAI_MAX_CALLS no endpoint). O grupo é o utilizador SIP, sem o prefixo
+; ext_/extweb_, para o hardphone e o webphone contarem juntos. Acima do limite:
+; ocupado (486), sem CDR nem cobrança.
+ same => n,GotoIf($["${FALAI_MAX_CALLS}" = ""]?livre)
+ same => n,Set(GROUP(falai_ext)=${CUT(FALAI_ENDPOINT,_,2-)})
+ same => n,GotoIf($[${GROUP_COUNT(${CUT(FALAI_ENDPOINT,_,2-)}@falai_ext)} > ${FALAI_MAX_CALLS}]?limite)
 ; O handler corre quando a chamada termina, seja qual for o desfecho. É o que
 ; permite contabilizar as chamadas marcadas no webphone, que nunca passam pela
 ; API — ver services/webphoneCdr.service.ts.
- same => n,Set(CHANNEL(hangup_handler_push)=falai-cdr,s,1)
+ same => n(livre),Set(CHANNEL(hangup_handler_push)=falai-cdr,s,1)
  same => n,Set(CALLERID(num)=${TRUNK_USER})
  same => n,Dial(PJSIP/${SAIDA}@${TRUNK_ENDPOINT},60)
  same => n,NoOp(Resultado: ${DIALSTATUS})
@@ -82,6 +89,8 @@ exten => sair,1,NoOp(A enviar ${SAIDA} pelo trunk ${TRUNK_ENDPOINT})
  same => n,Answer()
  same => n,Playback(ss-noservice)
  same => n,Hangup()
+ same => n(limite),NoOp(LIMITE: ${FALAI_ENDPOINT} já tem ${FALAI_MAX_CALLS} chamada(s) em curso)
+ same => n,Hangup(17)
 
 ;------------------------------------------------------------------------------
 ; CDR — entrega da chamada terminada à API do Falaí
