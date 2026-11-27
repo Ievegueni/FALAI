@@ -7,6 +7,7 @@ export {
   trunkEndpointId,
   extensionEndpointId,
   extensionWebEndpointId,
+  extensionIpEndpointId,
   sipAuthUserFromEndpointId,
   formatDialNumber,
   parseDialFormat,

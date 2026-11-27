@@ -44,6 +44,8 @@ export interface SipExtensionConfig {
   maxWebRegs: number;
   /** Chamadas de saída simultâneas; null/undefined = sem limite. */
   maxCalls?: number | null;
+  /** IPs aceites sem registo nem senha ("SIP mode"); vazio = desligado. */
+  trustedIps?: string[];
   disallowIntl: boolean;
   ringTimeoutS: number;
 }

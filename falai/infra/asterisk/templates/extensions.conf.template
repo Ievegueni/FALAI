@@ -70,7 +70,7 @@ exten => sair,1,NoOp(A enviar ${SAIDA} pelo trunk ${TRUNK_ENDPOINT})
  same => n,Set(FALAI_ENDPOINT=${CHANNEL(endpoint)})
 ; Limite de chamadas em simultâneo da extensão (Extension.maxCalls, chega como
 ; FALAI_MAX_CALLS no endpoint). O grupo é o utilizador SIP, sem o prefixo
-; ext_/extweb_, para o hardphone e o webphone contarem juntos. Acima do limite:
+; ext_/extweb_/extip_, para o hardphone, o webphone e o IP a IP contarem juntos. Acima do limite:
 ; ocupado (486), sem CDR nem cobrança.
  same => n,GotoIf($["${FALAI_MAX_CALLS}" = ""]?livre)
  same => n,Set(GROUP(falai_ext)=${CUT(FALAI_ENDPOINT,_,2-)})

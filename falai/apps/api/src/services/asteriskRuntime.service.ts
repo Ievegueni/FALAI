@@ -29,7 +29,7 @@
 import { chmod, chown, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TrunkRuntimeAdapter, PbxSyncPayload, PbxSyncResult } from "@falai/providers";
-import { trunkEndpointId, extensionEndpointId, extensionWebEndpointId, holdMusicClass, holdMusicDir } from "@falai/providers";
+import { trunkEndpointId, extensionEndpointId, extensionWebEndpointId, extensionIpEndpointId, holdMusicClass, holdMusicDir } from "@falai/providers";
 import { pickOutboundTrunk, sharedOutboundTrunk } from "./tenantOutboundTrunk.js";
 
 const AMI_URL = process.env["ASTERISK_AMI_URL"] ?? "";
@@ -462,6 +462,41 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         ...limitVars,
         ""
       );
+
+      // "SIP mode" (IP a IP): sistemas de terceiros que mandam INVITE sem se
+      // registarem (ex.: VOS3000 da IA da FÁCIL). Endpoint sem auth, reconhecido
+      // só pelo IP de origem (endpoint_identifier_order começa por ip). Mesmas
+      // variáveis da extensão, por isso o limite (o grupo do dialplan corta o
+      // prefixo extip_), a saída e o CDR contam para esta extensão. aors= aponta
+      // para o AOR do hardphone: vindo destes IPs, o REGISTER também cai aqui
+      // e continua a ser aceite.
+      const trusted = e.trustedIps ?? [];
+      if (trusted.length > 0) {
+        const ipId = extensionIpEndpointId(e.sipAuthUser);
+        L.push(
+          `[${ipId}]`,
+          "type=endpoint",
+          "transport=transport-udp",
+          `aors=${id}`,
+          "context=from-internal",
+          "disallow=all",
+          "allow=alaw,ulaw",
+          "dtmf_mode=rfc4733",
+          "direct_media=no",
+          "rtp_symmetric=yes",
+          "force_rport=yes",
+          "rewrite_contact=yes",
+          `callerid=${e.callerId} <${e.number}>`,
+          ...outVars,
+          ...limitVars,
+          "",
+          `[${ipId}]`,
+          "type=identify",
+          `endpoint=${ipId}`,
+          ...trusted.map((ip) => `match=${ip}`),
+          ""
+        );
+      }
     }
 
     return L.join("\n");

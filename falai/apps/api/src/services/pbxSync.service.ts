@@ -72,7 +72,7 @@ export async function buildPbxSyncPayload(): Promise<PbxSyncPayload> {
       dids: t.dids.map((d) => d.did),
     })),
     extensions: extensions.map((e) => {
-      const security = (e.security ?? {}) as { disallowIntl?: boolean };
+      const security = (e.security ?? {}) as { disallowIntl?: boolean; trustedIps?: unknown };
       const presence = (e.presence ?? {}) as { ringTimeoutS?: number };
       return {
         id: e.id,
@@ -85,6 +85,13 @@ export async function buildPbxSyncPayload(): Promise<PbxSyncPayload> {
         maxIpRegs: e.maxIpRegs,
         maxWebRegs: e.maxWebRegs,
         maxCalls: e.maxCalls,
+        // Só IPv4 simples: um valor estranho no JSON não pode abrir a porta
+        // a uma rede inteira nem partir o pjsip.conf.
+        trustedIps: Array.isArray(security.trustedIps)
+          ? security.trustedIps.filter(
+              (ip): ip is string => typeof ip === "string" && /^(\d{1,3}\.){3}\d{1,3}$/.test(ip)
+            )
+          : [],
         disallowIntl: security.disallowIntl ?? true,
         ringTimeoutS: presence.ringTimeoutS ?? 30,
       };

@@ -45,13 +45,23 @@ export function extensionWebEndpointId(sipAuthUser: string): string {
 }
 
 /**
+ * Endpoint "SIP mode" (IP a IP, sem registo) da mesma extensão: reconhecido
+ * pelo IP de origem (Extension.security.trustedIps), sem senha. Para sistemas
+ * de terceiros que mandam INVITE directo (ex.: IA da FÁCIL). Usa o mesmo AOR do
+ * hardphone, por isso o registo continua a funcionar a partir desses IPs.
+ */
+export function extensionIpEndpointId(sipAuthUser: string): string {
+  return `extip_${safe(sipAuthUser)}`;
+}
+
+/**
  * Caminho inverso dos dois anteriores: do nome do endpoint para o utilizador
  * SIP. Necessário para saber de QUEM é uma chamada que o Asterisk nos reporta
  * — no CDR do dialplan só temos o nome do endpoint.
  * Devolve null se o nome não for de uma extensão (ex.: um trunk).
  */
 export function sipAuthUserFromEndpointId(endpointId: string): string | null {
-  const m = /^ext(?:web)?_(.+)$/.exec(endpointId);
+  const m = /^ext(?:web|ip)?_(.+)$/.exec(endpointId);
   return m?.[1] ?? null;
 }
 
