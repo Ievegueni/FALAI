@@ -377,12 +377,25 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
       // com a extensão 1000 de colidirem. Ver extensionEndpointId().
       const id = extensionEndpointId(e.sipAuthUser);
       const auth = `${id}_auth`;
+      // Segunda credencial com o NOME do endpoint (ext_<utilizador>) como
+      // utilizador de autenticação. Equipamentos que só têm um campo
+      // "utilizador" (ex.: VOS3000 da IA da FÁCIL) mandam o mesmo valor no
+      // From e no Digest; o From tem de ser ext_<utilizador> para o PJSIP
+      // encontrar o endpoint, por isso o Digest chega com ext_ e falhava
+      // contra a credencial normal. Mesma senha; só o hardphone a aceita.
+      const authExt = `${id}_auth_ext`;
       L.push(
         `; ─── Extensão ${e.number}${e.tenantName ? ` — ${e.tenantName}` : ""} ───`,
         `[${auth}]`,
         "type=auth",
         "auth_type=userpass",
         `username=${e.sipAuthUser}`,
+        `password=${e.sipAuthSecret}`,
+        "",
+        `[${authExt}]`,
+        "type=auth",
+        "auth_type=userpass",
+        `username=${id}`,
         `password=${e.sipAuthSecret}`,
         "",
         `[${id}]`,
@@ -395,7 +408,7 @@ export class AsteriskRuntimeAdapter implements TrunkRuntimeAdapter {
         "type=endpoint",
         "transport=transport-udp",
         `aors=${id}`,
-        `auth=${auth}`,
+        `auth=${auth},${authExt}`,
         "context=from-internal",
         "disallow=all",
         "allow=alaw,ulaw",
